@@ -627,11 +627,11 @@ export class Game {
 
   enterShop() {
     this.oreVacuum = false
-    for (const chunk of this.oreChunks) {
-      this.score += CONFIG.ORE_SCORE
-      this.stats.ore++
-      this.oreBalance++
-    }
+    // sweep up any ore still on the field
+    const remaining = this.oreChunks.length
+    this.score += remaining * CONFIG.ORE_SCORE
+    this.stats.ore += remaining
+    this.oreBalance += remaining
     this.oreChunks.length = 0
 
     const accuracy = this.stats.shots ? this.stats.hits / this.stats.shots : 1
