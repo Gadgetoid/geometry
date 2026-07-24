@@ -24,7 +24,6 @@ import {
   subtract,
   normalize,
   countBeamCrossings,
-  distanceToSegment,
   mulberry32,
 } from "./math.js"
 import { Sound } from "./audio.js"
@@ -289,10 +288,12 @@ export class Game {
     const damage = weapon.type.damage
     const width = weapon.type.width || 2.4
 
-    // The beam stops at the first ship it strikes: find the nearest one along
-    // the beam and truncate to that point so it can't cut rocks beyond it.
+    // The beam stops at the first ship it strikes: find the nearest ship whose
+    // body the beam enters, remember it so we can damage exactly that one, and
+    // truncate the beam to its near surface so it can't cut rocks beyond it.
     const fullLen = Math.hypot(beam.b.x - beam.a.x, beam.b.y - beam.a.y)
     let blockDist = fullLen
+    let blockShip = null
     const considerShip = (e, radius) => {
       const reach = width * 0.6 + radius
       const t = (e.x - beam.a.x) * beam.dir.x + (e.y - beam.a.y) * beam.dir.y
@@ -305,11 +306,11 @@ export class Game {
       if (perp >= reach) {
         return
       }
-      // stop at the near surface (facing the shooter), not the centre, so the
-      // beam ends on the struck side and the shield flashes there
+      // near surface facing the shooter: beam ends here and the shield flashes here
       const tEntry = t - Math.sqrt(reach * reach - perp * perp)
-      if (tEntry > 0 && tEntry < blockDist) {
-        blockDist = tEntry
+      if (tEntry < blockDist) {
+        blockDist = Math.max(0, tEntry)
+        blockShip = e
       }
     }
     for (const rival of this.rivals) {
@@ -320,7 +321,7 @@ export class Game {
     if (this.player && attacker !== this.player) {
       considerShip(this.player, this.player.radius)
     }
-    if (blockDist < fullLen) {
+    if (blockShip) {
       beam.b.x = beam.a.x + beam.dir.x * blockDist
       beam.b.y = beam.a.y + beam.dir.y * blockDist
     }
@@ -406,35 +407,13 @@ export class Game {
       this.screenShake = Math.max(this.screenShake, 4)
     }
 
-    // Ships caught within the beam's width take laser damage (energy or hull),
-    // sparking at the point where the beam meets them.
-    const fromPlayer = attacker === this.player
-    const beamImpact = (e) => {
-      const t = clamp((e.x - beam.a.x) * beam.dir.x + (e.y - beam.a.y) * beam.dir.y, 0, blockDist)
-      return { x: beam.a.x + beam.dir.x * t, y: beam.a.y + beam.dir.y * t }
-    }
-    for (const rival of this.rivals) {
-      if (rival === attacker || rival.dead) {
-        continue
-      }
-      if (
-        distanceToSegment(rival.x, rival.y, beam.a.x, beam.a.y, beam.b.x, beam.b.y) <
-        width * 0.6 + rival.size
-      ) {
-        const hit = beamImpact(rival)
-        rival.takeDamage(damage, this, "laser", fromPlayer ? rival.type.killScore : 0, hit)
-        this.burst(hit.x, hit.y, randInt(3, 6), weapon.type.colour, 30, 130, 0.35)
-        didHit = true
-      }
-    }
-    const p = this.player
-    if (
-      p &&
-      attacker !== p &&
-      distanceToSegment(p.x, p.y, beam.a.x, beam.a.y, beam.b.x, beam.b.y) < width * 0.6 + p.radius
-    ) {
-      const hit = beamImpact(p)
-      p.takeDamage(damage, this, "laser", 0, hit)
+    // Damage the ship the beam struck. It is the one found above (the beam ends
+    // at its surface), so the hit lands on the shooter-facing side.
+    if (blockShip) {
+      const hit = { x: beam.b.x, y: beam.b.y }
+      const fromPlayer = attacker === this.player
+      const scoreOnKill = fromPlayer && blockShip !== this.player ? blockShip.type.killScore : 0
+      blockShip.takeDamage(damage, this, "laser", scoreOnKill, hit)
       this.burst(hit.x, hit.y, randInt(3, 6), weapon.type.colour, 30, 130, 0.35)
       didHit = true
     }
