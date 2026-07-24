@@ -287,19 +287,26 @@ export class Weapon {
         Sound.charge()
       }
     } else if (this.controller === "defense") {
-      // player nose turret: aim at the nearest rock in range and fire a beam
-      let target = null,
-        nearest = this.type.range
-      for (const a of game.asteroids) {
-        const d = Math.hypot(a.center.x - host.x, a.center.y - host.y)
-        if (d < nearest) {
-          nearest = d
-          target = a
+      // player nose turret. Manual (arrow keys) aims host.turretAim and fires
+      // on demand; otherwise it auto-targets the nearest rock in range.
+      if (host.turretManual > 0) {
+        if (host.turretFiring) {
+          this.emitBeam(game, host, host.x, host.y, host.turretAim, this.type.range)
         }
-      }
-      if (target) {
-        host.turretAim = Math.atan2(target.center.y - host.y, target.center.x - host.x)
-        this.emitBeam(game, host, host.x, host.y, host.turretAim, nearest + 42)
+      } else {
+        let target = null,
+          nearest = this.type.range
+        for (const a of game.asteroids) {
+          const d = Math.hypot(a.center.x - host.x, a.center.y - host.y)
+          if (d < nearest) {
+            nearest = d
+            target = a
+          }
+        }
+        if (target) {
+          host.turretAim = Math.atan2(target.center.y - host.y, target.center.x - host.x)
+          this.emitBeam(game, host, host.x, host.y, host.turretAim, nearest + 42)
+        }
       }
     }
     // 'manual' is driven by the player directly.
@@ -555,6 +562,8 @@ export class PlayerShip extends Ship {
     this.multiTime = 0
     this.magnetTime = 0
     this.turretAim = 0
+    this.turretManual = 0 // time left under player (arrow-key) control
+    this.turretFiring = false
     this.atBoundary = false
     this.impactSfx = 0 // throttles collision / boundary sounds
   }
@@ -629,16 +638,41 @@ export class PlayerShip extends Ship {
 
     const keys = game.pressedKeys
     const canControl = game.phase === "play"
+    // WASD flies the ship; the arrow keys aim the defense turret (below)
     if (canControl) {
-      if (keys.has("ArrowLeft") || keys.has("KeyA")) {
+      if (keys.has("KeyA")) {
         this.angle -= CONFIG.ROT * dt
       }
-      if (keys.has("ArrowRight") || keys.has("KeyD")) {
+      if (keys.has("KeyD")) {
         this.angle += CONFIG.ROT * dt
       }
-      this.thrusting = keys.has("ArrowUp") || keys.has("KeyW")
+      this.thrusting = keys.has("KeyW")
     } else {
       this.thrusting = false
+    }
+
+    // Arrow keys take manual control of the defense turret: LEFT/RIGHT swing the
+    // aim, UP fires. Any input holds manual mode; after a short cooldown with no
+    // input it reverts to auto-targeting.
+    this.turretManual = Math.max(0, this.turretManual - dt)
+    this.turretFiring = false
+    if (canControl && game.upgrades.turret) {
+      let active = false
+      if (keys.has("ArrowLeft")) {
+        this.turretAim -= 3.0 * dt
+        active = true
+      }
+      if (keys.has("ArrowRight")) {
+        this.turretAim += 3.0 * dt
+        active = true
+      }
+      if (keys.has("ArrowUp")) {
+        this.turretFiring = true
+        active = true
+      }
+      if (active) {
+        this.turretManual = 1.5
+      }
     }
 
     if (this.thrusting) {
@@ -659,10 +693,7 @@ export class PlayerShip extends Ship {
     }
 
     this.reversing =
-      canControl &&
-      game.upgrades.reverse &&
-      !this.thrusting &&
-      (keys.has("ArrowDown") || keys.has("KeyS"))
+      canControl && game.upgrades.reverse && !this.thrusting && keys.has("KeyS")
     if (this.reversing) {
       this.vx -= Math.cos(this.angle) * CONFIG.ACCEL * 0.6 * dt
       this.vy -= Math.sin(this.angle) * CONFIG.ACCEL * 0.6 * dt
