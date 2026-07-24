@@ -25,8 +25,7 @@ import {
   normalize,
   dot,
   perpendicular,
-  convexHull,
-  splitPolygon,
+  slicePolygon,
   polygonCentroid,
   polygonArea,
   countBeamCrossings,
@@ -449,13 +448,10 @@ export class Game {
   // grazes it (no clean two-way split).
   sliceFrigate(ship, beam, fromPlayer) {
     const cutNormal = perpendicular(beam.dir)
-    // split the real hull outline so the halves keep the frigate's shape; fall
-    // back to the convex hull if the concave outline doesn't cut cleanly
-    let parts = splitPolygon(ship.worldOutline(), beam.a, cutNormal)
-    if (parts.length !== 2) {
-      parts = splitPolygon(convexHull(ship.worldOutline()), beam.a, cutNormal)
-    }
-    if (parts.length !== 2) {
+    // slice the real (concave) hull outline; the slicer handles it directly and
+    // may return more than two pieces
+    const parts = slicePolygon(ship.worldOutline(), beam.a, cutNormal)
+    if (parts.length < 2) {
       return false
     }
     // the frigate's autocannon turrets, in world space, to hand to the pieces

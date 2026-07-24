@@ -23,7 +23,7 @@ import {
   polygonCentroid,
   boundingRadius,
   perpendicular,
-  splitPolygon,
+  slicePolygon,
 } from "./math.js"
 import {
   TAU,
@@ -1241,11 +1241,12 @@ export class Asteroid extends Entity {
     }
   }
 
-  // Split by a beam, distributing hardpoints to whichever half they fall on.
+  // Split by a beam, distributing hardpoints to whichever piece they fall on.
+  // A concave fragment can yield more than two pieces; all are handled.
   splitBy(beam, game) {
     const cutNormal = perpendicular(beam.dir)
-    const parts = splitPolygon(this.vertices, beam.a, cutNormal)
-    if (parts.length !== 2) {
+    const parts = slicePolygon(this.vertices, beam.a, cutNormal)
+    if (parts.length < 2) {
       return null
     }
     const fragments = []
