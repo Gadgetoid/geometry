@@ -698,17 +698,83 @@ export class WebGLRenderer extends Renderer {
   }
 
   // ---- Renderer contract --------------------------------------------------
+  // A polyline drawn as one continuous mitered band: each vertex is offset along
+  // its miter normal so consecutive edges share corner geometry. Every pixel is
+  // covered exactly once, so corners have no gaps and additive blending produces
+  // no double-bright dots. The fragment falloff (core + glow) uses the nominal
+  // half-width via `edge`, with the capsule's longitudinal term neutralised.
   strokePoly(points, opts = {}) {
     const col = this.#col(opts)
     const core = (opts.width ?? 1.6) / 2
     const total = core + (opts.glow || 0) * 0.5 + 1.2
-    this.#use("line")
     const closed = opts.closed !== false
     const n = points.length
-    for (let i = 0; i < n - (closed ? 0 : 1); i++) {
+    if (n < 2) {
+      return
+    }
+    this.#use("line")
+    const z = this.passZ
+    const edges = closed ? n : n - 1
+
+    // unit normal of each edge
+    const nx = new Array(edges),
+      ny = new Array(edges)
+    for (let i = 0; i < edges; i++) {
       const a = points[i],
         b = points[(i + 1) % n]
-      this.#lineQuad(a.x, a.y, b.x, b.y, this.passZ, core, total, col)
+      let dx = b.x - a.x,
+        dy = b.y - a.y
+      const len = Math.hypot(dx, dy) || 1
+      nx[i] = -dy / len
+      ny[i] = dx / len
+    }
+
+    // per-vertex miter offset: vertex ± (ox,oy) are the two band edges there
+    const ox = new Array(n),
+      oy = new Array(n)
+    for (let i = 0; i < n; i++) {
+      let inE, outE
+      if (closed) {
+        inE = (i - 1 + edges) % edges
+        outE = i % edges
+      } else {
+        inE = i === 0 ? 0 : i - 1
+        outE = i === n - 1 ? n - 2 : i
+      }
+      let mx = nx[inE] + nx[outE],
+        my = ny[inE] + ny[outE]
+      const mlen = Math.hypot(mx, my) || 1
+      mx /= mlen
+      my /= mlen
+      let denom = mx * nx[inE] + my * ny[inE]
+      if (denom < 0.25) {
+        denom = 0.25 // cap miter length so sharp corners bevel instead of spiking
+      }
+      const miter = Math.min(total / denom, total * 4)
+      ox[i] = mx * miter
+      oy[i] = my * miter
+    }
+
+    const [r, g, bl, a] = col
+    const v = (x, y, edge) => this.#push(x, y, z, edge, 0.5, core, total, 1, r, g, bl, a)
+    for (let i = 0; i < edges; i++) {
+      const a0 = points[i],
+        b0 = points[(i + 1) % n]
+      const j = (i + 1) % n
+      const alx = a0.x + ox[i],
+        aly = a0.y + oy[i]
+      const arx = a0.x - ox[i],
+        ary = a0.y - oy[i]
+      const blx = b0.x + ox[j],
+        bly = b0.y + oy[j]
+      const brx = b0.x - ox[j],
+        bry = b0.y - oy[j]
+      v(alx, aly, total)
+      v(blx, bly, total)
+      v(brx, bry, -total)
+      v(alx, aly, total)
+      v(brx, bry, -total)
+      v(arx, ary, -total)
     }
   }
 
