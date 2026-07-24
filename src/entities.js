@@ -554,6 +554,7 @@ export class PlayerShip extends Ship {
     if (!w || w.cooldown > 0 || w.charge < w.type.chargeMin) {
       return
     }
+    const chargeFrac = clamp(w.charge / w.type.chargeMax, 0, 1)
     const length = w.charge * (this.boosterTime > 0 ? 1.6 : 1) + 40
     const nose = this.mountWorld(this.hardpoints[0].local)
     const dir = { x: Math.cos(this.angle), y: Math.sin(this.angle) },
@@ -585,7 +586,7 @@ export class PlayerShip extends Ship {
     }
     w.cooldown = w.type.reload
     w.charge = 0
-    Sound.fire()
+    Sound.fire(0.9 + 0.35 * chargeFrac) // pitch rises slightly with charge
   }
 
   update(dt, game) {

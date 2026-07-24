@@ -140,8 +140,8 @@ export const Sound = {
     }
   },
 
-  fire() {
-    this.beep(680, 0.22, "sawtooth", 0.06, 120)
+  fire(pitch = 1) {
+    this.beep(680 * pitch, 0.22, "sawtooth", 0.06, 120 * pitch)
   },
   // Frigate main gun: a big, low "pew" with a sub layer and a breath of noise.
   bigLaser() {

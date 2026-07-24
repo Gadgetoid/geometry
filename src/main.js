@@ -55,6 +55,20 @@ function resize() {
 new ResizeObserver(resize).observe(canvas)
 resize()
 
+// Pause simulation and audio while the tab is hidden. Background rAF ticks
+// would otherwise keep the AI firing and emit stray sounds.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    Sound.setThruster(false)
+    if (Sound.ctx && Sound.ctx.suspend) {
+      Sound.ctx.suspend()
+    }
+    game.onBlur()
+  } else if (Sound.enabled && Sound.ctx && Sound.ctx.resume) {
+    Sound.ctx.resume().catch(() => {})
+  }
+})
+
 let last = 0
 function loop(timestamp) {
   if (!last) {
@@ -62,6 +76,11 @@ function loop(timestamp) {
   }
   let dt = (timestamp - last) / 1000
   last = timestamp
+  if (document.hidden) {
+    // don't simulate in the background (avoids stray AI fire / sounds)
+    requestAnimationFrame(loop)
+    return
+  }
   if (dt > 0.05) {
     dt = 0.05
   } // clamp so a stalled tab doesn't teleport everything
