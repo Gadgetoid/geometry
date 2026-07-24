@@ -33,7 +33,9 @@ document.getElementById("btnSnd").addEventListener("click", (e) => {
   Sound.enabled = !Sound.enabled
   e.currentTarget.setAttribute("aria-pressed", String(Sound.enabled))
   if (Sound.enabled) {
+    // resume + unlock the context inside this gesture, then a confirmation blip
     Sound.ensureContext()
+    Sound.power()
   }
 })
 

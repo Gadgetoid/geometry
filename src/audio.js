@@ -4,6 +4,8 @@ export const Sound = {
   enabled: false,
   ctx: null,
 
+  unlocked: false,
+
   ensureContext() {
     if (!this.ctx) {
       try {
@@ -12,10 +14,26 @@ export const Sound = {
         /* audio is best-effort */
       }
     }
-    // Safari (and Chrome's autoplay policy) start the context suspended; it must
-    // be resumed from a user gesture or nothing is audible.
-    if (this.ctx && this.ctx.state === "suspended" && this.ctx.resume) {
+    if (!this.ctx) {
+      return
+    }
+    // Safari (and Chrome's autoplay policy) hold the context in a non-running
+    // state ("suspended" / "interrupted") until it is resumed from a user
+    // gesture. Resume whenever it isn't running, and play a one-shot silent
+    // buffer, which Safari needs to fully unlock output.
+    if (this.ctx.state !== "running" && this.ctx.resume) {
       this.ctx.resume().catch(() => {})
+    }
+    if (!this.unlocked) {
+      try {
+        const src = this.ctx.createBufferSource()
+        src.buffer = this.ctx.createBuffer(1, 1, 22050)
+        src.connect(this.ctx.destination)
+        src.start(0)
+        this.unlocked = true
+      } catch (e) {
+        /* ignore */
+      }
     }
   },
 
