@@ -64,8 +64,9 @@ export const Sound = {
     }
   },
 
-  // Short filtered-noise burst, for crunchy / percussive effects.
-  noise(duration, volume, freq, q) {
+  // Short filtered-noise burst, for crunchy / percussive effects. `type` picks
+  // the filter: "bandpass" (default) for crisp cracks, "lowpass" for low booms.
+  noise(duration, volume, freq, q, type) {
     if (!this.enabled) {
       return
     }
@@ -84,7 +85,7 @@ export const Sound = {
       const src = this.ctx.createBufferSource()
       src.buffer = buffer
       const filter = this.ctx.createBiquadFilter()
-      filter.type = "bandpass"
+      filter.type = type || "bandpass"
       filter.frequency.value = freq || 600
       filter.Q.value = q || 1
       const gain = this.ctx.createGain()
@@ -161,10 +162,10 @@ export const Sound = {
     this.beep(240, 0.12, "square", 0.05, 90)
   },
   explode() {
-    this.beep(140, 0.42, "square", 0.06, 40)
-    this.beep(90, 0.55, "sawtooth", 0.045, 30)
-    this.noise(0.55, 0.05, 130, 0.5) // low rumble that decays for the boom
-    this.noise(0.12, 0.035, 800, 0.8) // initial crack
+    this.beep(140, 0.42, "square", 0.05, 40)
+    this.beep(90, 0.55, "sawtooth", 0.04, 30)
+    this.noise(0.6, 0.11, 340, 0.7, "lowpass") // full low rumble that decays: the boom
+    this.noise(0.14, 0.05, 1100, 0.9) // initial crack
   },
   collect() {
     this.beep(880, 0.09, "sine", 0.05, 1320)
