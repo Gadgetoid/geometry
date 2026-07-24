@@ -6,6 +6,7 @@
 import {
   VIEW_W,
   VIEW_H,
+  ARENA,
   TAU,
   CONFIG,
   SHIP_TYPES,
@@ -77,6 +78,7 @@ export class Game {
     this.rivalTimer = 0
     this.clearTimer = 0
     this.pressedKeys = new Set()
+    this.viewCenter = { x: ARENA.cx, y: ARENA.cy } // world point the camera follows
 
     this.initBackground()
     loadBest().then((value) => {
@@ -94,6 +96,15 @@ export class Game {
   }
   showToast(text) {
     this.toast = { text, life: 2.6 }
+  }
+
+  // Is a world point within the visible viewport (centred on viewCenter)?
+  // Used to stop off-screen enemies firing on the player.
+  onScreen(x, y, margin = 0) {
+    return (
+      Math.abs(x - this.viewCenter.x) <= VIEW_W / 2 + margin &&
+      Math.abs(y - this.viewCenter.y) <= VIEW_H / 2 + margin
+    )
   }
 
   // ---- particles -------------------------------------------------------
@@ -151,31 +162,22 @@ export class Game {
 
   spawnPowerup() {
     const type = pick(POWERUP_TYPES)
-    const side = randInt(0, 3)
-    let x, y
-    if (side === 0) {
-      x = randRange(0, VIEW_W)
-      y = -20
-    } else if (side === 1) {
-      x = VIEW_W + 20
-      y = randRange(0, VIEW_H)
-    } else if (side === 2) {
-      x = randRange(0, VIEW_W)
-      y = VIEW_H + 20
-    } else {
-      x = -20
-      y = randRange(0, VIEW_H)
-    }
-    const dir = normalize(subtract({ x: VIEW_W / 2, y: VIEW_H / 2 }, { x, y }))
+    // just beyond a screen edge near the camera, drifting in toward the player
+    const c = this.viewCenter
+    const angle = randRange(0, TAU)
+    const x = c.x + Math.cos(angle) * (VIEW_W / 2 + 30)
+    const y = c.y + Math.sin(angle) * (VIEW_H / 2 + 30)
+    const dir = normalize(subtract(c, { x, y }))
     this.powerupPickups.push(
-      new Powerup(x, y, dir.x * randRange(24, 40), dir.y * randRange(24, 40), type),
+      new Powerup(x, y, dir.x * randRange(30, 50), dir.y * randRange(30, 50), type),
     )
   }
 
   spawnRival() {
-    const side = randInt(0, 1),
-      x = side ? -50 : VIEW_W + 50,
-      y = randRange(90, VIEW_H - 90)
+    // enter from the arena boundary at a random bearing
+    const edgeAngle = randRange(0, TAU),
+      x = ARENA.cx + Math.cos(edgeAngle) * (ARENA.radius - 20),
+      y = ARENA.cy + Math.sin(edgeAngle) * (ARENA.radius - 20)
     const asFrigate =
       this.level >= CONFIG.FRIGATE_FROM_SECTOR &&
       Math.random() < 0.3 &&
@@ -389,14 +391,17 @@ export class Game {
     this.oreVacuum = false
 
     for (const spawn of this.plan.spawns) {
+      // scatter across the arena disc, clear of the ship spawn at the centre
       let x,
         y,
         tries = 0
       do {
-        x = randRange(90, VIEW_W - 90)
-        y = randRange(90, VIEW_H - 90)
+        const a = randRange(0, TAU),
+          rr = Math.sqrt(Math.random()) * (ARENA.radius - 120)
+        x = ARENA.cx + Math.cos(a) * rr
+        y = ARENA.cy + Math.sin(a) * rr
         tries++
-      } while (Math.hypot(x - VIEW_W / 2, y - VIEW_H / 2) < 180 && tries < 50) // keep clear of the ship spawn
+      } while (Math.hypot(x - ARENA.cx, y - ARENA.cy) < 220 && tries < 50)
       const angle = randRange(0, TAU),
         speed = randRange(30, 74)
       this.asteroids.push(
@@ -416,13 +421,15 @@ export class Game {
     this.rivalTimer = this.plan.rivalInterval * 0.6
     this.clearTimer = 0
     const p = this.player
-    p.x = VIEW_W / 2
-    p.y = VIEW_H / 2
+    p.x = ARENA.cx
+    p.y = ARENA.cy
     p.vx = 0
     p.vy = 0
     p.invincible = CONFIG.INVIN_TIME
     p.energyMax = this.maxEnergy()
     p.energy = p.energyMax
+    this.viewCenter.x = p.x
+    this.viewCenter.y = p.y
     this.clearInput() // drop keys held over from the shop so the laser starts uncharged
     this.phase = "play"
     Sound.level()
@@ -520,13 +527,15 @@ export class Game {
       return
     }
     const p = this.player
-    p.x = VIEW_W / 2
-    p.y = VIEW_H / 2
+    p.x = ARENA.cx
+    p.y = ARENA.cy
     p.vx = 0
     p.vy = 0
     p.energy = this.maxEnergy() * 0.6
     p.invincible = CONFIG.INVIN_TIME
     p.mainWeapon.charge = 0
+    this.viewCenter.x = p.x
+    this.viewCenter.y = p.y
   }
 
   usePowerupSlot(index) {
@@ -717,6 +726,19 @@ export class Game {
     }
 
     this.player.update(dt, this)
+    // camera eases toward the ship, clamped so it never scrolls far past the
+    // arena edge (a band of the out-of-bounds zone stays visible, no more)
+    const follow = Math.min(1, dt * 6)
+    this.viewCenter.x += (this.player.x - this.viewCenter.x) * follow
+    this.viewCenter.y += (this.player.y - this.viewCenter.y) * follow
+    const dcx = this.viewCenter.x - ARENA.cx,
+      dcy = this.viewCenter.y - ARENA.cy
+    const camDist = Math.hypot(dcx, dcy)
+    const maxCamDist = ARENA.radius - 140
+    if (camDist > maxCamDist) {
+      this.viewCenter.x = ARENA.cx + (dcx / camDist) * maxCamDist
+      this.viewCenter.y = ARENA.cy + (dcy / camDist) * maxCamDist
+    }
     for (const asteroid of this.asteroids) {
       asteroid.update(dt, this)
     }

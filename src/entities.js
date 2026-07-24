@@ -29,6 +29,7 @@ import {
   TAU,
   VIEW_W,
   VIEW_H,
+  ARENA,
   CONFIG,
   WEAPON_TYPES,
   SHIELD_TYPES,
@@ -62,17 +63,27 @@ export class Entity {
     this.x += this.vx * dt
     this.y += this.vy * dt
   }
-  wrap() {
-    if (this.x < 0) {
-      this.x += VIEW_W
-    } else if (this.x > VIEW_W) {
-      this.x -= VIEW_W
+  // Keep a point entity inside the circular arena: push it back to the boundary
+  // and reflect any outward velocity. `margin` insets the limit (e.g. the ship's
+  // radius). Returns true if it was on the boundary this frame.
+  confine(restitution = 0.6, margin = 0) {
+    const dx = this.x - ARENA.cx,
+      dy = this.y - ARENA.cy
+    const dist = Math.hypot(dx, dy)
+    const limit = ARENA.radius - margin
+    if (dist > limit && dist > 0) {
+      const ux = dx / dist,
+        uy = dy / dist
+      this.x = ARENA.cx + ux * limit
+      this.y = ARENA.cy + uy * limit
+      const vn = this.vx * ux + this.vy * uy
+      if (vn > 0) {
+        this.vx -= (1 + restitution) * vn * ux
+        this.vy -= (1 + restitution) * vn * uy
+      }
+      return true
     }
-    if (this.y < 0) {
-      this.y += VIEW_H
-    } else if (this.y > VIEW_H) {
-      this.y -= VIEW_H
-    }
+    return false
   }
 
   regenEnergy(dt) {
@@ -227,7 +238,8 @@ export class Weapon {
     }
     const player = game.player
     if (this.controller === "turret") {
-      if (!player || player.invincible > 0) {
+      // don't snipe the player from off-screen where they can't see the shooter
+      if (!player || player.invincible > 0 || !game.onScreen(host.x, host.y, 40)) {
         return
       }
       this.fireProjectile(
@@ -246,7 +258,7 @@ export class Weapon {
         this.emitBeam(game, host, world.x, world.y, host.angle, this.rollLength())
       }
     } else if (this.controller === "hunter") {
-      if (!player) {
+      if (!player || !game.onScreen(host.x, host.y, 40)) {
         return
       }
       const toPlayer = Math.atan2(player.y - host.y, player.x - host.x)
@@ -349,13 +361,7 @@ export class Projectile extends Entity {
   update(dt, game) {
     this.life -= dt
     this.integrate(dt)
-    if (
-      this.life <= 0 ||
-      this.x < -20 ||
-      this.x > VIEW_W + 20 ||
-      this.y < -20 ||
-      this.y > VIEW_H + 20
-    ) {
+    if (this.life <= 0 || Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + 30) {
       this.dead = true
       return
     }
@@ -644,7 +650,7 @@ export class PlayerShip extends Ship {
     this.vx *= Math.pow(CONFIG.SPEED_DRAG, dt)
     this.vy *= Math.pow(CONFIG.SPEED_DRAG, dt)
     this.integrate(dt)
-    this.wrap()
+    this.atBoundary = this.confine(0.35, this.radius)
 
     // Charge the manual laser off the shared energy cell (its cooldown is
     // ticked by updateWeapons below).
@@ -892,11 +898,15 @@ export class RivalShip extends Ship {
       this.leaving = true
     }
 
+    const outAngle = Math.atan2(this.y - ARENA.cy, this.x - ARENA.cx)
     const goal = this.leaving
-      ? { x: this.x < VIEW_W / 2 ? -60 : VIEW_W + 60, y: this.y }
+      ? {
+          x: ARENA.cx + Math.cos(outAngle) * (ARENA.radius + 200),
+          y: ARENA.cy + Math.sin(outAngle) * (ARENA.radius + 200),
+        }
       : this.hunts
         ? { x: player.x, y: player.y }
-        : target || { x: VIEW_W / 2, y: VIEW_H / 2 }
+        : target || { x: ARENA.cx, y: ARENA.cy }
     const wantAngle = Math.atan2(goal.y - this.y, goal.x - this.x)
     const angleDelta = ((wantAngle - this.angle + Math.PI * 3) % TAU) - Math.PI
     this.angle += clamp(angleDelta, -this.turnRate * dt, this.turnRate * dt)
@@ -933,7 +943,7 @@ export class RivalShip extends Ship {
 
     this.updateWeapons(dt, game) // guns + main laser fire via their controllers
 
-    if (this.leaving && (this.x < -60 || this.x > VIEW_W + 60)) {
+    if (this.leaving && Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + 140) {
       this.dead = true
     }
   }
@@ -1055,45 +1065,34 @@ export class Asteroid extends Entity {
     }
     this.recompute()
 
-    let minX = 1e9,
-      maxX = -1e9,
-      minY = 1e9,
-      maxY = -1e9
-    for (const p of this.vertices) {
-      minX = Math.min(minX, p.x)
-      maxX = Math.max(maxX, p.x)
-      minY = Math.min(minY, p.y)
-      maxY = Math.max(maxY, p.y)
-    }
-    let shiftX = 0,
-      shiftY = 0
-    if (minX < 0) {
-      shiftX = -minX
-      this.vx = Math.abs(this.vx)
-    } else if (maxX > VIEW_W) {
-      shiftX = VIEW_W - maxX
-      this.vx = -Math.abs(this.vx)
-    }
-    if (minY < 0) {
-      shiftY = -minY
-      this.vy = Math.abs(this.vy)
-    } else if (maxY > VIEW_H) {
-      shiftY = VIEW_H - maxY
-      this.vy = -Math.abs(this.vy)
-    }
-    if (shiftX || shiftY) {
+    // Arena confinement: when the rock's body crosses the boundary circle, push
+    // it (vertices, hardpoints, centre) back inside and reflect its velocity so
+    // it is repelled into the play zone.
+    const dcx = this.center.x - ARENA.cx,
+      dcy = this.center.y - ARENA.cy
+    const cdist = Math.hypot(dcx, dcy)
+    const limit = ARENA.radius - this.collideRadius
+    if (cdist > limit && cdist > 0) {
+      const ux = dcx / cdist,
+        uy = dcy / cdist
+      const over = cdist - limit
       for (const p of this.vertices) {
-        p.x += shiftX
-        p.y += shiftY
+        p.x -= ux * over
+        p.y -= uy * over
       }
       for (const hp of this.hardpoints) {
-        hp.x += shiftX
-        hp.y += shiftY
+        hp.x -= ux * over
+        hp.y -= uy * over
       }
-      this.center.x += shiftX
-      this.center.y += shiftY
+      this.center.x -= ux * over
+      this.center.y -= uy * over
       this.x = this.center.x
       this.y = this.center.y
+      const vn = this.vx * ux + this.vy * uy
+      if (vn > 0) {
+        this.vx -= 1.9 * vn * ux
+        this.vy -= 1.9 * vn * uy
+      }
     }
 
     this.updateWeapons(dt, game) // gun emplacements fire via their turret controller
@@ -1327,7 +1326,7 @@ export class Ore extends Entity {
     this.vy *= Math.pow(0.55, dt)
     this.integrate(dt)
     this.angle += this.spin * dt
-    this.wrap()
+    this.confine(0.4, this.size)
     if (this.life <= 0) {
       game.burst(this.x, this.y, randInt(5, 8), "#ff8ae6", 40, 150, 0.4)
       this.dead = true
@@ -1367,13 +1366,7 @@ export class Powerup extends Entity {
     this.life -= dt
     this.angle += dt * 1.4
     this.integrate(dt)
-    if (
-      this.x < -30 ||
-      this.x > VIEW_W + 30 ||
-      this.y < -30 ||
-      this.y > VIEW_H + 30 ||
-      this.life <= 0
-    ) {
+    if (Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + 60 || this.life <= 0) {
       this.dead = true
     }
   }

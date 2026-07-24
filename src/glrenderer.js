@@ -549,13 +549,16 @@ export class WebGLRenderer extends Renderer {
   }
 
   pushView(camera) {
-    // Fold shake + sway into the eye. HUD passes pass no shake/sway, so the eye
-    // stays centred and the projection collapses to a straight 2D mapping.
+    // The eye is the world point shown at the screen centre (camera follow),
+    // plus shake and sway. HUD / background passes omit centerX, so the eye
+    // stays at the screen centre and the projection is a straight 2D mapping.
+    const cx = camera.centerX ?? HALF_W
+    const cy = camera.centerY ?? HALF_H
     const sx = camera.shakeX || 0,
       sy = camera.shakeY || 0
     const px = camera.panX || 0,
       py = camera.panY || 0
-    this.eye = [HALF_W + sx + px, HALF_H + sy + py]
+    this.eye = [cx + sx + px, cy + sy + py]
     this.passZ = camera.z || 0
   }
 

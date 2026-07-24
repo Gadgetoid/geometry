@@ -5,9 +5,64 @@
 // the Renderer without touching game logic. Entities still paint themselves via
 // their own draw(renderer, game) methods.
 
-import { VIEW_W, VIEW_H, SHOP, SHOP_DESC, POWERUP_COLOUR } from "./config.js"
+import { VIEW_W, VIEW_H, TAU, ARENA, SHOP, SHOP_DESC, POWERUP_COLOUR } from "./config.js"
 import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
+
+// Clip the infinite line (px,py)+s*(ux,uy) to the rect; returns the [s0,s1]
+// range inside it, or null. Used to bound the out-of-bounds hatch to the view.
+function clipLineToRect(px, py, ux, uy, x0, y0, x1, y1) {
+  let s0 = -1e9,
+    s1 = 1e9
+  for (const [p, u, lo, hi] of [
+    [px, ux, x0, x1],
+    [py, uy, y0, y1],
+  ]) {
+    if (Math.abs(u) < 1e-9) {
+      if (p < lo || p > hi) {
+        return null
+      }
+    } else {
+      let a = (lo - p) / u,
+        b = (hi - p) / u
+      if (a > b) {
+        const t = a
+        a = b
+        b = t
+      }
+      s0 = Math.max(s0, a)
+      s1 = Math.min(s1, b)
+    }
+  }
+  return s1 > s0 ? { s0, s1 } : null
+}
+
+// Emit the parts of segment A->B that lie outside the circle.
+function segmentOutsideCircle(ax, ay, bx, by, cx, cy, radius, emit) {
+  const dx = bx - ax,
+    dy = by - ay
+  const fx = ax - cx,
+    fy = ay - cy
+  const a = dx * dx + dy * dy
+  const b = 2 * (fx * dx + fy * dy)
+  const c = fx * fx + fy * fy - radius * radius
+  let disc = b * b - 4 * a * c
+  if (disc <= 0 || a < 1e-9) {
+    if (c > 0) {
+      emit(ax, ay, bx, by) // wholly outside
+    }
+    return
+  }
+  disc = Math.sqrt(disc)
+  const t1 = clamp((-b - disc) / (2 * a), 0, 1)
+  const t2 = clamp((-b + disc) / (2 * a), 0, 1)
+  if (t1 > 0) {
+    emit(ax, ay, ax + dx * t1, ay + dy * t1)
+  }
+  if (t2 < 1) {
+    emit(ax + dx * t2, ay + dy * t2, bx, by)
+  }
+}
 
 export class GameView {
   constructor(renderer) {
@@ -156,10 +211,115 @@ export class GameView {
     }
   }
 
-  // Arena bounds + off-screen radar are filled in with the arena system; stubs
-  // keep the render path stable until then.
-  #bounds() {}
-  #radar() {}
+  // The circular arena boundary and the hatched out-of-bounds exterior, drawn
+  // in world space so they scroll with the camera.
+  #bounds(game) {
+    const r = this.renderer
+    const { cx, cy, radius } = ARENA
+
+    // visible world rect (with a little slack for shake / sway)
+    const c = game.viewCenter
+    const pad = 60
+    const x0 = c.x - VIEW_W / 2 - pad,
+      x1 = c.x + VIEW_W / 2 + pad,
+      y0 = c.y - VIEW_H / 2 - pad,
+      y1 = c.y + VIEW_H / 2 + pad
+
+    // nothing to hatch if the whole visible rect sits inside the arena
+    const corners = [
+      [x0, y0],
+      [x1, y0],
+      [x1, y1],
+      [x0, y1],
+    ]
+    let farthest = 0
+    for (const [px, py] of corners) {
+      farthest = Math.max(farthest, Math.hypot(px - cx, py - cy))
+    }
+    if (farthest > radius) {
+      const spacing = 26
+      const nx = 0.7071,
+        ny = -0.7071 // hatch line normal
+      const ux = 0.7071,
+        uy = 0.7071 // direction along each hatch line
+      let dmin = 1e9,
+        dmax = -1e9
+      for (const [px, py] of corners) {
+        const d = px * nx + py * ny
+        dmin = Math.min(dmin, d)
+        dmax = Math.max(dmax, d)
+      }
+      const emit = (sx, sy, ex, ey) =>
+        r.line(sx, sy, ex, ey, { color: "#ff3b52", width: 1.3, glow: 4, alpha: 0.45 })
+      for (let d = Math.ceil(dmin / spacing) * spacing; d <= dmax; d += spacing) {
+        const p0x = nx * d,
+          p0y = ny * d
+        const clip = clipLineToRect(p0x, p0y, ux, uy, x0, y0, x1, y1)
+        if (!clip) {
+          continue
+        }
+        segmentOutsideCircle(
+          p0x + ux * clip.s0,
+          p0y + uy * clip.s0,
+          p0x + ux * clip.s1,
+          p0y + uy * clip.s1,
+          cx,
+          cy,
+          radius,
+          emit,
+        )
+      }
+    }
+
+    // the boundary ring, pulsing gently
+    const ring = []
+    const seg = 96
+    for (let i = 0; i < seg; i++) {
+      const a = (i / seg) * TAU
+      ring.push({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius })
+    }
+    const pulse = 0.75 + 0.25 * Math.sin(game.gameTime * 3)
+    r.strokePoly(ring, { color: "#ff3b52", width: 2, glow: 16, alpha: 0.85 * pulse, closed: true })
+  }
+
+  // Off-screen asteroids and rivals as direction arrows around the screen edge.
+  #radar(game) {
+    if (game.phase !== "play" && game.phase !== "clearing") {
+      return
+    }
+    const r = this.renderer
+    const c = game.viewCenter
+    const sx = VIEW_W / 2,
+      sy = VIEW_H / 2
+    const halfX = sx - 30,
+      halfY = sy - 30
+    const mark = (wx, wy, color) => {
+      const dx = wx - c.x,
+        dy = wy - c.y
+      if (Math.abs(dx) <= sx - 10 && Math.abs(dy) <= sy - 10) {
+        return // on-screen: no marker
+      }
+      const ang = Math.atan2(dy, dx)
+      const k = 1 / Math.max(Math.abs(dx) / halfX, Math.abs(dy) / halfY)
+      const mx = sx + dx * k,
+        my = sy + dy * k
+      const dist = Math.hypot(dx, dy)
+      const alpha = clamp(1 - (dist - VIEW_W / 2) / 1400, 0.28, 0.9)
+      const size = 9
+      const tip = { x: mx + Math.cos(ang) * size, y: my + Math.sin(ang) * size }
+      const la = { x: mx + Math.cos(ang + 2.5) * size, y: my + Math.sin(ang + 2.5) * size }
+      const rb = { x: mx + Math.cos(ang - 2.5) * size, y: my + Math.sin(ang - 2.5) * size }
+      r.strokePoly([tip, la, rb], { color, width: 1.6, glow: 8, alpha, closed: true })
+    }
+    for (const a of game.asteroids) {
+      mark(a.center.x, a.center.y, a.explosive ? "#ff6b52" : "#9fd8ff")
+    }
+    for (const rv of game.rivals) {
+      if (!rv.dead) {
+        mark(rv.x, rv.y, "#ff9a3c")
+      }
+    }
+  }
 
   #laserShots(game) {
     const r = this.renderer
@@ -305,6 +465,18 @@ export class GameView {
         color: "#ffbdee",
         glow: 8,
         alpha: clamp(game.toast.life / 0.6, 0, 1),
+      })
+    }
+
+    // the ship sits at screen centre (camera follows), so warn just above it
+    if (game.player && game.player.atBoundary && game.phase === "play") {
+      r.text("OUT OF BOUNDS", VIEW_W / 2, VIEW_H / 2 - 42, {
+        size: 14,
+        bold: true,
+        color: "#ff5b5b",
+        align: "center",
+        glow: 10,
+        alpha: 0.55 + 0.45 * Math.sin(game.gameTime * 9),
       })
     }
 
