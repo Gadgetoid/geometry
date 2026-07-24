@@ -175,7 +175,7 @@ export class Weapon {
     this.typeName = typeName
     this.type = WEAPON_TYPES[typeName]
     this.controller = controller
-    this.cooldown = this.rollReload() * 0.5
+    this.cooldown = this.rollReload() * randRange(0.15, 1) // random phase so turrets don't fire in unison
     this.charge = 0
     this.charging = 0 // wind-up time left before a charged beam fires
     this.chargeDuration = 0

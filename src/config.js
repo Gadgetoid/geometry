@@ -89,7 +89,7 @@ export const WEAPON_TYPES = {
     kind: "projectile",
     damage: CONFIG.DMG_RIVAL_GUN,
     energy: 8,
-    reload: 1.5,
+    reload: [1.1, 1.9], // range so multiple turrets drift out of sync
     speed: CONFIG.BULLET_SPEED,
     colour: "#ffb14b",
   },
@@ -236,7 +236,7 @@ export const SHIP_TYPES = {
   frigate: {
     outline: FRIGATE_SHAPE,
     colour: "#ff8a3c",
-    size: 22,
+    size: 66,
     accel: 32,
     maxSpeed: 44,
     turnRate: 0.28,
