@@ -149,6 +149,9 @@ export class Game {
         color,
       })
     }
+    if (this.particles.length > MAX_PARTICLES) {
+      this.particles.splice(0, this.particles.length - MAX_PARTICLES)
+    }
   }
 
   // ---- spawning --------------------------------------------------------
