@@ -41,8 +41,98 @@ export const Sound = {
     }
   },
 
+  // Short filtered-noise burst, for crunchy / percussive effects.
+  noise(duration, volume, freq, q) {
+    if (!this.enabled) {
+      return
+    }
+    this.ensureContext()
+    if (!this.ctx) {
+      return
+    }
+    try {
+      const now = this.ctx.currentTime
+      const len = Math.max(1, Math.floor(this.ctx.sampleRate * duration))
+      const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < len; i++) {
+        data[i] = Math.random() * 2 - 1
+      }
+      const src = this.ctx.createBufferSource()
+      src.buffer = buffer
+      const filter = this.ctx.createBiquadFilter()
+      filter.type = "bandpass"
+      filter.frequency.value = freq || 600
+      filter.Q.value = q || 1
+      const gain = this.ctx.createGain()
+      gain.gain.setValueAtTime(volume || 0.04, now)
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration)
+      src.connect(filter).connect(gain).connect(this.ctx.destination)
+      src.start(now)
+      src.stop(now + duration)
+    } catch (e) {
+      /* ignore */
+    }
+  },
+
+  // Continuous thruster: a subtle band-passed white-noise bed whose level eases
+  // toward on/off. Started lazily once the context exists.
+  thruster: null,
+  setThruster(active) {
+    if (!this.enabled) {
+      if (this.thruster) {
+        this.thruster.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05)
+      }
+      return
+    }
+    this.ensureContext()
+    if (!this.ctx) {
+      return
+    }
+    if (!this.thruster) {
+      try {
+        const buffer = this.ctx.createBuffer(1, this.ctx.sampleRate, this.ctx.sampleRate)
+        const data = buffer.getChannelData(0)
+        for (let i = 0; i < data.length; i++) {
+          data[i] = Math.random() * 2 - 1
+        }
+        const src = this.ctx.createBufferSource()
+        src.buffer = buffer
+        src.loop = true
+        const filter = this.ctx.createBiquadFilter()
+        filter.type = "bandpass"
+        filter.frequency.value = 360
+        filter.Q.value = 0.7
+        const gain = this.ctx.createGain()
+        gain.gain.value = 0
+        src.connect(filter).connect(gain).connect(this.ctx.destination)
+        src.start()
+        this.thruster = { gain }
+      } catch (e) {
+        return
+      }
+    }
+    this.thruster.gain.gain.setTargetAtTime(active ? 0.03 : 0, this.ctx.currentTime, 0.08)
+  },
+
   fire() {
     this.beep(680, 0.22, "sawtooth", 0.06, 120)
+  },
+  // Frigate main gun: a big, low "pew" with a sub layer and a breath of noise.
+  bigLaser() {
+    this.beep(520, 0.5, "sawtooth", 0.08, 60)
+    this.beep(150, 0.55, "square", 0.05, 40)
+    this.noise(0.4, 0.03, 480, 0.6)
+  },
+  // Ship glancing off a rock: a soft low thud.
+  thud() {
+    this.beep(78, 0.18, "sine", 0.05, 40)
+    this.noise(0.16, 0.035, 240, 0.9)
+  },
+  // A rock breaking apart into ore: a short soft crunch.
+  shatter() {
+    this.noise(0.16, 0.035, 1300, 0.6)
+    this.beep(220, 0.1, "square", 0.03, 90)
   },
   slice() {
     this.beep(240, 0.12, "square", 0.05, 90)

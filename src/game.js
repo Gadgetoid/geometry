@@ -44,6 +44,11 @@ const SLOT_KEYS = {
   Numpad4: 3,
 }
 
+// Planets live in a region larger than the viewport (so they sit well apart and
+// only a couple are on screen at once) and wrap within it as they drift.
+const PLANET_MARGIN_X = 560
+const PLANET_MARGIN_Y = 380
+
 // Pick a planet flavour and palette from a seeded RNG. Rocky and gas planets
 // are tinted by the sector's base hue for cohesion; volcanic and inhabited
 // worlds are rarer accents with an emissive channel (lava / city lights).
@@ -272,6 +277,7 @@ export class Game {
       )
     }
     this.burst(asteroid.center.x, asteroid.center.y, randInt(8, 16), "#ff8ae6", 40, 170, 0.7)
+    Sound.shatter()
     this.stats.mined++
   }
 
@@ -581,6 +587,7 @@ export class Game {
     if (this.lives <= 0) {
       this.recordBest()
       this.phase = "over"
+      Sound.setThruster(false)
       return
     }
     const p = this.player
@@ -685,8 +692,8 @@ export class Game {
       seed: rand(0, 30),
     }
 
-    const marginX = 260,
-      marginY = 200
+    const marginX = PLANET_MARGIN_X,
+      marginY = PLANET_MARGIN_Y
     const cols = 3,
       rows = 2
     const cellW = (VIEW_W + marginX * 2) / cols,
@@ -701,7 +708,7 @@ export class Game {
       const j = Math.floor(rng() * (i + 1))
       ;[cells[i], cells[j]] = [cells[j], cells[i]]
     }
-    const count = 4 + Math.floor(rng() * 2) // 4-5, one per grid cell
+    const count = 3 + Math.floor(rng() * 2) // 3-4, one per grid cell, well spaced
     this.planets = []
     for (let i = 0; i < count; i++) {
       const [cx, cy] = cells[i]
@@ -751,11 +758,12 @@ export class Game {
         star.y -= VIEW_H
       }
     }
-    const marginX = 260,
-      marginY = 200
+    const marginX = PLANET_MARGIN_X,
+      marginY = PLANET_MARGIN_Y
     for (const planet of this.planets) {
-      planet.x += (planet.drift * planet.depth - pvx * planet.depth * 0.04) * dt
-      planet.y += -pvy * planet.depth * 0.04 * dt
+      // slight parallax: planets drift and lag the ship a little
+      planet.x += (planet.drift * planet.depth - pvx * planet.depth * 0.11) * dt
+      planet.y += -pvy * planet.depth * 0.11 * dt
       if (planet.x < -marginX) {
         planet.x += VIEW_W + marginX * 2
       } else if (planet.x > VIEW_W + marginX) {
@@ -989,6 +997,9 @@ export class Game {
 
     if (e.code === "KeyP" && (this.phase === "play" || this.phase === "clearing")) {
       this.paused = !this.paused
+      if (this.paused) {
+        Sound.setThruster(false)
+      }
     }
     if (this.phase === "play" && !this.paused) {
       const slot = SLOT_KEYS[e.code]
@@ -1017,6 +1028,7 @@ export class Game {
   // the start of a level so input never carries across a phase transition.
   clearInput() {
     this.pressedKeys.clear()
+    Sound.setThruster(false)
     if (this.player) {
       this.player.mainWeapon.charge = 0
     }

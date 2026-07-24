@@ -228,7 +228,12 @@ export class Weapon {
       life: this.type.width > 10 ? 0.55 : 0.4,
     })
     this.cooldown = this.rollReload()
-    Sound.fire()
+    // wide beams are the frigate's heavy cannon: a bigger report
+    if (this.type.width > 10) {
+      Sound.bigLaser()
+    } else {
+      Sound.fire()
+    }
   }
 
   update(dt, game, host, world) {
@@ -641,6 +646,7 @@ export class PlayerShip extends Ship {
         )
       }
     }
+    Sound.setThruster(this.thrusting || this.reversing)
 
     const speed = Math.hypot(this.vx, this.vy)
     if (speed > CONFIG.MAX_SPEED) {
@@ -742,6 +748,7 @@ export class PlayerShip extends Ship {
         game.screenShake = Math.max(game.screenShake, 3)
         if (this.fxCooldown <= 0) {
           game.burst(this.x, this.y, 4, "#ff6b6b", 30, 90, 0.35)
+          Sound.thud()
         }
         this.takeDamage(CONFIG.DMG_AST_GUN * dt * 3.6, game, "projectile")
       }
@@ -1131,6 +1138,7 @@ export class Asteroid extends Entity {
           )
         }
         game.burst(centre.x, centre.y, randInt(6, 12), "#ff8ae6", 30, 110, 0.6)
+        Sound.shatter()
         game.stats.mined++
         continue
       }
