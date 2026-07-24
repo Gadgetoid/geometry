@@ -153,9 +153,11 @@ export const Sound = {
   bump() {
     this.beep(440, 0.09, "square", 0.04, 300)
   },
-  // A rock breaking apart into ore: a short soft crunch.
+  // A rock breaking apart into ore: a short soft crunch with a touch of low
+  // rumble underneath for a little weight.
   shatter() {
     this.noise(0.16, 0.035, 1300, 0.6)
+    this.noise(0.28, 0.045, 260, 0.7, "lowpass")
     this.beep(220, 0.1, "square", 0.03, 90)
   },
   slice() {
