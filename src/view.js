@@ -450,9 +450,12 @@ export class GameView {
       const recoverX = barX + barW * shield.type.recoverAt
       r.line(dropX, barY - 2, dropX, barY + barH + 2, { color: "#ff5b5b", width: 1 }) // offline level
       r.line(recoverX, barY - 2, recoverX, barY + barH + 2, { color: "#9fe8ff", width: 1, alpha: 0.55 }) // recovery level
-      r.text(shield.up ? "SHIELD" : "SHIELD OFFLINE", barX + 46, barY - 4, {
+      // offline while overloaded, or whenever energy is at/below the drop marker
+      // (below that the shield can't absorb a hit)
+      const offline = !shield.up || game.player.energy <= shield.type.dropAt * game.player.energyMax
+      r.text(offline ? "SHIELD OFFLINE" : "SHIELD", barX + 46, barY - 4, {
         size: 9,
-        color: shield.up ? "#9fe8ff" : "#ff5b5b",
+        color: offline ? "#ff5b5b" : "#9fe8ff",
       }) // beside ENERGY, clear of the powerup slots at the right edge
     }
 
