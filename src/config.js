@@ -232,6 +232,7 @@ export const SHIP_TYPES = {
     killScore: 400,
     blastScore: 200,
     oreDrop: 5,
+    hull: 80, // survives a couple of laser hits once its shield is down
   },
   frigate: {
     outline: FRIGATE_SHAPE,
@@ -264,6 +265,7 @@ export const SHIP_TYPES = {
     killScore: 900,
     blastScore: 500,
     oreDrop: 9,
+    hull: 320, // mostly relevant to blasts; an unshielded frigate is sliced, not shot
   },
 }
 

@@ -973,6 +973,7 @@ export class RivalShip extends Ship {
     this.energyMax = type.energyMax
     this.energy = type.energyMax
     this.regen = type.regen
+    this.hull = type.hull || 60 // hull HP once the shield is gone; more than one hit
     this.lifeTimer = randRange(type.lifeTime[0], type.lifeTime[1])
     this.leaving = false
     this.buildHardpoints(type.hardpoints)
@@ -981,8 +982,15 @@ export class RivalShip extends Ship {
     this.hunts = activeLoadout.some((e) => e.controller === "hunter")
   }
 
+  // Hull hits chip the hull down rather than destroying outright, so the laser
+  // no longer one-shots ships. A surviving hit sparks; zero hull destroys.
   onHull(amount, game, channel, scoreOnKill) {
-    this.destroy(game, scoreOnKill)
+    this.hull -= amount
+    if (this.hull <= 0) {
+      this.destroy(game, scoreOnKill)
+    } else {
+      game.burst(this.x, this.y, 4, "#ffcaa0", 30, 110, 0.35)
+    }
   }
 
   destroy(game, scoreOnKill) {
