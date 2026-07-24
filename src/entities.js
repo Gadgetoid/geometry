@@ -374,8 +374,9 @@ export class Shield {
   }
 
   draw(renderer, cx, cy, radius, fraction, time) {
-    const pulse = 0.6 + 0.4 * Math.sin(time * 1.8)
-    const alpha = clamp((0.2 + 0.55 * fraction) * pulse * 0.65, 0, 1) // ~50% peak: present but subtle
+    // gentle pulse that never fades to invisible; brightness tracks energy
+    const pulse = 0.88 + 0.12 * Math.sin(time * 1.8)
+    const alpha = clamp((0.24 + 0.4 * fraction) * pulse, 0.2, 0.75)
     const rotation = time * 0.3,
       sides = this.type.sides,
       points = []
@@ -722,6 +723,27 @@ export class PlayerShip extends Ship {
         0.35,
         "#7fd8ff",
       )
+      // exhaust wash gently shoves rocks caught behind the thruster away
+      const bx = Math.cos(back),
+        by = Math.sin(back)
+      const range = 150
+      for (const a of game.asteroids) {
+        const dx = a.center.x - this.x,
+          dy = a.center.y - this.y
+        const dist = Math.hypot(dx, dy)
+        if (dist < 1 || dist > range) {
+          continue
+        }
+        const ux = dx / dist,
+          uy = dy / dist
+        const align = ux * bx + uy * by // 1 = directly behind the ship
+        if (align < 0.25) {
+          continue
+        }
+        const push = (160 * (1 - dist / range) * align) / clamp(a.area / 3200, 0.5, 4)
+        a.vx += ux * push * dt
+        a.vy += uy * push * dt
+      }
     }
 
     this.reversing =
@@ -855,7 +877,9 @@ export class PlayerShip extends Ship {
         if (this.fxCooldown <= 0) {
           game.burst(this.x, this.y, 4, "#ff6b6b", 30, 90, 0.35)
         }
-        this.takeDamage(CONFIG.DMG_AST_GUN * dt * 3.6, game, "projectile")
+        // flash the shield on the side facing the rock
+        const contact = { x: this.x - ux * this.radius, y: this.y - uy * this.radius }
+        this.takeDamage(CONFIG.DMG_AST_GUN * dt * 3.6, game, "projectile", 0, contact)
       }
       break
     }
