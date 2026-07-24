@@ -132,14 +132,18 @@ export class GameView {
     r.beginFrame(game.gameTime)
     r.clearFrame("#02040a")
 
-    // background layer: nebula, planets, stars (softened for depth of field)
+    // far background: nebula + planets (softened for depth of field)
     const neb = game.nebula
     r.nebula(c.x, c.y, neb.colorA, neb.colorB, neb.seed)
     r.pushView(cam.bg)
     this.#planets(game)
-    this.#background(game)
     r.popView()
     r.compositeBackground()
+
+    // stars sit in front of the depth-of-field blur so they stay sharp and bright
+    r.pushView(cam.bg)
+    this.#stars(game)
+    r.popView()
 
     // world layer: arena, entities, effects (follows the ship)
     r.pushView(cam.world)
@@ -208,29 +212,35 @@ export class GameView {
   }
 
   // Foreground stardust streaks (screen-space, sharp, in front of gameplay).
+  // Subtle: fades in with speed, so it only reads as motion when moving.
   #dust(game) {
     const r = this.renderer
     const pvx = game.player ? game.player.vx : 0
     const pvy = game.player ? game.player.vy : 0
+    const speed = Math.hypot(pvx, pvy)
+    const fade = clamp(speed / 260, 0, 1)
+    if (fade < 0.02) {
+      return // invisible when nearly still
+    }
     for (const d of game.dust) {
-      r.line(d.x, d.y, d.x + pvx * d.z * 0.035, d.y + pvy * d.z * 0.035, {
+      r.line(d.x, d.y, d.x + pvx * d.z * 0.03, d.y + pvy * d.z * 0.03, {
         color: "#cfe0ff",
-        width: 1.3,
-        glow: 5,
-        alpha: 0.42 * d.z,
+        width: 1.1,
+        glow: 4,
+        alpha: 0.22 * d.z * fade,
         cap: "round",
       })
     }
   }
 
-  #background(game) {
+  #stars(game) {
     const r = this.renderer
     for (const star of game.stars) {
-      const twinkle = 0.4 + 0.6 * Math.sin(star.twinkle + game.gameTime * 1.5)
-      const alpha = clamp((0.14 + 0.72 * star.depth) * twinkle, 0, 1)
-      const size = star.depth * 2.2
+      const twinkle = 0.55 + 0.45 * Math.sin(star.twinkle + game.gameTime * 1.5)
+      const alpha = clamp((0.4 + 0.6 * star.depth) * twinkle, 0, 1)
+      const size = star.depth * 2.6 + 0.7
       r.point(star.x, star.y, size, {
-        color: `rgb(${lerp(148, 226, star.depth) | 0},${lerp(180, 236, star.depth) | 0},242)`,
+        color: `rgb(${lerp(170, 232, star.depth) | 0},${lerp(198, 240, star.depth) | 0},255)`,
         alpha,
         depth: star.depth,
       })

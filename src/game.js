@@ -730,9 +730,9 @@ export class Game {
     const pvx = this.player && this.phase === "play" ? this.player.vx : 0
     const pvy = this.player && this.phase === "play" ? this.player.vy : 0
     for (const d of this.dust) {
-      // strong screen-space parallax opposite to travel
-      d.x -= pvx * d.z * 0.9 * dt
-      d.y -= pvy * d.z * 0.9 * dt
+      // foreground: streaks past faster than the world (opposite to travel)
+      d.x -= pvx * d.z * 1.2 * dt
+      d.y -= pvy * d.z * 1.2 * dt
       if (d.x < 0) {
         d.x += VIEW_W
       } else if (d.x > VIEW_W) {
@@ -745,8 +745,9 @@ export class Game {
       }
     }
     for (const star of this.stars) {
-      star.x += (star.vx - pvx * star.depth * 0.06) * dt
-      star.y += (star.vy - pvy * star.depth * 0.06) * dt
+      // stream opposite to travel, scaled by depth (near stars move most)
+      star.x += (star.vx - pvx * star.depth * 0.5) * dt
+      star.y += (star.vy - pvy * star.depth * 0.5) * dt
       if (star.x < 0) {
         star.x += VIEW_W
       } else if (star.x > VIEW_W) {
@@ -761,9 +762,9 @@ export class Game {
     const marginX = PLANET_MARGIN_X,
       marginY = PLANET_MARGIN_Y
     for (const planet of this.planets) {
-      // slight parallax: planets drift and lag the ship a little
-      planet.x += (planet.drift * planet.depth - pvx * planet.depth * 0.11) * dt
-      planet.y += -pvy * planet.depth * 0.11 * dt
+      // distant parallax: planets drift and stream slowly opposite to travel
+      planet.x += (planet.drift * planet.depth - pvx * planet.depth * 0.6) * dt
+      planet.y += -pvy * planet.depth * 0.6 * dt
       if (planet.x < -marginX) {
         planet.x += VIEW_W + marginX * 2
       } else if (planet.x > VIEW_W + marginX) {
