@@ -49,29 +49,13 @@ const SLOT_KEYS = {
 const PLANET_MARGIN_X = 560
 const PLANET_MARGIN_Y = 380
 
-// Pick a planet flavour and palette from a seeded RNG. Rocky and gas planets
-// are tinted by the sector's base hue for cohesion; volcanic and inhabited
-// worlds are rarer accents with an emissive channel (lava / city lights).
-// Returns { type, base, hi, atmo, emit } where type is the shader's uType.
-function planetPalette(rng, baseHue) {
+// Palette for an ordinary world (rocky / gas / ice), tinted by the sector hue
+// for cohesion. The rare emissive worlds are handled separately so there is at
+// most one per sector. Returns { type, base, hi, atmo, emit } (type = uType).
+function ordinaryPalette(rng, baseHue) {
   const jitter = (h, d) => Math.round((((h + (rng() * 2 - 1) * d) % 360) + 360) % 360)
   const roll = rng()
-  if (roll < 0.1) {
-    // volcanic: dark rock, glowing lava
-    return { type: 1, base: "#241c18", hi: "#4a352a", atmo: "#7a3a24", emit: "#ff5a1e" }
-  }
-  if (roll < 0.2) {
-    // inhabited: night side speckled with city lights
-    const h = jitter(baseHue, 40)
-    return {
-      type: 2,
-      base: `hsl(${h} 30% 15%)`,
-      hi: `hsl(${h} 26% 30%)`,
-      atmo: `hsl(${(h + 180) % 360} 40% 55%)`,
-      emit: "#ffd98a",
-    }
-  }
-  if (roll < 0.4) {
+  if (roll < 0.35) {
     // gas giant with banding
     const h = jitter(baseHue, 25)
     return {
@@ -101,6 +85,21 @@ function planetPalette(rng, baseHue) {
     hi: `hsl(${h} 30% 45%)`,
     atmo: `hsl(${(h + 30) % 360} 34% 58%)`,
     emit: "#000000",
+  }
+}
+
+// The rare, cool worlds: volcanic (glowing lava) and inhabited (city lights).
+function fancyPalette(type, baseHue, rng) {
+  if (type === 1) {
+    return { type: 1, base: "#241c18", hi: "#4a352a", atmo: "#7a3a24", emit: "#ff5a1e" }
+  }
+  const h = Math.round(baseHue + (rng() * 2 - 1) * 40 + 360) % 360
+  return {
+    type: 2,
+    base: `hsl(${h} 30% 15%)`,
+    hi: `hsl(${h} 26% 30%)`,
+    atmo: `hsl(${(h + 180) % 360} 40% 55%)`,
+    emit: "#ffd98a",
   }
 }
 
@@ -709,10 +708,15 @@ export class Game {
       ;[cells[i], cells[j]] = [cells[j], cells[i]]
     }
     const count = 3 + Math.floor(rng() * 2) // 3-4, one per grid cell, well spaced
+    // at most one rare emissive world per sector, and only sometimes
+    const fancyRoll = rng()
+    const fancyType = fancyRoll < 0.2 ? 1 : fancyRoll < 0.4 ? 2 : 0 // volcanic / city / none
+    const fancySlot = fancyType ? Math.floor(rng() * count) : -1
     this.planets = []
     for (let i = 0; i < count; i++) {
       const [cx, cy] = cells[i]
-      const pal = planetPalette(rng, baseHue)
+      const pal =
+        i === fancySlot ? fancyPalette(fancyType, baseHue, rng) : ordinaryPalette(rng, baseHue)
       this.planets.push({
         x: -marginX + cx * cellW + rand(cellW * 0.2, cellW * 0.8),
         y: -marginY + cy * cellH + rand(cellH * 0.2, cellH * 0.8),
