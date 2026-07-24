@@ -378,11 +378,15 @@ export class Game {
         this.shatterToOre(asteroid)
         didHit = true
         this.score += CONFIG.SLICE_SCORE
+        // the effect beam follows the laser trajectory, ending level with the
+        // rock (projected onto the beam) rather than veering to its centre
+        const reach =
+          (asteroid.center.x - beam.a.x) * beam.dir.x + (asteroid.center.y - beam.a.y) * beam.dir.y
         this.laserShots.push({
           beams: [
             {
               a: { x: beam.a.x, y: beam.a.y },
-              b: { x: asteroid.center.x, y: asteroid.center.y },
+              b: { x: beam.a.x + beam.dir.x * reach, y: beam.a.y + beam.dir.y * reach },
               dir: beam.dir,
             },
           ],
