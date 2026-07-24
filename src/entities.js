@@ -136,7 +136,9 @@ export class Entity {
   }
 
   updateShield(dt) {
-    if (this.fxCooldown > 0) this.fxCooldown -= dt
+    if (this.fxCooldown > 0) {
+      this.fxCooldown -= dt
+    }
     const shield = this.shieldModule()
     if (shield) {
       shield.tick(dt, this)
@@ -710,7 +712,9 @@ export class PlayerShip extends Ship {
         ny = this.y - asteroid.center.y
       const dist = Math.hypot(nx, ny) || 1
       const minDist = asteroid.collideRadius + this.radius
-      if (dist >= minDist) continue
+      if (dist >= minDist) {
+        continue
+      }
       const ux = nx / dist,
         uy = ny / dist
       // separate: pop the ship onto the surface
@@ -730,7 +734,9 @@ export class PlayerShip extends Ship {
       }
       if (this.invincible <= 0 && this.boosterTime <= 0) {
         game.screenShake = Math.max(game.screenShake, 3)
-        if (this.fxCooldown <= 0) game.burst(this.x, this.y, 4, "#ff6b6b", 30, 90, 0.35)
+        if (this.fxCooldown <= 0) {
+          game.burst(this.x, this.y, 4, "#ff6b6b", 30, 90, 0.35)
+        }
         this.takeDamage(CONFIG.DMG_AST_GUN * dt * 3.6, game, "projectile")
       }
       break
