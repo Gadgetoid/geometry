@@ -436,12 +436,18 @@ export class WebGLRenderer extends Renderer {
       blit: program(gl, FSTRI_VS, BLIT_FS),
       composite: program(gl, FSTRI_VS, COMPOSITE_FS),
     }
-    // per-program vertex layout: [location, size] entries, and blend mode.
+    // Polygon strokes reuse the line shader but composite with MAX blending, so
+    // overlapping round caps at shared vertices take the brightest value rather
+    // than summing into dots. Works for concave outlines (no miter maths).
+    this.progs.poly = this.progs.line
+    // per-pipeline vertex layout: [location, size] entries, and blend mode.
+    const LINE_ATTRS = [[0, 3], [1, 2], [2, 3], [3, 4]]
     this.layouts = {
-      line: { stride: 12, attrs: [[0, 3], [1, 2], [2, 3], [3, 4]], additive: true },
-      sprite: { stride: 10, attrs: [[0, 3], [1, 2], [2, 1], [3, 4]], additive: true },
-      flat: { stride: 7, attrs: [[0, 3], [1, 4]], additive: false },
-      text: { stride: 9, attrs: [[0, 3], [1, 2], [2, 4]], additive: false },
+      line: { stride: 12, attrs: LINE_ATTRS, blend: "add" },
+      poly: { stride: 12, attrs: LINE_ATTRS, blend: "max" },
+      sprite: { stride: 10, attrs: [[0, 3], [1, 2], [2, 1], [3, 4]], blend: "add" },
+      flat: { stride: 7, attrs: [[0, 3], [1, 4]], blend: "alpha" },
+      text: { stride: 9, attrs: [[0, 3], [1, 2], [2, 4]], blend: "alpha" },
     }
   }
 
@@ -631,7 +637,13 @@ export class WebGLRenderer extends Renderer {
       gl.bindTexture(gl.TEXTURE_2D, this.atlasTex)
       gl.uniform1i(gl.getUniformLocation(prog, "uAtlas"), 0)
     }
-    gl.blendFunc(gl.SRC_ALPHA, layout.additive ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA)
+    if (layout.blend === "max") {
+      gl.blendEquation(gl.MAX)
+      gl.blendFunc(gl.ONE, gl.ONE) // factors ignored for MAX
+    } else {
+      gl.blendEquation(gl.FUNC_ADD)
+      gl.blendFunc(gl.SRC_ALPHA, layout.blend === "alpha" ? gl.ONE_MINUS_SRC_ALPHA : gl.ONE)
+    }
 
     gl.bindVertexArray(this.vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo)
@@ -645,15 +657,16 @@ export class WebGLRenderer extends Renderer {
     }
     gl.drawArrays(gl.TRIANGLES, 0, b.verts.length / layout.stride)
     gl.bindVertexArray(null)
+    gl.blendEquation(gl.FUNC_ADD) // restore for other passes (MAX is per-batch)
 
     b.verts.length = 0
     b.prog = null
   }
 
   // ---- geometry builders --------------------------------------------------
-  // Capsule quad. capScale extends the ends for round caps (standalone lines);
-  // polygon strokes pass 0 for butt caps so shared vertices meet exactly rather
-  // than overlapping and additively over-brightening into dots.
+  // Capsule quad. capScale extends the ends for round caps (1 = fully round,
+  // 0 = butt). Round caps let polygon-stroke segments overlap at shared vertices
+  // to close corners; under the MAX "poly" pipeline the overlap doesn't brighten.
   #lineQuad(ax, ay, bx, by, z, core, total, col, capScale = 0) {
     let dx = bx - ax,
       dy = by - ay
@@ -698,13 +711,16 @@ export class WebGLRenderer extends Renderer {
   }
 
   // ---- Renderer contract --------------------------------------------------
-  // A polyline drawn as one continuous mitered band: each vertex is offset along
-  // its miter normal so consecutive edges share corner geometry. Every pixel is
-  // covered exactly once, so corners have no gaps and additive blending produces
-  // no double-bright dots. The fragment falloff (core + glow) uses the nominal
-  // half-width via `edge`, with the capsule's longitudinal term neutralised.
+  // Polygon / polyline stroke: each edge is a round-capped capsule drawn with
+  // MAX blending (the "poly" pipeline). Round caps close the corners on any
+  // shape (convex or concave, no miter maths), and MAX means the overlapping
+  // caps at a shared vertex take the brightest value instead of summing, so
+  // there are no gaps and no over-bright dots.
   strokePoly(points, opts = {}) {
-    const col = this.#col(opts)
+    const c = this.#col(opts)
+    // MAX blending ignores per-vertex alpha, so bake alpha into the colour to
+    // preserve fades (shield energy/pulse, radar distance, etc.)
+    const col = [c[0] * c[3], c[1] * c[3], c[2] * c[3], 1]
     const core = (opts.width ?? 1.6) / 2
     const total = core + (opts.glow || 0) * 0.5 + 1.2
     const closed = opts.closed !== false
@@ -712,69 +728,11 @@ export class WebGLRenderer extends Renderer {
     if (n < 2) {
       return
     }
-    this.#use("line")
-    const z = this.passZ
-    const edges = closed ? n : n - 1
-
-    // unit normal of each edge
-    const nx = new Array(edges),
-      ny = new Array(edges)
-    for (let i = 0; i < edges; i++) {
+    this.#use("poly")
+    for (let i = 0; i < (closed ? n : n - 1); i++) {
       const a = points[i],
         b = points[(i + 1) % n]
-      let dx = b.x - a.x,
-        dy = b.y - a.y
-      const len = Math.hypot(dx, dy) || 1
-      nx[i] = -dy / len
-      ny[i] = dx / len
-    }
-
-    // per-vertex miter offset: vertex ± (ox,oy) are the two band edges there
-    const ox = new Array(n),
-      oy = new Array(n)
-    for (let i = 0; i < n; i++) {
-      let inE, outE
-      if (closed) {
-        inE = (i - 1 + edges) % edges
-        outE = i % edges
-      } else {
-        inE = i === 0 ? 0 : i - 1
-        outE = i === n - 1 ? n - 2 : i
-      }
-      let mx = nx[inE] + nx[outE],
-        my = ny[inE] + ny[outE]
-      const mlen = Math.hypot(mx, my) || 1
-      mx /= mlen
-      my /= mlen
-      let denom = mx * nx[inE] + my * ny[inE]
-      if (denom < 0.25) {
-        denom = 0.25 // cap miter length so sharp corners bevel instead of spiking
-      }
-      const miter = Math.min(total / denom, total * 4)
-      ox[i] = mx * miter
-      oy[i] = my * miter
-    }
-
-    const [r, g, bl, a] = col
-    const v = (x, y, edge) => this.#push(x, y, z, edge, 0.5, core, total, 1, r, g, bl, a)
-    for (let i = 0; i < edges; i++) {
-      const a0 = points[i],
-        b0 = points[(i + 1) % n]
-      const j = (i + 1) % n
-      const alx = a0.x + ox[i],
-        aly = a0.y + oy[i]
-      const arx = a0.x - ox[i],
-        ary = a0.y - oy[i]
-      const blx = b0.x + ox[j],
-        bly = b0.y + oy[j]
-      const brx = b0.x - ox[j],
-        bry = b0.y - oy[j]
-      v(alx, aly, total)
-      v(blx, bly, total)
-      v(brx, bry, -total)
-      v(alx, aly, total)
-      v(brx, bry, -total)
-      v(arx, ary, -total)
+      this.#lineQuad(a.x, a.y, b.x, b.y, this.passZ, core, total, col, 1)
     }
   }
 
