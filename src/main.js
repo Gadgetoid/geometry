@@ -1,13 +1,15 @@
 // Entry point: wire the DOM, create the renderer + game, run the loop.
 
 import { Canvas2DRenderer } from "./renderer.js"
+import { GameView } from "./view.js"
 import { Game } from "./game.js"
 import { DEV_VISIBLE } from "./config.js"
 import { Sound } from "./audio.js"
 
 const canvas = document.getElementById("game")
 const renderer = new Canvas2DRenderer(canvas)
-const game = new Game(renderer)
+const view = new GameView(renderer)
+const game = new Game()
 
 addEventListener("keydown", (e) => game.onKeyDown(e))
 addEventListener("keyup", (e) => game.onKeyUp(e))
@@ -37,7 +39,7 @@ devButton.addEventListener("click", (e) => {
 })
 
 function resize() {
-  game.resize(canvas.getBoundingClientRect())
+  view.resize(canvas.getBoundingClientRect())
 }
 new ResizeObserver(resize).observe(canvas)
 resize()
@@ -53,6 +55,7 @@ function loop(timestamp) {
     dt = 0.05
   } // clamp so a stalled tab doesn't teleport everything
   game.advance(dt)
+  view.render(game)
   requestAnimationFrame(loop)
 }
 requestAnimationFrame(loop)
