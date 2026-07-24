@@ -63,6 +63,8 @@ export class GameView {
       clipH: VIEW_H,
     }
     return {
+      // background is screen-space (it scrolls via parallax, not the world camera)
+      bg: { ...base, shakeX: sx, shakeY: sy, panX, panY },
       world: { ...base, shakeX: sx, shakeY: sy, panX, panY, centerX: c.x, centerY: c.y },
       hud: { ...base, shakeX: 0, shakeY: 0, panX: 0, panY: 0 },
     }
@@ -71,49 +73,57 @@ export class GameView {
   render(game) {
     const r = this.renderer,
       cam = this.#cameras(game)
+    const c = this.#center(game)
     r.beginFrame(game.gameTime)
     r.clearFrame("#02040a")
 
-    r.pushView(cam.world)
+    // background layer: nebula, planets, stars (softened for depth of field)
+    r.nebula(c.x, c.y)
+    r.pushView(cam.bg)
     this.#planets(game)
     this.#background(game)
+    r.popView()
+    r.compositeBackground()
+
+    // world layer: arena, entities, effects (follows the ship)
+    r.pushView(cam.world)
     if (game.phase === "title") {
       for (const rock of game.menuAsteroids) {
         r.strokePoly(rock.vertices, { color: `hsl(${rock.hue} 85% 66%)`, width: 1.6, glow: 10 })
       }
-      r.popView()
-      r.pushView(cam.hud)
-      this.#title(game)
-      r.popView()
-      r.endFrame()
-      return
-    }
-    this.#bounds(game)
-    for (const chunk of game.oreChunks) {
-      chunk.draw(r, game)
-    }
-    for (const asteroid of game.asteroids) {
-      asteroid.draw(r, game)
-    }
-    for (const pickup of game.powerupPickups) {
-      pickup.draw(r, game)
-    }
-    for (const rival of game.rivals) {
-      rival.draw(r, game)
-    }
-    for (const projectile of game.projectiles) {
-      projectile.draw(r, game)
-    }
-    this.#laserShots(game)
-    this.#particles(game)
-    if (game.phase === "play" || game.phase === "clearing") {
-      game.player.draw(r, game)
+    } else {
+      this.#bounds(game)
+      for (const chunk of game.oreChunks) {
+        chunk.draw(r, game)
+      }
+      for (const asteroid of game.asteroids) {
+        asteroid.draw(r, game)
+      }
+      for (const pickup of game.powerupPickups) {
+        pickup.draw(r, game)
+      }
+      for (const rival of game.rivals) {
+        rival.draw(r, game)
+      }
+      for (const projectile of game.projectiles) {
+        projectile.draw(r, game)
+      }
+      this.#laserShots(game)
+      this.#particles(game)
+      if (game.phase === "play" || game.phase === "clearing") {
+        game.player.draw(r, game)
+      }
     }
     r.popView()
 
+    // HUD layer: screen-space, unshaken
     r.pushView(cam.hud)
-    this.#radar(game)
-    this.#hud(game)
+    if (game.phase === "title") {
+      this.#title(game)
+    } else {
+      this.#radar(game)
+      this.#hud(game)
+    }
     r.popView()
     r.endFrame()
   }

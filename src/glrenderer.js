@@ -215,7 +215,7 @@ const PLANET_FS = `#version 300 es
     col += uAtmo * rim * (0.28 + 0.5 * lit);
     float edge = smoothstep(1.0, 0.985, r); // soft antialiased disc edge
     // dim overall so planets read as distant background, not foreground
-    frag = vec4(col * edge * 0.82, edge);
+    frag = vec4(col * edge * 0.6, edge);
   }`
 
 // full-screen passes (bloom + composite) share a fullscreen-triangle VS.
@@ -251,6 +251,47 @@ const BLUR_FS = `#version 300 es
     sum += texture(uTex, vUV - uDir * 3.2308).rgb * 0.070270;
     frag = vec4(sum, 1.0);
   }`
+// value-noise fbm, shared by the nebula
+const NOISE = `
+  float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float noise(vec2 p){
+    vec2 i = floor(p), f = fract(p);
+    f = f*f*(3.0-2.0*f);
+    float a = hash(i), b = hash(i+vec2(1.0,0.0));
+    float c = hash(i+vec2(0.0,1.0)), d = hash(i+vec2(1.0,1.0));
+    return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+  }
+  float fbm(vec2 p){
+    float v = 0.0, amp = 0.5;
+    for (int i = 0; i < 5; i++){ v += amp * noise(p); p *= 2.03; amp *= 0.5; }
+    return v;
+  }
+`
+// faint muted nebula clouds + fine dust, drawn as the deep-space base layer.
+const NEBULA_FS = `#version 300 es
+  precision highp float;
+  in vec2 vUV; out vec4 frag;
+  uniform float uTime; uniform vec2 uScroll;
+  ${NOISE}
+  void main() {
+    vec2 p = vUV * vec2(1.6, 1.0) * 2.4 + uScroll * 0.0004;
+    float n1 = fbm(p * 1.3 + vec2(uTime * 0.004, 0.0));
+    float n2 = fbm(p * 2.7 - vec2(0.0, uTime * 0.003) + 5.0);
+    float clouds = smoothstep(0.42, 0.95, n1 * 0.65 + n2 * 0.45);
+    vec3 c1 = vec3(0.09, 0.13, 0.26); // deep blue
+    vec3 c2 = vec3(0.19, 0.10, 0.22); // dusty purple
+    vec3 col = mix(c1, c2, n2) * clouds * 0.55;
+    float dust = smoothstep(0.72, 0.97, fbm(p * 20.0 + uScroll * 0.001)) * 0.10;
+    vec3 base = vec3(0.008, 0.016, 0.04);
+    frag = vec4(base + col + dust, 1.0);
+  }`
+// straight texture copy (used to blit the blurred background into the scene).
+const BLIT_FS = `#version 300 es
+  precision highp float;
+  in vec2 vUV; out vec4 frag;
+  uniform sampler2D uTex;
+  void main() { frag = vec4(texture(uTex, vUV).rgb, 1.0); }`
+
 const COMPOSITE_FS = `#version 300 es
   precision highp float;
   in vec2 vUV; out vec4 frag;
@@ -283,9 +324,9 @@ const COMPOSITE_FS = `#version 300 es
       col.r = sceneSample(uv + off).r;
       col.g = sceneSample(uv).g;
       col.b = sceneSample(uv - off).b;
-      // scanlines + vignette
+      // scanlines + gentle vignette (keeps the curved screen edges visible)
       float scan = 0.93 + 0.07 * sin(uv.y * 1400.0);
-      float vig = smoothstep(1.5, 0.4, r2);
+      float vig = mix(1.0, smoothstep(2.7, 0.7, r2), 0.45);
       frag = vec4(col * scan * vig, 1.0);
     } else {
       frag = vec4(sceneSample(uv), 1.0);
@@ -370,6 +411,8 @@ export class WebGLRenderer extends Renderer {
       planet: program(gl, PLANET_VS, PLANET_FS),
       bright: program(gl, FSTRI_VS, BRIGHT_FS),
       blur: program(gl, FSTRI_VS, BLUR_FS),
+      nebula: program(gl, FSTRI_VS, NEBULA_FS),
+      blit: program(gl, FSTRI_VS, BLIT_FS),
       composite: program(gl, FSTRI_VS, COMPOSITE_FS),
     }
     // per-program vertex layout: [location, size] entries, and blend mode.
@@ -411,6 +454,8 @@ export class WebGLRenderer extends Renderer {
     const ext = gl.getExtension("EXT_color_buffer_float")
     this.floatTargets = !!ext
     this.scene = this.#makeTarget(SCENE_W, SCENE_H)
+    // background renders half-res then upscales, giving a cheap depth-of-field
+    this.bg = this.#makeTarget(SCENE_W >> 1, SCENE_H >> 1)
     this.bloomA = this.#makeTarget(SCENE_W >> 1, SCENE_H >> 1)
     this.bloomB = this.#makeTarget(SCENE_W >> 1, SCENE_H >> 1)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
@@ -453,11 +498,14 @@ export class WebGLRenderer extends Renderer {
   }
 
   // ---- frame lifecycle ----------------------------------------------------
+  // Background (nebula, planets, stars) renders into the half-res bg target,
+  // then compositeBackground() blurs and upscales it into the full-res scene,
+  // giving depth of field. World and HUD passes then draw sharp over the top.
   beginFrame(time) {
     this.time = time
     const gl = this.gl
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.scene.fbo)
-    gl.viewport(0, 0, SCENE_W, SCENE_H)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.bg.fbo)
+    gl.viewport(0, 0, this.bg.w, this.bg.h)
   }
 
   clearFrame(color) {
@@ -465,6 +513,39 @@ export class WebGLRenderer extends Renderer {
     const c = parseColour(color)
     gl.clearColor(c[0], c[1], c[2], 1)
     gl.clear(gl.COLOR_BUFFER_BIT)
+  }
+
+  nebula(scrollX = 0, scrollY = 0) {
+    const gl = this.gl
+    gl.disable(gl.BLEND)
+    gl.useProgram(this.progs.nebula)
+    gl.uniform1f(gl.getUniformLocation(this.progs.nebula, "uTime"), this.time)
+    gl.uniform2f(gl.getUniformLocation(this.progs.nebula, "uScroll"), scrollX, scrollY)
+    gl.bindVertexArray(this.emptyVao)
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    gl.enable(gl.BLEND)
+  }
+
+  compositeBackground() {
+    this.#flush()
+    const gl = this.gl
+    gl.disable(gl.BLEND)
+    // soften the background for depth of field
+    this.#blurPass(this.bg, this.bloomA, [1.2 / this.bg.w, 0])
+    this.#blurPass(this.bloomA, this.bg, [0, 1.2 / this.bg.h])
+    // upscale the blurred background into the full-res scene target
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.scene.fbo)
+    gl.viewport(0, 0, SCENE_W, SCENE_H)
+    this.#blit(this.bg.tex)
+    gl.enable(gl.BLEND)
+  }
+
+  #blit(tex) {
+    const gl = this.gl
+    gl.useProgram(this.progs.blit)
+    this.#bindTex(this.progs.blit, "uTex", tex, 0)
+    gl.bindVertexArray(this.emptyVao)
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
   }
 
   pushView(camera) {
@@ -540,7 +621,9 @@ export class WebGLRenderer extends Renderer {
   }
 
   // ---- geometry builders --------------------------------------------------
-  #lineQuad(ax, ay, bx, by, z, core, total, col) {
+  // capScale extends the ends for rounded standalone lines; strokePoly passes 0
+  // so polygon edges meet cleanly at shared vertices instead of overshooting.
+  #lineQuad(ax, ay, bx, by, z, core, total, col, capScale = 0) {
     let dx = bx - ax,
       dy = by - ay
     const len = Math.hypot(dx, dy) || 1
@@ -548,8 +631,7 @@ export class WebGLRenderer extends Renderer {
     dy /= len
     const px = -dy,
       py = dx
-    const cap = total * 0.6
-    // extend the ends slightly for softer caps
+    const cap = total * capScale
     ax -= dx * cap
     ay -= dy * cap
     bx += dx * cap
@@ -611,7 +693,7 @@ export class WebGLRenderer extends Renderer {
     const core = (opts.width ?? 1.6) / 2
     const total = core + (opts.glow || 0) * 0.5 + 1.2
     this.#use("line")
-    this.#lineQuad(ax, ay, bx, by, this.passZ, core, total, col)
+    this.#lineQuad(ax, ay, bx, by, this.passZ, core, total, col, 0.8)
   }
 
   circle(x, y, r, opts = {}) {
