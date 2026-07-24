@@ -240,7 +240,7 @@ export const SHIP_TYPES = {
     size: 40,
     accel: 32,
     maxSpeed: 44,
-    turnRate: 0.28,
+    turnRate: 0.17,
     drag: 0.94,
     exhaustFactor: 1.7,
     lifeTime: [34, 50],
