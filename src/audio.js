@@ -105,14 +105,13 @@ export const Sound = {
     // Runs every frame from the game loop, so it must never throw: a stray
     // exception here would stall the loop.
     try {
-      if (!this.enabled) {
+      // Never create the context here (this runs in the game loop, not a user
+      // gesture): only use one that a gesture has already unlocked, or Safari
+      // brings it up muted and silences everything.
+      if (!this.ctx || !this.enabled) {
         if (this.thruster && this.ctx) {
           this.thruster.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05)
         }
-        return
-      }
-      this.ensureContext()
-      if (!this.ctx) {
         return
       }
       if (!this.thruster) {
