@@ -294,14 +294,22 @@ export class Game {
     const fullLen = Math.hypot(beam.b.x - beam.a.x, beam.b.y - beam.a.y)
     let blockDist = fullLen
     const considerShip = (e, radius) => {
+      const reach = width * 0.6 + radius
       const t = (e.x - beam.a.x) * beam.dir.x + (e.y - beam.a.y) * beam.dir.y
-      if (t < 0 || t >= blockDist) {
+      if (t < 0) {
         return
       }
       const cx = beam.a.x + beam.dir.x * t,
         cy = beam.a.y + beam.dir.y * t
-      if (Math.hypot(e.x - cx, e.y - cy) < width * 0.6 + radius) {
-        blockDist = t
+      const perp = Math.hypot(e.x - cx, e.y - cy)
+      if (perp >= reach) {
+        return
+      }
+      // stop at the near surface (facing the shooter), not the centre, so the
+      // beam ends on the struck side and the shield flashes there
+      const tEntry = t - Math.sqrt(reach * reach - perp * perp)
+      if (tEntry > 0 && tEntry < blockDist) {
+        blockDist = tEntry
       }
     }
     for (const rival of this.rivals) {

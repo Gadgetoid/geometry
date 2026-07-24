@@ -651,9 +651,10 @@ export class WebGLRenderer extends Renderer {
   }
 
   // ---- geometry builders --------------------------------------------------
-  // Round-capped quad: ends extend by `total` and the fragment measures the
-  // capsule distance to the core segment [0, len], so joins overlap cleanly.
-  #lineQuad(ax, ay, bx, by, z, core, total, col) {
+  // Capsule quad. capScale extends the ends for round caps (standalone lines);
+  // polygon strokes pass 0 for butt caps so shared vertices meet exactly rather
+  // than overlapping and additively over-brightening into dots.
+  #lineQuad(ax, ay, bx, by, z, core, total, col, capScale = 0) {
     let dx = bx - ax,
       dy = by - ay
     const len = Math.hypot(dx, dy) || 1
@@ -661,7 +662,7 @@ export class WebGLRenderer extends Renderer {
     dy /= len
     const px = -dy,
       py = dx
-    const cap = total
+    const cap = total * capScale
     const axe = ax - dx * cap,
       aye = ay - dy * cap // extended A end (long = -cap)
     const bxe = bx + dx * cap,
@@ -724,7 +725,7 @@ export class WebGLRenderer extends Renderer {
     const core = (opts.width ?? 1.6) / 2
     const total = core + (opts.glow || 0) * 0.5 + 1.2
     this.#use("line")
-    this.#lineQuad(ax, ay, bx, by, this.passZ, core, total, col)
+    this.#lineQuad(ax, ay, bx, by, this.passZ, core, total, col, 1)
   }
 
   circle(x, y, r, opts = {}) {
