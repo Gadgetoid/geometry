@@ -987,11 +987,10 @@ export class Game {
       const recoverX = barX + barW * shield.type.recoverAt
       r.line(dropX, barY - 2, dropX, barY + barH + 2, { color: "#ff5b5b", width: 1 }) // offline level
       r.line(recoverX, barY - 2, recoverX, barY + barH + 2, { color: "#9fe8ff", width: 1, alpha: 0.55 }) // recovery level
-      r.text(shield.up ? "SHIELD" : "SHIELD OFFLINE", barX + barW, barY - 4, {
+      r.text(shield.up ? "SHIELD" : "SHIELD OFFLINE", barX + 46, barY - 4, {
         size: 9,
         color: shield.up ? "#9fe8ff" : "#ff5b5b",
-        align: "right",
-      })
+      }) // beside ENERGY, clear of the powerup slots at the right edge
     }
 
     if (this.player) {
