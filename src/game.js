@@ -25,6 +25,7 @@ import {
   normalize,
   countBeamCrossings,
   distanceToSegment,
+  mulberry32,
 } from "./math.js"
 import { Sound } from "./audio.js"
 import { loadBest, saveBest } from "./persistence.js"
@@ -41,6 +42,61 @@ const SLOT_KEYS = {
   Numpad2: 1,
   Numpad3: 2,
   Numpad4: 3,
+}
+
+// Pick a planet flavour and palette from a seeded RNG. Rocky and gas planets
+// are tinted by the sector's base hue for cohesion; volcanic and inhabited
+// worlds are rarer accents with an emissive channel (lava / city lights).
+// Returns { type, base, hi, atmo, emit } where type is the shader's uType.
+function planetPalette(rng, baseHue) {
+  const jitter = (h, d) => Math.round((((h + (rng() * 2 - 1) * d) % 360) + 360) % 360)
+  const roll = rng()
+  if (roll < 0.1) {
+    // volcanic: dark rock, glowing lava
+    return { type: 1, base: "#241c18", hi: "#4a352a", atmo: "#7a3a24", emit: "#ff5a1e" }
+  }
+  if (roll < 0.2) {
+    // inhabited: night side speckled with city lights
+    const h = jitter(baseHue, 40)
+    return {
+      type: 2,
+      base: `hsl(${h} 30% 15%)`,
+      hi: `hsl(${h} 26% 30%)`,
+      atmo: `hsl(${(h + 180) % 360} 40% 55%)`,
+      emit: "#ffd98a",
+    }
+  }
+  if (roll < 0.4) {
+    // gas giant with banding
+    const h = jitter(baseHue, 25)
+    return {
+      type: 3,
+      base: `hsl(${h} 34% 26%)`,
+      hi: `hsl(${(h + 20) % 360} 40% 52%)`,
+      atmo: `hsl(${h} 45% 60%)`,
+      emit: "#000000",
+    }
+  }
+  if (roll < 0.55) {
+    // ice world (cool, high albedo)
+    const h = jitter(210, 30)
+    return {
+      type: 4,
+      base: `hsl(${h} 20% 40%)`,
+      hi: `hsl(${h} 14% 82%)`,
+      atmo: `hsl(${h} 40% 78%)`,
+      emit: "#000000",
+    }
+  }
+  // rocky world tinted by the sector hue
+  const h = jitter(baseHue, 35)
+  return {
+    type: 0,
+    base: `hsl(${h} 26% 22%)`,
+    hi: `hsl(${h} 30% 45%)`,
+    atmo: `hsl(${(h + 30) % 360} 34% 58%)`,
+    emit: "#000000",
+  }
 }
 
 export class Game {
@@ -379,6 +435,7 @@ export class Game {
   startLevel(sector) {
     this.level = sector
     this.plan = this.planLevel(sector)
+    this.regenSector(sector) // seeded backdrop for this sector's vibe
     this.asteroids = []
     this.oreChunks = []
     this.projectiles = []
@@ -589,30 +646,17 @@ export class Game {
         vy: randRange(-1.4, 1.4),
       })
     }
-    // Distant procedural planets. Muted palettes; each carries a seed and a
-    // light direction for the renderer's sphere shader. They sit on the far
-    // parallax layer (low depth) and drift slowly.
-    const palettes = [
-      { base: "#2f3d54", hi: "#5b6f88", atmo: "#7aa3c8" }, // slate blue
-      { base: "#2b423f", hi: "#4f6f68", atmo: "#79b6a8" }, // muted teal
-      { base: "#4a3540", hi: "#6f5560", atmo: "#b98a9a" }, // dusty rose
-      { base: "#453a2c", hi: "#6e5f45", atmo: "#c8a06a" }, // ochre sand
-      { base: "#3a3550", hi: "#5f5878", atmo: "#9a8fc8" }, // violet grey
-    ]
-    this.planets = []
-    for (let i = 0; i < 5; i++) {
-      const pal = palettes[i % palettes.length]
-      this.planets.push({
-        x: randRange(-220, VIEW_W + 220),
-        y: randRange(-160, VIEW_H + 160),
-        r: randRange(46, 120),
-        depth: randRange(0.05, 0.2), // far: barely parallaxes
-        seed: randRange(0, 20),
-        light: randRange(-Math.PI, Math.PI),
-        drift: randRange(2, 6),
-        ...pal,
+    // Foreground stardust: near, fast-parallax motes that streak past as the
+    // ship moves, selling the sense of motion.
+    this.dust = []
+    for (let i = 0; i < 90; i++) {
+      this.dust.push({
+        x: Math.random() * VIEW_W,
+        y: Math.random() * VIEW_H,
+        z: randRange(0.55, 1), // parallax strength (near)
       })
     }
+    this.regenSector(1) // planets + nebula for the title / first sector
     this.menuAsteroids = []
     for (let i = 0; i < 7; i++) {
       const x = randRange(90, VIEW_W - 90),
@@ -628,9 +672,71 @@ export class Game {
     }
   }
 
+  // Rebuild the backdrop for a sector: a seeded palette so each sector has its
+  // own repeatable vibe, evolving slowly as the base hue advances. Planets are
+  // spread over a jittered grid so they never clump.
+  regenSector(sector) {
+    const rng = mulberry32((Math.imul(sector, 2654435761) ^ 0x9e3779b9) >>> 0)
+    const rand = (a, b) => a + rng() * (b - a)
+    const baseHue = (sector * 43) % 360 // advances each sector for slow evolution
+    this.nebula = {
+      colorA: `hsl(${baseHue} 45% 16%)`,
+      colorB: `hsl(${(baseHue + 55) % 360} 40% 14%)`,
+      seed: rand(0, 30),
+    }
+
+    const marginX = 260,
+      marginY = 200
+    const cols = 3,
+      rows = 2
+    const cellW = (VIEW_W + marginX * 2) / cols,
+      cellH = (VIEW_H + marginY * 2) / rows
+    const cells = []
+    for (let cy = 0; cy < rows; cy++) {
+      for (let cx = 0; cx < cols; cx++) {
+        cells.push([cx, cy])
+      }
+    }
+    for (let i = cells.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1))
+      ;[cells[i], cells[j]] = [cells[j], cells[i]]
+    }
+    const count = 4 + Math.floor(rng() * 2) // 4-5, one per grid cell
+    this.planets = []
+    for (let i = 0; i < count; i++) {
+      const [cx, cy] = cells[i]
+      const pal = planetPalette(rng, baseHue)
+      this.planets.push({
+        x: -marginX + cx * cellW + rand(cellW * 0.2, cellW * 0.8),
+        y: -marginY + cy * cellH + rand(cellH * 0.2, cellH * 0.8),
+        r: rand(50, 120),
+        depth: rand(0.05, 0.2), // far: barely parallaxes
+        seed: rand(0, 20),
+        light: rand(-Math.PI, Math.PI),
+        drift: rand(2, 6),
+        ...pal,
+      })
+    }
+  }
+
   updateBackground(dt) {
     const pvx = this.player && this.phase === "play" ? this.player.vx : 0
     const pvy = this.player && this.phase === "play" ? this.player.vy : 0
+    for (const d of this.dust) {
+      // strong screen-space parallax opposite to travel
+      d.x -= pvx * d.z * 0.9 * dt
+      d.y -= pvy * d.z * 0.9 * dt
+      if (d.x < 0) {
+        d.x += VIEW_W
+      } else if (d.x > VIEW_W) {
+        d.x -= VIEW_W
+      }
+      if (d.y < 0) {
+        d.y += VIEW_H
+      } else if (d.y > VIEW_H) {
+        d.y -= VIEW_H
+      }
+    }
     for (const star of this.stars) {
       star.x += (star.vx - pvx * star.depth * 0.06) * dt
       star.y += (star.vy - pvy * star.depth * 0.06) * dt

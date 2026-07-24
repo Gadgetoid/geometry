@@ -133,7 +133,8 @@ export class GameView {
     r.clearFrame("#02040a")
 
     // background layer: nebula, planets, stars (softened for depth of field)
-    r.nebula(c.x, c.y)
+    const neb = game.nebula
+    r.nebula(c.x, c.y, neb.colorA, neb.colorB, neb.seed)
     r.pushView(cam.bg)
     this.#planets(game)
     this.#background(game)
@@ -171,6 +172,13 @@ export class GameView {
     }
     r.popView()
 
+    // foreground stardust (screen-space, in front of gameplay)
+    if (game.phase === "play" || game.phase === "clearing") {
+      r.pushView(cam.bg)
+      this.#dust(game)
+      r.popView()
+    }
+
     // HUD layer: screen-space, unshaken
     r.pushView(cam.hud)
     if (game.phase === "title") {
@@ -190,9 +198,27 @@ export class GameView {
         base: p.base,
         hi: p.hi,
         atmo: p.atmo,
+        emit: p.emit,
+        type: p.type,
         seed: p.seed,
         light: p.light,
         depth: p.depth,
+      })
+    }
+  }
+
+  // Foreground stardust streaks (screen-space, sharp, in front of gameplay).
+  #dust(game) {
+    const r = this.renderer
+    const pvx = game.player ? game.player.vx : 0
+    const pvy = game.player ? game.player.vy : 0
+    for (const d of game.dust) {
+      r.line(d.x, d.y, d.x + pvx * d.z * 0.035, d.y + pvy * d.z * 0.035, {
+        color: "#cfe0ff",
+        width: 1.3,
+        glow: 5,
+        alpha: 0.42 * d.z,
+        cap: "round",
       })
     }
   }
@@ -293,7 +319,7 @@ export class GameView {
       sy = VIEW_H / 2
     const halfX = sx - 30,
       halfY = sy - 30
-    const mark = (wx, wy, color) => {
+    const mark = (wx, wy, color, size = 9) => {
       const dx = wx - c.x,
         dy = wy - c.y
       if (Math.abs(dx) <= sx - 10 && Math.abs(dy) <= sy - 10) {
@@ -305,11 +331,13 @@ export class GameView {
         my = sy + dy * k
       const dist = Math.hypot(dx, dy)
       const alpha = clamp(1 - (dist - VIEW_W / 2) / 1400, 0.28, 0.9)
-      const size = 9
       const tip = { x: mx + Math.cos(ang) * size, y: my + Math.sin(ang) * size }
       const la = { x: mx + Math.cos(ang + 2.5) * size, y: my + Math.sin(ang + 2.5) * size }
       const rb = { x: mx + Math.cos(ang - 2.5) * size, y: my + Math.sin(ang - 2.5) * size }
       r.strokePoly([tip, la, rb], { color, width: 1.6, glow: 8, alpha, closed: true })
+    }
+    for (const chunk of game.oreChunks) {
+      mark(chunk.x, chunk.y, "#ff8ae6", 6)
     }
     for (const a of game.asteroids) {
       mark(a.center.x, a.center.y, a.explosive ? "#ff6b52" : "#9fd8ff")

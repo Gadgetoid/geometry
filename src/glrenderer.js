@@ -178,9 +178,11 @@ const PLANET_FS = `#version 300 es
   uniform vec3 uBase;    // muted base colour
   uniform vec3 uHi;      // lit / band highlight colour
   uniform vec3 uAtmo;    // atmosphere rim colour
+  uniform vec3 uEmit;    // emissive colour (lava / city lights); black = none
   uniform vec2 uLight;   // 2D light direction on the disc
   uniform float uSeed;
   uniform float uTime;
+  uniform int uType;     // 0 rocky, 1 volcanic, 2 inhabited, 3 gas, 4 ice
   float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise(vec2 p){
     vec2 i = floor(p), f = fract(p);
@@ -194,28 +196,45 @@ const PLANET_FS = `#version 300 es
     for (int i = 0; i < 5; i++){ v += amp * noise(p); p *= 2.03; amp *= 0.5; }
     return v;
   }
+  float ridged(vec2 p){ return 1.0 - abs(2.0 * fbm(p) - 1.0); }
   void main() {
     float r = length(vUV);
     if (r > 1.0) discard;
-    // sphere normal from the disc position
     vec3 n = vec3(vUV, sqrt(max(0.0, 1.0 - r*r)));
-    // sample surface in a way that wraps toward the limb for a spherical feel
-    vec2 sp = vUV / (0.35 + 0.65 * n.z);
-    float bands = fbm(sp * 2.2 + vec2(uSeed, uSeed * 1.7) + vec2(uTime * 0.01, 0.0));
-    float mottle = fbm(sp * 6.0 + uSeed * 3.0);
-    float surf = mix(bands, mottle, 0.35);
-    vec3 albedo = mix(uBase, uHi, smoothstep(0.35, 0.75, surf));
-    // lambert-ish shading from the 2D light direction
+    vec2 sp = vUV / (0.35 + 0.65 * n.z); // spherical-ish surface coords
     float lambert = clamp(dot(normalize(vec3(uLight, 0.85)), n), 0.0, 1.0);
+    vec3 albedo;
+    vec3 emit = vec3(0.0);
+    if (uType == 3) {                       // gas giant: latitude bands
+      float bands = sin(sp.y * 6.0 + fbm(sp * 2.0 + uSeed) * 3.0) * 0.5 + 0.5;
+      float swirl = fbm(vec2(sp.x * 0.7, sp.y * 3.2) + uSeed);
+      albedo = mix(uBase, uHi, smoothstep(0.3, 0.75, mix(bands, swirl, 0.4)));
+    } else if (uType == 4) {                // ice
+      albedo = mix(uBase, uHi, smoothstep(0.4, 0.78, fbm(sp * 4.0 + uSeed)));
+    } else if (uType == 1) {                // volcanic: glowing lava veins
+      albedo = mix(uBase, uHi, fbm(sp * 4.0 + uSeed) * 0.5);
+      float lava = smoothstep(0.80, 0.97, ridged(sp * 3.2 + uSeed * 2.0));
+      emit += uEmit * lava * (2.0 + 0.6 * sin(uTime * 2.0 + uSeed));
+    } else if (uType == 2) {                // inhabited: city lights on the night side
+      float land = fbm(sp * 3.0 + uSeed);
+      albedo = mix(uBase, uHi, smoothstep(0.45, 0.7, land));
+      float night = 1.0 - smoothstep(0.02, 0.32, lambert);
+      float cities = smoothstep(0.68, 0.9, fbm(sp * 15.0 + uSeed * 4.0));
+      emit += uEmit * cities * night * step(0.48, land) * 1.8;
+    } else {                                // rocky
+      float bands = fbm(sp * 2.2 + uSeed);
+      float mottle = fbm(sp * 6.0 + uSeed * 3.0);
+      albedo = mix(uBase, uHi, smoothstep(0.35, 0.75, mix(bands, mottle, 0.35)));
+    }
     float shade = 0.12 + 0.72 * lambert;
     vec3 col = albedo * shade;
-    // atmosphere rim: brighten the lit limb, fade the disc edge softly
     float rim = pow(1.0 - n.z, 2.5);
     float lit = clamp(dot(normalize(uLight), normalize(vUV + 1e-3)), 0.0, 1.0);
     col += uAtmo * rim * (0.28 + 0.5 * lit);
-    float edge = smoothstep(1.0, 0.985, r); // soft antialiased disc edge
-    // dim overall so planets read as distant background, not foreground
-    frag = vec4(col * edge * 0.6, edge);
+    col *= 0.6;    // dim the lit body so planets read as distant background
+    col += emit;   // emissive stays bright so it glows through bloom
+    float edge = smoothstep(1.0, 0.985, r);
+    frag = vec4(col * edge, edge);
   }`
 
 // full-screen passes (bloom + composite) share a fullscreen-triangle VS.
@@ -272,15 +291,14 @@ const NEBULA_FS = `#version 300 es
   precision highp float;
   in vec2 vUV; out vec4 frag;
   uniform float uTime; uniform vec2 uScroll;
+  uniform vec3 uColA; uniform vec3 uColB; uniform float uSeed;
   ${NOISE}
   void main() {
-    vec2 p = vUV * vec2(1.6, 1.0) * 2.4 + uScroll * 0.0004;
+    vec2 p = vUV * vec2(1.6, 1.0) * 2.4 + uScroll * 0.0004 + uSeed;
     float n1 = fbm(p * 1.3 + vec2(uTime * 0.004, 0.0));
     float n2 = fbm(p * 2.7 - vec2(0.0, uTime * 0.003) + 5.0);
     float clouds = smoothstep(0.42, 0.95, n1 * 0.65 + n2 * 0.45);
-    vec3 c1 = vec3(0.09, 0.13, 0.26); // deep blue
-    vec3 c2 = vec3(0.19, 0.10, 0.22); // dusty purple
-    vec3 col = mix(c1, c2, n2) * clouds * 0.55;
+    vec3 col = mix(uColA, uColB, n2) * clouds * 0.9;
     float dust = smoothstep(0.72, 0.97, fbm(p * 20.0 + uScroll * 0.001)) * 0.10;
     vec3 base = vec3(0.008, 0.016, 0.04);
     frag = vec4(base + col + dust, 1.0);
@@ -515,12 +533,18 @@ export class WebGLRenderer extends Renderer {
     gl.clear(gl.COLOR_BUFFER_BIT)
   }
 
-  nebula(scrollX = 0, scrollY = 0) {
+  nebula(scrollX = 0, scrollY = 0, colorA = "#0f1226", colorB = "#1a0f22", seed = 0) {
     const gl = this.gl
+    const prog = this.progs.nebula
+    const a = parseColour(colorA),
+      b = parseColour(colorB)
     gl.disable(gl.BLEND)
-    gl.useProgram(this.progs.nebula)
-    gl.uniform1f(gl.getUniformLocation(this.progs.nebula, "uTime"), this.time)
-    gl.uniform2f(gl.getUniformLocation(this.progs.nebula, "uScroll"), scrollX, scrollY)
+    gl.useProgram(prog)
+    gl.uniform1f(gl.getUniformLocation(prog, "uTime"), this.time)
+    gl.uniform2f(gl.getUniformLocation(prog, "uScroll"), scrollX, scrollY)
+    gl.uniform3f(gl.getUniformLocation(prog, "uColA"), a[0], a[1], a[2])
+    gl.uniform3f(gl.getUniformLocation(prog, "uColB"), b[0], b[1], b[2])
+    gl.uniform1f(gl.getUniformLocation(prog, "uSeed"), seed)
     gl.bindVertexArray(this.emptyVao)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
     gl.enable(gl.BLEND)
@@ -811,9 +835,12 @@ export class WebGLRenderer extends Renderer {
     const base = parseColour(opts.base || "#3a4a63")
     const hi = parseColour(opts.hi || "#7f93a8")
     const atmo = parseColour(opts.atmo || "#8fb7d6")
+    const emit = parseColour(opts.emit || "#000000")
     gl.uniform3f(gl.getUniformLocation(prog, "uBase"), base[0], base[1], base[2])
     gl.uniform3f(gl.getUniformLocation(prog, "uHi"), hi[0], hi[1], hi[2])
     gl.uniform3f(gl.getUniformLocation(prog, "uAtmo"), atmo[0], atmo[1], atmo[2])
+    gl.uniform3f(gl.getUniformLocation(prog, "uEmit"), emit[0], emit[1], emit[2])
+    gl.uniform1i(gl.getUniformLocation(prog, "uType"), opts.type || 0)
     const la = opts.light != null ? opts.light : -0.7
     gl.uniform2f(gl.getUniformLocation(prog, "uLight"), Math.cos(la), Math.sin(la))
     gl.uniform1f(gl.getUniformLocation(prog, "uSeed"), opts.seed || 1.0)
