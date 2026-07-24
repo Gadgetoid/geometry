@@ -287,6 +287,36 @@ export class Game {
   applyBeam(beam, attacker, weapon) {
     let didHit = false
     const damage = weapon.type.damage
+    const width = weapon.type.width || 2.4
+
+    // The beam stops at the first ship it strikes: find the nearest one along
+    // the beam and truncate to that point so it can't cut rocks beyond it.
+    const fullLen = Math.hypot(beam.b.x - beam.a.x, beam.b.y - beam.a.y)
+    let blockDist = fullLen
+    const considerShip = (e, radius) => {
+      const t = (e.x - beam.a.x) * beam.dir.x + (e.y - beam.a.y) * beam.dir.y
+      if (t < 0 || t >= blockDist) {
+        return
+      }
+      const cx = beam.a.x + beam.dir.x * t,
+        cy = beam.a.y + beam.dir.y * t
+      if (Math.hypot(e.x - cx, e.y - cy) < width * 0.6 + radius) {
+        blockDist = t
+      }
+    }
+    for (const rival of this.rivals) {
+      if (rival !== attacker && !rival.dead) {
+        considerShip(rival, rival.size)
+      }
+    }
+    if (this.player && attacker !== this.player) {
+      considerShip(this.player, this.player.radius)
+    }
+    if (blockDist < fullLen) {
+      beam.b.x = beam.a.x + beam.dir.x * blockDist
+      beam.b.y = beam.a.y + beam.dir.y * blockDist
+    }
+
     const survivors = []
     for (const asteroid of this.asteroids) {
       if (asteroid === attacker) {
@@ -300,7 +330,13 @@ export class Game {
       const shield = asteroid.shieldModule()
       if (shield && shield.up && shield.blocks("laser") && asteroid.energy > 0) {
         asteroid.energy = Math.max(0, asteroid.energy - damage)
-        this.ring(asteroid.center.x, asteroid.center.y, 10, SHIELD_SPARK, 120, 0.4)
+        // flash the side facing the shooter and spark there
+        const toShooter = Math.atan2(beam.a.y - asteroid.center.y, beam.a.x - asteroid.center.x)
+        shield.hitAt(toShooter)
+        const ex = asteroid.center.x + Math.cos(toShooter) * asteroid.boundRadius,
+          ey = asteroid.center.y + Math.sin(toShooter) * asteroid.boundRadius
+        this.ring(ex, ey, 8, SHIELD_SPARK, 120, 0.35)
+        this.burst(ex, ey, 4, SHIELD_SPARK, 30, 120, 0.3)
         if (shield.checkOverload(asteroid)) {
           this.burst(asteroid.center.x, asteroid.center.y, 16, SHIELD_SPARK, 50, 210, 0.6)
         }
@@ -362,9 +398,13 @@ export class Game {
       this.screenShake = Math.max(this.screenShake, 4)
     }
 
-    // Ships caught within the beam's width take laser damage (energy or hull).
-    const width = weapon.type.width || 2.4
+    // Ships caught within the beam's width take laser damage (energy or hull),
+    // sparking at the point where the beam meets them.
     const fromPlayer = attacker === this.player
+    const beamImpact = (e) => {
+      const t = clamp((e.x - beam.a.x) * beam.dir.x + (e.y - beam.a.y) * beam.dir.y, 0, blockDist)
+      return { x: beam.a.x + beam.dir.x * t, y: beam.a.y + beam.dir.y * t }
+    }
     for (const rival of this.rivals) {
       if (rival === attacker || rival.dead) {
         continue
@@ -373,7 +413,9 @@ export class Game {
         distanceToSegment(rival.x, rival.y, beam.a.x, beam.a.y, beam.b.x, beam.b.y) <
         width * 0.6 + rival.size
       ) {
-        rival.takeDamage(damage, this, "laser", fromPlayer ? rival.type.killScore : 0)
+        const hit = beamImpact(rival)
+        rival.takeDamage(damage, this, "laser", fromPlayer ? rival.type.killScore : 0, hit)
+        this.burst(hit.x, hit.y, randInt(3, 6), weapon.type.colour, 30, 130, 0.35)
         didHit = true
       }
     }
@@ -383,7 +425,9 @@ export class Game {
       attacker !== p &&
       distanceToSegment(p.x, p.y, beam.a.x, beam.a.y, beam.b.x, beam.b.y) < width * 0.6 + p.radius
     ) {
-      p.takeDamage(damage, this, "laser")
+      const hit = beamImpact(p)
+      p.takeDamage(damage, this, "laser", 0, hit)
+      this.burst(hit.x, hit.y, randInt(3, 6), weapon.type.colour, 30, 130, 0.35)
       didHit = true
     }
     return didHit

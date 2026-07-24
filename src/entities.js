@@ -129,12 +129,17 @@ export class Entity {
   // Uniform damage entry point. A raised shield converts the hit into energy
   // drain; if that pushes energy to the overload threshold the shield collapses
   // (but still absorbs this hit). A down or absent shield lets it reach the hull.
-  takeDamage(amount, game, channel, scoreOnKill = 0) {
+  takeDamage(amount, game, channel, scoreOnKill = 0, impact = null) {
     const shield = this.shieldModule()
     if (shield && shield.up && shield.blocks(channel) && this.energy > 0) {
       this.energy = Math.max(0, this.energy - amount * shield.type.efficiency * this.damageResist())
+      const hx = impact ? impact.x : this.x,
+        hy = impact ? impact.y : this.y
+      if (impact) {
+        shield.hitAt(Math.atan2(impact.y - this.y, impact.x - this.x))
+      }
       if (this.fxCooldown <= 0) {
-        game.ring(this.x, this.y, 10, SHIELD_SPARK, 120, 0.4)
+        game.ring(hx, hy, 8, SHIELD_SPARK, 120, 0.35)
         this.fxCooldown = 0.12
       }
       if (shield.checkOverload(this)) {
@@ -325,10 +330,18 @@ export class Shield {
     this.type = SHIELD_TYPES[typeName]
     this.up = true
     this.downTimer = 0
+    this.flash = 0 // brief bright flash on the struck side
+    this.flashAngle = 0
   }
 
   blocks(channel) {
     return channel === "laser" ? this.type.blocksLaser : this.type.blocksProjectile
+  }
+
+  // Flash the side facing `angle` (world direction from the host centre).
+  hitAt(angle) {
+    this.flash = 0.25
+    this.flashAngle = angle
   }
 
   // Overload the shield if the host's energy has dropped to the threshold.
@@ -344,6 +357,9 @@ export class Shield {
 
   // Recover once the cooldown has elapsed and energy has recharged enough.
   tick(dt, host) {
+    if (this.flash > 0) {
+      this.flash = Math.max(0, this.flash - dt)
+    }
     if (this.up) {
       return
     }
@@ -368,6 +384,22 @@ export class Shield {
       points.push({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius })
     }
     renderer.strokePoly(points, { color: this.type.colour, width: 1.7, glow: 12, alpha })
+    // struck side flashes brightly for a moment
+    if (this.flash > 0) {
+      const f = this.flash / 0.25
+      const arc = []
+      for (let i = -2; i <= 2; i++) {
+        const a = this.flashAngle + i * 0.32
+        arc.push({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius })
+      }
+      renderer.strokePoly(arc, {
+        color: "#ffffff",
+        width: 2 + 1.5 * f,
+        glow: 16,
+        alpha: clamp(0.9 * f, 0, 1),
+        closed: false,
+      })
+    }
   }
 }
 
@@ -398,10 +430,10 @@ export class Projectile extends Entity {
       Math.hypot(this.x - player.x, this.y - player.y) < player.radius + 3
     ) {
       this.dead = true
-      game.burst(player.x, player.y, 8, "#ff8a5a", 40, 140, 0.4)
+      game.burst(this.x, this.y, 8, "#ff8a5a", 40, 140, 0.4)
       game.screenShake = Math.max(game.screenShake, 5)
       Sound.hit()
-      player.takeDamage(this.damage, game, "projectile")
+      player.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
       return
     }
     for (const rival of game.rivals) {
@@ -411,7 +443,7 @@ export class Projectile extends Entity {
       if (pointInPolygon(this, rival.worldOutline())) {
         this.dead = true
         game.burst(this.x, this.y, 6, "#ff9a3c", 40, 130, 0.4)
-        rival.takeDamage(this.damage, game, "projectile")
+        rival.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
         return
       }
     }
@@ -422,7 +454,7 @@ export class Projectile extends Entity {
       if (pointInPolygon(this, asteroid.vertices)) {
         this.dead = true
         game.burst(this.x, this.y, 5, "#9fc0ff", 30, 110, 0.3)
-        asteroid.takeDamage(this.damage, game, "projectile")
+        asteroid.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
         return
       }
     }
