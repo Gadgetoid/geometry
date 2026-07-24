@@ -12,6 +12,11 @@ export const Sound = {
         /* audio is best-effort */
       }
     }
+    // Safari (and Chrome's autoplay policy) start the context suspended; it must
+    // be resumed from a user gesture or nothing is audible.
+    if (this.ctx && this.ctx.state === "suspended" && this.ctx.resume) {
+      this.ctx.resume().catch(() => {})
+    }
   },
 
   beep(freq, duration, wave, volume, endFreq) {
@@ -79,18 +84,20 @@ export const Sound = {
   // toward on/off. Started lazily once the context exists.
   thruster: null,
   setThruster(active) {
-    if (!this.enabled) {
-      if (this.thruster) {
-        this.thruster.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05)
+    // Runs every frame from the game loop, so it must never throw: a stray
+    // exception here would stall the loop.
+    try {
+      if (!this.enabled) {
+        if (this.thruster && this.ctx) {
+          this.thruster.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05)
+        }
+        return
       }
-      return
-    }
-    this.ensureContext()
-    if (!this.ctx) {
-      return
-    }
-    if (!this.thruster) {
-      try {
+      this.ensureContext()
+      if (!this.ctx) {
+        return
+      }
+      if (!this.thruster) {
         const buffer = this.ctx.createBuffer(1, this.ctx.sampleRate, this.ctx.sampleRate)
         const data = buffer.getChannelData(0)
         for (let i = 0; i < data.length; i++) {
@@ -108,11 +115,11 @@ export const Sound = {
         src.connect(filter).connect(gain).connect(this.ctx.destination)
         src.start()
         this.thruster = { gain }
-      } catch (e) {
-        return
       }
+      this.thruster.gain.gain.setTargetAtTime(active ? 0.03 : 0, this.ctx.currentTime, 0.08)
+    } catch (e) {
+      /* audio is best-effort */
     }
-    this.thruster.gain.gain.setTargetAtTime(active ? 0.03 : 0, this.ctx.currentTime, 0.08)
   },
 
   fire() {
