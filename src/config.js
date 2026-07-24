@@ -112,6 +112,7 @@ export const WEAPON_TYPES = {
     width: 26,
     glow: 30,
     arc: 0.42,
+    chargeTime: 0.9, // telegraphs with a growing glow before firing
     colour: "#ff4d6d",
   },
   defenseLaser: {

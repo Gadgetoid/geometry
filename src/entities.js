@@ -172,6 +172,8 @@ export class Weapon {
     this.controller = controller
     this.cooldown = this.rollReload() * 0.5
     this.charge = 0
+    this.charging = 0 // wind-up time left before a charged beam fires
+    this.chargeDuration = 0
   }
 
   rollReload() {
@@ -263,14 +265,26 @@ export class Weapon {
         this.emitBeam(game, host, world.x, world.y, host.angle, this.rollLength())
       }
     } else if (this.controller === "hunter") {
-      if (!player || !game.onScreen(host.x, host.y, 40)) {
+      if (!player) {
+        return
+      }
+      // wind up with a growing glow, then fire (see drawShip); once committed
+      // it fires even if the player slips away, telegraphing the big shot
+      if (this.charging > 0) {
+        this.charging -= dt
+        if (this.charging <= 0) {
+          this.charging = 0
+          this.emitBeam(game, host, world.x, world.y, host.angle, this.type.length)
+        }
         return
       }
       const toPlayer = Math.atan2(player.y - host.y, player.x - host.x)
       const arc = ((toPlayer - host.angle + Math.PI * 3) % TAU) - Math.PI
       const dist = Math.hypot(player.x - host.x, player.y - host.y)
-      if (Math.abs(arc) < this.type.arc && dist < this.type.length) {
-        this.emitBeam(game, host, world.x, world.y, host.angle, this.type.length)
+      if (Math.abs(arc) < this.type.arc && dist < this.type.length && game.onScreen(host.x, host.y, 40)) {
+        this.charging = this.type.chargeTime || 0.8
+        this.chargeDuration = this.charging
+        Sound.charge()
       }
     } else if (this.controller === "defense") {
       // player nose turret: aim at the nearest rock in range and fire a beam
@@ -484,6 +498,22 @@ export class Ship extends Entity {
         continue
       }
       const w = this.mountWorld(hp.local)
+      // charging beam: a glow at the emitter that grows as the shot winds up
+      if (m.charging > 0 && m.chargeDuration > 0) {
+        const prog = 1 - m.charging / m.chargeDuration
+        renderer.circle(w.x, w.y, 2 + prog * 9, {
+          fill: m.type.colour,
+          glow: 10 + prog * 24,
+          alpha: 0.35 + 0.55 * prog,
+        })
+        const reach = 24 + prog * 40
+        renderer.line(w.x, w.y, w.x + Math.cos(this.angle) * reach, w.y + Math.sin(this.angle) * reach, {
+          color: m.type.colour,
+          width: 1 + prog * 2.5,
+          glow: 12,
+          alpha: 0.3 + 0.5 * prog,
+        })
+      }
       if (m.type.kind === "projectile") {
         renderer.circle(w.x, w.y, 3, { stroke: "#ffb14b", width: 1.4, glow: 8 })
       } else if (hp.role === "nose") {
