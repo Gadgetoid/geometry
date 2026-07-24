@@ -525,6 +525,8 @@ export class PlayerShip extends Ship {
     this.multiTime = 0
     this.magnetTime = 0
     this.turretAim = 0
+    this.atBoundary = false
+    this.impactSfx = 0 // throttles collision / boundary sounds
   }
 
   damageResist() {
@@ -591,6 +593,7 @@ export class PlayerShip extends Ship {
     this.boosterTime = Math.max(0, this.boosterTime - dt)
     this.multiTime = Math.max(0, this.multiTime - dt)
     this.magnetTime = Math.max(0, this.magnetTime - dt)
+    this.impactSfx = Math.max(0, this.impactSfx - dt)
     this.energyMax = game.maxEnergy()
 
     const keys = game.pressedKeys
@@ -656,7 +659,12 @@ export class PlayerShip extends Ship {
     this.vx *= Math.pow(CONFIG.SPEED_DRAG, dt)
     this.vy *= Math.pow(CONFIG.SPEED_DRAG, dt)
     this.integrate(dt)
+    const wasBoundary = this.atBoundary
     this.atBoundary = this.confine(0.35, this.radius)
+    if (this.atBoundary && !wasBoundary && this.impactSfx <= 0) {
+      Sound.bump() // energy shield glancing the arena wall
+      this.impactSfx = 0.15
+    }
 
     // Charge the manual laser off the shared energy cell (its cooldown is
     // ticked by updateWeapons below).
@@ -743,12 +751,15 @@ export class PlayerShip extends Ship {
         asteroid.vx += (vn * ux * 0.5) / massFactor
         asteroid.vy += (vn * uy * 0.5) / massFactor
         asteroid.spin += randRange(-1.5, 1.5)
+        if (-vn > 45 && this.impactSfx <= 0) {
+          Sound.bump() // knock on contact with a rock
+          this.impactSfx = 0.15
+        }
       }
       if (this.invincible <= 0 && this.boosterTime <= 0) {
         game.screenShake = Math.max(game.screenShake, 3)
         if (this.fxCooldown <= 0) {
           game.burst(this.x, this.y, 4, "#ff6b6b", 30, 90, 0.35)
-          Sound.thud()
         }
         this.takeDamage(CONFIG.DMG_AST_GUN * dt * 3.6, game, "projectile")
       }

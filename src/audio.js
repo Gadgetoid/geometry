@@ -148,10 +148,9 @@ export const Sound = {
     this.beep(150, 0.55, "square", 0.05, 40)
     this.noise(0.4, 0.03, 480, 0.6)
   },
-  // Ship glancing off a rock: a soft low thud.
-  thud() {
-    this.beep(78, 0.18, "sine", 0.05, 40)
-    this.noise(0.16, 0.035, 240, 0.9)
+  // Knock on contact with a rock or the arena wall: a short menu-style blip.
+  bump() {
+    this.beep(440, 0.09, "square", 0.04, 300)
   },
   // A rock breaking apart into ore: a short soft crunch.
   shatter() {
@@ -162,8 +161,10 @@ export const Sound = {
     this.beep(240, 0.12, "square", 0.05, 90)
   },
   explode() {
-    this.beep(140, 0.4, "square", 0.07, 40)
-    this.beep(90, 0.5, "sawtooth", 0.05, 30)
+    this.beep(140, 0.42, "square", 0.06, 40)
+    this.beep(90, 0.55, "sawtooth", 0.045, 30)
+    this.noise(0.55, 0.05, 130, 0.5) // low rumble that decays for the boom
+    this.noise(0.12, 0.035, 800, 0.8) // initial crack
   },
   collect() {
     this.beep(880, 0.09, "sine", 0.05, 1320)
