@@ -1092,6 +1092,7 @@ export class Asteroid extends Entity {
     this.fuse = null
     this.noCollideTimer = opts.fragment ? 0.55 : 0
     this.hardpoints = opts.hardpoints || []
+    this.tint = opts.tint || null // overrides the rock palette (e.g. frigate debris)
     this.recompute()
 
     if (!opts.vertices) {
@@ -1258,6 +1259,7 @@ export class Asteroid extends Entity {
         fragment: true,
         hardpoints: mine,
         energy: this.energy,
+        tint: this.tint,
       })
       fragments.push(frag)
     }
@@ -1347,6 +1349,9 @@ export class Asteroid extends Entity {
   }
 
   colour() {
+    if (this.tint) {
+      return this.tint
+    }
     if (this.explosive) {
       return "#ff6b52"
     }

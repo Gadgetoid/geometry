@@ -444,9 +444,13 @@ export class Game {
   // be cut again with normal rock handling. Returns false if the beam only
   // grazes it (no clean two-way split).
   sliceFrigate(ship, beam, fromPlayer) {
-    const hull = convexHull(ship.worldOutline())
     const cutNormal = perpendicular(beam.dir)
-    const parts = splitPolygon(hull, beam.a, cutNormal)
+    // split the real hull outline so the halves keep the frigate's shape; fall
+    // back to the convex hull if the concave outline doesn't cut cleanly
+    let parts = splitPolygon(ship.worldOutline(), beam.a, cutNormal)
+    if (parts.length !== 2) {
+      parts = splitPolygon(convexHull(ship.worldOutline()), beam.a, cutNormal)
+    }
     if (parts.length !== 2) {
       return false
     }
@@ -485,6 +489,7 @@ export class Game {
           spin: randRange(-1.2, 1.2),
           fragment: true,
           hardpoints: mine,
+          tint: ship.colour, // keep the frigate's colour on the debris
         }),
       )
     }
