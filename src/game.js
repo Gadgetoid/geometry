@@ -430,7 +430,7 @@ export class Game {
     p.invincible = CONFIG.INVIN_TIME
     p.energyMax = this.maxEnergy()
     p.energy = p.energyMax
-    p.mainWeapon.charge = 0
+    this.clearInput() // drop keys held over from the shop so the laser starts uncharged
     this.phase = "play"
     Sound.level()
   }
@@ -1306,6 +1306,12 @@ export class Game {
   }
 
   onBlur() {
+    this.clearInput()
+  }
+
+  // Drop held keys and any accumulated laser charge. Used on focus loss and at
+  // the start of a level so input never carries across a phase transition.
+  clearInput() {
     this.pressedKeys.clear()
     if (this.player) {
       this.player.mainWeapon.charge = 0
