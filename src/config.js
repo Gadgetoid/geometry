@@ -236,7 +236,7 @@ export const SHIP_TYPES = {
   frigate: {
     outline: FRIGATE_SHAPE,
     colour: "#ff8a3c",
-    size: 66,
+    size: 40,
     accel: 32,
     maxSpeed: 44,
     turnRate: 0.28,
