@@ -25,12 +25,35 @@ export class GameView {
     this.scale = Math.min(rect.width / VIEW_W, rect.height / VIEW_H)
     this.offsetX = (rect.width - VIEW_W * this.scale) / 2
     this.offsetY = (rect.height - VIEW_H * this.scale) / 2
+    if (this.renderer.setContentRect) {
+      this.renderer.setContentRect(
+        this.offsetX,
+        this.offsetY,
+        VIEW_W * this.scale,
+        VIEW_H * this.scale,
+        this.dpr,
+      )
+    }
   }
 
-  #camera(game) {
+  // The world point shown at the centre of the view. Defaults to the middle of
+  // the screen-sized world; when the arena is larger than the screen the view
+  // follows the player (game.viewCenter).
+  #center(game) {
+    if (game.viewCenter) {
+      return game.viewCenter
+    }
+    return { x: VIEW_W / 2, y: VIEW_H / 2 }
+  }
+
+  #cameras(game) {
     const shake = game.screenShake
     const sx = shake > 0 ? randRange(-shake, shake) : 0
     const sy = shake > 0 ? randRange(-shake, shake) : 0
+    // slow cinematic sway; parallax between layers comes from per-object depth
+    const panX = Math.sin(game.gameTime * 0.13) * 6
+    const panY = Math.cos(game.gameTime * 0.17) * 4
+    const c = this.#center(game)
     const base = {
       dpr: this.dpr,
       scale: this.scale,
@@ -39,15 +62,20 @@ export class GameView {
       clipW: VIEW_W,
       clipH: VIEW_H,
     }
-    return { world: { ...base, shakeX: sx, shakeY: sy }, hud: { ...base, shakeX: 0, shakeY: 0 } }
+    return {
+      world: { ...base, shakeX: sx, shakeY: sy, panX, panY, centerX: c.x, centerY: c.y },
+      hud: { ...base, shakeX: 0, shakeY: 0, panX: 0, panY: 0 },
+    }
   }
 
   render(game) {
     const r = this.renderer,
-      cam = this.#camera(game)
+      cam = this.#cameras(game)
+    r.beginFrame(game.gameTime)
     r.clearFrame("#02040a")
 
     r.pushView(cam.world)
+    this.#planets(game)
     this.#background(game)
     if (game.phase === "title") {
       for (const rock of game.menuAsteroids) {
@@ -57,8 +85,10 @@ export class GameView {
       r.pushView(cam.hud)
       this.#title(game)
       r.popView()
+      r.endFrame()
       return
     }
+    this.#bounds(game)
     for (const chunk of game.oreChunks) {
       chunk.draw(r, game)
     }
@@ -82,16 +112,28 @@ export class GameView {
     r.popView()
 
     r.pushView(cam.hud)
+    this.#radar(game)
     this.#hud(game)
     r.popView()
+    r.endFrame()
+  }
+
+  #planets(game) {
+    const r = this.renderer
+    for (const p of game.planets) {
+      r.planet(p.x, p.y, p.r, {
+        base: p.base,
+        hi: p.hi,
+        atmo: p.atmo,
+        seed: p.seed,
+        light: p.light,
+        depth: p.depth,
+      })
+    }
   }
 
   #background(game) {
     const r = this.renderer
-    for (const light of game.bokehLights) {
-      const alpha = 0.09 + 0.05 * Math.sin(light.twinkle + game.gameTime * 0.6)
-      r.circle(light.x, light.y, light.size, { fill: light.colour, glow: light.size * 1.7, alpha })
-    }
     for (const star of game.stars) {
       const twinkle = 0.4 + 0.6 * Math.sin(star.twinkle + game.gameTime * 1.5)
       const alpha = clamp((0.14 + 0.72 * star.depth) * twinkle, 0, 1)
@@ -99,9 +141,15 @@ export class GameView {
       r.point(star.x, star.y, size, {
         color: `rgb(${lerp(148, 226, star.depth) | 0},${lerp(180, 236, star.depth) | 0},242)`,
         alpha,
+        depth: star.depth,
       })
     }
   }
+
+  // Arena bounds + off-screen radar are filled in with the arena system; stubs
+  // keep the render path stable until then.
+  #bounds() {}
+  #radar() {}
 
   #laserShots(game) {
     const r = this.renderer

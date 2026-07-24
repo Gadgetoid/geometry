@@ -11,6 +11,8 @@
 
 /** Abstract contract. A backend must implement every method. */
 export class Renderer {
+  beginFrame(_time) {} // start a frame (bind targets / stash time); optional
+  endFrame() {} // finish a frame (post-processing / present); optional
   clearFrame(_color) {
     throw new Error("not implemented")
   }
@@ -39,6 +41,9 @@ export class Renderer {
     throw new Error("not implemented")
   }
   text(_str, _x, _y, _opts) {
+    throw new Error("not implemented")
+  }
+  planet(_x, _y, _r, _opts) {
     throw new Error("not implemented")
   }
 }
@@ -70,7 +75,9 @@ export class Canvas2DRenderer extends Renderer {
     ctx.fillRect(0, 0, canvas.width, canvas.height)
   }
 
-  // camera: { dpr, offsetX, offsetY, scale, shakeX, shakeY, clipW, clipH }
+  // camera: { dpr, offsetX, offsetY, scale, shakeX, shakeY, clipW, clipH,
+  //           centerX, centerY }. centerX/centerY is the world point shown at
+  //           the middle of the view (camera follow); defaults to the middle.
   pushView(camera) {
     const { ctx } = this
     ctx.save()
@@ -80,6 +87,9 @@ export class Canvas2DRenderer extends Renderer {
     ctx.beginPath()
     ctx.rect(0, 0, camera.clipW, camera.clipH)
     ctx.clip()
+    const cx = camera.centerX ?? camera.clipW / 2
+    const cy = camera.centerY ?? camera.clipH / 2
+    ctx.translate(camera.clipW / 2 - cx, camera.clipH / 2 - cy)
   }
 
   popView() {
@@ -190,6 +200,30 @@ export class Canvas2DRenderer extends Renderer {
     ctx.textAlign = opts.align || "left"
     ctx.textBaseline = opts.baseline || "alphabetic"
     ctx.fillText(str, x, y)
+    ctx.restore()
+  }
+
+  // Simple shaded disc: a radial gradient lit from the light direction, with a
+  // faint atmosphere rim. The WebGL backend renders a far richer procedural
+  // sphere; this keeps the fallback legible.
+  planet(x, y, r, opts = {}) {
+    const { ctx } = this
+    const light = opts.light ?? -0.7
+    const lx = x + Math.cos(light) * r * 0.4
+    const ly = y + Math.sin(light) * r * 0.4
+    ctx.save()
+    const grad = ctx.createRadialGradient(lx, ly, r * 0.1, x, y, r)
+    grad.addColorStop(0, opts.hi || "#5b6f88")
+    grad.addColorStop(0.7, opts.base || "#2f3d54")
+    grad.addColorStop(1, "#0a0f1a")
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = opts.atmo || "#7aa3c8"
+    ctx.globalAlpha = 0.25
+    ctx.lineWidth = 1.5
+    ctx.stroke()
     ctx.restore()
   }
 }

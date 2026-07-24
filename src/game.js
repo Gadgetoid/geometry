@@ -580,16 +580,28 @@ export class Game {
         vy: randRange(-1.4, 1.4),
       })
     }
-    this.bokehLights = []
-    const colours = ["#5fd7ff", "#b38bff", "#ff6bd0", "#ffcf5c", "#57e39a"]
-    for (let i = 0; i < 13; i++) {
-      this.bokehLights.push({
-        x: Math.random() * VIEW_W,
-        y: Math.random() * VIEW_H,
-        depth: randRange(0.1, 0.26),
-        size: randRange(7, 20),
-        colour: colours[i % colours.length],
-        twinkle: Math.random() * TAU,
+    // Distant procedural planets. Muted palettes; each carries a seed and a
+    // light direction for the renderer's sphere shader. They sit on the far
+    // parallax layer (low depth) and drift slowly.
+    const palettes = [
+      { base: "#2f3d54", hi: "#5b6f88", atmo: "#7aa3c8" }, // slate blue
+      { base: "#2b423f", hi: "#4f6f68", atmo: "#79b6a8" }, // muted teal
+      { base: "#4a3540", hi: "#6f5560", atmo: "#b98a9a" }, // dusty rose
+      { base: "#453a2c", hi: "#6e5f45", atmo: "#c8a06a" }, // ochre sand
+      { base: "#3a3550", hi: "#5f5878", atmo: "#9a8fc8" }, // violet grey
+    ]
+    this.planets = []
+    for (let i = 0; i < 5; i++) {
+      const pal = palettes[i % palettes.length]
+      this.planets.push({
+        x: randRange(-220, VIEW_W + 220),
+        y: randRange(-160, VIEW_H + 160),
+        r: randRange(46, 120),
+        depth: randRange(0.05, 0.2), // far: barely parallaxes
+        seed: randRange(0, 20),
+        light: randRange(-Math.PI, Math.PI),
+        drift: randRange(2, 6),
+        ...pal,
       })
     }
     this.menuAsteroids = []
@@ -624,18 +636,20 @@ export class Game {
         star.y -= VIEW_H
       }
     }
-    for (const light of this.bokehLights) {
-      light.x += (3 * light.depth - pvx * light.depth * 0.05) * dt
-      light.y += -pvy * light.depth * 0.05 * dt
-      if (light.x < -40) {
-        light.x += VIEW_W + 80
-      } else if (light.x > VIEW_W + 40) {
-        light.x -= VIEW_W + 80
+    const marginX = 260,
+      marginY = 200
+    for (const planet of this.planets) {
+      planet.x += (planet.drift * planet.depth - pvx * planet.depth * 0.04) * dt
+      planet.y += -pvy * planet.depth * 0.04 * dt
+      if (planet.x < -marginX) {
+        planet.x += VIEW_W + marginX * 2
+      } else if (planet.x > VIEW_W + marginX) {
+        planet.x -= VIEW_W + marginX * 2
       }
-      if (light.y < -40) {
-        light.y += VIEW_H + 80
-      } else if (light.y > VIEW_H + 40) {
-        light.y -= VIEW_H + 80
+      if (planet.y < -marginY) {
+        planet.y += VIEW_H + marginY * 2
+      } else if (planet.y > VIEW_H + marginY) {
+        planet.y -= VIEW_H + marginY * 2
       }
     }
   }
