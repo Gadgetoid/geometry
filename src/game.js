@@ -28,6 +28,7 @@ import {
   slicePolygon,
   polygonCentroid,
   polygonArea,
+  pointInPolygon,
   countBeamCrossings,
   mulberry32,
 } from "./math.js"
@@ -469,7 +470,9 @@ export class Game {
       const side = dot(subtract(centre, beam.a), cutNormal) > 0 ? 1 : -1
       const ix = cutNormal.x * side * CONFIG.SPLIT_IMPULSE,
         iy = cutNormal.y * side * CONFIG.SPLIT_IMPULSE
-      const mine = guns.filter((g) => (dot(subtract(g, beam.a), cutNormal) > 0 ? 1 : -1) === side)
+      // assign turrets to the piece that actually contains them (side-of-line
+      // is ambiguous once a concave cut yields more than two pieces)
+      const mine = guns.filter((g) => pointInPolygon(g, partVerts))
       // burning debris at the cut end
       this.burst(centre.x, centre.y, randInt(10, 16), "#ff7a4a", 40, 190, 0.75)
       this.burst(centre.x, centre.y, randInt(6, 10), "#ffd36a", 30, 130, 0.5)

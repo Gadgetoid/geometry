@@ -1281,9 +1281,9 @@ export class Asteroid extends Entity {
         game.stats.mined++
         continue
       }
-      const mine = this.hardpoints.filter(
-        (hp) => (dot(subtract(hp, beam.a), cutNormal) > 0 ? 1 : -1) === side,
-      )
+      // keep the gun/shield hardpoints that fall inside this piece (containment
+      // is correct even when a concave cut produces more than two pieces)
+      const mine = this.hardpoints.filter((hp) => pointInPolygon(hp, partVerts))
       const frag = new Asteroid({
         vertices: partVerts,
         vx: this.vx + ix,
