@@ -37,6 +37,8 @@
   @keyframes flick{ 0%,100%{opacity:1} 50%{opacity:.94} 73%{opacity:.98} }
   .crt-off .scan,.crt-off .vig,.crt-off .glare{display:none}
   .crt-off .screen{border-radius:8px}
+  /* WebGL backend renders scanlines / vignette / curvature in the shader */
+  .gl .scan,.gl .vig,.gl .glare{display:none}
   .hud-btns{position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:6; display:flex; gap:6px}
   .hud-btns button{font-family:var(--mono); font-size:11px; letter-spacing:.06em; color:#8fb2dd;
     background:rgba(10,20,38,.6); border:1px solid #1c3050; border-radius:6px; padding:5px 9px; cursor:pointer}
@@ -63,8 +65,9 @@
     </div>
   </div>
   <p class="help">
-    <b>WASD</b> or arrows to fly <span class="sep">/</span> <b>SPACE</b> hold to charge, release to fire
-    <span class="sep">/</span> <b>1-4</b> use item <span class="sep">/</span> <b>ENTER</b> start <span class="sep">/</span> <b>P</b> pause
+    <b>WASD</b> fly <span class="sep">/</span> <b>SPACE</b> hold to charge, release to fire
+    <span class="sep">/</span> <b>ARROWS</b> aim turret, <b>UP</b> fire <span class="sep">/</span> <b>1-4</b> use item
+    <span class="sep">/</span> <b>ENTER</b> start <span class="sep">/</span> <b>P</b> pause
   </p>
 
 <script type="module" src="src/main.js"></script>

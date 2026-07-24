@@ -4,12 +4,35 @@ export const Sound = {
   enabled: false,
   ctx: null,
 
+  unlocked: false,
+
   ensureContext() {
     if (!this.ctx) {
       try {
         this.ctx = new (window.AudioContext || window.webkitAudioContext)()
       } catch (e) {
         /* audio is best-effort */
+      }
+    }
+    if (!this.ctx) {
+      return
+    }
+    // Safari (and Chrome's autoplay policy) hold the context in a non-running
+    // state ("suspended" / "interrupted") until it is resumed from a user
+    // gesture. Resume whenever it isn't running, and play a one-shot silent
+    // buffer, which Safari needs to fully unlock output.
+    if (this.ctx.state !== "running" && this.ctx.resume) {
+      this.ctx.resume().catch(() => {})
+    }
+    if (!this.unlocked) {
+      try {
+        const src = this.ctx.createBufferSource()
+        src.buffer = this.ctx.createBuffer(1, 1, 22050)
+        src.connect(this.ctx.destination)
+        src.start(0)
+        this.unlocked = true
+      } catch (e) {
+        /* ignore */
       }
     }
   },
@@ -41,15 +64,114 @@ export const Sound = {
     }
   },
 
-  fire() {
-    this.beep(680, 0.22, "sawtooth", 0.06, 120)
+  // Short filtered-noise burst, for crunchy / percussive effects. `type` picks
+  // the filter: "bandpass" (default) for crisp cracks, "lowpass" for low booms.
+  noise(duration, volume, freq, q, type) {
+    if (!this.enabled) {
+      return
+    }
+    this.ensureContext()
+    if (!this.ctx) {
+      return
+    }
+    try {
+      const now = this.ctx.currentTime
+      const len = Math.max(1, Math.floor(this.ctx.sampleRate * duration))
+      const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < len; i++) {
+        data[i] = Math.random() * 2 - 1
+      }
+      const src = this.ctx.createBufferSource()
+      src.buffer = buffer
+      const filter = this.ctx.createBiquadFilter()
+      filter.type = type || "bandpass"
+      filter.frequency.value = freq || 600
+      filter.Q.value = q || 1
+      const gain = this.ctx.createGain()
+      gain.gain.setValueAtTime(volume || 0.04, now)
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration)
+      src.connect(filter).connect(gain).connect(this.ctx.destination)
+      src.start(now)
+      src.stop(now + duration)
+    } catch (e) {
+      /* ignore */
+    }
+  },
+
+  // Continuous thruster: a subtle band-passed white-noise bed whose level eases
+  // toward on/off. Started lazily once the context exists.
+  thruster: null,
+  setThruster(active) {
+    // Runs every frame from the game loop, so it must never throw: a stray
+    // exception here would stall the loop.
+    try {
+      // Never create the context here (this runs in the game loop, not a user
+      // gesture): only use one that a gesture has already unlocked, or Safari
+      // brings it up muted and silences everything.
+      if (!this.ctx || !this.enabled) {
+        if (this.thruster && this.ctx) {
+          this.thruster.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05)
+        }
+        return
+      }
+      if (!this.thruster) {
+        const buffer = this.ctx.createBuffer(1, this.ctx.sampleRate, this.ctx.sampleRate)
+        const data = buffer.getChannelData(0)
+        for (let i = 0; i < data.length; i++) {
+          data[i] = Math.random() * 2 - 1
+        }
+        const src = this.ctx.createBufferSource()
+        src.buffer = buffer
+        src.loop = true
+        const filter = this.ctx.createBiquadFilter()
+        filter.type = "bandpass"
+        filter.frequency.value = 360
+        filter.Q.value = 0.7
+        const gain = this.ctx.createGain()
+        gain.gain.value = 0
+        src.connect(filter).connect(gain).connect(this.ctx.destination)
+        src.start()
+        this.thruster = { gain }
+      }
+      this.thruster.gain.gain.setTargetAtTime(active ? 0.03 : 0, this.ctx.currentTime, 0.08)
+    } catch (e) {
+      /* audio is best-effort */
+    }
+  },
+
+  fire(pitch = 1) {
+    this.beep(680 * pitch, 0.22, "sawtooth", 0.06, 120 * pitch)
+  },
+  // Rising whine as the frigate cannon charges up.
+  charge() {
+    this.beep(180, 0.85, "sawtooth", 0.035, 720)
+  },
+  // Frigate main gun: a big, low "pew" with a sub layer and a breath of noise.
+  bigLaser() {
+    this.beep(520, 0.5, "sawtooth", 0.08, 60)
+    this.beep(150, 0.55, "square", 0.05, 40)
+    this.noise(0.4, 0.03, 480, 0.6)
+  },
+  // Knock on contact with a rock or the arena wall: a short menu-style blip.
+  bump() {
+    this.beep(440, 0.09, "square", 0.04, 300)
+  },
+  // A rock breaking apart into ore: a short soft crunch with a touch of low
+  // rumble underneath for a little weight.
+  shatter() {
+    this.noise(0.16, 0.035, 1300, 0.6)
+    this.noise(0.28, 0.045, 260, 0.7, "lowpass")
+    this.beep(220, 0.1, "square", 0.03, 90)
   },
   slice() {
     this.beep(240, 0.12, "square", 0.05, 90)
   },
   explode() {
-    this.beep(140, 0.4, "square", 0.07, 40)
-    this.beep(90, 0.5, "sawtooth", 0.05, 30)
+    this.beep(140, 0.42, "square", 0.05, 40)
+    this.beep(90, 0.55, "sawtooth", 0.04, 30)
+    this.noise(0.6, 0.11, 340, 0.7, "lowpass") // full low rumble that decays: the boom
+    this.noise(0.14, 0.05, 1100, 0.9) // initial crack
   },
   collect() {
     this.beep(880, 0.09, "sine", 0.05, 1320)

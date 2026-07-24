@@ -11,6 +11,11 @@
 export const VIEW_W = 1024
 export const VIEW_H = 640
 export const TAU = Math.PI * 2
+
+// The play field is a circle larger than the viewport. The camera follows the
+// ship; outside the circle is an out-of-bounds zone that confines the player
+// and repels asteroids back in.
+export const ARENA = { cx: VIEW_W / 2, cy: VIEW_H / 2, radius: 860 }
 export const MONO_FONT = "ui-monospace,Menlo,monospace"
 export const DEV_VISIBLE = true
 export const SHIELD_SPARK = "#9fe8ff" // ring colour when a shield takes a hit
@@ -107,6 +112,7 @@ export const WEAPON_TYPES = {
     width: 26,
     glow: 30,
     arc: 0.42,
+    chargeTime: 0.9, // telegraphs with a growing glow before firing
     colour: "#ff4d6d",
   },
   defenseLaser: {

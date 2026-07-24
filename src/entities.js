@@ -29,6 +29,7 @@ import {
   TAU,
   VIEW_W,
   VIEW_H,
+  ARENA,
   CONFIG,
   WEAPON_TYPES,
   SHIELD_TYPES,
@@ -62,17 +63,27 @@ export class Entity {
     this.x += this.vx * dt
     this.y += this.vy * dt
   }
-  wrap() {
-    if (this.x < 0) {
-      this.x += VIEW_W
-    } else if (this.x > VIEW_W) {
-      this.x -= VIEW_W
+  // Keep a point entity inside the circular arena: push it back to the boundary
+  // and reflect any outward velocity. `margin` insets the limit (e.g. the ship's
+  // radius). Returns true if it was on the boundary this frame.
+  confine(restitution = 0.6, margin = 0) {
+    const dx = this.x - ARENA.cx,
+      dy = this.y - ARENA.cy
+    const dist = Math.hypot(dx, dy)
+    const limit = ARENA.radius - margin
+    if (dist > limit && dist > 0) {
+      const ux = dx / dist,
+        uy = dy / dist
+      this.x = ARENA.cx + ux * limit
+      this.y = ARENA.cy + uy * limit
+      const vn = this.vx * ux + this.vy * uy
+      if (vn > 0) {
+        this.vx -= (1 + restitution) * vn * ux
+        this.vy -= (1 + restitution) * vn * uy
+      }
+      return true
     }
-    if (this.y < 0) {
-      this.y += VIEW_H
-    } else if (this.y > VIEW_H) {
-      this.y -= VIEW_H
-    }
+    return false
   }
 
   regenEnergy(dt) {
@@ -118,12 +129,17 @@ export class Entity {
   // Uniform damage entry point. A raised shield converts the hit into energy
   // drain; if that pushes energy to the overload threshold the shield collapses
   // (but still absorbs this hit). A down or absent shield lets it reach the hull.
-  takeDamage(amount, game, channel, scoreOnKill = 0) {
+  takeDamage(amount, game, channel, scoreOnKill = 0, impact = null) {
     const shield = this.shieldModule()
     if (shield && shield.up && shield.blocks(channel) && this.energy > 0) {
       this.energy = Math.max(0, this.energy - amount * shield.type.efficiency * this.damageResist())
+      const hx = impact ? impact.x : this.x,
+        hy = impact ? impact.y : this.y
+      if (impact) {
+        shield.hitAt(Math.atan2(impact.y - this.y, impact.x - this.x))
+      }
       if (this.fxCooldown <= 0) {
-        game.ring(this.x, this.y, 10, SHIELD_SPARK, 120, 0.4)
+        game.ring(hx, hy, 8, SHIELD_SPARK, 120, 0.35)
         this.fxCooldown = 0.12
       }
       if (shield.checkOverload(this)) {
@@ -136,7 +152,9 @@ export class Entity {
   }
 
   updateShield(dt) {
-    if (this.fxCooldown > 0) this.fxCooldown -= dt
+    if (this.fxCooldown > 0) {
+      this.fxCooldown -= dt
+    }
     const shield = this.shieldModule()
     if (shield) {
       shield.tick(dt, this)
@@ -159,6 +177,8 @@ export class Weapon {
     this.controller = controller
     this.cooldown = this.rollReload() * 0.5
     this.charge = 0
+    this.charging = 0 // wind-up time left before a charged beam fires
+    this.chargeDuration = 0
   }
 
   rollReload() {
@@ -215,7 +235,12 @@ export class Weapon {
       life: this.type.width > 10 ? 0.55 : 0.4,
     })
     this.cooldown = this.rollReload()
-    Sound.fire()
+    // wide beams are the frigate's heavy cannon: a bigger report
+    if (this.type.width > 10) {
+      Sound.bigLaser()
+    } else {
+      Sound.fire()
+    }
   }
 
   update(dt, game, host, world) {
@@ -225,7 +250,8 @@ export class Weapon {
     }
     const player = game.player
     if (this.controller === "turret") {
-      if (!player || player.invincible > 0) {
+      // don't snipe the player from off-screen where they can't see the shooter
+      if (!player || player.invincible > 0 || !game.onScreen(host.x, host.y, 40)) {
         return
       }
       this.fireProjectile(
@@ -247,26 +273,45 @@ export class Weapon {
       if (!player) {
         return
       }
+      // wind up with a growing glow, then fire (see drawShip); once committed
+      // it fires even if the player slips away, telegraphing the big shot
+      if (this.charging > 0) {
+        this.charging -= dt
+        if (this.charging <= 0) {
+          this.charging = 0
+          this.emitBeam(game, host, world.x, world.y, host.angle, this.type.length)
+        }
+        return
+      }
       const toPlayer = Math.atan2(player.y - host.y, player.x - host.x)
       const arc = ((toPlayer - host.angle + Math.PI * 3) % TAU) - Math.PI
       const dist = Math.hypot(player.x - host.x, player.y - host.y)
-      if (Math.abs(arc) < this.type.arc && dist < this.type.length) {
-        this.emitBeam(game, host, world.x, world.y, host.angle, this.type.length)
+      if (Math.abs(arc) < this.type.arc && dist < this.type.length && game.onScreen(host.x, host.y, 40)) {
+        this.charging = this.type.chargeTime || 0.8
+        this.chargeDuration = this.charging
+        Sound.charge()
       }
     } else if (this.controller === "defense") {
-      // player nose turret: aim at the nearest rock in range and fire a beam
-      let target = null,
-        nearest = this.type.range
-      for (const a of game.asteroids) {
-        const d = Math.hypot(a.center.x - host.x, a.center.y - host.y)
-        if (d < nearest) {
-          nearest = d
-          target = a
+      // player nose turret. Manual (arrow keys) aims host.turretAim and fires
+      // on demand; otherwise it auto-targets the nearest rock in range.
+      if (host.turretManual > 0) {
+        if (host.turretFiring) {
+          this.emitBeam(game, host, host.x, host.y, host.turretAim, this.type.range)
         }
-      }
-      if (target) {
-        host.turretAim = Math.atan2(target.center.y - host.y, target.center.x - host.x)
-        this.emitBeam(game, host, host.x, host.y, host.turretAim, nearest + 42)
+      } else {
+        let target = null,
+          nearest = this.type.range
+        for (const a of game.asteroids) {
+          const d = Math.hypot(a.center.x - host.x, a.center.y - host.y)
+          if (d < nearest) {
+            nearest = d
+            target = a
+          }
+        }
+        if (target) {
+          host.turretAim = Math.atan2(target.center.y - host.y, target.center.x - host.x)
+          this.emitBeam(game, host, host.x, host.y, host.turretAim, nearest + 42)
+        }
       }
     }
     // 'manual' is driven by the player directly.
@@ -285,10 +330,18 @@ export class Shield {
     this.type = SHIELD_TYPES[typeName]
     this.up = true
     this.downTimer = 0
+    this.flash = 0 // brief bright flash on the struck side
+    this.flashAngle = 0
   }
 
   blocks(channel) {
     return channel === "laser" ? this.type.blocksLaser : this.type.blocksProjectile
+  }
+
+  // Flash the side facing `angle` (world direction from the host centre).
+  hitAt(angle) {
+    this.flash = 0.25
+    this.flashAngle = angle
   }
 
   // Overload the shield if the host's energy has dropped to the threshold.
@@ -304,6 +357,9 @@ export class Shield {
 
   // Recover once the cooldown has elapsed and energy has recharged enough.
   tick(dt, host) {
+    if (this.flash > 0) {
+      this.flash = Math.max(0, this.flash - dt)
+    }
     if (this.up) {
       return
     }
@@ -318,8 +374,9 @@ export class Shield {
   }
 
   draw(renderer, cx, cy, radius, fraction, time) {
-    const pulse = 0.6 + 0.4 * Math.sin(time * 1.8)
-    const alpha = clamp((0.2 + 0.55 * fraction) * pulse * 0.65, 0, 1) // ~50% peak: present but subtle
+    // gentle pulse that never fades to invisible; brightness tracks energy
+    const pulse = 0.88 + 0.12 * Math.sin(time * 1.8)
+    const alpha = clamp((0.24 + 0.4 * fraction) * pulse, 0.2, 0.75)
     const rotation = time * 0.3,
       sides = this.type.sides,
       points = []
@@ -328,6 +385,22 @@ export class Shield {
       points.push({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius })
     }
     renderer.strokePoly(points, { color: this.type.colour, width: 1.7, glow: 12, alpha })
+    // struck side flashes brightly for a moment
+    if (this.flash > 0) {
+      const f = this.flash / 0.25
+      const arc = []
+      for (let i = -2; i <= 2; i++) {
+        const a = this.flashAngle + i * 0.32
+        arc.push({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius })
+      }
+      renderer.strokePoly(arc, {
+        color: "#ffffff",
+        width: 2 + 1.5 * f,
+        glow: 16,
+        alpha: clamp(0.9 * f, 0, 1),
+        closed: false,
+      })
+    }
   }
 }
 
@@ -347,13 +420,7 @@ export class Projectile extends Entity {
   update(dt, game) {
     this.life -= dt
     this.integrate(dt)
-    if (
-      this.life <= 0 ||
-      this.x < -20 ||
-      this.x > VIEW_W + 20 ||
-      this.y < -20 ||
-      this.y > VIEW_H + 20
-    ) {
+    if (this.life <= 0 || Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + 30) {
       this.dead = true
       return
     }
@@ -364,10 +431,10 @@ export class Projectile extends Entity {
       Math.hypot(this.x - player.x, this.y - player.y) < player.radius + 3
     ) {
       this.dead = true
-      game.burst(player.x, player.y, 8, "#ff8a5a", 40, 140, 0.4)
+      game.burst(this.x, this.y, 8, "#ff8a5a", 40, 140, 0.4)
       game.screenShake = Math.max(game.screenShake, 5)
       Sound.hit()
-      player.takeDamage(this.damage, game, "projectile")
+      player.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
       return
     }
     for (const rival of game.rivals) {
@@ -377,7 +444,7 @@ export class Projectile extends Entity {
       if (pointInPolygon(this, rival.worldOutline())) {
         this.dead = true
         game.burst(this.x, this.y, 6, "#ff9a3c", 40, 130, 0.4)
-        rival.takeDamage(this.damage, game, "projectile")
+        rival.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
         return
       }
     }
@@ -388,7 +455,7 @@ export class Projectile extends Entity {
       if (pointInPolygon(this, asteroid.vertices)) {
         this.dead = true
         game.burst(this.x, this.y, 5, "#9fc0ff", 30, 110, 0.3)
-        asteroid.takeDamage(this.damage, game, "projectile")
+        asteroid.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
         return
       }
     }
@@ -471,6 +538,22 @@ export class Ship extends Entity {
         continue
       }
       const w = this.mountWorld(hp.local)
+      // charging beam: a glow at the emitter that grows as the shot winds up
+      if (m.charging > 0 && m.chargeDuration > 0) {
+        const prog = 1 - m.charging / m.chargeDuration
+        renderer.circle(w.x, w.y, 2 + prog * 9, {
+          fill: m.type.colour,
+          glow: 10 + prog * 24,
+          alpha: 0.35 + 0.55 * prog,
+        })
+        const reach = 24 + prog * 40
+        renderer.line(w.x, w.y, w.x + Math.cos(this.angle) * reach, w.y + Math.sin(this.angle) * reach, {
+          color: m.type.colour,
+          width: 1 + prog * 2.5,
+          glow: 12,
+          alpha: 0.3 + 0.5 * prog,
+        })
+      }
       if (m.type.kind === "projectile") {
         renderer.circle(w.x, w.y, 3, { stroke: "#ffb14b", width: 1.4, glow: 8 })
       } else if (hp.role === "nose") {
@@ -512,6 +595,10 @@ export class PlayerShip extends Ship {
     this.multiTime = 0
     this.magnetTime = 0
     this.turretAim = 0
+    this.turretManual = 0 // time left under player (arrow-key) control
+    this.turretFiring = false
+    this.atBoundary = false
+    this.impactSfx = 0 // throttles collision / boundary sounds
   }
 
   damageResist() {
@@ -539,6 +626,7 @@ export class PlayerShip extends Ship {
     if (!w || w.cooldown > 0 || w.charge < w.type.chargeMin) {
       return
     }
+    const chargeFrac = clamp(w.charge / w.type.chargeMax, 0, 1)
     const length = w.charge * (this.boosterTime > 0 ? 1.6 : 1) + 40
     const nose = this.mountWorld(this.hardpoints[0].local)
     const dir = { x: Math.cos(this.angle), y: Math.sin(this.angle) },
@@ -570,7 +658,7 @@ export class PlayerShip extends Ship {
     }
     w.cooldown = w.type.reload
     w.charge = 0
-    Sound.fire()
+    Sound.fire(0.9 + 0.35 * chargeFrac) // pitch rises slightly with charge
   }
 
   update(dt, game) {
@@ -578,20 +666,46 @@ export class PlayerShip extends Ship {
     this.boosterTime = Math.max(0, this.boosterTime - dt)
     this.multiTime = Math.max(0, this.multiTime - dt)
     this.magnetTime = Math.max(0, this.magnetTime - dt)
+    this.impactSfx = Math.max(0, this.impactSfx - dt)
     this.energyMax = game.maxEnergy()
 
     const keys = game.pressedKeys
     const canControl = game.phase === "play"
+    // WASD flies the ship; the arrow keys aim the defense turret (below)
     if (canControl) {
-      if (keys.has("ArrowLeft") || keys.has("KeyA")) {
+      if (keys.has("KeyA")) {
         this.angle -= CONFIG.ROT * dt
       }
-      if (keys.has("ArrowRight") || keys.has("KeyD")) {
+      if (keys.has("KeyD")) {
         this.angle += CONFIG.ROT * dt
       }
-      this.thrusting = keys.has("ArrowUp") || keys.has("KeyW")
+      this.thrusting = keys.has("KeyW")
     } else {
       this.thrusting = false
+    }
+
+    // Arrow keys take manual control of the defense turret: LEFT/RIGHT swing the
+    // aim, UP fires. Any input holds manual mode; after a short cooldown with no
+    // input it reverts to auto-targeting.
+    this.turretManual = Math.max(0, this.turretManual - dt)
+    this.turretFiring = false
+    if (canControl && game.upgrades.turret) {
+      let active = false
+      if (keys.has("ArrowLeft")) {
+        this.turretAim -= 3.0 * dt
+        active = true
+      }
+      if (keys.has("ArrowRight")) {
+        this.turretAim += 3.0 * dt
+        active = true
+      }
+      if (keys.has("ArrowUp")) {
+        this.turretFiring = true
+        active = true
+      }
+      if (active) {
+        this.turretManual = 1.5
+      }
     }
 
     if (this.thrusting) {
@@ -609,13 +723,31 @@ export class PlayerShip extends Ship {
         0.35,
         "#7fd8ff",
       )
+      // exhaust wash gently shoves rocks caught behind the thruster away
+      const bx = Math.cos(back),
+        by = Math.sin(back)
+      const range = 150
+      for (const a of game.asteroids) {
+        const dx = a.center.x - this.x,
+          dy = a.center.y - this.y
+        const dist = Math.hypot(dx, dy)
+        if (dist < 1 || dist > range) {
+          continue
+        }
+        const ux = dx / dist,
+          uy = dy / dist
+        const align = ux * bx + uy * by // 1 = directly behind the ship
+        if (align < 0.25) {
+          continue
+        }
+        const push = (160 * (1 - dist / range) * align) / clamp(a.area / 3200, 0.5, 4)
+        a.vx += ux * push * dt
+        a.vy += uy * push * dt
+      }
     }
 
     this.reversing =
-      canControl &&
-      game.upgrades.reverse &&
-      !this.thrusting &&
-      (keys.has("ArrowDown") || keys.has("KeyS"))
+      canControl && game.upgrades.reverse && !this.thrusting && keys.has("KeyS")
     if (this.reversing) {
       this.vx -= Math.cos(this.angle) * CONFIG.ACCEL * 0.6 * dt
       this.vy -= Math.sin(this.angle) * CONFIG.ACCEL * 0.6 * dt
@@ -633,6 +765,7 @@ export class PlayerShip extends Ship {
         )
       }
     }
+    Sound.setThruster(this.thrusting || this.reversing)
 
     const speed = Math.hypot(this.vx, this.vy)
     if (speed > CONFIG.MAX_SPEED) {
@@ -642,7 +775,12 @@ export class PlayerShip extends Ship {
     this.vx *= Math.pow(CONFIG.SPEED_DRAG, dt)
     this.vy *= Math.pow(CONFIG.SPEED_DRAG, dt)
     this.integrate(dt)
-    this.wrap()
+    const wasBoundary = this.atBoundary
+    this.atBoundary = this.confine(0.35, this.radius)
+    if (this.atBoundary && !wasBoundary && this.impactSfx <= 0) {
+      Sound.bump() // energy shield glancing the arena wall
+      this.impactSfx = 0.15
+    }
 
     // Charge the manual laser off the shared energy cell (its cooldown is
     // ticked by updateWeapons below).
@@ -710,7 +848,9 @@ export class PlayerShip extends Ship {
         ny = this.y - asteroid.center.y
       const dist = Math.hypot(nx, ny) || 1
       const minDist = asteroid.collideRadius + this.radius
-      if (dist >= minDist) continue
+      if (dist >= minDist) {
+        continue
+      }
       const ux = nx / dist,
         uy = ny / dist
       // separate: pop the ship onto the surface
@@ -727,11 +867,19 @@ export class PlayerShip extends Ship {
         asteroid.vx += (vn * ux * 0.5) / massFactor
         asteroid.vy += (vn * uy * 0.5) / massFactor
         asteroid.spin += randRange(-1.5, 1.5)
+        if (-vn > 45 && this.impactSfx <= 0) {
+          Sound.bump() // knock on contact with a rock
+          this.impactSfx = 0.15
+        }
       }
       if (this.invincible <= 0 && this.boosterTime <= 0) {
         game.screenShake = Math.max(game.screenShake, 3)
-        if (this.fxCooldown <= 0) game.burst(this.x, this.y, 4, "#ff6b6b", 30, 90, 0.35)
-        this.takeDamage(CONFIG.DMG_AST_GUN * dt * 3.6, game, "projectile")
+        if (this.fxCooldown <= 0) {
+          game.burst(this.x, this.y, 4, "#ff6b6b", 30, 90, 0.35)
+        }
+        // flash the shield on the side facing the rock
+        const contact = { x: this.x - ux * this.radius, y: this.y - uy * this.radius }
+        this.takeDamage(CONFIG.DMG_AST_GUN * dt * 3.6, game, "projectile", 0, contact)
       }
       break
     }
@@ -886,11 +1034,15 @@ export class RivalShip extends Ship {
       this.leaving = true
     }
 
+    const outAngle = Math.atan2(this.y - ARENA.cy, this.x - ARENA.cx)
     const goal = this.leaving
-      ? { x: this.x < VIEW_W / 2 ? -60 : VIEW_W + 60, y: this.y }
+      ? {
+          x: ARENA.cx + Math.cos(outAngle) * (ARENA.radius + 200),
+          y: ARENA.cy + Math.sin(outAngle) * (ARENA.radius + 200),
+        }
       : this.hunts
         ? { x: player.x, y: player.y }
-        : target || { x: VIEW_W / 2, y: VIEW_H / 2 }
+        : target || { x: ARENA.cx, y: ARENA.cy }
     const wantAngle = Math.atan2(goal.y - this.y, goal.x - this.x)
     const angleDelta = ((wantAngle - this.angle + Math.PI * 3) % TAU) - Math.PI
     this.angle += clamp(angleDelta, -this.turnRate * dt, this.turnRate * dt)
@@ -927,7 +1079,7 @@ export class RivalShip extends Ship {
 
     this.updateWeapons(dt, game) // guns + main laser fire via their controllers
 
-    if (this.leaving && (this.x < -60 || this.x > VIEW_W + 60)) {
+    if (this.leaving && Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + 140) {
       this.dead = true
     }
   }
@@ -964,6 +1116,7 @@ export class Asteroid extends Entity {
     this.fuse = null
     this.noCollideTimer = opts.fragment ? 0.55 : 0
     this.hardpoints = opts.hardpoints || []
+    this.tint = opts.tint || null // overrides the rock palette (e.g. frigate debris)
     this.recompute()
 
     if (!opts.vertices) {
@@ -1049,45 +1202,34 @@ export class Asteroid extends Entity {
     }
     this.recompute()
 
-    let minX = 1e9,
-      maxX = -1e9,
-      minY = 1e9,
-      maxY = -1e9
-    for (const p of this.vertices) {
-      minX = Math.min(minX, p.x)
-      maxX = Math.max(maxX, p.x)
-      minY = Math.min(minY, p.y)
-      maxY = Math.max(maxY, p.y)
-    }
-    let shiftX = 0,
-      shiftY = 0
-    if (minX < 0) {
-      shiftX = -minX
-      this.vx = Math.abs(this.vx)
-    } else if (maxX > VIEW_W) {
-      shiftX = VIEW_W - maxX
-      this.vx = -Math.abs(this.vx)
-    }
-    if (minY < 0) {
-      shiftY = -minY
-      this.vy = Math.abs(this.vy)
-    } else if (maxY > VIEW_H) {
-      shiftY = VIEW_H - maxY
-      this.vy = -Math.abs(this.vy)
-    }
-    if (shiftX || shiftY) {
+    // Arena confinement: when the rock's body crosses the boundary circle, push
+    // it (vertices, hardpoints, centre) back inside and reflect its velocity so
+    // it is repelled into the play zone.
+    const dcx = this.center.x - ARENA.cx,
+      dcy = this.center.y - ARENA.cy
+    const cdist = Math.hypot(dcx, dcy)
+    const limit = ARENA.radius - this.collideRadius
+    if (cdist > limit && cdist > 0) {
+      const ux = dcx / cdist,
+        uy = dcy / cdist
+      const over = cdist - limit
       for (const p of this.vertices) {
-        p.x += shiftX
-        p.y += shiftY
+        p.x -= ux * over
+        p.y -= uy * over
       }
       for (const hp of this.hardpoints) {
-        hp.x += shiftX
-        hp.y += shiftY
+        hp.x -= ux * over
+        hp.y -= uy * over
       }
-      this.center.x += shiftX
-      this.center.y += shiftY
+      this.center.x -= ux * over
+      this.center.y -= uy * over
       this.x = this.center.x
       this.y = this.center.y
+      const vn = this.vx * ux + this.vy * uy
+      if (vn > 0) {
+        this.vx -= 1.9 * vn * ux
+        this.vy -= 1.9 * vn * uy
+      }
     }
 
     this.updateWeapons(dt, game) // gun emplacements fire via their turret controller
@@ -1126,6 +1268,7 @@ export class Asteroid extends Entity {
           )
         }
         game.burst(centre.x, centre.y, randInt(6, 12), "#ff8ae6", 30, 110, 0.6)
+        Sound.shatter()
         game.stats.mined++
         continue
       }
@@ -1140,6 +1283,7 @@ export class Asteroid extends Entity {
         fragment: true,
         hardpoints: mine,
         energy: this.energy,
+        tint: this.tint,
       })
       fragments.push(frag)
     }
@@ -1229,6 +1373,9 @@ export class Asteroid extends Entity {
   }
 
   colour() {
+    if (this.tint) {
+      return this.tint
+    }
     if (this.explosive) {
       return "#ff6b52"
     }
@@ -1321,7 +1468,7 @@ export class Ore extends Entity {
     this.vy *= Math.pow(0.55, dt)
     this.integrate(dt)
     this.angle += this.spin * dt
-    this.wrap()
+    this.confine(0.4, this.size)
     if (this.life <= 0) {
       game.burst(this.x, this.y, randInt(5, 8), "#ff8ae6", 40, 150, 0.4)
       this.dead = true
@@ -1361,13 +1508,7 @@ export class Powerup extends Entity {
     this.life -= dt
     this.angle += dt * 1.4
     this.integrate(dt)
-    if (
-      this.x < -30 ||
-      this.x > VIEW_W + 30 ||
-      this.y < -30 ||
-      this.y > VIEW_H + 30 ||
-      this.life <= 0
-    ) {
+    if (Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + 60 || this.life <= 0) {
       this.dead = true
     }
   }

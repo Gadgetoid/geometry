@@ -1,18 +1,18 @@
-// The Game owns all mutable state and orchestrates update, rendering, level
-// flow, the shop, and beam resolution. Entities receive the game instance and
+// The Game owns all mutable state and orchestrates the simulation: update,
+// level flow, the shop, and beam resolution. Painting lives in GameView
+// (view.js), which reads this state. Entities receive the game instance and
 // read / mutate its public fields; nothing here reaches for module globals.
 
 import {
   VIEW_W,
   VIEW_H,
+  ARENA,
   TAU,
   CONFIG,
   SHIP_TYPES,
   SHOP,
-  SHOP_DESC,
   POWERUP_TYPES,
   POWERUP_LABEL,
-  POWERUP_COLOUR,
   SHIELD_SPARK,
   freshUpgrades,
 } from "./config.js"
@@ -21,14 +21,18 @@ import {
   randInt,
   pick,
   clamp,
-  lerp,
   subtract,
   normalize,
+  dot,
+  perpendicular,
+  convexHull,
+  splitPolygon,
+  polygonCentroid,
+  polygonArea,
   countBeamCrossings,
-  distanceToSegment,
+  mulberry32,
 } from "./math.js"
 import { Sound } from "./audio.js"
-import { drawVectorText } from "./font.js"
 import { loadBest, saveBest } from "./persistence.js"
 import { Asteroid, Ore, Powerup, PlayerShip, RivalShip, makeAsteroidPolygon } from "./entities.js"
 
@@ -45,15 +49,67 @@ const SLOT_KEYS = {
   Numpad4: 3,
 }
 
+// Planets live in a region larger than the viewport (so they sit well apart and
+// only a couple are on screen at once) and wrap within it as they drift.
+const PLANET_MARGIN_X = 560
+const PLANET_MARGIN_Y = 380
+
+// Palette for an ordinary world (rocky / gas / ice), tinted by the sector hue
+// for cohesion. The rare emissive worlds are handled separately so there is at
+// most one per sector. Returns { type, base, hi, atmo, emit } (type = uType).
+function ordinaryPalette(rng, baseHue) {
+  const jitter = (h, d) => Math.round((((h + (rng() * 2 - 1) * d) % 360) + 360) % 360)
+  const roll = rng()
+  if (roll < 0.35) {
+    // gas giant with banding
+    const h = jitter(baseHue, 25)
+    return {
+      type: 3,
+      base: `hsl(${h} 34% 26%)`,
+      hi: `hsl(${(h + 20) % 360} 40% 52%)`,
+      atmo: `hsl(${h} 45% 60%)`,
+      emit: "#000000",
+    }
+  }
+  if (roll < 0.55) {
+    // ice world (cool, high albedo)
+    const h = jitter(210, 30)
+    return {
+      type: 4,
+      base: `hsl(${h} 20% 40%)`,
+      hi: `hsl(${h} 14% 82%)`,
+      atmo: `hsl(${h} 40% 78%)`,
+      emit: "#000000",
+    }
+  }
+  // rocky world tinted by the sector hue
+  const h = jitter(baseHue, 35)
+  return {
+    type: 0,
+    base: `hsl(${h} 26% 22%)`,
+    hi: `hsl(${h} 30% 45%)`,
+    atmo: `hsl(${(h + 30) % 360} 34% 58%)`,
+    emit: "#000000",
+  }
+}
+
+// The rare, cool worlds: volcanic (glowing lava) and inhabited (city lights).
+function fancyPalette(type, baseHue, rng) {
+  if (type === 1) {
+    return { type: 1, base: "#241c18", hi: "#4a352a", atmo: "#7a3a24", emit: "#ff5a1e" }
+  }
+  const h = Math.round(baseHue + (rng() * 2 - 1) * 40 + 360) % 360
+  return {
+    type: 2,
+    base: `hsl(${h} 30% 15%)`,
+    hi: `hsl(${h} 26% 30%)`,
+    atmo: `hsl(${(h + 180) % 360} 40% 55%)`,
+    emit: "#ffd98a",
+  }
+}
+
 export class Game {
-  constructor(renderer) {
-    this.renderer = renderer
-
-    this.dpr = 1
-    this.scale = 1
-    this.offsetX = 0
-    this.offsetY = 0
-
+  constructor() {
     this.phase = "title" // title | play | clearing | shop | over
     this.asteroids = []
     this.oreChunks = []
@@ -87,6 +143,7 @@ export class Game {
     this.rivalTimer = 0
     this.clearTimer = 0
     this.pressedKeys = new Set()
+    this.viewCenter = { x: ARENA.cx, y: ARENA.cy } // world point the camera follows
 
     this.initBackground()
     loadBest().then((value) => {
@@ -104,6 +161,15 @@ export class Game {
   }
   showToast(text) {
     this.toast = { text, life: 2.6 }
+  }
+
+  // Is a world point within the visible viewport (centred on viewCenter)?
+  // Used to stop off-screen enemies firing on the player.
+  onScreen(x, y, margin = 0) {
+    return (
+      Math.abs(x - this.viewCenter.x) <= VIEW_W / 2 + margin &&
+      Math.abs(y - this.viewCenter.y) <= VIEW_H / 2 + margin
+    )
   }
 
   // ---- particles -------------------------------------------------------
@@ -149,6 +215,9 @@ export class Game {
         color,
       })
     }
+    if (this.particles.length > MAX_PARTICLES) {
+      this.particles.splice(0, this.particles.length - MAX_PARTICLES)
+    }
   }
 
   // ---- spawning --------------------------------------------------------
@@ -158,31 +227,22 @@ export class Game {
 
   spawnPowerup() {
     const type = pick(POWERUP_TYPES)
-    const side = randInt(0, 3)
-    let x, y
-    if (side === 0) {
-      x = randRange(0, VIEW_W)
-      y = -20
-    } else if (side === 1) {
-      x = VIEW_W + 20
-      y = randRange(0, VIEW_H)
-    } else if (side === 2) {
-      x = randRange(0, VIEW_W)
-      y = VIEW_H + 20
-    } else {
-      x = -20
-      y = randRange(0, VIEW_H)
-    }
-    const dir = normalize(subtract({ x: VIEW_W / 2, y: VIEW_H / 2 }, { x, y }))
+    // just beyond a screen edge near the camera, drifting in toward the player
+    const c = this.viewCenter
+    const angle = randRange(0, TAU)
+    const x = c.x + Math.cos(angle) * (VIEW_W / 2 + 30)
+    const y = c.y + Math.sin(angle) * (VIEW_H / 2 + 30)
+    const dir = normalize(subtract(c, { x, y }))
     this.powerupPickups.push(
-      new Powerup(x, y, dir.x * randRange(24, 40), dir.y * randRange(24, 40), type),
+      new Powerup(x, y, dir.x * randRange(30, 50), dir.y * randRange(30, 50), type),
     )
   }
 
   spawnRival() {
-    const side = randInt(0, 1),
-      x = side ? -50 : VIEW_W + 50,
-      y = randRange(90, VIEW_H - 90)
+    // enter from the arena boundary at a random bearing
+    const edgeAngle = randRange(0, TAU),
+      x = ARENA.cx + Math.cos(edgeAngle) * (ARENA.radius - 20),
+      y = ARENA.cy + Math.sin(edgeAngle) * (ARENA.radius - 20)
     const asFrigate =
       this.level >= CONFIG.FRIGATE_FROM_SECTOR &&
       Math.random() < 0.3 &&
@@ -221,6 +281,7 @@ export class Game {
       )
     }
     this.burst(asteroid.center.x, asteroid.center.y, randInt(8, 16), "#ff8ae6", 40, 170, 0.7)
+    Sound.shatter()
     this.stats.mined++
   }
 
@@ -231,6 +292,50 @@ export class Game {
   applyBeam(beam, attacker, weapon) {
     let didHit = false
     const damage = weapon.type.damage
+    const width = weapon.type.width || 2.4
+
+    // The beam stops at the first ship it strikes: find the nearest ship whose
+    // body the beam enters, remember it so we can damage exactly that one, and
+    // truncate the beam to its near surface so it can't cut rocks beyond it.
+    const fullLen = Math.hypot(beam.b.x - beam.a.x, beam.b.y - beam.a.y)
+    let blockDist = fullLen
+    let blockShip = null
+    const considerShip = (e, radius) => {
+      const reach = width * 0.6 + radius
+      const t = (e.x - beam.a.x) * beam.dir.x + (e.y - beam.a.y) * beam.dir.y
+      if (t < 0) {
+        return
+      }
+      const cx = beam.a.x + beam.dir.x * t,
+        cy = beam.a.y + beam.dir.y * t
+      const perp = Math.hypot(e.x - cx, e.y - cy)
+      if (perp >= reach) {
+        return
+      }
+      // near surface facing the shooter: beam ends here and the shield flashes here
+      const tEntry = t - Math.sqrt(reach * reach - perp * perp)
+      if (tEntry < blockDist) {
+        blockDist = Math.max(0, tEntry)
+        blockShip = e
+      }
+    }
+    for (const rival of this.rivals) {
+      if (rival !== attacker && !rival.dead) {
+        considerShip(rival, rival.size)
+      }
+    }
+    if (this.player && attacker !== this.player) {
+      considerShip(this.player, this.player.radius)
+    }
+    // An unshielded frigate is sliced in two like a rock (see below) rather than
+    // blocking the beam, so it is not truncated against.
+    const blockShielded = blockShip && blockShip.shieldModule() && blockShip.shieldModule().up
+    const cuttable = blockShip && blockShip.typeName === "frigate" && !blockShielded
+    if (blockShip && !cuttable) {
+      beam.b.x = beam.a.x + beam.dir.x * blockDist
+      beam.b.y = beam.a.y + beam.dir.y * blockDist
+    }
+
     const survivors = []
     for (const asteroid of this.asteroids) {
       if (asteroid === attacker) {
@@ -244,7 +349,13 @@ export class Game {
       const shield = asteroid.shieldModule()
       if (shield && shield.up && shield.blocks("laser") && asteroid.energy > 0) {
         asteroid.energy = Math.max(0, asteroid.energy - damage)
-        this.ring(asteroid.center.x, asteroid.center.y, 10, SHIELD_SPARK, 120, 0.4)
+        // flash the side facing the shooter and spark there
+        const toShooter = Math.atan2(beam.a.y - asteroid.center.y, beam.a.x - asteroid.center.x)
+        shield.hitAt(toShooter)
+        const ex = asteroid.center.x + Math.cos(toShooter) * asteroid.boundRadius,
+          ey = asteroid.center.y + Math.sin(toShooter) * asteroid.boundRadius
+        this.ring(ex, ey, 8, SHIELD_SPARK, 120, 0.35)
+        this.burst(ex, ey, 4, SHIELD_SPARK, 30, 120, 0.3)
         if (shield.checkOverload(asteroid)) {
           this.burst(asteroid.center.x, asteroid.center.y, 16, SHIELD_SPARK, 50, 210, 0.6)
         }
@@ -267,11 +378,15 @@ export class Game {
         this.shatterToOre(asteroid)
         didHit = true
         this.score += CONFIG.SLICE_SCORE
+        // the effect beam follows the laser trajectory, ending level with the
+        // rock (projected onto the beam) rather than veering to its centre
+        const reach =
+          (asteroid.center.x - beam.a.x) * beam.dir.x + (asteroid.center.y - beam.a.y) * beam.dir.y
         this.laserShots.push({
           beams: [
             {
               a: { x: beam.a.x, y: beam.a.y },
-              b: { x: asteroid.center.x, y: asteroid.center.y },
+              b: { x: beam.a.x + beam.dir.x * reach, y: beam.a.y + beam.dir.y * reach },
               dir: beam.dir,
             },
           ],
@@ -306,31 +421,90 @@ export class Game {
       this.screenShake = Math.max(this.screenShake, 4)
     }
 
-    // Ships caught within the beam's width take laser damage (energy or hull).
-    const width = weapon.type.width || 2.4
-    const fromPlayer = attacker === this.player
-    for (const rival of this.rivals) {
-      if (rival === attacker || rival.dead) {
-        continue
-      }
-      if (
-        distanceToSegment(rival.x, rival.y, beam.a.x, beam.a.y, beam.b.x, beam.b.y) <
-        width * 0.6 + rival.size
-      ) {
-        rival.takeDamage(damage, this, "laser", fromPlayer ? rival.type.killScore : 0)
+    // Slice an unshielded frigate into drifting gun-rocks; otherwise damage the
+    // struck ship on its shooter-facing side.
+    if (blockShip) {
+      if (cuttable && this.sliceFrigate(blockShip, beam, attacker === this.player)) {
+        didHit = true
+      } else {
+        if (cuttable) {
+          // grazing cut that didn't split cleanly: truncate and damage instead
+          beam.b.x = beam.a.x + beam.dir.x * blockDist
+          beam.b.y = beam.a.y + beam.dir.y * blockDist
+        }
+        const hit = { x: beam.b.x, y: beam.b.y }
+        const fromPlayer = attacker === this.player
+        const scoreOnKill = fromPlayer && blockShip !== this.player ? blockShip.type.killScore : 0
+        blockShip.takeDamage(damage, this, "laser", scoreOnKill, hit)
+        this.burst(hit.x, hit.y, randInt(3, 6), weapon.type.colour, 30, 130, 0.35)
         didHit = true
       }
     }
-    const p = this.player
-    if (
-      p &&
-      attacker !== p &&
-      distanceToSegment(p.x, p.y, beam.a.x, beam.a.y, beam.b.x, beam.b.y) < width * 0.6 + p.radius
-    ) {
-      p.takeDamage(damage, this, "laser")
-      didHit = true
-    }
     return didHit
+  }
+
+  // Slice an unshielded frigate along the beam into two Asteroid fragments that
+  // carry its surviving turrets, so the pieces drift apart, keep firing, and can
+  // be cut again with normal rock handling. Returns false if the beam only
+  // grazes it (no clean two-way split).
+  sliceFrigate(ship, beam, fromPlayer) {
+    const cutNormal = perpendicular(beam.dir)
+    // split the real hull outline so the halves keep the frigate's shape; fall
+    // back to the convex hull if the concave outline doesn't cut cleanly
+    let parts = splitPolygon(ship.worldOutline(), beam.a, cutNormal)
+    if (parts.length !== 2) {
+      parts = splitPolygon(convexHull(ship.worldOutline()), beam.a, cutNormal)
+    }
+    if (parts.length !== 2) {
+      return false
+    }
+    // the frigate's autocannon turrets, in world space, to hand to the pieces
+    const guns = []
+    for (const hp of ship.hardpoints) {
+      const m = hp.module
+      if (m && m.kind === "weapon" && m.controller === "turret") {
+        const w = ship.mountWorld(hp.local)
+        guns.push({ x: w.x, y: w.y, module: m })
+      }
+    }
+    for (const partVerts of parts) {
+      const centre = polygonCentroid(partVerts)
+      const area = polygonArea(partVerts)
+      const side = dot(subtract(centre, beam.a), cutNormal) > 0 ? 1 : -1
+      const ix = cutNormal.x * side * CONFIG.SPLIT_IMPULSE,
+        iy = cutNormal.y * side * CONFIG.SPLIT_IMPULSE
+      const mine = guns.filter((g) => (dot(subtract(g, beam.a), cutNormal) > 0 ? 1 : -1) === side)
+      // burning debris at the cut end
+      this.burst(centre.x, centre.y, randInt(10, 16), "#ff7a4a", 40, 190, 0.75)
+      this.burst(centre.x, centre.y, randInt(6, 10), "#ffd36a", 30, 130, 0.5)
+      // a gunless sliver just becomes ore; a piece with turrets survives as a
+      // gun-rock so it can keep firing, even if small
+      if (area < CONFIG.AST_MIN_AREA && mine.length === 0) {
+        for (let k = 0; k < 3; k++) {
+          this.spawnOre(centre.x + randRange(-12, 12), centre.y + randRange(-12, 12), ship.vx + ix, ship.vy + iy)
+        }
+        continue
+      }
+      this.asteroids.push(
+        new Asteroid({
+          vertices: partVerts,
+          vx: ship.vx + ix,
+          vy: ship.vy + iy,
+          spin: randRange(-1.2, 1.2),
+          fragment: true,
+          hardpoints: mine,
+          tint: ship.colour, // keep the frigate's colour on the debris
+        }),
+      )
+    }
+    this.ring(ship.x, ship.y, 16, "#ffcf5c", 190, 0.6)
+    this.screenShake = Math.max(this.screenShake, 9)
+    Sound.explode()
+    if (fromPlayer) {
+      this.score += ship.type.blastScore
+    }
+    ship.dead = true
+    return true
   }
 
   // ---- level / sector flow --------------------------------------------
@@ -384,6 +558,7 @@ export class Game {
   startLevel(sector) {
     this.level = sector
     this.plan = this.planLevel(sector)
+    this.regenSector(sector) // seeded backdrop for this sector's vibe
     this.asteroids = []
     this.oreChunks = []
     this.projectiles = []
@@ -396,14 +571,17 @@ export class Game {
     this.oreVacuum = false
 
     for (const spawn of this.plan.spawns) {
+      // scatter across the arena disc, clear of the ship spawn at the centre
       let x,
         y,
         tries = 0
       do {
-        x = randRange(90, VIEW_W - 90)
-        y = randRange(90, VIEW_H - 90)
+        const a = randRange(0, TAU),
+          rr = Math.sqrt(Math.random()) * (ARENA.radius - 120)
+        x = ARENA.cx + Math.cos(a) * rr
+        y = ARENA.cy + Math.sin(a) * rr
         tries++
-      } while (Math.hypot(x - VIEW_W / 2, y - VIEW_H / 2) < 180 && tries < 50) // keep clear of the ship spawn
+      } while (Math.hypot(x - ARENA.cx, y - ARENA.cy) < 220 && tries < 50)
       const angle = randRange(0, TAU),
         speed = randRange(30, 74)
       this.asteroids.push(
@@ -423,14 +601,16 @@ export class Game {
     this.rivalTimer = this.plan.rivalInterval * 0.6
     this.clearTimer = 0
     const p = this.player
-    p.x = VIEW_W / 2
-    p.y = VIEW_H / 2
+    p.x = ARENA.cx
+    p.y = ARENA.cy
     p.vx = 0
     p.vy = 0
     p.invincible = CONFIG.INVIN_TIME
     p.energyMax = this.maxEnergy()
     p.energy = p.energyMax
-    p.mainWeapon.charge = 0
+    this.viewCenter.x = p.x
+    this.viewCenter.y = p.y
+    this.clearInput() // drop keys held over from the shop so the laser starts uncharged
     this.phase = "play"
     Sound.level()
   }
@@ -447,11 +627,11 @@ export class Game {
 
   enterShop() {
     this.oreVacuum = false
-    for (const chunk of this.oreChunks) {
-      this.score += CONFIG.ORE_SCORE
-      this.stats.ore++
-      this.oreBalance++
-    }
+    // sweep up any ore still on the field
+    const remaining = this.oreChunks.length
+    this.score += remaining * CONFIG.ORE_SCORE
+    this.stats.ore += remaining
+    this.oreBalance += remaining
     this.oreChunks.length = 0
 
     const accuracy = this.stats.shots ? this.stats.hits / this.stats.shots : 1
@@ -524,16 +704,19 @@ export class Game {
     if (this.lives <= 0) {
       this.recordBest()
       this.phase = "over"
+      Sound.setThruster(false)
       return
     }
     const p = this.player
-    p.x = VIEW_W / 2
-    p.y = VIEW_H / 2
+    p.x = ARENA.cx
+    p.y = ARENA.cy
     p.vx = 0
     p.vy = 0
     p.energy = this.maxEnergy() * 0.6
     p.invincible = CONFIG.INVIN_TIME
     p.mainWeapon.charge = 0
+    this.viewCenter.x = p.x
+    this.viewCenter.y = p.y
   }
 
   usePowerupSlot(index) {
@@ -587,18 +770,17 @@ export class Game {
         vy: randRange(-1.4, 1.4),
       })
     }
-    this.bokehLights = []
-    const colours = ["#5fd7ff", "#b38bff", "#ff6bd0", "#ffcf5c", "#57e39a"]
-    for (let i = 0; i < 13; i++) {
-      this.bokehLights.push({
+    // Foreground stardust: near, fast-parallax motes that streak past as the
+    // ship moves, selling the sense of motion.
+    this.dust = []
+    for (let i = 0; i < 90; i++) {
+      this.dust.push({
         x: Math.random() * VIEW_W,
         y: Math.random() * VIEW_H,
-        depth: randRange(0.1, 0.26),
-        size: randRange(7, 20),
-        colour: colours[i % colours.length],
-        twinkle: Math.random() * TAU,
+        z: randRange(0.55, 1), // parallax strength (near)
       })
     }
+    this.regenSector(1) // planets + nebula for the title / first sector
     this.menuAsteroids = []
     for (let i = 0; i < 7; i++) {
       const x = randRange(90, VIEW_W - 90),
@@ -614,12 +796,80 @@ export class Game {
     }
   }
 
+  // Rebuild the backdrop for a sector: a seeded palette so each sector has its
+  // own repeatable vibe, evolving slowly as the base hue advances. Planets are
+  // spread over a jittered grid so they never clump.
+  regenSector(sector) {
+    const rng = mulberry32((Math.imul(sector, 2654435761) ^ 0x9e3779b9) >>> 0)
+    const rand = (a, b) => a + rng() * (b - a)
+    const baseHue = (sector * 43) % 360 // advances each sector for slow evolution
+    this.nebula = {
+      colorA: `hsl(${baseHue} 45% 16%)`,
+      colorB: `hsl(${(baseHue + 55) % 360} 40% 14%)`,
+      seed: rand(0, 30),
+    }
+
+    const marginX = PLANET_MARGIN_X,
+      marginY = PLANET_MARGIN_Y
+    const cols = 3,
+      rows = 2
+    const cellW = (VIEW_W + marginX * 2) / cols,
+      cellH = (VIEW_H + marginY * 2) / rows
+    const cells = []
+    for (let cy = 0; cy < rows; cy++) {
+      for (let cx = 0; cx < cols; cx++) {
+        cells.push([cx, cy])
+      }
+    }
+    for (let i = cells.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1))
+      ;[cells[i], cells[j]] = [cells[j], cells[i]]
+    }
+    const count = 3 + Math.floor(rng() * 2) // 3-4, one per grid cell, well spaced
+    // at most one rare emissive world per sector, and only sometimes
+    const fancyRoll = rng()
+    const fancyType = fancyRoll < 0.2 ? 1 : fancyRoll < 0.4 ? 2 : 0 // volcanic / city / none
+    const fancySlot = fancyType ? Math.floor(rng() * count) : -1
+    this.planets = []
+    for (let i = 0; i < count; i++) {
+      const [cx, cy] = cells[i]
+      const pal =
+        i === fancySlot ? fancyPalette(fancyType, baseHue, rng) : ordinaryPalette(rng, baseHue)
+      this.planets.push({
+        x: -marginX + cx * cellW + rand(cellW * 0.2, cellW * 0.8),
+        y: -marginY + cy * cellH + rand(cellH * 0.2, cellH * 0.8),
+        r: rand(50, 120),
+        depth: rand(0.05, 0.2), // far: barely parallaxes
+        seed: rand(0, 20),
+        light: rand(-Math.PI, Math.PI),
+        drift: rand(2, 6),
+        ...pal,
+      })
+    }
+  }
+
   updateBackground(dt) {
     const pvx = this.player && this.phase === "play" ? this.player.vx : 0
     const pvy = this.player && this.phase === "play" ? this.player.vy : 0
+    for (const d of this.dust) {
+      // foreground: streaks past faster than the world (opposite to travel)
+      d.x -= pvx * d.z * 1.2 * dt
+      d.y -= pvy * d.z * 1.2 * dt
+      if (d.x < 0) {
+        d.x += VIEW_W
+      } else if (d.x > VIEW_W) {
+        d.x -= VIEW_W
+      }
+      if (d.y < 0) {
+        d.y += VIEW_H
+      } else if (d.y > VIEW_H) {
+        d.y -= VIEW_H
+      }
+    }
     for (const star of this.stars) {
-      star.x += (star.vx - pvx * star.depth * 0.06) * dt
-      star.y += (star.vy - pvy * star.depth * 0.06) * dt
+      // stream opposite to travel, scaled by depth (near stars move most)
+      star.x += (star.vx - pvx * star.depth * 0.5) * dt
+      star.y += (star.vy - pvy * star.depth * 0.5) * dt
       if (star.x < 0) {
         star.x += VIEW_W
       } else if (star.x > VIEW_W) {
@@ -631,18 +881,21 @@ export class Game {
         star.y -= VIEW_H
       }
     }
-    for (const light of this.bokehLights) {
-      light.x += (3 * light.depth - pvx * light.depth * 0.05) * dt
-      light.y += -pvy * light.depth * 0.05 * dt
-      if (light.x < -40) {
-        light.x += VIEW_W + 80
-      } else if (light.x > VIEW_W + 40) {
-        light.x -= VIEW_W + 80
+    const marginX = PLANET_MARGIN_X,
+      marginY = PLANET_MARGIN_Y
+    for (const planet of this.planets) {
+      // distant parallax: planets drift and stream slowly opposite to travel
+      planet.x += (planet.drift * planet.depth - pvx * planet.depth * 0.6) * dt
+      planet.y += -pvy * planet.depth * 0.6 * dt
+      if (planet.x < -marginX) {
+        planet.x += VIEW_W + marginX * 2
+      } else if (planet.x > VIEW_W + marginX) {
+        planet.x -= VIEW_W + marginX * 2
       }
-      if (light.y < -40) {
-        light.y += VIEW_H + 80
-      } else if (light.y > VIEW_H + 40) {
-        light.y -= VIEW_H + 80
+      if (planet.y < -marginY) {
+        planet.y += VIEW_H + marginY * 2
+      } else if (planet.y > VIEW_H + marginY) {
+        planet.y -= VIEW_H + marginY * 2
       }
     }
   }
@@ -710,6 +963,19 @@ export class Game {
     }
 
     this.player.update(dt, this)
+    // camera eases toward the ship, clamped so it never scrolls far past the
+    // arena edge (a band of the out-of-bounds zone stays visible, no more)
+    const follow = Math.min(1, dt * 6)
+    this.viewCenter.x += (this.player.x - this.viewCenter.x) * follow
+    this.viewCenter.y += (this.player.y - this.viewCenter.y) * follow
+    const dcx = this.viewCenter.x - ARENA.cx,
+      dcy = this.viewCenter.y - ARENA.cy
+    const camDist = Math.hypot(dcx, dcy)
+    const maxCamDist = ARENA.radius - 140
+    if (camDist > maxCamDist) {
+      this.viewCenter.x = ARENA.cx + (dcx / camDist) * maxCamDist
+      this.viewCenter.y = ARENA.cy + (dcy / camDist) * maxCamDist
+    }
     for (const asteroid of this.asteroids) {
       asteroid.update(dt, this)
     }
@@ -820,437 +1086,6 @@ export class Game {
     }
   }
 
-  // ---- rendering -------------------------------------------------------
-  camera() {
-    const sx = this.screenShake > 0 ? randRange(-this.screenShake, this.screenShake) : 0
-    const sy = this.screenShake > 0 ? randRange(-this.screenShake, this.screenShake) : 0
-    const base = {
-      dpr: this.dpr,
-      scale: this.scale,
-      offsetX: this.offsetX,
-      offsetY: this.offsetY,
-      clipW: VIEW_W,
-      clipH: VIEW_H,
-    }
-    return { world: { ...base, shakeX: sx, shakeY: sy }, hud: { ...base, shakeX: 0, shakeY: 0 } }
-  }
-
-  render() {
-    const r = this.renderer,
-      cam = this.camera()
-    r.clearFrame("#02040a")
-
-    r.pushView(cam.world)
-    this.drawBackground()
-    if (this.phase === "title") {
-      for (const rock of this.menuAsteroids) {
-        r.strokePoly(rock.vertices, { color: `hsl(${rock.hue} 85% 66%)`, width: 1.6, glow: 10 })
-      }
-      r.popView()
-      r.pushView(cam.hud)
-      this.drawTitle()
-      r.popView()
-      return
-    }
-    for (const chunk of this.oreChunks) {
-      chunk.draw(r, this)
-    }
-    for (const asteroid of this.asteroids) {
-      asteroid.draw(r, this)
-    }
-    for (const pickup of this.powerupPickups) {
-      pickup.draw(r, this)
-    }
-    for (const rival of this.rivals) {
-      rival.draw(r, this)
-    }
-    for (const projectile of this.projectiles) {
-      projectile.draw(r, this)
-    }
-    this.drawLaserShots()
-    this.drawParticles()
-    if (this.phase === "play" || this.phase === "clearing") {
-      this.player.draw(r, this)
-    }
-    r.popView()
-
-    r.pushView(cam.hud)
-    this.drawHUD()
-    r.popView()
-  }
-
-  drawBackground() {
-    const r = this.renderer
-    for (const light of this.bokehLights) {
-      const alpha = 0.09 + 0.05 * Math.sin(light.twinkle + this.gameTime * 0.6)
-      r.circle(light.x, light.y, light.size, { fill: light.colour, glow: light.size * 1.7, alpha })
-    }
-    for (const star of this.stars) {
-      const twinkle = 0.4 + 0.6 * Math.sin(star.twinkle + this.gameTime * 1.5)
-      const alpha = clamp((0.14 + 0.72 * star.depth) * twinkle, 0, 1)
-      const size = star.depth * 2.2
-      r.point(star.x, star.y, size, {
-        color: `rgb(${lerp(148, 226, star.depth) | 0},${lerp(180, 236, star.depth) | 0},242)`,
-        alpha,
-      })
-    }
-  }
-
-  drawLaserShots() {
-    const r = this.renderer
-    for (const shot of this.laserShots) {
-      const life = shot.life || 0.4,
-        alpha = 1 - shot.age / life
-      const width = shot.width || 2.4
-      const glow = shot.glow || 16
-      for (const beam of shot.beams) {
-        r.line(beam.a.x, beam.a.y, beam.b.x, beam.b.y, {
-          color: shot.color,
-          width,
-          glow,
-          alpha,
-          cap: "round",
-        })
-      }
-    }
-  }
-
-  drawParticles() {
-    const r = this.renderer
-    for (const q of this.particles) {
-      const alpha = clamp(q.life / q.maxLife, 0, 1)
-      r.line(q.x, q.y, q.x - q.vx * 0.03, q.y - q.vy * 0.03, {
-        color: q.color,
-        width: 1.6,
-        glow: 8,
-        alpha,
-        cap: "round",
-      })
-    }
-  }
-
-  // ---- HUD + overlays --------------------------------------------------
-  drawHUD() {
-    const r = this.renderer
-    r.text(`SCORE ${String(this.score).padStart(6, "0")}`, 18, 30, {
-      size: 18,
-      bold: true,
-      color: "#eaf4ff",
-    })
-    r.text(`SECTOR ${this.level}   ROCKS ${this.asteroids.length}`, 18, 48, {
-      size: 12,
-      color: "#9fc0ff",
-    })
-    r.text(`ORE ${this.oreBalance}`, 18, 64, { size: 12, color: "#ffcf5c" })
-    if (this.plan && this.plan.rivals > 0) {
-      r.text(`RIVAL ${String(this.rivalScore).padStart(6, "0")}`, 18, 80, {
-        size: 12,
-        color: "#ff9a3c",
-      })
-    }
-
-    r.text("LIVES", VIEW_W - 18, 24, { size: 12, color: "#5fd7ff", align: "right" })
-    for (let i = 0; i < this.lives; i++) {
-      const x = VIEW_W - 24 - i * 22,
-        y = 40
-      r.strokePoly(
-        [
-          { x, y: y - 7 },
-          { x: x - 8, y: y + 5 },
-          { x, y: y + 2 },
-          { x: x + 8, y: y + 5 },
-        ],
-        { color: "#5fd7ff", width: 1.5, glow: 6 },
-      )
-    }
-
-    const barW = VIEW_W - 36,
-      barX = 18,
-      barY = VIEW_H - 26,
-      barH = 12
-    r.rect(barX, barY, barW, barH, { stroke: "#1c3050", width: 1 })
-    const fraction = this.player ? this.player.energy / this.maxEnergy() : 0
-    const low = fraction < 0.22
-    let fillW = barW * fraction
-    if (low) {
-      fillW = barW * fraction * (0.85 + 0.15 * Math.sin(this.gameTime * 10))
-    }
-    const barColour =
-      this.player && this.player.boosterTime > 0 ? "#ffcf5c" : low ? "#ff5b5b" : "#5fd7ff"
-    r.rect(barX + 1, barY + 1, Math.max(0, fillW - 2), barH - 2, { fill: barColour, glow: 10 })
-    r.text("ENERGY", barX + 2, barY - 4, { size: 9, color: "#7fa0c8" })
-
-    // Shield: mark the offline / recovery energy levels and show online state.
-    const shield = this.player ? this.player.shieldModule() : null
-    if (shield) {
-      const dropX = barX + barW * shield.type.dropAt
-      const recoverX = barX + barW * shield.type.recoverAt
-      r.line(dropX, barY - 2, dropX, barY + barH + 2, { color: "#ff5b5b", width: 1 }) // offline level
-      r.line(recoverX, barY - 2, recoverX, barY + barH + 2, { color: "#9fe8ff", width: 1, alpha: 0.55 }) // recovery level
-      r.text(shield.up ? "SHIELD" : "SHIELD OFFLINE", barX + barW, barY - 4, {
-        size: 9,
-        color: shield.up ? "#9fe8ff" : "#ff5b5b",
-        align: "right",
-      })
-    }
-
-    if (this.player) {
-      const size = 20,
-        count = this.upgrades.slots,
-        startX = VIEW_W - 14 - count * (size + 4)
-      for (let i = 0; i < count; i++) {
-        const sx = startX + i * (size + 4),
-          sy = barY - 4 - size,
-          item = this.player.items[i]
-        r.rect(sx, sy, size, size, { stroke: item ? POWERUP_COLOUR[item] : "#26436b", width: 1.2 })
-        r.text(String(i + 1), sx + 2, sy + 9, { size: 8, color: "#5f79a6" })
-        if (item) {
-          r.text(item[0].toUpperCase(), sx + size / 2, sy + size / 2 + 5, {
-            size: 12,
-            bold: true,
-            color: POWERUP_COLOUR[item],
-            align: "center",
-          })
-        }
-      }
-    }
-
-    const buffs = []
-    if (this.player) {
-      if (this.player.boosterTime > 0) {
-        buffs.push(["BOOST", this.player.boosterTime, "#ffcf5c"])
-      }
-      if (this.player.multiTime > 0) {
-        buffs.push(["MULTI", this.player.multiTime, "#5fd7ff"])
-      }
-      if (this.player.magnetTime > 0) {
-        buffs.push(["MAGNET", this.player.magnetTime, "#b38bff"])
-      }
-    }
-    buffs.forEach((buff, i) =>
-      r.text(`${buff[0]} ${buff[1].toFixed(1)}s`, VIEW_W / 2, 26 + i * 15, {
-        size: 11,
-        color: buff[2],
-        align: "center",
-      }),
-    )
-
-    if (this.toast) {
-      r.text(this.toast.text, 18, VIEW_H - 72, {
-        size: 12,
-        color: "#ffbdee",
-        glow: 8,
-        alpha: clamp(this.toast.life / 0.6, 0, 1),
-      })
-    }
-
-    if (this.phase === "clearing") {
-      r.text("SECTOR CLEARED", VIEW_W / 2, VIEW_H / 2, {
-        size: 26,
-        bold: true,
-        color: "#57e39a",
-        align: "center",
-        glow: 14,
-      })
-    }
-    if (this.phase === "shop") {
-      this.drawShop()
-    }
-    if (this.phase === "over") {
-      this.drawGameOver()
-    }
-    if (this.paused) {
-      this.drawPaused()
-    }
-  }
-
-  drawTitle() {
-    const r = this.renderer
-    drawVectorText(
-      r,
-      "GEOMETRY II",
-      VIEW_W / 2,
-      VIEW_H / 2 - 92,
-      74,
-      (ch, i) => (i >= 9 ? "#ff7fdc" : "#7fe0ff"),
-      18,
-    )
-    r.text(
-      "Galactic Extraction Of Minerals, Europium, Thallium, Rare-earths & Yttrium",
-      VIEW_W / 2,
-      VIEW_H / 2 - 8,
-      { size: 15, color: "#ffcf5c", align: "center" },
-    )
-    r.text(
-      "Slice asteroids, mine ore, balance your thrusters, shields and laser carefully!",
-      VIEW_W / 2,
-      VIEW_H / 2 + 30,
-      { size: 13, color: "#9fc0ff", align: "center" },
-    )
-    r.text(
-      "Clear every rock in the sector. Rinse. Repeat. You've got company.",
-      VIEW_W / 2,
-      VIEW_H / 2 + 52,
-      { size: 13, color: "#9fc0ff", align: "center" },
-    )
-    r.text(
-      `BEST   SCORE ${this.best.score}    SECTOR ${this.best.sector}`,
-      VIEW_W / 2,
-      VIEW_H / 2 + 82,
-      { size: 12, color: "#7fe0ff", align: "center" },
-    )
-    if (Math.floor(this.gameTime * 2) % 2 === 0) {
-      r.text("PRESS ENTER", VIEW_W / 2, VIEW_H / 2 + 114, {
-        size: 18,
-        bold: true,
-        color: "#57e39a",
-        align: "center",
-        glow: 14,
-      })
-    }
-  }
-
-  drawShop() {
-    const r = this.renderer,
-      d = this.summaryData
-    if (!d) {
-      return
-    }
-    r.rect(0, 0, VIEW_W, VIEW_H, { fill: "rgba(2,4,10,.74)" })
-    r.text(`SECTOR ${d.level} CLEARED`, VIEW_W / 2, 58, {
-      size: 30,
-      bold: true,
-      color: "#7ff0b8",
-      align: "center",
-      glow: 16,
-    })
-    r.text(
-      `accuracy ${Math.round(d.accuracy * 100)}%    mined ${d.mined}    ore this run ${d.ore}    damage ${d.damage}    bonus +${d.totalBonus}`,
-      VIEW_W / 2,
-      82,
-      { size: 12, color: "#9fc0ff", align: "center" },
-    )
-    r.text(`ORE  ${this.oreBalance}`, VIEW_W / 2, 112, {
-      size: 20,
-      bold: true,
-      color: "#ffcf5c",
-      align: "center",
-      glow: 12,
-    })
-
-    const leftX = VIEW_W / 2 - 250,
-      rightX = VIEW_W / 2 + 250,
-      top = 146,
-      rowHeight = 32
-    for (let i = 0; i < SHOP.length; i++) {
-      const item = SHOP[i],
-        y = top + i * rowHeight
-      const selected = this.shopSelection === i,
-        maxed = item.maxed(this),
-        cost = item.cost(this),
-        affordable = this.oreBalance >= cost && !maxed
-      if (selected) {
-        r.rect(leftX - 16, y - 18, rightX - leftX + 32, rowHeight - 4, {
-          fill: "rgba(95,215,255,.12)",
-        })
-      }
-      r.text(`${selected ? "> " : "  "}${item.name}`, leftX, y, {
-        size: 15,
-        bold: selected,
-        color: maxed ? "#57e39a" : selected ? "#eaf4ff" : "#bcd0ee",
-      })
-      r.text(item.info(this), leftX + 206, y, { size: 11, color: "#7fa0c8" })
-      r.text(maxed ? "MAX" : this.devMode ? "FREE" : `${cost} ore`, rightX, y, {
-        size: 14,
-        color: maxed ? "#57e39a" : this.devMode ? "#57e39a" : affordable ? "#ffcf5c" : "#5a6f92",
-        align: "right",
-      })
-    }
-    if (this.shopSelection < SHOP.length) {
-      r.text(
-        SHOP_DESC[SHOP[this.shopSelection].id],
-        VIEW_W / 2,
-        top + SHOP.length * rowHeight + 8,
-        { size: 12, color: "#8fb2dd", align: "center" },
-      )
-    }
-
-    const launchY = top + SHOP.length * rowHeight + 42,
-      launchSelected = this.shopSelection === SHOP.length
-    if (launchSelected) {
-      r.rect(VIEW_W / 2 - 190, launchY - 21, 380, 30, { fill: "rgba(87,227,154,.16)" })
-    }
-    r.text(
-      `${launchSelected ? "> " : ""}LAUNCH TO SECTOR ${this.shopSector}`,
-      VIEW_W / 2,
-      launchY,
-      { size: 18, bold: true, color: "#7ff0b8", align: "center", glow: launchSelected ? 16 : 8 },
-    )
-    r.text("UP / DOWN select      ENTER buy or launch", VIEW_W / 2, launchY + 26, {
-      size: 11,
-      color: "#5f79a6",
-      align: "center",
-    })
-    if (this.devMode) {
-      r.text(
-        "DEV   LEFT / RIGHT choose sector (hold SHIFT for x10)   -   purchases are free",
-        VIEW_W / 2,
-        launchY + 44,
-        { size: 11, color: "#ff7fdc", align: "center" },
-      )
-    }
-  }
-
-  drawGameOver() {
-    const r = this.renderer
-    r.rect(0, 0, VIEW_W, VIEW_H, { fill: "rgba(2,4,10,.55)" })
-    r.text("SHIP LOST", VIEW_W / 2, VIEW_H / 2 - 30, {
-      size: 56,
-      bold: true,
-      color: "#ff8080",
-      align: "center",
-      glow: 20,
-    })
-    r.text(`REACHED SECTOR ${this.level}   SCORE ${this.score}`, VIEW_W / 2, VIEW_H / 2 + 14, {
-      size: 18,
-      color: "#eaf4ff",
-      align: "center",
-    })
-    if (this.plan && this.plan.rivals > 0) {
-      r.text(`RIVAL HAUL  ${this.rivalScore}`, VIEW_W / 2, VIEW_H / 2 + 38, {
-        size: 14,
-        color: "#ff9a3c",
-        align: "center",
-      })
-    }
-    const newBest = this.score >= this.best.score && this.score > 0
-    r.text(
-      `${newBest ? "NEW BEST   " : "BEST   "}SCORE ${this.best.score}    SECTOR ${this.best.sector}`,
-      VIEW_W / 2,
-      VIEW_H / 2 + 58,
-      { size: 12, color: newBest ? "#7ff0b8" : "#7fe0ff", align: "center" },
-    )
-    if (Math.floor(this.gameTime * 2) % 2 === 0) {
-      r.text("PRESS ENTER TO RETRY", VIEW_W / 2, VIEW_H / 2 + 82, {
-        size: 13,
-        color: "#9fc0ff",
-        align: "center",
-      })
-    }
-  }
-
-  drawPaused() {
-    const r = this.renderer
-    r.rect(0, 0, VIEW_W, VIEW_H, { fill: "rgba(2,4,10,.5)" })
-    r.text("PAUSED", VIEW_W / 2, VIEW_H / 2, {
-      size: 40,
-      bold: true,
-      color: "#eaf4ff",
-      align: "center",
-      glow: 16,
-    })
-  }
-
   // ---- input -----------------------------------------------------------
   onKeyDown(e) {
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
@@ -1285,6 +1120,9 @@ export class Game {
 
     if (e.code === "KeyP" && (this.phase === "play" || this.phase === "clearing")) {
       this.paused = !this.paused
+      if (this.paused) {
+        Sound.setThruster(false)
+      }
     }
     if (this.phase === "play" && !this.paused) {
       const slot = SLOT_KEYS[e.code]
@@ -1306,7 +1144,14 @@ export class Game {
   }
 
   onBlur() {
+    this.clearInput()
+  }
+
+  // Drop held keys and any accumulated laser charge. Used on focus loss and at
+  // the start of a level so input never carries across a phase transition.
+  clearInput() {
     this.pressedKeys.clear()
+    Sound.setThruster(false)
     if (this.player) {
       this.player.mainWeapon.charge = 0
     }
@@ -1320,15 +1165,8 @@ export class Game {
     this.enterShop()
   }
 
-  resize(rect) {
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2)
-    this.renderer.canvas.width = Math.round(rect.width * this.dpr)
-    this.renderer.canvas.height = Math.round(rect.height * this.dpr)
-    this.scale = Math.min(rect.width / VIEW_W, rect.height / VIEW_H)
-    this.offsetX = (rect.width - VIEW_W * this.scale) / 2
-    this.offsetY = (rect.height - VIEW_H * this.scale) / 2
-  }
-
+  // Advance the simulation one step. Rendering is the view's job; main.js
+  // paints via GameView after this returns.
   advance(dt) {
     this.gameTime += dt
     this.updateBackground(dt)
@@ -1337,6 +1175,5 @@ export class Game {
     } else if ((this.phase === "play" || this.phase === "clearing") && !this.paused) {
       this.update(dt)
     }
-    this.render()
   }
 }
