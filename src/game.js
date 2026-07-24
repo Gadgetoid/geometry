@@ -23,6 +23,12 @@ import {
   clamp,
   subtract,
   normalize,
+  dot,
+  perpendicular,
+  convexHull,
+  splitPolygon,
+  polygonCentroid,
+  polygonArea,
   countBeamCrossings,
   mulberry32,
 } from "./math.js"
@@ -321,7 +327,11 @@ export class Game {
     if (this.player && attacker !== this.player) {
       considerShip(this.player, this.player.radius)
     }
-    if (blockShip) {
+    // An unshielded frigate is sliced in two like a rock (see below) rather than
+    // blocking the beam, so it is not truncated against.
+    const blockShielded = blockShip && blockShip.shieldModule() && blockShip.shieldModule().up
+    const cuttable = blockShip && blockShip.typeName === "frigate" && !blockShielded
+    if (blockShip && !cuttable) {
       beam.b.x = beam.a.x + beam.dir.x * blockDist
       beam.b.y = beam.a.y + beam.dir.y * blockDist
     }
@@ -407,17 +417,85 @@ export class Game {
       this.screenShake = Math.max(this.screenShake, 4)
     }
 
-    // Damage the ship the beam struck. It is the one found above (the beam ends
-    // at its surface), so the hit lands on the shooter-facing side.
+    // Slice an unshielded frigate into drifting gun-rocks; otherwise damage the
+    // struck ship on its shooter-facing side.
     if (blockShip) {
-      const hit = { x: beam.b.x, y: beam.b.y }
-      const fromPlayer = attacker === this.player
-      const scoreOnKill = fromPlayer && blockShip !== this.player ? blockShip.type.killScore : 0
-      blockShip.takeDamage(damage, this, "laser", scoreOnKill, hit)
-      this.burst(hit.x, hit.y, randInt(3, 6), weapon.type.colour, 30, 130, 0.35)
-      didHit = true
+      if (cuttable && this.sliceFrigate(blockShip, beam, attacker === this.player)) {
+        didHit = true
+      } else {
+        if (cuttable) {
+          // grazing cut that didn't split cleanly: truncate and damage instead
+          beam.b.x = beam.a.x + beam.dir.x * blockDist
+          beam.b.y = beam.a.y + beam.dir.y * blockDist
+        }
+        const hit = { x: beam.b.x, y: beam.b.y }
+        const fromPlayer = attacker === this.player
+        const scoreOnKill = fromPlayer && blockShip !== this.player ? blockShip.type.killScore : 0
+        blockShip.takeDamage(damage, this, "laser", scoreOnKill, hit)
+        this.burst(hit.x, hit.y, randInt(3, 6), weapon.type.colour, 30, 130, 0.35)
+        didHit = true
+      }
     }
     return didHit
+  }
+
+  // Slice an unshielded frigate along the beam into two Asteroid fragments that
+  // carry its surviving turrets, so the pieces drift apart, keep firing, and can
+  // be cut again with normal rock handling. Returns false if the beam only
+  // grazes it (no clean two-way split).
+  sliceFrigate(ship, beam, fromPlayer) {
+    const hull = convexHull(ship.worldOutline())
+    const cutNormal = perpendicular(beam.dir)
+    const parts = splitPolygon(hull, beam.a, cutNormal)
+    if (parts.length !== 2) {
+      return false
+    }
+    // the frigate's autocannon turrets, in world space, to hand to the pieces
+    const guns = []
+    for (const hp of ship.hardpoints) {
+      const m = hp.module
+      if (m && m.kind === "weapon" && m.controller === "turret") {
+        const w = ship.mountWorld(hp.local)
+        guns.push({ x: w.x, y: w.y, module: m })
+      }
+    }
+    for (const partVerts of parts) {
+      const centre = polygonCentroid(partVerts)
+      const area = polygonArea(partVerts)
+      const side = dot(subtract(centre, beam.a), cutNormal) > 0 ? 1 : -1
+      const ix = cutNormal.x * side * CONFIG.SPLIT_IMPULSE,
+        iy = cutNormal.y * side * CONFIG.SPLIT_IMPULSE
+      const mine = guns.filter((g) => (dot(subtract(g, beam.a), cutNormal) > 0 ? 1 : -1) === side)
+      // burning debris at the cut end
+      this.burst(centre.x, centre.y, randInt(10, 16), "#ff7a4a", 40, 190, 0.75)
+      this.burst(centre.x, centre.y, randInt(6, 10), "#ffd36a", 30, 130, 0.5)
+      // a gunless sliver just becomes ore; a piece with turrets survives as a
+      // gun-rock so it can keep firing, even if small
+      if (area < CONFIG.AST_MIN_AREA && mine.length === 0) {
+        for (let k = 0; k < 3; k++) {
+          this.spawnOre(centre.x + randRange(-12, 12), centre.y + randRange(-12, 12), ship.vx + ix, ship.vy + iy)
+        }
+        continue
+      }
+      this.asteroids.push(
+        new Asteroid({
+          vertices: partVerts,
+          vx: ship.vx + ix,
+          vy: ship.vy + iy,
+          spin: randRange(-1.2, 1.2),
+          fragment: true,
+          hardpoints: mine,
+        }),
+      )
+    }
+    this.ring(ship.x, ship.y, 16, "#ffcf5c", 190, 0.6)
+    this.screenShake = Math.max(this.screenShake, 9)
+    Sound.explode()
+    if (fromPlayer) {
+      this.score += ship.type.blastScore
+    }
+    ship.dead = true
+    return true
   }
 
   // ---- level / sector flow --------------------------------------------
