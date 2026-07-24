@@ -90,25 +90,28 @@ const PROJECT = `
 const LINE_VS = `#version 300 es
   precision highp float;
   layout(location=0) in vec3 aPos;
-  layout(location=1) in float aEdge;    // signed distance across the width (virtual px)
-  layout(location=2) in vec2 aWidths;   // halfCore, halfTotal
+  layout(location=1) in vec2 aLine;     // edge (transverse), long (along, 0..L core)
+  layout(location=2) in vec3 aParams;   // halfCore, halfTotal, L
   layout(location=3) in vec4 aColor;
-  out float vEdge;
-  out vec2 vWidths;
+  out vec2 vLine;
+  out vec3 vParams;
   out vec4 vColor;
   ${PROJECT}
   void main() {
-    vEdge = aEdge; vWidths = aWidths; vColor = aColor;
+    vLine = aLine; vParams = aParams; vColor = aColor;
     gl_Position = project(aPos);
   }`
+// Capsule distance field: distance to the core segment (round caps), so
+// segments sharing an endpoint overlap smoothly with no gap at the join.
 const LINE_FS = `#version 300 es
   precision highp float;
-  in float vEdge; in vec2 vWidths; in vec4 vColor;
+  in vec2 vLine; in vec3 vParams; in vec4 vColor;
   out vec4 frag;
   void main() {
-    float t = abs(vEdge);
-    float core = 1.0 - smoothstep(vWidths.x - 1.0, vWidths.x + 0.5, t);
-    float halo = pow(clamp(1.0 - t / vWidths.y, 0.0, 1.0), 2.2);
+    float over = max(max(0.0, -vLine.y), vLine.y - vParams.z);
+    float d = sqrt(over * over + vLine.x * vLine.x);
+    float core = 1.0 - smoothstep(vParams.x - 1.0, vParams.x + 0.5, d);
+    float halo = pow(clamp(1.0 - d / vParams.y, 0.0, 1.0), 2.2);
     float inten = max(core, halo * 0.7);
     frag = vec4(vColor.rgb * inten, inten * vColor.a);
   }`
@@ -435,7 +438,7 @@ export class WebGLRenderer extends Renderer {
     }
     // per-program vertex layout: [location, size] entries, and blend mode.
     this.layouts = {
-      line: { stride: 10, attrs: [[0, 3], [1, 1], [2, 2], [3, 4]], additive: true },
+      line: { stride: 12, attrs: [[0, 3], [1, 2], [2, 3], [3, 4]], additive: true },
       sprite: { stride: 10, attrs: [[0, 3], [1, 2], [2, 1], [3, 4]], additive: true },
       flat: { stride: 7, attrs: [[0, 3], [1, 4]], additive: false },
       text: { stride: 9, attrs: [[0, 3], [1, 2], [2, 4]], additive: false },
@@ -648,9 +651,9 @@ export class WebGLRenderer extends Renderer {
   }
 
   // ---- geometry builders --------------------------------------------------
-  // capScale extends the ends for rounded standalone lines; strokePoly passes 0
-  // so polygon edges meet cleanly at shared vertices instead of overshooting.
-  #lineQuad(ax, ay, bx, by, z, core, total, col, capScale = 0) {
+  // Round-capped quad: ends extend by `total` and the fragment measures the
+  // capsule distance to the core segment [0, len], so joins overlap cleanly.
+  #lineQuad(ax, ay, bx, by, z, core, total, col) {
     let dx = bx - ax,
       dy = by - ay
     const len = Math.hypot(dx, dy) || 1
@@ -658,20 +661,21 @@ export class WebGLRenderer extends Renderer {
     dy /= len
     const px = -dy,
       py = dx
-    const cap = total * capScale
-    ax -= dx * cap
-    ay -= dy * cap
-    bx += dx * cap
-    by += dy * cap
+    const cap = total
+    const axe = ax - dx * cap,
+      aye = ay - dy * cap // extended A end (long = -cap)
+    const bxe = bx + dx * cap,
+      bye = by + dy * cap // extended B end (long = len + cap)
     const [r, g, bl, a] = col
-    const corner = (x, y, edge) => this.#push(x + px * edge, y + py * edge, z, edge, core, total, r, g, bl, a)
-    // two triangles across the width
-    corner(ax, ay, -total)
-    corner(bx, by, -total)
-    corner(bx, by, total)
-    corner(ax, ay, -total)
-    corner(bx, by, total)
-    corner(ax, ay, total)
+    // vertex: pos, edge (transverse), long (along), halfCore, halfTotal, len, rgba
+    const corner = (x, y, edge, long) =>
+      this.#push(x + px * edge, y + py * edge, z, edge, long, core, total, len, r, g, bl, a)
+    corner(axe, aye, -total, -cap)
+    corner(bxe, bye, -total, len + cap)
+    corner(bxe, bye, total, len + cap)
+    corner(axe, aye, -total, -cap)
+    corner(bxe, bye, total, len + cap)
+    corner(axe, aye, total, -cap)
   }
 
   #spriteQuad(x, y, z, radius, exp, col) {
@@ -720,7 +724,7 @@ export class WebGLRenderer extends Renderer {
     const core = (opts.width ?? 1.6) / 2
     const total = core + (opts.glow || 0) * 0.5 + 1.2
     this.#use("line")
-    this.#lineQuad(ax, ay, bx, by, this.passZ, core, total, col, 0.8)
+    this.#lineQuad(ax, ay, bx, by, this.passZ, core, total, col)
   }
 
   circle(x, y, r, opts = {}) {
