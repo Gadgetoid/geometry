@@ -121,6 +121,26 @@ test("a heavy rock is barely deflected by a light one", () => {
   assert.ok(small.vx > big.vx, "the chip is thrown clear")
 })
 
+test("the rocks a sector spawns differ in mass", () => {
+  // The clamp is a guard against extremes, not the thing that sets the answer:
+  // a ceiling of 4 sat below everything a sector spawns, so every rock in the
+  // field weighed exactly the same and no boulder could shrug off any chip.
+  const game = new Game()
+  game.startNewGame()
+  const masses = []
+  for (let sector = 1; sector <= 12; sector++) {
+    game.startLevel(sector)
+    for (const rock of game.asteroids) {
+      masses.push(rock.mass)
+    }
+  }
+  assert.ok(masses.length > 20, "enough rocks to say anything")
+  const atCap = masses.filter((m) => m === CONFIG.AST_MASS_RANGE[1]).length
+  assert.equal(atCap, 0, `${atCap} of ${masses.length} spawned rocks are pinned to the clamp`)
+  const spread = Math.max(...masses) / Math.min(...masses)
+  assert.ok(spread > 1.5, `spawned rock mass spans a factor of ${spread.toFixed(2)}`)
+})
+
 test("a rock collision honours ROCK_RESTITUTION", () => {
   const game = liveGame()
   const a = new Asteroid({ vertices: square(0, 0, 60), vx: 80, vy: 0 })
@@ -295,21 +315,37 @@ test("a ship driven into a corner is not left inside either rock", () => {
   game.asteroids = [floor, wall]
   player.x = 570
   player.y = 370
-  let deepest = 0
+  const speed = 200
+  // What the hull could travel in one step. The solver may be caught mid-frame
+  // with the ship part of the way in, but it must never end a frame deeper than
+  // the ship could have moved during it, or it is losing ground rather than
+  // holding it. How much of that shows depends on how far the rocks give: these
+  // slabs are heavy enough to stay put, which is the worst case for the ship.
+  const oneStep = (Math.hypot(speed, speed) * 1) / 60
+  const trace = []
   for (let i = 0; i < 180; i++) {
     for (const rock of game.asteroids) {
       rock.vx = 0
       rock.vy = 0
       rock.spin = 0
     }
-    player.vx = 200
-    player.vy = 200 // keep driving into the corner
+    player.vx = speed
+    player.vy = speed // keep driving into the corner
     game.advance(1 / 60)
+    let deepest = 0
     for (const rock of game.asteroids) {
       deepest = Math.max(deepest, overlapDepth(rock.convexParts(), player.collisionOutline()))
     }
+    trace.push(deepest)
   }
-  assert.ok(deepest < 1, `deepest residual penetration ${deepest.toFixed(2)} world units`)
+  const worst = Math.max(...trace)
+  assert.ok(
+    worst < oneStep,
+    `deepest penetration ${worst.toFixed(2)} of a ${oneStep.toFixed(2)} step`,
+  )
+  // and it is not merely bounded: the ship works its way clear and stays clear
+  const settled = Math.max(...trace.slice(60))
+  assert.equal(settled, 0, `still ${settled.toFixed(2)} deep after a second of this`)
 })
 
 // Deepest overlap between two bodies given as convex parts, 0 when apart.

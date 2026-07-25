@@ -99,7 +99,11 @@ export const CONFIG = {
   CONTACT_BIAS: 0.35,
   CONTACT_ITERATIONS: 4,
   AST_MASS_AREA: 3200, // rock area per unit of mass, for collision response
-  AST_MASS_RANGE: [0.4, 4], // clamp on the mass a rock's area may imply
+  // Clamp on the mass a rock's area may imply, as a guard against extremes. It
+  // has to stay clear of what a sector actually spawns: those run 4.3 to 8.2, so
+  // a ceiling of 4 put every last one of them on it and made every rock in the
+  // field weigh exactly the same, whatever its size.
+  AST_MASS_RANGE: [0.4, 9],
   SHIP_RESTITUTION: 0.3, // bounce between two hulls
   RIVAL_ENTRY_MARGIN: 80, // how far past its own hull a rival starts, outside the boundary
   RIVAL_EXIT_MARGIN: 200, // how far outside the boundary a departing rival steers for
