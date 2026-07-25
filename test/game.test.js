@@ -12,6 +12,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import { Game } from "../src/game.js"
+import { PALETTE } from "../src/palette.js"
 import {
   Asteroid,
   Projectile,
@@ -31,9 +32,11 @@ import {
   POWERUP_TYPES,
   PROGRESSION,
   SHIP_PLATING,
+  SHIP_SCALARS,
   SHOP,
   WEAPON_TYPES,
   SHIP_TYPES,
+  deriveShipStats,
 } from "../src/config.js"
 import {
   convexContact,
@@ -1860,6 +1863,115 @@ test("the volume row still adjusts, on the page that has it", () => {
   const before = game.settings.volume
   assert.equal(game.menuAdjust(-1), true)
   assert.ok(game.settings.volume < before, "left turned it down")
+})
+
+// ---- a ship is a shape and three numbers ----------------------------------
+
+test("every ship type states only its shape and its three stats", () => {
+  // The derived settings must not be written down as well, or the relationships
+  // stop being the thing that decides them and quietly become decoration.
+  const derived = [
+    "accel",
+    "maxSpeed",
+    "turnRate",
+    "drag",
+    "hull",
+    "shieldScale",
+    "hullWidth",
+    "rockContact",
+  ]
+  for (const [name, type] of Object.entries(SHIP_TYPES)) {
+    for (const field of ["size", "mass", "power", "armour"]) {
+      assert.equal(typeof type[field], "number", `${name} must state ${field}`)
+    }
+    for (const field of derived) {
+      assert.equal(typeof type[field], "number", `${name} must end up with ${field}`)
+      assert.ok(Number.isFinite(type[field]), `${name}.${field} is ${type[field]}`)
+    }
+  }
+})
+
+test("the ship stats follow from the shape and the three numbers", () => {
+  const k = SHIP_SCALARS
+  const reach = (outline) => Math.max(...outline.map(([x, y]) => Math.hypot(x, y)))
+  for (const [name, t] of Object.entries(SHIP_TYPES)) {
+    const thrust = t.power * k.thrustPerPower
+    assert.ok(Math.abs(t.accel - thrust / t.mass) < 1e-9, `${name} accel`)
+    assert.ok(Math.abs(t.maxSpeed - t.accel * k.speedPerAccel) < 1e-9, `${name} maxSpeed`)
+    assert.ok(
+      Math.abs(t.turnRate - (thrust * k.turnPerThrust) / (t.mass * t.size)) < 1e-9,
+      `${name} turnRate`,
+    )
+    assert.ok(Math.abs(t.drag - (1 - k.dragPerMass / t.mass)) < 1e-9, `${name} drag`)
+    assert.ok(
+      Math.abs(t.shieldScale - reach(t.outline) * k.shieldClearance) < 1e-9,
+      `${name} shieldScale`,
+    )
+    // the bubble has to clear the hull it is drawn around, whatever the shape
+    assert.ok(t.shieldScale > reach(t.outline), `${name} bubble must stand clear of the outline`)
+  }
+})
+
+test("a new ship needs a shape and three numbers, and nothing else", () => {
+  // Same machinery the shipped types go through, so this cannot pass by way of
+  // a value written down somewhere.
+  const design = {
+    outline: [
+      [1.5, 0],
+      [-1, -0.8],
+      [-0.6, 0],
+      [-1, 0.8],
+    ],
+    colour: PALETTE.rival.hull,
+    size: 20,
+    mass: 2,
+    power: 1.5,
+    armour: 0.8,
+    hardpoints: [{ local: [0, 0], role: "core" }],
+    loadout: [],
+    spawn: { fromSector: 5, chance: 0.5, maxConcurrent: 1 },
+    lifeTime: [20, 30],
+    energyMax: 120,
+    regen: 25,
+    debrisMaterial: SHIP_PLATING,
+    debris: { particles: 30, speed: 250, ring: 20, shake: 12 },
+    killScore: 500,
+    blastScore: 250,
+    oreDrop: 6,
+  }
+  SHIP_TYPES.corvette = deriveShipStats(design)
+  try {
+    const game = liveGame()
+    game.player.x = -9000
+    game.player.y = -9000
+    const ship = new RivalShip(300, 320, "corvette", [])
+    game.rivals = [ship]
+    for (const field of ["accel", "maxSpeed", "turnRate", "drag", "hull"]) {
+      assert.ok(Number.isFinite(ship[field]), `corvette ${field} is ${ship[field]}`)
+      assert.ok(ship[field] > 0, `corvette ${field} is ${ship[field]}`)
+    }
+    assert.ok(ship.shieldRadius() > ship.boundRadius, "its bubble clears its hull")
+    // and it flies
+    const startX = ship.x
+    for (let i = 0; i < 120; i++) {
+      game.advance(1 / 60)
+    }
+    assert.notEqual(ship.x, startX, "it moves under its own power")
+  } finally {
+    delete SHIP_TYPES.corvette
+  }
+})
+
+test("stating a setting on a type keeps it, for tuning one ship", () => {
+  const design = { ...SHIP_TYPES.scout, mass: 0.7, power: 1, armour: 1, drag: 0.123, hull: 99 }
+  delete design.accel
+  const tuned = deriveShipStats(design)
+  assert.equal(tuned.drag, 0.123, "a stated value wins")
+  assert.equal(tuned.hull, 99)
+  assert.ok(
+    Math.abs(tuned.accel - (1 * SHIP_SCALARS.thrustPerPower) / 0.7) < 1e-9,
+    "the rest still derives",
+  )
 })
 
 test("sector plans follow PROGRESSION", () => {

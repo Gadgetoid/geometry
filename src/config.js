@@ -10,7 +10,7 @@
 // A registry entry may carry an `apply` function; it drives the effect through
 // the public Game API so the whole definition stays in one place.
 
-import { normalize, randRange, subtract } from "./math.js"
+import { clamp, normalize, randRange, subtract } from "./math.js"
 import { PALETTE } from "./palette.js"
 
 export const VIEW_W = 1024
@@ -476,39 +476,122 @@ export const SHIELD_TYPES = {
 }
 
 // ---------------------------------------------------------------------------
-// SHIP TYPES - outline + a few numbers. `hardpoints` are attachment slots in
-// local space (role is documentation); `loadout` mounts modules onto them by
-// index. `arms` are optional modules the spawner rolls, each with a per-sector
-// chance that ramps from the type's spawn sector up to its cap.
+// SHIP STATS - how a ship's settings come out of what the ship is.
+//
+// A type states its shape (`outline` and `size`) and three numbers a person can
+// hold in their head:
+//
+//   mass    how heavy the hull is, on the scale a rock's mass is on
+//   power   engine output, in units of `thrustPerPower` below
+//   armour  plating quality, as hull points per unit of hull area
+//
+// How it flies and how much it can take then follow from those and from the
+// outline itself, through the relationships below. That is the point of keeping
+// them here: a ship is a shape and three numbers, not a dozen loose values that
+// have to be kept consistent with one another by hand, and the reasoning that
+// ties them together is written down once instead of being implied by the
+// numbers a dozen times.
+//
+// Stating any derived field on a type keeps that value instead, for tuning one
+// ship without disturbing the relationships. Nothing ships with one.
+//
+// `size` is not derived. It belongs with the outline, which is drawn at unit
+// scale, and it cannot come out of mass without one of the ships moving a long
+// way: a scout packs 2.1x the mass into its area that a frigate does, so a
+// single density puts one of them 20% off whichever way it is fitted.
+// ---------------------------------------------------------------------------
+export const SHIP_SCALARS = {
+  thrustPerPower: 100, // accel = power * this / mass
+  speedPerAccel: 1.37, // top speed, as a multiple of acceleration
+  // turnRate = thrust * this / (mass * size): thrusters at the hull's edge give a
+  // torque proportional to its reach, against a spin inertia that grows with mass
+  // and with reach squared, so one power of the reach cancels.
+  turnPerThrust: 0.217,
+  dragPerMass: 0.39, // drag = 1 - this / mass: a heavy hull coasts, a light one bites
+  shieldClearance: 1.33, // the bubble, as a multiple of how far the outline reaches
+  hullWidthBase: 1.71, // outline weight, which grows a little with the hull
+  hullWidthPerSize: 0.0071,
+  hullPerArea: 0.11, // hull = armour * hull area * this
+  // rockContact is set so a full-speed ram costs about this much of the hull.
+  // Rivals steer for ore and rocks and shoulder them aside constantly, so
+  // charging them the player's flat rate kills them faster than they can do
+  // anything interesting: at 1 a scout does not survive a single ram and a
+  // rival's median life falls from 24s to 5s.
+  ramSurvivability: 0.7,
+  // And a ceiling for the hulls that are tough or slow enough that a ram cannot
+  // threaten them anyway, which the formula would otherwise put on the player's
+  // full rate. The player is the one hull meant to fear a rock.
+  maxRockContact: 0.6,
+}
+
+// Area the outline encloses at unit scale, and how far it reaches from the origin.
+const outlineArea = (outline) => {
+  let twice = 0
+  for (let i = 0; i < outline.length; i++) {
+    const p = outline[i],
+      q = outline[(i + 1) % outline.length]
+    twice += p[0] * q[1] - q[0] * p[1]
+  }
+  return Math.abs(twice) / 2
+}
+const outlineReach = (outline) => Math.max(...outline.map(([x, y]) => Math.hypot(x, y)))
+
+// What the shape alone decides, for any hull including the player's.
+function hullShape(type) {
+  return {
+    shieldScale: outlineReach(type.outline) * SHIP_SCALARS.shieldClearance,
+    hullWidth: SHIP_SCALARS.hullWidthBase + type.size * SHIP_SCALARS.hullWidthPerSize,
+  }
+}
+
+// Fill in everything a type has not stated for itself.
+export function deriveShipStats(type) {
+  const k = SHIP_SCALARS
+  const stated = (field, value) => (type[field] !== undefined ? type[field] : value)
+  const thrust = type.power * k.thrustPerPower
+  const hullArea = outlineArea(type.outline) * type.size * type.size
+  const accel = stated("accel", thrust / type.mass)
+  const maxSpeed = stated("maxSpeed", accel * k.speedPerAccel)
+  const hull = stated("hull", Math.round(type.armour * hullArea * k.hullPerArea))
+  const shape = hullShape(type)
+  return {
+    ...type,
+    accel,
+    maxSpeed,
+    hull,
+    turnRate: stated("turnRate", (thrust * k.turnPerThrust) / (type.mass * type.size)),
+    drag: stated("drag", clamp(1 - k.dragPerMass / type.mass, 0.05, 0.98)),
+    shieldScale: stated("shieldScale", shape.shieldScale),
+    hullWidth: stated("hullWidth", shape.hullWidth),
+    rockContact: stated(
+      "rockContact",
+      clamp(
+        (k.ramSurvivability * hull) / (maxSpeed * CONFIG.ROCK_IMPACT_DAMAGE),
+        0.05,
+        k.maxRockContact,
+      ),
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SHIP TYPES - a shape, three numbers, and what the simulation cannot work out
+// for itself. `hardpoints` are attachment slots in local space (role is
+// documentation); `loadout` mounts modules onto them by index. `arms` are
+// optional modules the spawner rolls, each with a per-sector chance that ramps
+// from the type's spawn sector up to its cap.
 //
 // The spawner reads `spawn`: a type with a `chance` is rolled once its
 // `fromSector` is reached, up to `maxConcurrent` alive at a time; the type
 // marked `fallback` is spawned when nothing else is picked.
 //
-// The rest describes how a type differs in play, so no code tests a ship by
-// name: `hullWidth` is its outline weight, `debris` sizes the explosion, and
-// `debrisMaterial` says what its wreckage is made of. `hunts` says it steers for
-// the player instead of for ore and rocks.
+// The rest is what a type does rather than what it is made of, so no code tests
+// a ship by name: `debris` sizes the explosion, `debrisMaterial` says what its
+// wreckage is made of, and `hunts` says it steers for the player instead of for
+// ore and rocks.
 //
-// `mass` is what the contact solver weighs the hull at, on the scale a rock's
-// mass is expressed on, with the player's hull as 1. It is picked for how the
-// ship should feel to shoulder and is not derived from its outline: a rock's
-// mass comes from its area and a ship's does not. So the two are comparable as
-// numbers the solver divides by and in no other sense - a frigate's 6 against a
-// hull area that would imply 1.5. Debris does take its mass from area, being
-// rock from then on, so wreckage weighs less than the ship it was cut from.
-//
-// `shieldScale` sizes the shield bubble, as a multiple of `size`, so it clears the
-// hull without floating far off it. A beam is stopped by that bubble, so this sets
-// how big a shielded ship is to shoot at as well as how big it looks.
-//
-// `rockContact` scales what a frame of rock contact costs this hull, against the
-// player's 1. Rivals steer for ore and rocks and shoulder them aside constantly,
-// so charging them the player's rate kills them faster than they can do anything
-// interesting: at 1 a scout does not survive a single full-speed ram and a
-// rival's median life falls from 24s to 5s. These are set so a rock is a real
-// hazard to them without ending the run of shoving rocks around that makes them
-// worth watching.
+// Debris takes its mass from its area, being rock from then on, so wreckage
+// weighs less than the ship it was cut from.
 //
 // `exhaust` is the thruster: `mounts` are nozzle positions in local space, as
 // hardpoints are, and every one of them emits, so two mounts read as two streams.
@@ -546,7 +629,7 @@ export const FRIGATE_SHAPE = [
   [1.7, -0.55],
 ]
 
-export const SHIP_TYPES = {
+const SHIP_DESIGNS = {
   scout: {
     outline: [
       [1.4, 0],
@@ -556,11 +639,9 @@ export const SHIP_TYPES = {
     ],
     colour: PALETTE.rival.hull,
     size: 12,
-    mass: 0.7,
-    accel: 140,
-    maxSpeed: 190,
-    turnRate: 2.6,
-    drag: 0.4,
+    mass: 0.7, // a light dart
+    power: 1,
+    armour: 1,
     exhaust: { mounts: [[-1.17, 0]], rate: 26, speed: 55, life: 0.4, spread: 20 },
     lifeTime: [16, 26],
     energyMax: 90,
@@ -582,25 +663,19 @@ export const SHIP_TYPES = {
       shield: { hp: 2, shield: "standard", chancePerSector: 0.12, chanceCap: 0.8 },
     },
     spawn: { fromSector: 4, fallback: true },
-    hullWidth: 1.8,
-    shieldScale: 1.9,
-    rockContact: 0.2, // a light dart: one full-speed ram leaves it on a third of its hull
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
     killScore: 400,
     blastScore: 200,
     oreDrop: 5,
-    hull: 30, // one clean laser hit finishes it once the shield is down
   },
   frigate: {
     outline: FRIGATE_SHAPE,
     colour: PALETTE.rival.frigateHull,
     size: 40,
-    mass: 6,
-    accel: 32,
-    maxSpeed: 44,
-    turnRate: 0.17,
-    drag: 0.94,
+    mass: 6, // a slab: heavy, hard to turn, and thin-skinned for its size
+    power: 2,
+    armour: 0.6,
     // twin nozzles set either side of the tail, throwing a long heavy plume: a
     // single small stream read far too light for a hull this size
     exhaust: {
@@ -634,20 +709,23 @@ export const SHIP_TYPES = {
     ],
     spawn: { fromSector: 6, chance: 0.3, maxConcurrent: 1 },
     hunts: true, // steers for the player rather than for ore and rocks
-    hullWidth: 2,
-    shieldScale: 2.3, // a long hull needs a wider bubble to clear its nose
-    rockContact: 0.5, // heavy and slow: it shoulders rocks aside and barely notices
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
     killScore: 900,
     blastScore: 500,
     oreDrop: 9,
-    hull: 320, // mostly relevant to blasts; an unshielded frigate is sliced, not shot
   },
 }
 
-// Player ship definition (its own type so the same machinery drives it).
-export const PLAYER_TYPE = {
+export const SHIP_TYPES = Object.fromEntries(
+  Object.entries(SHIP_DESIGNS).map(([name, design]) => [name, deriveShipStats(design)]),
+)
+
+// Player ship definition (its own type so the same machinery drives it). How it
+// flies is CONFIG's business and not this table's, since the player's throttle,
+// turn and drag are tuned against the controls rather than against the hull; the
+// bubble and the outline weight still come from the shape, as every hull's do.
+const PLAYER_DESIGN = {
   outline: [
     [1.4, 0],
     [-0.8, -0.85],
@@ -656,8 +734,7 @@ export const PLAYER_TYPE = {
   ],
   colour: PALETTE.player.hull,
   size: 13,
-  mass: 1,
-  shieldScale: 1.9,
+  mass: 1, // the scale every other hull's mass is quoted against
   hardpoints: [
     { local: [1.4, 0], role: "nose" },
     { local: [0, 0], role: "core" },
@@ -675,6 +752,8 @@ export const PLAYER_TYPE = {
     turret: { hp: 2, weapon: "defenseLaser", controller: "defense" },
   },
 }
+
+export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
 
 // ---------------------------------------------------------------------------
 // POWERUP TYPES - one entry per collectable. Fields:

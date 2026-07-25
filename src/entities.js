@@ -1456,7 +1456,12 @@ export class PlayerShip extends Ship {
       x: this.x + (p[0] * c - p[1] * s) * scale,
       y: this.y + (p[0] * s + p[1] * c) * scale,
     }))
-    renderer.strokePoly(hull, { color: this.colour, width: 1.9, glow: 20, alpha: t })
+    renderer.strokePoly(hull, {
+      color: this.colour,
+      width: this.type.hullWidth,
+      glow: 20,
+      alpha: t,
+    })
     for (let i = 0; i < 2; i++) {
       const ring = clamp(t * 1.5 - i * 0.4, 0, 1)
       if (ring <= 0 || ring >= 1) {
@@ -1500,9 +1505,17 @@ export class PlayerShip extends Ship {
         closed: false,
       })
     }
-    renderer.strokePoly(this.worldOutline(), { color: colour, width: 1.9, glow: 14 })
+    renderer.strokePoly(this.worldOutline(), {
+      color: colour,
+      width: this.type.hullWidth,
+      glow: 14,
+    })
     if (tint) {
-      renderer.circle(this.x, this.y, this.radius * 1.7, { stroke: colour, width: 1.9, alpha: 0.5 })
+      renderer.circle(this.x, this.y, this.radius * 1.7, {
+        stroke: colour,
+        width: this.type.hullWidth,
+        alpha: 0.5,
+      })
     }
 
     // Shield bubble around the ship (fades with the energy cell; gone when overloaded).
@@ -1569,7 +1582,7 @@ export class RivalShip extends Ship {
     this.energyMax = type.energyMax
     this.energy = type.energyMax
     this.regen = type.regen
-    this.hull = type.hull || 60 // hull HP once the shield is gone; more than one hit
+    this.hull = type.hull // hull HP once the shield is gone; more than one hit
     this.lifeTimer = randRange(type.lifeTime[0], type.lifeTime[1])
     this.leaving = false
     this.buildHardpoints(type.hardpoints)
