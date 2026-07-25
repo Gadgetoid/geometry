@@ -484,33 +484,55 @@ test("hazard traits are gated by sector", () => {
 
 // ---- pause menu, settings and the saved run --------------------------------
 
-test("pause opens a menu, and the cursor wraps", async () => {
-  const { PAUSE_MENU } = await import("../src/config.js")
+test("pause opens a menu, and the cursor wraps", () => {
   const game = liveGame()
   assert.equal(game.menuRows(), 0, "nothing to navigate while flying")
   game.togglePause()
-  assert.equal(game.menuRows(), PAUSE_MENU.length)
+  const rows = game.pauseMenu().length
+  assert.ok(rows > 1)
+  assert.equal(game.menuRows(), rows)
   assert.equal(game.pauseSelection, 0)
   game.menuMove(-1)
-  assert.equal(game.pauseSelection, PAUSE_MENU.length - 1, "wraps backwards off the top")
+  assert.equal(game.pauseSelection, rows - 1, "wraps backwards off the top")
   game.menuMove(1)
   assert.equal(game.pauseSelection, 0)
 })
 
-test("the pause menu takes precedence over the shop", async () => {
-  const { PAUSE_MENU } = await import("../src/config.js")
+test("the pause menu takes precedence over the shop", () => {
   const game = liveGame()
   game.enterShop()
   game.paused = true
-  assert.equal(game.menuRows(), PAUSE_MENU.length, "paused wins where both could apply")
+  assert.equal(game.menuRows(), game.pauseMenu().length, "paused wins where both could apply")
+})
+
+test("exit is only offered where the window can actually be closed", () => {
+  const named = (game) => game.pauseMenu().map((row) => row.name)
+  const tab = liveGame()
+  tab.canExit = false
+  assert.ok(!named(tab).includes("EXIT GAME"), "a tab cannot be closed by script, so no row")
+  const app = liveGame()
+  app.canExit = true
+  assert.ok(named(app).includes("EXIT GAME"), "an app window can, so the row is there")
+  assert.equal(named(app).length, named(tab).length + 1, "and nothing else changes with it")
+})
+
+test("the cursor cannot land on a row that is not offered", () => {
+  const game = liveGame()
+  game.canExit = false
+  game.togglePause()
+  for (let i = 0; i < game.menuRows() * 2; i++) {
+    game.menuMove(1)
+    const row = game.pauseMenu()[game.pauseSelection]
+    assert.ok(row, "every position holds a row")
+    assert.notEqual(row.name, "EXIT GAME")
+  }
 })
 
 test("volume is adjusted from the menu and reaches the mixer", async () => {
-  const { PAUSE_MENU } = await import("../src/config.js")
   const { Sound } = await import("../src/audio.js")
   const game = liveGame()
   game.togglePause()
-  game.pauseSelection = PAUSE_MENU.findIndex((row) => row.name === "VOLUME")
+  game.pauseSelection = game.pauseMenu().findIndex((row) => row.name === "VOLUME")
   game.setVolume(0.5)
   assert.equal(Sound.volume, 0.5, "the mixer follows the setting")
   game.menuAdjust(1)
@@ -523,12 +545,12 @@ test("volume is adjusted from the menu and reaches the mixer", async () => {
   assert.equal(game.settings.volume, 0, "or below silence")
 })
 
-test("a row that asks for confirmation needs two presses", async () => {
-  const { PAUSE_MENU } = await import("../src/config.js")
+test("a row that asks for confirmation needs two presses", () => {
   const game = liveGame()
+  game.canExit = true // exit is only offered where the window can be closed
   game.togglePause()
-  const index = PAUSE_MENU.findIndex((row) => row.name === "EXIT GAME")
-  assert.ok(PAUSE_MENU[index].confirm, "this row should want confirming")
+  const index = game.pauseMenu().findIndex((row) => row.name === "EXIT GAME")
+  assert.ok(game.pauseMenu()[index].confirm, "this row should want confirming")
   game.pauseSelection = index
   game.menuConfirm()
   assert.equal(game.exitRequested, false, "the first press only asks")
@@ -537,11 +559,11 @@ test("a row that asks for confirmation needs two presses", async () => {
   assert.equal(game.exitRequested, true, "the second press does it")
 })
 
-test("moving the cursor abandons a pending confirmation", async () => {
-  const { PAUSE_MENU } = await import("../src/config.js")
+test("moving the cursor abandons a pending confirmation", () => {
   const game = liveGame()
+  game.canExit = true
   game.togglePause()
-  game.pauseSelection = PAUSE_MENU.findIndex((row) => row.name === "EXIT GAME")
+  game.pauseSelection = game.pauseMenu().findIndex((row) => row.name === "EXIT GAME")
   game.menuConfirm()
   assert.ok(game.pauseConfirming)
   game.menuMove(1)
@@ -549,11 +571,10 @@ test("moving the cursor abandons a pending confirmation", async () => {
   assert.equal(game.exitRequested, false, "and nothing was done")
 })
 
-test("resume closes the menu", async () => {
-  const { PAUSE_MENU } = await import("../src/config.js")
+test("resume closes the menu", () => {
   const game = liveGame()
   game.togglePause()
-  game.pauseSelection = PAUSE_MENU.findIndex((row) => row.name === "RESUME")
+  game.pauseSelection = game.pauseMenu().findIndex((row) => row.name === "RESUME")
   game.menuConfirm()
   assert.equal(game.paused, false)
 })

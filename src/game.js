@@ -123,6 +123,9 @@ export class Game {
     this.settings = { volume: 0.8, sound: true, crt: true }
     this.savedRun = null // the run left behind by a previous session, if any
     this.exitRequested = false // main.js closes the window when this is set
+    // Whether closing the window is even possible. main.js decides, since only it can
+    // see what kind of window this is; a tab cannot be closed by script.
+    this.canExit = false
     this.toast = null
     this.devMode = false
     this.paused = false
@@ -1204,11 +1207,17 @@ export class Game {
   // keyboard and a gamepad drive exactly the same code. Each is safe to call in
   // any phase; the guards live here and not at the call site.
 
+  // The pause rows that belong here. A row can rule itself out, so the menu does not
+  // offer anything that would do nothing when pressed.
+  pauseMenu() {
+    return PAUSE_MENU.filter((row) => !row.available || row.available(this))
+  }
+
   // Which list the cursor is in. The pause menu sits over a live sector, so it wins
   // wherever both could apply.
   menuRows() {
     if (this.paused) {
-      return PAUSE_MENU.length
+      return this.pauseMenu().length
     }
     return this.phase === "shop" ? SHOP.length + 1 : 0
   }
@@ -1231,7 +1240,7 @@ export class Game {
   // A row carrying `confirm` asks once and acts on the second press.
   menuConfirm() {
     if (this.paused) {
-      const row = PAUSE_MENU[this.pauseSelection]
+      const row = this.pauseMenu()[this.pauseSelection]
       if (!row || !row.action) {
         return
       }
@@ -1260,7 +1269,7 @@ export class Game {
   // shop it steps the sector. Returns whether it did anything, so a caller can stop.
   menuAdjust(step) {
     if (this.paused) {
-      const row = PAUSE_MENU[this.pauseSelection]
+      const row = this.pauseMenu()[this.pauseSelection]
       if (row && row.adjust) {
         this.pauseConfirming = null
         row.adjust(this, step)

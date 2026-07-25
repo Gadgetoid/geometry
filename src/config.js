@@ -610,6 +610,7 @@ export function freshUpgrades() {
 //   action  optional (game) => run on ENTER / A
 //   adjust  optional (game, step) => run on LEFT / RIGHT, for anything on a scale
 //   confirm optional prompt; ENTER once asks, ENTER again does it
+//   available optional (game) => whether the row belongs here at all
 // Everything goes through a method on Game, so this file stays free of the audio
 // and renderer plumbing and a row cannot reach past the game's own API.
 // ---------------------------------------------------------------------------
@@ -638,7 +639,14 @@ export const PAUSE_MENU = [
     confirm: "ERASE YOUR RUN?",
     action: (g) => g.resetProgress(),
   },
-  { name: "EXIT GAME", confirm: "QUIT TO DESKTOP?", action: (g) => g.requestExit() },
+  // Only where the window can actually be closed, which is an app window and not a
+  // tab. Offering it in a tab would be a row that does nothing when pressed.
+  {
+    name: "EXIT GAME",
+    confirm: "QUIT TO DESKTOP?",
+    available: (g) => g.canExit,
+    action: (g) => g.requestExit(),
+  },
 ]
 
 // ---------------------------------------------------------------------------

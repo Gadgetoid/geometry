@@ -5,7 +5,7 @@
 // the Renderer without touching game logic. Entities still paint themselves via
 // their own draw(renderer, game) methods.
 
-import { VIEW_W, VIEW_H, TAU, ARENA, GAMEPAD, PAUSE_MENU, SHOP, POWERUP_TYPES } from "./config.js"
+import { VIEW_W, VIEW_H, TAU, ARENA, GAMEPAD, SHOP, POWERUP_TYPES } from "./config.js"
 import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
 import { PALETTE } from "./palette.js"
@@ -801,12 +801,13 @@ export class GameView {
       glow: 16,
     })
 
+    const rows = game.pauseMenu()
     const leftX = VIEW_W / 2 - 190,
       rightX = VIEW_W / 2 + 190,
       top = 168,
       rowHeight = 34
-    for (let i = 0; i < PAUSE_MENU.length; i++) {
-      const row = PAUSE_MENU[i],
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i],
         y = top + i * rowHeight
       const selected = game.pauseSelection === i
       const asking = game.pauseConfirming === row.name
@@ -835,7 +836,7 @@ export class GameView {
       }
     }
 
-    const hintY = top + PAUSE_MENU.length * rowHeight + 18
+    const hintY = top + rows.length * rowHeight + 18
     r.text(
       this.#prompt(
         game,
