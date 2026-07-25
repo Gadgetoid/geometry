@@ -2,3 +2,4 @@ node_modules/
 .chromium-profile/
 __pycache__/
 *.app/
+.DS_Store
