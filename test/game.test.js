@@ -1072,6 +1072,77 @@ test("damage mid-warp is ignored, and not counted", () => {
   assert.equal(game.player.energy, game.player.energyMax)
 })
 
+test("a body that is not in the sector neither stops a beam nor swallows a shot", () => {
+  // A rock directly behind the body: it is cut when the beam gets through.
+  const behind = () => new Asteroid({ vertices: square(700, 320, 60), vx: 0, vy: 0 })
+  const beamPast = (pose) => {
+    const game = liveGame()
+    const shooter = new RivalShip(150, 320, "scout", [])
+    shooter.angle = 0
+    game.rivals.push(shooter)
+    game.asteroids = [behind()]
+    pose(game)
+    const before = game.asteroids.length
+    game.applyBeam(
+      { a: { x: 200, y: 320 }, b: { x: 1000, y: 320 }, dir: { x: 1, y: 0 } },
+      shooter,
+      playerWeapon,
+      30,
+    )
+    return game.asteroids.length > before
+  }
+  // The player is at the centre of the view, squarely in the beam's path.
+  const inTheWay = (game) => {
+    game.player.x = 500
+    game.player.y = 320
+    game.player.angle = 0
+  }
+  assert.ok(
+    beamPast((game) => {
+      inTheWay(game)
+      game.player.warp = 0.4 // mid-warp: not really here
+    }),
+    "a beam must pass through a ship that is mid-warp",
+  )
+  assert.ok(!beamPast(inTheWay), "and must still be stopped by the same ship once it is solid")
+
+  // The same question for a projectile, which must not be spent on it either.
+  const shootAt = (pose) => {
+    const game = liveGame()
+    inTheWay(game)
+    pose(game)
+    const bullet = new Projectile(game.player.x - 60, game.player.y, 900, 0, 100, null)
+    game.projectiles = [bullet]
+    for (let i = 0; i < 200 && !bullet.dead; i++) {
+      bullet.update(1 / 600, game)
+    }
+    return bullet.dead
+  }
+  assert.ok(!shootAt((game) => (game.player.warp = 0.4)), "a shot must fly past a warping ship")
+  assert.ok(
+    shootAt(() => {}),
+    "and must still be stopped by a solid one",
+  )
+})
+
+test("a rival outside the arena is passed through by a shot, as it is by a beam", () => {
+  const game = liveGame()
+  // Just past the ring, where a rival flying in actually sits. A shot expires of
+  // its own accord out here, so the impact effect is what tells the two apart.
+  const rival = new RivalShip(ARENA.cx + ARENA.radius + 20, ARENA.cy, "scout", [])
+  rival.angle = Math.PI
+  game.rivals = [rival]
+  assert.ok(!rival.inPlay(), "the rival must actually be outside the arena")
+  assert.equal(game.particles.length, 0)
+  const bullet = new Projectile(rival.x - 60, rival.y, 900, 0, 100, null)
+  game.projectiles = [bullet]
+  for (let i = 0; i < 400 && !bullet.dead; i++) {
+    bullet.update(1 / 600, game)
+  }
+  assert.equal(game.particles.length, 0, "a rival that cannot be hurt must strike no sparks")
+  assert.equal(rival.hull, SHIP_TYPES.scout.hull)
+})
+
 // ---- powerups are declared, not special-cased ------------------------------
 
 test("a powerup's ongoing effect is read from its registry entry", () => {

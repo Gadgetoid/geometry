@@ -434,14 +434,15 @@ export class Game {
         blockShip = e
       }
     }
-    // A rival outside the arena is passed straight through: it cannot be cut and
-    // cannot be damaged out there, so it must not truncate the beam either.
+    // A body that is not really in the sector is passed straight through: it
+    // cannot be cut and cannot be damaged, so it must not truncate the beam
+    // either. That covers a rival still flying in and a player mid-warp alike.
     for (const rival of this.rivals) {
-      if (rival !== attacker && !rival.dead && rival.insideArena()) {
+      if (rival !== attacker && !rival.dead && rival.inPlay()) {
         considerShip(rival)
       }
     }
-    if (this.player && attacker !== this.player) {
+    if (this.player && attacker !== this.player && this.player.inPlay()) {
       considerShip(this.player)
     }
     // An unshielded hull is cut like a rock (see below) rather than blocking the

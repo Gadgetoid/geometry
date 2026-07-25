@@ -309,6 +309,14 @@ export class Entity {
     return Math.hypot(dx, dy) - this.boundRadius <= ARENA.radius
   }
 
+  // Is this body really in the sector? A body that is not cannot be damaged, and
+  // so must not stop a beam or swallow a bullet either: it is not there to be
+  // shot at. Everything that fires reads this one predicate, so the two channels
+  // cannot come to disagree about which bodies exist. Rocks always are.
+  inPlay() {
+    return true
+  }
+
   // Is a shield raised over this entity?
   shieldUp() {
     const shield = this.shieldModule()
@@ -674,6 +682,7 @@ export class Projectile extends Entity {
     if (
       player &&
       this.owner !== player &&
+      player.inPlay() &&
       this.#withinRadius(player.x, player.y, player.boundRadius) &&
       pointInPolygon(this, player.worldOutline())
     ) {
@@ -687,7 +696,11 @@ export class Projectile extends Entity {
     // A bounding-circle reject first: the exact polygon test is only worth its
     // cost (and, for ships, building the world outline) on a near miss.
     for (const rival of game.rivals) {
-      if (rival === this.owner || !this.#withinRadius(rival.x, rival.y, rival.boundRadius)) {
+      if (
+        rival === this.owner ||
+        !rival.inPlay() ||
+        !this.#withinRadius(rival.x, rival.y, rival.boundRadius)
+      ) {
         continue
       }
       if (pointInPolygon(this, rival.worldOutline())) {
@@ -929,7 +942,7 @@ export class PlayerShip extends Ship {
   // Everything that lands is totalled for the sector summary, whether the
   // shield soaked it or the hull did, so "flawless" means untouched.
   takeDamage(amount, game, channel, scoreOnKill, impact) {
-    if (!this.solid) {
+    if (!this.inPlay()) {
       return false
     }
     game.stats.damage += amount
@@ -960,6 +973,9 @@ export class PlayerShip extends Ship {
   // Solid enough to collide, be hit, and be flown.
   get solid() {
     return this.warp >= 1
+  }
+  inPlay() {
+    return this.solid
   }
 
   #tickWarp(dt, game) {
@@ -1529,8 +1545,11 @@ export class RivalShip extends Ship {
   // flying in or flying out and not really in the sector, so this mirrors the
   // player being intangible mid-warp. Wreckage left out there would be snapped
   // back into the field by the arena confinement the moment it existed.
+  inPlay() {
+    return this.insideArena()
+  }
   takeDamage(amount, game, channel, scoreOnKill, impact) {
-    if (!this.insideArena()) {
+    if (!this.inPlay()) {
       return false
     }
     return super.takeDamage(amount, game, channel, scoreOnKill, impact)
