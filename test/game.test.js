@@ -340,6 +340,43 @@ test("a hull and a rock agree on what counts as a cut", () => {
   assert.equal(hullCut, rockCut, "a hull and a rock must treat a grazing beam alike")
 })
 
+// A beam that never crosses the drawn hull must not register on it, and one that
+// does must. The player used to answer this on a circle of `radius` while every
+// rival answered it on its outline, so a wide beam landed on empty space beside
+// the hull and a narrow one missed the nose, which reaches past `radius`.
+test("a beam hits the player where its hull actually is", () => {
+  // Run a beam parallel to the hull, offset sideways, and compare what the beam
+  // resolver decides against what the outline says.
+  const probe = (offset, weaponType) => {
+    const game = liveGame()
+    const player = game.player
+    player.angle = 0
+    player.x = 400
+    player.y = 320
+    player.energy = player.energyMax
+    const shooter = new RivalShip(400 + offset, 320 - 300, "scout", [])
+    game.rivals = [shooter]
+    const beam = {
+      a: { x: 400 + offset, y: 320 - 300 },
+      b: { x: 400 + offset, y: 320 + 300 },
+      dir: { x: 0, y: 1 },
+    }
+    const crosses = countBeamCrossings(beam, player.worldOutline()) >= 1
+    game.applyBeam(beam, shooter, { type: weaponType })
+    return { crosses, landed: game.stats.damage > 0 }
+  }
+  // The widest beam in the game: its old hit circle was ~10x the hull's area.
+  for (const offset of [-14, -8, 0, 8, 14, 20, 26]) {
+    const r = probe(offset, WEAPON_TYPES.cannonLaser)
+    assert.equal(r.landed, r.crosses, `cannonLaser at offset ${offset}`)
+  }
+  // The narrowest: its old circle stopped short of the nose.
+  for (const offset of [-12, 0, 12, 16, 18, 20]) {
+    const r = probe(offset, WEAPON_TYPES.minerLaser)
+    assert.equal(r.landed, r.crosses, `minerLaser at offset ${offset}`)
+  }
+})
+
 test("frigate debris is partitioned into convex parts that tile it", () => {
   const game = liveGame()
   const { tail } = frigateOnAxis(game)

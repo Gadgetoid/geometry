@@ -357,29 +357,10 @@ export class Game {
     const fullLen = Math.hypot(beam.b.x - beam.a.x, beam.b.y - beam.a.y)
     let blockDist = fullLen
     let blockShip = null
-    const considerShip = (e, radius) => {
-      const reach = width * 0.6 + radius
-      const t = (e.x - beam.a.x) * beam.dir.x + (e.y - beam.a.y) * beam.dir.y
-      if (t < 0) {
-        return
-      }
-      const cx = beam.a.x + beam.dir.x * t,
-        cy = beam.a.y + beam.dir.y * t
-      const perp = Math.hypot(e.x - cx, e.y - cy)
-      if (perp >= reach) {
-        return
-      }
-      // near surface facing the shooter: beam ends here and the shield flashes here
-      const tEntry = t - Math.sqrt(reach * reach - perp * perp)
-      if (tEntry < blockDist) {
-        blockDist = Math.max(0, tEntry)
-        blockShip = e
-      }
-    }
-    // A rival is hit against its actual outline. A circle of `size` left most
-    // of a frigate's length unhittable, and a circle of its full reach would
-    // register on the empty space beside it, so reject on the enclosing circle
-    // and then find the real entry point.
+    // Every ship, the player included, is hit against its actual outline. A
+    // circle of `size` left most of a frigate's length unhittable, and a circle
+    // of its full reach would register on the empty space beside it, so reject on
+    // the enclosing circle and then find the real entry point.
     const considerHull = (e) => {
       const reach = width * 0.6 + e.boundRadius
       const t = (e.x - beam.a.x) * beam.dir.x + (e.y - beam.a.y) * beam.dir.y
@@ -403,7 +384,7 @@ export class Game {
       }
     }
     if (this.player && attacker !== this.player) {
-      considerShip(this.player, this.player.radius)
+      considerHull(this.player)
     }
     // An unshielded sliceable hull is cut in two like a rock (see below) rather
     // than blocking the beam, so it is not truncated against. As for a rock, the
