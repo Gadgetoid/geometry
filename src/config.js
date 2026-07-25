@@ -760,13 +760,6 @@ export function freshUpgrades() {
 // and renderer plumbing and a row cannot reach past the game's own API.
 // ---------------------------------------------------------------------------
 export const PAUSE_MENU = [
-  // `label` is what a player reads; `name` stays the row's identity, which is what
-  // a pending confirmation is remembered by.
-  {
-    name: "RESUME",
-    label: (g) => (g.inSector() ? "RESUME" : "BACK"),
-    action: (g) => g.toggleOptions(),
-  },
   {
     name: "VOLUME",
     value: (g) => `${Math.round(g.settings.volume * 100)}%`,
@@ -798,6 +791,14 @@ export const PAUSE_MENU = [
     confirm: "QUIT TO DESKTOP?",
     available: (g) => g.canExit,
     action: (g) => g.requestExit(),
+  },
+  // The way out sits last, where the controls page also puts it. `label` is what a
+  // player reads; `name` stays the row's identity, which is what a pending
+  // confirmation is remembered by.
+  {
+    name: "RESUME",
+    label: (g) => (g.inSector() ? "RESUME" : "BACK"),
+    action: (g) => g.toggleOptions(),
   },
 ]
 

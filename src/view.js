@@ -884,20 +884,34 @@ export class GameView {
       })
     })
 
-    let y = deepest + 40
-    for (const { row, index } of loose) {
-      this.#menuRow(
-        game,
-        row,
-        game.pauseSelection === index,
-        VIEW_W / 2 - 150,
-        VIEW_W / 2 + 150,
-        y,
-        14,
-      )
-      y += 30
-    }
-    return y
+    // The loose rows share one line under the columns, taking their outer edges: the
+    // first left-aligned, the last right-aligned, as the shop's last row does.
+    const y = deepest + 40
+    const outerLeft = VIEW_W / 2 - totalWidth / 2
+    const outerRight = VIEW_W / 2 + totalWidth / 2
+    const midX = (outerLeft + outerRight) / 2
+    loose.forEach(({ row, index }, position) => {
+      const onLeft = position === 0
+      const selected = game.pauseSelection === index
+      const asking = game.pauseConfirming === row.name
+      if (selected) {
+        r.rect(onLeft ? outerLeft - 12 : midX + 8, y - 15, midX - outerLeft + 4, 24, {
+          fill: asking ? "rgba(255,91,91,.16)" : "rgba(95,215,255,.12)",
+        })
+      }
+      const edge = onLeft ? outerLeft : outerRight
+      const align = onLeft ? "left" : "right"
+      r.text(`${selected ? "> " : "  "}${row.label ? row.label(game) : row.name}`, edge, y, {
+        size: 14,
+        bold: selected,
+        color: asking ? PALETTE.ui.warn : selected ? PALETTE.text.bright : PALETTE.text.normal,
+        align,
+      })
+      if (asking) {
+        r.text(row.confirm, edge, y + 17, { size: 11, color: PALETTE.ui.warn, align })
+      }
+    })
+    return y + 17
   }
 
   // Pause doubles as the settings menu, laid out like the shop so the two read the

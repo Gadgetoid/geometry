@@ -1444,14 +1444,22 @@ test("there is nothing to the left of the first column or the right of the last"
   assert.equal(game.menuAdjust(1), false, "and right of the last")
 })
 
-test("the rows below the columns have no column to cross to", () => {
+test("the rows below the columns pair up on their own line", () => {
   const game = liveGame()
   game.toggleOptions()
   game.openPausePage("controls")
   const rows = game.pauseMenu()
-  game.pauseSelection = rows.findIndex((row) => row.name === "BACK")
-  assert.equal(game.menuAdjust(1), false)
-  assert.equal(rows[game.pauseSelection].name, "BACK", "and the cursor stays put")
+  const at = (name) => rows.findIndex((row) => row.name === name)
+  // BACK sits left and RESET TO DEFAULTS right, so they cross as the columns do
+  game.pauseSelection = at("BACK")
+  assert.equal(game.menuAdjust(1), true)
+  assert.equal(rows[game.pauseSelection].name, "RESET TO DEFAULTS")
+  assert.equal(game.menuAdjust(-1), true)
+  assert.equal(rows[game.pauseSelection].name, "BACK")
+  // and there is nothing beyond either end of the pair
+  assert.equal(game.menuAdjust(-1), false, "nothing to the left of BACK")
+  game.pauseSelection = at("RESET TO DEFAULTS")
+  assert.equal(game.menuAdjust(1), false, "nor to the right of RESET")
 })
 
 test("a waiting row swallows left and right too", () => {

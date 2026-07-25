@@ -1458,12 +1458,14 @@ export class Game {
         })
       }
     }
+    // These two share the line below the columns, BACK under the left one and RESET
+    // under the right, so left and right move between them as they do above.
+    rows.push({ name: "BACK", action: (g) => g.openPausePage("root") })
     rows.push({
       name: "RESET TO DEFAULTS",
       confirm: "RESTORE EVERY CONTROL?",
       action: (g) => g.resetBindings(),
     })
-    rows.push({ name: "BACK", action: (g) => g.openPausePage("root") })
     return rows
   }
 
@@ -1542,7 +1544,7 @@ export class Game {
       if (row && row.section) {
         return this.#stepColumn(rows, step)
       }
-      return false
+      return this.#stepPair(rows, step)
     }
     if (this.devSectorStep(step)) {
       return true
@@ -1565,6 +1567,22 @@ export class Game {
       return true
     }
     return false
+  }
+
+  // The rows below the columns sit two to a line, so left and right move along it.
+  #stepPair(rows, step) {
+    const loose = rows.map((row, index) => ({ row, index })).filter(({ row }) => !row.section)
+    const at = loose.findIndex(({ index }) => index === this.pauseSelection)
+    if (at < 0) {
+      return false
+    }
+    const next = loose[at + (step > 0 ? 1 : -1)]
+    if (!next) {
+      return false
+    }
+    this.pauseSelection = next.index
+    this.pauseConfirming = null
+    return true
   }
 
   // Move to the same place in the neighbouring column: the nth row here becomes the
