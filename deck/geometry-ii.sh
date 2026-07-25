@@ -47,21 +47,78 @@ done
 PROFILE="${GEOMETRY_PROFILE:-$GAME_DIR/.chromium-profile}"
 mkdir -p "$PROFILE"
 
+CHROME_FLAGS=(
+  --user-data-dir="$PROFILE"
+  --allow-file-access-from-files
+  --start-fullscreen
+  --ignore-gpu-blocklist
+  --autoplay-policy=no-user-gesture-required
+  --no-first-run
+  --no-default-browser-check
+  --noerrdialogs
+  --disable-session-crashed-bubble
+  --disable-features=HardwareMediaKeyHandling
+)
+
 if ! geometry_find_browser; then
   geometry_no_browser_message "$0"
   exit 1
 fi
 
-exec "${BROWSER_ARGV[@]}" \
-  --app="$URL" \
-  --user-data-dir="$PROFILE" \
-  --allow-file-access-from-files \
-  --start-fullscreen \
-  --ignore-gpu-blocklist \
-  --autoplay-policy=no-user-gesture-required \
-  --no-first-run \
-  --no-default-browser-check \
-  --noerrdialogs \
-  --disable-session-crashed-bubble \
-  --disable-features=HardwareMediaKeyHandling \
-  "$@"
+# Closing the game window does not necessarily end the browser: on macOS an app with
+# no windows keeps running, so this script would never return and Steam would go on
+# showing the game as running for the rest of the session.
+#
+# So the browser is supervised rather than exec'd. --remote-debugging-port=0 makes it
+# pick a free port and write it into DevToolsActivePort in its own profile, which is
+# then asked how many pages are open. No pages means the game has been closed, from
+# its own Exit or by the window being shut, and this exits with it.
+#
+# Without curl there is nothing to ask, so fall back to handing the process over and
+# accept that quitting may not be noticed.
+PORT_FILE="$PROFILE/DevToolsActivePort"
+rm -f "$PORT_FILE"
+
+if ! command -v curl >/dev/null; then
+  exec "${BROWSER_ARGV[@]}" --app="$URL" "${CHROME_FLAGS[@]}" "$@"
+fi
+
+"${BROWSER_ARGV[@]}" --app="$URL" --remote-debugging-port=0 "${CHROME_FLAGS[@]}" "$@" &
+BROWSER_PID=$!
+
+# tidy up if this script is killed rather than the game being quit
+# `|| true` matters: a failing last command in an EXIT trap becomes the script's own
+# status in bash, and a non-zero exit is what Steam reports as a crash.
+trap 'kill "$BROWSER_PID" 2>/dev/null || true' EXIT INT TERM
+
+# wait for the port to be written, then watch the page count
+PORT=""
+for _ in $(seq 1 60); do
+  if [ -s "$PORT_FILE" ]; then
+    PORT="$(head -n 1 "$PORT_FILE")"
+    break
+  fi
+  kill -0 "$BROWSER_PID" 2>/dev/null || exit 0
+  sleep 0.25
+done
+
+if [ -z "$PORT" ]; then
+  # never came up; nothing to supervise, so just wait on the browser
+  wait "$BROWSER_PID"
+  exit $?
+fi
+
+while kill -0 "$BROWSER_PID" 2>/dev/null; do
+  sleep 1
+  pages="$(curl -s --max-time 2 "http://127.0.0.1:$PORT/json/list" |
+    grep -c '"type": *"page"' || true)"
+  # An empty answer means the browser is going away on its own; only a definite
+  # zero pages counts as the game having been closed.
+  if [ "${pages:-1}" = "0" ]; then
+    kill "$BROWSER_PID" 2>/dev/null
+    break
+  fi
+done
+wait "$BROWSER_PID" 2>/dev/null
+exit 0
+
