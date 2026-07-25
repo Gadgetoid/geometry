@@ -73,6 +73,10 @@ export const CONFIG = {
   AST_REGEN: 12, // shielded/armed rocks recover energy slowly
   AST_ENERGY_SHIELD: 100,
   AST_ENERGY_GUN: 50,
+  // How a rock's collision circle is sized: 0 uses the area-equivalent radius
+  // (tight, and vanishes for a sliver), 1 the bounding radius (generous).
+  // Raising this makes every rock collide closer to how it is drawn.
+  AST_COLLIDE_BLEND: 0.5,
   AST_DRAG: 0.985, // velocity retained per second
   AST_SPIN_DRAG: 0.82,
   AST_BOUNDARY_BOUNCE: 1.9, // rocks are repelled hard off the arena wall

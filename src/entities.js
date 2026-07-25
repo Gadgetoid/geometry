@@ -1275,7 +1275,14 @@ export class Asteroid extends Entity {
     this.center = polygonCentroid(this.vertices)
     this.area = polygonArea(this.vertices)
     this.boundRadius = boundingRadius(this.vertices, this.center)
-    this.collideRadius = Math.sqrt(Math.max(this.area, 1) / Math.PI)
+    // Rocks collide as circles, sized between the area-equivalent radius and
+    // the bounding radius. The area-equivalent radius sits well inside the
+    // drawn outline of a spiky hull and collapses entirely for a long sliver
+    // (a cut frigate half reads as a fraction of its length); the bounding
+    // radius wraps that sliver in mostly empty space. The two agree on a
+    // circle, so the blend only matters as a shape gets less round.
+    const areaRadius = Math.sqrt(Math.max(this.area, 1) / Math.PI)
+    this.collideRadius = lerp(areaRadius, this.boundRadius, CONFIG.AST_COLLIDE_BLEND)
     this.x = this.center.x
     this.y = this.center.y
   }
