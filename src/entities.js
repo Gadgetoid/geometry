@@ -250,78 +250,105 @@ export class Weapon {
     if (!this.ready || game.phase !== "play" || host.leaving) {
       return
     }
+    const controller = WEAPON_CONTROLLERS[this.controller]
+    if (controller) {
+      controller(this, dt, game, host, world)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WEAPON CONTROLLERS - the firing behaviour behind a loadout's `controller`
+// field. Each is called once per frame for a ready weapon as
+// (weapon, dt, game, host, world), where `world` is the hardpoint's position,
+// and fires through weapon.fireProjectile / weapon.emitBeam. Add a behaviour by
+// adding an entry here and naming it in a loadout.
+// ---------------------------------------------------------------------------
+const MINER_RANGE = 420 // a scout starts mining once a rock is this close
+const DEFENSE_BEAM_OVERSHOOT = 42 // beam reaches past the rock it is aimed at
+const OFFSCREEN_MARGIN = 40
+
+export const WEAPON_CONTROLLERS = {
+  // driven directly by player input, see PlayerShip.fireLaser
+  manual() {},
+
+  // leads nothing: fires straight at the player whenever they are visible
+  turret(weapon, dt, game, host, world) {
     const player = game.player
-    if (this.controller === "turret") {
-      // don't snipe the player from off-screen where they can't see the shooter
-      if (!player || player.invincible > 0 || !game.onScreen(host.x, host.y, 40)) {
-        return
-      }
-      this.fireProjectile(
-        game,
-        world.x,
-        world.y,
-        Math.atan2(player.y - world.y, player.x - world.x),
-        host,
+    // don't snipe the player from off-screen where they can't see the shooter
+    if (!player || player.invincible > 0 || !game.onScreen(host.x, host.y, OFFSCREEN_MARGIN)) {
+      return
+    }
+    const aim = Math.atan2(player.y - world.y, player.x - world.x)
+    weapon.fireProjectile(game, world.x, world.y, aim, host)
+  },
+
+  // cuts rocks for ore, firing along the host's facing when one is near
+  miner(weapon, dt, game, host, world) {
+    let nearest = Infinity
+    for (const asteroid of game.asteroids) {
+      nearest = Math.min(
+        nearest,
+        Math.hypot(asteroid.center.x - host.x, asteroid.center.y - host.y),
       )
-    } else if (this.controller === "miner") {
-      let nearest = 1e9
-      for (const a of game.asteroids) {
-        nearest = Math.min(nearest, Math.hypot(a.center.x - host.x, a.center.y - host.y))
+    }
+    if (nearest < MINER_RANGE) {
+      weapon.emitBeam(game, host, world.x, world.y, host.angle, weapon.rollLength())
+    }
+  },
+
+  // heavy cannon: winds up with a growing glow (drawn by drawShip) and, once
+  // committed, fires even if the player slips away, so the shot is telegraphed
+  hunter(weapon, dt, game, host, world) {
+    const player = game.player
+    if (!player) {
+      return
+    }
+    if (weapon.charging > 0) {
+      weapon.charging -= dt
+      if (weapon.charging <= 0) {
+        weapon.charging = 0
+        weapon.emitBeam(game, host, world.x, world.y, host.angle, weapon.type.length)
       }
-      if (nearest < 420) {
-        this.emitBeam(game, host, world.x, world.y, host.angle, this.rollLength())
+      return
+    }
+    const toPlayer = Math.atan2(player.y - host.y, player.x - host.x)
+    const arc = ((toPlayer - host.angle + Math.PI * 3) % TAU) - Math.PI
+    const dist = Math.hypot(player.x - host.x, player.y - host.y)
+    if (
+      Math.abs(arc) < weapon.type.arc &&
+      dist < weapon.type.length &&
+      game.onScreen(host.x, host.y, OFFSCREEN_MARGIN)
+    ) {
+      weapon.charging = weapon.type.chargeTime || 0.8
+      weapon.chargeDuration = weapon.charging
+      Sound.charge()
+    }
+  },
+
+  // the player's nose turret. Arrow keys aim host.turretAim and fire on demand;
+  // with no input it auto-targets the nearest rock in range.
+  defense(weapon, dt, game, host) {
+    if (host.turretManual > 0) {
+      if (host.turretFiring) {
+        weapon.emitBeam(game, host, host.x, host.y, host.turretAim, weapon.type.range)
       }
-    } else if (this.controller === "hunter") {
-      if (!player) {
-        return
-      }
-      // wind up with a growing glow, then fire (see drawShip); once committed
-      // it fires even if the player slips away, telegraphing the big shot
-      if (this.charging > 0) {
-        this.charging -= dt
-        if (this.charging <= 0) {
-          this.charging = 0
-          this.emitBeam(game, host, world.x, world.y, host.angle, this.type.length)
-        }
-        return
-      }
-      const toPlayer = Math.atan2(player.y - host.y, player.x - host.x)
-      const arc = ((toPlayer - host.angle + Math.PI * 3) % TAU) - Math.PI
-      const dist = Math.hypot(player.x - host.x, player.y - host.y)
-      if (
-        Math.abs(arc) < this.type.arc &&
-        dist < this.type.length &&
-        game.onScreen(host.x, host.y, 40)
-      ) {
-        this.charging = this.type.chargeTime || 0.8
-        this.chargeDuration = this.charging
-        Sound.charge()
-      }
-    } else if (this.controller === "defense") {
-      // player nose turret. Manual (arrow keys) aims host.turretAim and fires
-      // on demand; otherwise it auto-targets the nearest rock in range.
-      if (host.turretManual > 0) {
-        if (host.turretFiring) {
-          this.emitBeam(game, host, host.x, host.y, host.turretAim, this.type.range)
-        }
-      } else {
-        let target = null,
-          nearest = this.type.range
-        for (const a of game.asteroids) {
-          const d = Math.hypot(a.center.x - host.x, a.center.y - host.y)
-          if (d < nearest) {
-            nearest = d
-            target = a
-          }
-        }
-        if (target) {
-          host.turretAim = Math.atan2(target.center.y - host.y, target.center.x - host.x)
-          this.emitBeam(game, host, host.x, host.y, host.turretAim, nearest + 42)
-        }
+      return
+    }
+    let target = null,
+      nearest = weapon.type.range
+    for (const asteroid of game.asteroids) {
+      const d = Math.hypot(asteroid.center.x - host.x, asteroid.center.y - host.y)
+      if (d < nearest) {
+        nearest = d
+        target = asteroid
       }
     }
-    // 'manual' is driven by the player directly.
-  }
+    if (target) {
+      host.turretAim = Math.atan2(target.center.y - host.y, target.center.x - host.x)
+      weapon.emitBeam(game, host, host.x, host.y, host.turretAim, nearest + DEFENSE_BEAM_OVERSHOOT)
+    }
+  },
 }
 
 // ---------------------------------------------------------------------------
