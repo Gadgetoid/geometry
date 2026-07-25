@@ -418,27 +418,22 @@ export class Game {
     // so a shot that visibly laps a target is a shot that connects.
     const halfWidth = (weapon.type.width || 2.4) / 2
 
-    // The beam stops at the first ship it strikes: find the nearest ship whose
-    // body the beam enters, remember it so we can damage exactly that one, and
-    // truncate the beam to its near surface so it can't cut rocks beyond it.
+    // Every ship the beam reaches, nearest first. Each is struck on its outermost
+    // real surface: the shield bubble while one is raised, and the hull outline
+    // when none is. Both are the shape the view draws, so a shot that looks like
+    // it connected is the shot that does. A bubble is round, so a circle is its
+    // shape rather than a proxy for it; a hull is not, and a circle around one
+    // registers on the empty space beside it while leaving the nose unhittable.
     const fullLen = Math.hypot(beam.b.x - beam.a.x, beam.b.y - beam.a.y)
-    let blockDist = fullLen
-    let blockShip = null
-    // Every ship, the player included, is struck on its outermost real surface:
-    // the shield bubble while one is raised, and the hull outline when none is.
-    // Both are the shape the view draws, so a shot that looks like it connected is
-    // the shot that does. A bubble is round, so a circle is its shape rather than a
-    // proxy for it; a hull is not, and a circle around one registers on the empty
-    // space beside it while leaving the nose unhittable.
+    const reached = []
     const considerShip = (e) => {
       const bubble = e.shieldUp() ? e.shieldRadius() : 0
       const entry =
         bubble > 0
           ? segmentCircleEntry(beam.a, beam.b, e, bubble + halfWidth)
           : this.#hullEntry(beam, e, halfWidth)
-      if (entry !== null && entry < blockDist) {
-        blockDist = entry
-        blockShip = e
+      if (entry !== null) {
+        reached.push({ ship: e, entry })
       }
     }
     // A body that is not really in the sector is passed straight through: it
@@ -452,19 +447,28 @@ export class Game {
     if (this.player && attacker !== this.player && this.player.inPlay()) {
       considerShip(this.player)
     }
-    // An unshielded hull is cut like a rock (see below) rather than blocking the
-    // beam, so it is not truncated against. As for a rock, the beam has to pass
-    // through: it must cross the outline at least twice, so clipping the tip of a
-    // hull scorches it instead of severing its whole length along a line the shot
-    // never reached. A raised shield is what stops a beam; a hull about to come
-    // apart is not.
-    const blockShielded = blockShip && blockShip.shieldUp()
-    const cuttable =
-      blockShip &&
-      blockShip.severable &&
-      !blockShielded &&
-      countBeamCrossings(beam, blockShip.worldOutline()) >= 2
-    if (blockShip && !cuttable) {
+    reached.sort((a, b) => a.entry - b.entry)
+
+    // A beam passes through every hull it can sever, exactly as it passes through
+    // every rock it can cut, and stops at the first one it cannot. As for a rock,
+    // severing means passing through: the beam must cross the outline at least
+    // twice, so clipping the tip of a hull scorches it instead of severing its
+    // whole length along a line the shot never reached. A raised shield stops a
+    // beam; a hull about to come apart does not.
+    const severed = []
+    let blockDist = fullLen
+    let blockShip = null
+    for (const { ship, entry } of reached) {
+      const cuttable =
+        ship.severable && !ship.shieldUp() && countBeamCrossings(beam, ship.worldOutline()) >= 2
+      if (!cuttable) {
+        blockShip = ship
+        blockDist = entry
+        break
+      }
+      severed.push({ ship, entry })
+    }
+    if (blockShip) {
       beam.b.x = beam.a.x + beam.dir.x * blockDist
       beam.b.y = beam.a.y + beam.dir.y * blockDist
     }
@@ -582,24 +586,28 @@ export class Game {
       this.screenShake = Math.max(this.screenShake, 4)
     }
 
-    // Cut an unshielded hull apart; otherwise damage the struck ship on its
-    // shooter-facing side.
-    if (blockShip) {
-      if (cuttable && this.sliceHull(blockShip, beam, attacker === this.player)) {
+    // Now the hulls, after the rocks, so wreckage this shot makes is not then cut
+    // by the same shot. Damage a ship on its shooter-facing side.
+    const fromPlayer = attacker === this.player
+    const strike = (ship, at) => {
+      const scoreOnKill = fromPlayer && ship !== this.player ? ship.type.killScore : 0
+      ship.takeDamage(damage, this, "laser", scoreOnKill, at)
+      this.burst(at.x, at.y, randInt(3, 6), weapon.type.colour, 30, 130, 0.35)
+      didHit = true
+    }
+    // Every hull the beam passed through comes apart. A cut that will not split
+    // cleanly scorches instead, where the beam met it.
+    for (const { ship, entry } of severed) {
+      if (this.sliceHull(ship, beam, fromPlayer)) {
         didHit = true
       } else {
-        if (cuttable) {
-          // grazing cut that didn't split cleanly: truncate and damage instead
-          beam.b.x = beam.a.x + beam.dir.x * blockDist
-          beam.b.y = beam.a.y + beam.dir.y * blockDist
-        }
-        const hit = { x: beam.b.x, y: beam.b.y }
-        const fromPlayer = attacker === this.player
-        const scoreOnKill = fromPlayer && blockShip !== this.player ? blockShip.type.killScore : 0
-        blockShip.takeDamage(damage, this, "laser", scoreOnKill, hit)
-        this.burst(hit.x, hit.y, randInt(3, 6), weapon.type.colour, 30, 130, 0.35)
-        didHit = true
+        strike(ship, { x: beam.a.x + beam.dir.x * entry, y: beam.a.y + beam.dir.y * entry })
       }
+    }
+    // And the one that stopped it takes the hit at the end of the beam, which is
+    // its own near surface.
+    if (blockShip) {
+      strike(blockShip, { x: beam.b.x, y: beam.b.y })
     }
     return didHit
   }

@@ -817,6 +817,49 @@ test("an unshielded hull does not stop a beam reaching the rocks behind it", () 
   }
 })
 
+test("a beam cuts every hull it passes through, as it cuts every rock", () => {
+  const game = liveGame()
+  game.player.x = -9000
+  game.player.y = -9000
+  const line = []
+  for (let i = 0; i < 4; i++) {
+    const scout = new RivalShip(400 + i * 90, 320, "scout", []) // unarmed, unshielded
+    scout.angle = 0
+    line.push(scout)
+  }
+  game.rivals = [...line]
+  game.applyBeam(
+    { a: { x: 300, y: 320 }, b: { x: 1000, y: 320 }, dir: { x: 1, y: 0 } },
+    game.player,
+    playerWeapon,
+    68,
+  )
+  assert.deepEqual(
+    line.map((s) => s.dead),
+    [true, true, true, true],
+    "a beam that cuts the nearest must cut the ones behind it too",
+  )
+})
+
+test("a raised shield still stops the beam, and shelters what is behind it", () => {
+  const game = liveGame()
+  game.player.x = -9000
+  game.player.y = -9000
+  const shielded = new RivalShip(500, 320, "scout", [{ hp: 2, shield: "standard" }])
+  shielded.angle = 0
+  const behind = new RivalShip(700, 320, "scout", [])
+  behind.angle = 0
+  game.rivals = [shielded, behind]
+  const rock = new Asteroid({ vertices: square(860, 320, 60) })
+  game.asteroids = [rock]
+  assert.ok(shielded.shieldUp())
+  const beam = { a: { x: 300, y: 320 }, b: { x: 1000, y: 320 }, dir: { x: 1, y: 0 } }
+  game.applyBeam(beam, game.player, playerWeapon, 68)
+  assert.equal(behind.dead, false, "a shield must shelter the ship behind it")
+  assert.equal(game.asteroids.length, 1, "and the rock behind that")
+  assert.ok(beam.b.x < 500, "the beam is truncated at the bubble it struck")
+})
+
 // The reported bug: a shot that visibly grazed a scout's shield did nothing,
 // because the sim tested the hull outline while the view drew a bubble half again
 // as wide around it. A scout's bubble is 22.8 against a hull reaching 16.8, and a
