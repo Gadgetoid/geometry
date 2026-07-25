@@ -344,3 +344,43 @@ test("clearing input drops pad state too", () => {
   assert.equal(game.padInput.thrust, false)
   assert.equal(game.padInput.turn, 0)
 })
+
+test("B backs out of a menu on a pad, as escape does on a keyboard", () => {
+  const game = liveGame()
+  const input = new GamepadInput(game)
+  const press = (fields) => {
+    input.apply(readPad(pad(fields)))
+    input.apply(readPad(pad({}))) // and release, so the next press is an edge
+  }
+  game.togglePause()
+  game.openPausePage("controls")
+  press({ buttons: { [B.back]: 1 } })
+  assert.equal(game.pausePage, "root", "off the sub page first")
+  assert.equal(game.paused, true, "without closing the menu")
+  press({ buttons: { [B.back]: 1 } })
+  assert.equal(game.paused, false, "a second press closes it")
+})
+
+test("B abandons a rebind rather than being bound to the control", () => {
+  const game = liveGame()
+  const input = new GamepadInput(game)
+  game.togglePause()
+  game.openPausePage("controls")
+  game.beginRebind("buttons", "thrust")
+  input.apply(readPad(pad({ buttons: { [B.back]: 1 } })))
+  assert.equal(game.rebinding, null, "the wait is abandoned")
+  assert.equal(game.bindings.buttons.thrust, 6, "and B was not captured")
+  assert.equal(game.pausePage, "controls", "without leaving the page")
+})
+
+test("B still works its powerup slot in flight", () => {
+  // B is slot 2 by default and back in a menu. The two never collide, because a
+  // slot only works in a flying phase and a menu only exists outside one.
+  const game = liveGame()
+  const input = new GamepadInput(game)
+  game.upgrades.slots = 2
+  game.player.items = ["refuel", "repel"]
+  assert.equal(game.paused, false)
+  input.apply(readPad(pad({ buttons: { [B.back]: 1 } })))
+  assert.deepEqual(game.player.items, ["refuel"], "the second slot was used")
+})

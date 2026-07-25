@@ -909,11 +909,11 @@ export class GameView {
       const hintY = this.#controls(game, rows) + 6
       r.text(
         game.rebinding
-          ? this.#prompt(game, "ESC cancels", "BACK cancels")
+          ? this.#prompt(game, "ESC cancels", "B cancels")
           : this.#prompt(
               game,
               "UP / DOWN select    ENTER rebind    ESC back    P, ENTER and ESC cannot be bound",
-              "DPAD select    A rebind    BACK back    the menu controls cannot be bound",
+              "DPAD select    A rebind    B back    the menu controls cannot be bound",
             ),
         VIEW_W / 2,
         hintY,
@@ -942,7 +942,7 @@ export class GameView {
       this.#prompt(
         game,
         "UP / DOWN select    LEFT / RIGHT adjust    ENTER choose    P resume",
-        "DPAD select and adjust    A choose    BACK resume",
+        "DPAD select and adjust    A choose    B resume",
       ),
       VIEW_W / 2,
       hintY,

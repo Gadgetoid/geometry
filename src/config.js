@@ -174,10 +174,11 @@ export const GAMEPAD = {
     fire: 7, // right trigger: hold to charge, release to shoot
     pause: 8, // back / select
     confirm: 9, // start
-    // A confirms a menu as well as filling a powerup slot. The two never
-    // collide: a slot can only be used in a flying phase and a menu only exists
-    // outside one, so each press reaches exactly one of them.
+    // A confirms a menu and B backs out of one, as well as filling powerup slots.
+    // The two never collide: a slot can only be used in a flying phase and a menu
+    // only exists outside one, so each press reaches exactly one of them.
     confirmAlt: 0,
+    back: 1,
     dpadUp: 12,
     dpadDown: 13,
     dpadLeft: 14,

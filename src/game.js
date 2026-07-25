@@ -1512,6 +1512,19 @@ export class Game {
     return true
   }
 
+  // Back out one step: off a sub page of the pause menu, then out of the menu
+  // itself. ESCAPE on a keyboard and B on a pad, so the two cannot drift apart.
+  menuBack() {
+    if (!this.paused) {
+      return
+    }
+    if (this.pausePage === "root") {
+      this.togglePause()
+    } else {
+      this.openPausePage("root")
+    }
+  }
+
   togglePause() {
     if (!this.inSector()) {
       return
@@ -1577,13 +1590,8 @@ export class Game {
       this.menuMove(1)
     } else if (e.code === "Enter") {
       this.menuConfirm()
-    } else if (e.code === "Escape" && this.paused) {
-      // back out one step: off a sub page, or out of the menu altogether
-      if (this.pausePage === "root") {
-        this.togglePause()
-      } else {
-        this.openPausePage("root")
-      }
+    } else if (e.code === "Escape") {
+      this.menuBack()
     }
     if (e.code === "KeyP") {
       this.togglePause()

@@ -71,6 +71,7 @@ export function readPad(pad, bound = freshBindings().buttons) {
     turretAim: turretX || turretY ? Math.atan2(turretY, turretX) : null,
     turretFire: bind("turretFire"),
     confirm: held(button.confirm) || held(button.confirmAlt),
+    back: held(button.back),
     pause: held(button.pause),
     slots: [bind("slot1"), bind("slot2"), bind("slot3"), bind("slot4")],
     pressed,
@@ -92,6 +93,7 @@ export function padInUse(state) {
     state.turretFire ||
     state.turretAim !== null ||
     state.confirm ||
+    state.back ||
     state.pause ||
     state.slots.some(Boolean) ||
     state.menuUp ||
@@ -153,9 +155,10 @@ export class GamepadInput {
     }
 
     // A row waiting for a button takes the next new press, and the menu sees none
-    // of it. BACK is reserved, so it is always free to abandon the wait.
+    // of it. B abandons the wait, as ESCAPE does, and BACK does too since it is
+    // reserved and so always free; neither can therefore be captured.
     if (game.rebinding) {
-      if (pressed("pause")) {
+      if (pressed("back") || pressed("pause")) {
         game.cancelRebind()
       } else {
         for (const index of state.pressed) {
@@ -183,6 +186,9 @@ export class GamepadInput {
     })
     if (pressed("confirm")) {
       game.menuConfirm()
+    }
+    if (pressed("back")) {
+      game.menuBack()
     }
     if (pressed("pause")) {
       game.togglePause()
