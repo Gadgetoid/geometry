@@ -482,6 +482,29 @@ export function boundaryDistance(vertices, from, ux, uy, maxReach) {
   return nearest
 }
 
+// How far along the ray from `from` in direction (ux, uy) the point is still
+// inside an axis-aligned rectangle, i.e. where it leaves for good. Zero when the
+// ray never passes through it at all. Used to put something beyond the view
+// rather than merely beyond the arena.
+export function rayExitDistance(from, ux, uy, centre, halfWidth, halfHeight) {
+  let exit = Infinity
+  for (const [origin, direction, half, middle] of [
+    [from.x, ux, halfWidth, centre.x],
+    [from.y, uy, halfHeight, centre.y],
+  ]) {
+    const lo = middle - half,
+      hi = middle + half
+    if (Math.abs(direction) < 1e-9) {
+      if (origin < lo || origin > hi) {
+        return 0 // parallel to this pair of edges and outside them
+      }
+      continue // parallel and between them, so this axis never ends the ray
+    }
+    exit = Math.min(exit, Math.max((lo - origin) / direction, (hi - origin) / direction))
+  }
+  return exit === Infinity || exit < 0 ? 0 : exit
+}
+
 // How many polygon edges a beam segment crosses.
 export function countBeamCrossings(beam, vertices) {
   let count = 0

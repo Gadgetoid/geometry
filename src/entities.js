@@ -1680,6 +1680,10 @@ export class RivalShip extends Ship {
     this.regen = type.regen
     this.hull = type.hull // hull HP once the shield is gone; more than one hit
     this.lifeTimer = randRange(type.lifeTime[0], type.lifeTime[1])
+    // A rival starts well outside the view and flies in, and out there it is
+    // intangible and holds fire. Its life is what it spends in the sector, so
+    // the clock does not start until it has reached one.
+    this.arrived = false
     this.leaving = false
     this.buildHardpoints(type.hardpoints)
     this.applyLoadout(loadout || type.loadout || [])
@@ -1737,7 +1741,11 @@ export class RivalShip extends Ship {
     this.regenEnergy(dt)
     this.updateShield(dt)
     this.slamCooldown = Math.max(0, this.slamCooldown - dt)
-    this.lifeTimer -= dt
+    if (this.arrived) {
+      this.lifeTimer -= dt
+    } else if (this.insideArena()) {
+      this.arrived = true
+    }
 
     let target = null,
       nearest = 1e9

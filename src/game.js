@@ -41,6 +41,7 @@ import {
   countBeamCrossings,
   segmentPolygonEntry,
   segmentCircleEntry,
+  rayExitDistance,
 } from "./math.js"
 import { Sound } from "./audio.js"
 import { PALETTE } from "./palette.js"
@@ -338,17 +339,37 @@ export class Game {
     return loadout
   }
 
-  // Bring a rival in from beyond the boundary on the given bearing, clear of the
-  // ring by its own reach so the whole hull starts out of bounds and is seen
-  // flying in. It is faced inward on arrival: nothing sets a heading otherwise,
+  // Bring a rival in from beyond the boundary on the given bearing. It starts
+  // where a departing one is dropped, which is the only place it can start
+  // without being seen to appear: clear of the ring by its own reach, and clear
+  // of the view by the same margin that lets one vanish. The arena is smaller
+  // than the camera's reach, so clearing the ring alone is not enough - with the
+  // player out at the rim, the far side of the ring is on screen.
+  //
+  // It is faced inward and already under way: nothing sets a heading otherwise,
   // and a frigate turning at 0.17 rad/s would spend a third of its life coming
   // about before it ever reached the sector.
   #enterRival(name, bearing, loadout) {
     const ship = new RivalShip(0, 0, name, loadout)
-    const distance = ARENA.radius + ship.boundRadius + CONFIG.RIVAL_ENTRY_MARGIN
-    ship.x = ARENA.cx + Math.cos(bearing) * distance
-    ship.y = ARENA.cy + Math.sin(bearing) * distance
+    const ux = Math.cos(bearing),
+      uy = Math.sin(bearing)
+    const margin = ship.boundRadius + CONFIG.RIVAL_DESPAWN_MARGIN
+    const distance = Math.max(
+      ARENA.radius + ship.boundRadius + CONFIG.RIVAL_ENTRY_MARGIN,
+      rayExitDistance(
+        { x: ARENA.cx, y: ARENA.cy },
+        ux,
+        uy,
+        this.viewCenter,
+        VIEW_W / 2 + margin,
+        VIEW_H / 2 + margin,
+      ),
+    )
+    ship.x = ARENA.cx + ux * distance
+    ship.y = ARENA.cy + uy * distance
     ship.angle = bearing + Math.PI
+    ship.vx = Math.cos(ship.angle) * ship.maxSpeed
+    ship.vy = Math.sin(ship.angle) * ship.maxSpeed
     this.rivals.push(ship)
   }
 
