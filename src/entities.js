@@ -565,6 +565,18 @@ export class Weapon {
     Sound[this.type.sound || "fire"]()
   }
 
+  // Fire from a hardpoint along a bearing, whichever kind this weapon is, so a
+  // controller can decide when and where without also deciding with what.
+  // `reach` is how far a beam should carry; a projectile has its own speed and
+  // life and ignores it.
+  fire(game, host, x, y, aim, reach) {
+    if (this.type.kind === "beam") {
+      this.emitBeam(game, host, x, y, aim, reach)
+    } else {
+      this.fireProjectile(game, x, y, aim, host)
+    }
+  }
+
   update(dt, game, host, world) {
     this.tick(dt)
     // A host outside the arena holds fire, for the same reason it cannot be shot
@@ -649,28 +661,37 @@ export const WEAPON_CONTROLLERS = {
     }
   },
 
-  // the player's nose turret, firing from its hardpoint. Arrow keys aim
-  // host.turretAim and fire on demand; with no input it auto-targets the
-  // nearest rock in range.
+  // The player's nose turret, firing from its hardpoint. Arrow keys aim
+  // host.turretAim and fire on demand; with no input it auto-targets the nearest
+  // rival in range. Rocks are the main laser's business: a bare rock has no hull
+  // to lose and is destroyed by being cut, so a turret spent on one achieves
+  // nothing while pointing away from what does.
   defense(weapon, dt, game, host, world) {
     if (host.turretManual > 0) {
       if (host.turretFiring) {
-        weapon.emitBeam(game, host, world.x, world.y, host.turretAim, weapon.type.range)
+        weapon.fire(game, host, world.x, world.y, host.turretAim, weapon.type.range)
       }
       return
     }
     let target = null,
       nearest = weapon.type.range
-    for (const asteroid of game.asteroids) {
-      const d = Math.hypot(asteroid.center.x - world.x, asteroid.center.y - world.y)
+    for (const rival of game.rivals) {
+      if (rival.dead || !rival.inPlay()) {
+        continue
+      }
+      const d = Math.hypot(rival.x - world.x, rival.y - world.y)
       if (d < nearest) {
         nearest = d
-        target = asteroid
+        target = rival
       }
     }
     if (target) {
-      host.turretAim = Math.atan2(target.center.y - world.y, target.center.x - world.x)
-      weapon.emitBeam(game, host, world.x, world.y, host.turretAim, nearest + weapon.type.overshoot)
+      host.turretAim = Math.atan2(target.y - world.y, target.x - world.x)
+      // A beam has to carry past the target to cut it. Stopping at the target's
+      // middle crosses its outline once, which counts as a graze and never
+      // severs anything.
+      const reach = nearest + target.boundRadius + (weapon.type.overshoot ?? 0)
+      weapon.fire(game, host, world.x, world.y, host.turretAim, reach)
     }
   },
 }

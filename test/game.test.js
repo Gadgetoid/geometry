@@ -2279,6 +2279,98 @@ test("sector plans follow PROGRESSION", () => {
   )
 })
 
+// The player's nose turret, fitted from the shop.
+function withTurret(game) {
+  game.upgrades.turret = true
+  game.player.fit("turret")
+  const hp = game.player.hardpoints.find(
+    (entry) => entry.module && entry.module.kind === "weapon" && entry.role === "aux",
+  )
+  assert.ok(hp, "the fitting should have mounted a weapon on the aux hardpoint")
+  return hp.module
+}
+
+test("the defense turret shoots at rivals and leaves rocks alone", () => {
+  // A bare rock has no hull to lose and is destroyed by being cut, so a turret
+  // spent on one achieves nothing while pointing away from what it could hurt.
+  const atRock = liveGame()
+  atRock.player.x = 400
+  atRock.player.y = 320
+  atRock.player.angle = 0
+  withTurret(atRock)
+  atRock.asteroids = [new Asteroid({ vertices: square(560, 320, 70) })]
+  for (let i = 0; i < 240; i++) {
+    atRock.player.energy = atRock.player.energyMax
+    atRock.advance(1 / 60)
+  }
+  assert.equal(atRock.projectiles.length, 0, "it must not spend itself on a rock")
+
+  const atRival = liveGame()
+  atRival.player.x = 400
+  atRival.player.y = 320
+  atRival.player.angle = 0
+  withTurret(atRival)
+  atRival.asteroids = [new Asteroid({ vertices: square(400, -600, 60) })] // keep the sector live
+  const rival = new RivalShip(600, 320, "scout", [])
+  atRival.rivals = [rival]
+  let fired = false
+  for (let i = 0; i < 240 && !fired; i++) {
+    atRival.player.energy = atRival.player.energyMax
+    rival.x = 600
+    rival.y = 320
+    atRival.advance(1 / 60)
+    fired = atRival.projectiles.length > 0 || rival.dead
+  }
+  assert.ok(fired, "a rival in range must draw fire")
+})
+
+test("a beam aimed at a target carries past it, so it can cut", () => {
+  // The turret used to end its beam `overshoot` past the target's centre, which
+  // is inside anything bigger than the overshoot: one crossing, which is a graze
+  // and never severs. It cut rocks of radius 30 and none at all of radius 90,
+  // and a sector spawns 72 to 100.
+  const original = WEAPON_TYPES.defenseBlaster
+  WEAPON_TYPES.defenseBlaster = {
+    kind: "beam",
+    damage: 30,
+    energy: 4,
+    reload: 0.2,
+    range: 340,
+    overshoot: 42,
+    width: 2.4,
+    glow: 14,
+    colour: PALETTE.player.turret,
+  }
+  try {
+    const game = liveGame()
+    game.player.x = 300
+    game.player.y = 320
+    game.player.angle = 0
+    withTurret(game)
+    game.asteroids = [new Asteroid({ vertices: square(300, -600, 60) })] // keep the sector live
+    // a big unshielded hull, further across than the overshoot
+    const target = new RivalShip(560, 320, "frigate", [])
+    target.angle = 0
+    game.rivals = [target]
+    assert.ok(
+      target.boundRadius > WEAPON_TYPES.defenseBlaster.overshoot,
+      "the target must be wider than the overshoot for this to mean anything",
+    )
+    for (let i = 0; i < 300 && !target.dead; i++) {
+      game.player.energy = game.player.energyMax
+      target.x = 560
+      target.y = 320
+      target.vx = 0
+      target.vy = 0
+      target.angle = 0
+      game.advance(1 / 60)
+    }
+    assert.ok(target.dead, "a beam that carries past its target must cut it apart")
+  } finally {
+    WEAPON_TYPES.defenseBlaster = original
+  }
+})
+
 test("a rock's turrets are spread around it, not stacked on one bearing", () => {
   // Each used to pick its own vertex to sit under, and independent picks put a
   // pair on the same bearing often enough to read as a cluster.

@@ -428,15 +428,17 @@ export const WEAPON_TYPES = {
     sound: "snapLaser",
     colour: PALETTE.rival.seekerBeam,
   },
-  defenseLaser: {
-    kind: "beam",
-    damage: 30,
-    energy: 10,
-    reload: 4.6,
-    range: 230,
-    overshoot: 42, // the beam reaches this far past the rock it is aimed at
-    width: 2.4,
-    glow: 14,
+  defenseBlaster: {
+    kind: "projectile",
+    // Point defence against rivals. A rock cannot be shot apart, only cut, so
+    // this is aimed at the things that can be: it chips a hull and drains a
+    // shield while the main laser is busy elsewhere. Faster than a rival's own
+    // rounds, or it could never catch one running.
+    damage: 60,
+    energy: 8,
+    reload: 0.5,
+    range: 340, // how far out it looks for a target
+    speed: 420,
     colour: PALETTE.player.turret,
   },
   playerLaser: {
@@ -850,7 +852,7 @@ const PLAYER_DESIGN = {
   // loadout is, and re-mounted when a saved run is resumed. A one-off fitting in
   // SHOP needs no `apply` of its own to reach this.
   fittings: {
-    turret: { hp: 2, weapon: "defenseLaser", controller: "defense" },
+    turret: { hp: 2, weapon: "defenseBlaster", controller: "defense" },
   },
 }
 
@@ -1120,7 +1122,7 @@ export const SHOP = [
   fitting(
     "turret",
     "DEFENSE TURRET",
-    "A nose turret that auto-fires on rocks that drift close.",
+    "A nose blaster that auto-fires on rivals that come close.",
     85,
   ),
   fitting("reverse", "REVERSE THRUST", "Forward thrusters: hold DOWN or S to back away.", 55),
