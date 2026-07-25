@@ -604,6 +604,44 @@ export function freshUpgrades() {
 }
 
 // ---------------------------------------------------------------------------
+// PAUSE MENU - one entry per row, in order. Fields:
+//   name    the label
+//   value   optional (game) => text shown on the right, for anything with a state
+//   action  optional (game) => run on ENTER / A
+//   adjust  optional (game, step) => run on LEFT / RIGHT, for anything on a scale
+//   confirm optional prompt; ENTER once asks, ENTER again does it
+// Everything goes through a method on Game, so this file stays free of the audio
+// and renderer plumbing and a row cannot reach past the game's own API.
+// ---------------------------------------------------------------------------
+export const PAUSE_MENU = [
+  { name: "RESUME", action: (g) => g.togglePause() },
+  {
+    name: "VOLUME",
+    value: (g) => `${Math.round(g.settings.volume * 100)}%`,
+    adjust: (g, step) => g.setVolume(g.settings.volume + step * 0.1),
+  },
+  {
+    name: "SOUND",
+    value: (g) => (g.settings.sound ? "ON" : "OFF"),
+    action: (g) => g.setSound(!g.settings.sound),
+    adjust: (g, step) => g.setSound(step > 0),
+  },
+  {
+    name: "CRT FILTER",
+    value: (g) => (g.settings.crt ? "ON" : "OFF"),
+    action: (g) => g.setCrt(!g.settings.crt),
+    adjust: (g, step) => g.setCrt(step > 0),
+  },
+  {
+    name: "RESET PROGRESS",
+    value: (g) => (g.savedRun ? `SECTOR ${g.savedRun.level}` : "-"),
+    confirm: "ERASE YOUR RUN?",
+    action: (g) => g.resetProgress(),
+  },
+  { name: "EXIT GAME", confirm: "QUIT TO DESKTOP?", action: (g) => g.requestExit() },
+]
+
+// ---------------------------------------------------------------------------
 // SHOP - one entry per purchasable upgrade, in menu order. Fields:
 //   id      key into game.upgrades
 //   name    menu label, desc the one-line explanation under it

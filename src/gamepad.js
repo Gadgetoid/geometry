@@ -158,10 +158,10 @@ export class GamepadInput {
       game.menuMove(1)
     }
     if (pressed("menuLeft")) {
-      game.devSectorStep(-1)
+      game.menuAdjust(-1)
     }
     if (pressed("menuRight")) {
-      game.devSectorStep(1)
+      game.menuAdjust(1)
     }
 
     this.previous = state

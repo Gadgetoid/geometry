@@ -57,16 +57,15 @@ addEventListener("keyup", (e) => game.onKeyUp(e))
 addEventListener("blur", () => game.onBlur())
 
 document.getElementById("btnCrt").addEventListener("click", (e) => {
-  const off = document.querySelector(".stage").classList.toggle("crt-off")
-  renderer.crtEnabled = !off
-  e.currentTarget.setAttribute("aria-pressed", String(!off))
+  game.setCrt(!game.settings.crt)
+  e.currentTarget.setAttribute("aria-pressed", String(game.settings.crt))
 })
 
 const soundButton = document.getElementById("btnSnd")
 soundButton.addEventListener("click", (e) => {
-  Sound.enabled = !Sound.enabled
-  e.currentTarget.setAttribute("aria-pressed", String(Sound.enabled))
-  if (Sound.enabled) {
+  game.setSound(!game.settings.sound)
+  e.currentTarget.setAttribute("aria-pressed", String(game.settings.sound))
+  if (game.settings.sound) {
     // resume + unlock the context inside this gesture, then a confirmation blip
     Sound.ensureContext()
     Sound.power()
@@ -82,9 +81,25 @@ soundButton.addEventListener("click", (e) => {
 // open unprompted. Without that flag the context comes up suspended and stays
 // quiet until something is clicked, which is the same as not passing this at all.
 if (OPTIONS.has("sound")) {
-  Sound.enabled = true
+  game.setSound(true)
   Sound.ensureContext()
-  soundButton.setAttribute("aria-pressed", "true")
+}
+
+// Settings live on the game so the pause menu can work them without knowing about
+// the renderer or the DOM; this is where they are actually applied. Cheap enough to
+// check every frame, and it means a change from any source lands the same way.
+const applied = { crt: null, sound: null }
+function syncSettings() {
+  if (applied.crt !== game.settings.crt) {
+    applied.crt = game.settings.crt
+    renderer.crtEnabled = game.settings.crt
+    document.querySelector(".stage").classList.toggle("crt-off", !game.settings.crt)
+    document.getElementById("btnCrt").setAttribute("aria-pressed", String(game.settings.crt))
+  }
+  if (applied.sound !== game.settings.sound) {
+    applied.sound = game.settings.sound
+    soundButton.setAttribute("aria-pressed", String(game.settings.sound))
+  }
 }
 
 const devButton = document.getElementById("btnDev")
@@ -135,6 +150,14 @@ function loop(timestamp) {
   // a pad is polled, not evented, so it is sampled before the step it drives
   gamepad.poll()
   syncHelp()
+  syncSettings()
+  if (game.exitRequested) {
+    // Only works because the game is opened as an app window; a tab the user opened
+    // themselves refuses. The launcher notices the window going and exits with it,
+    // which is what lets Steam see the game stop.
+    window.close()
+    return
+  }
   game.advance(dt)
   // the simulation still runs while a lost GPU context is being restored
   if (renderer.ready) {

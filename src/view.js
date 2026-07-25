@@ -5,7 +5,7 @@
 // the Renderer without touching game logic. Entities still paint themselves via
 // their own draw(renderer, game) methods.
 
-import { VIEW_W, VIEW_H, TAU, ARENA, GAMEPAD, SHOP, POWERUP_TYPES } from "./config.js"
+import { VIEW_W, VIEW_H, TAU, ARENA, GAMEPAD, PAUSE_MENU, SHOP, POWERUP_TYPES } from "./config.js"
 import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
 import { PALETTE } from "./palette.js"
@@ -612,6 +612,14 @@ export class GameView {
       VIEW_H / 2 + 82,
       { size: 12, color: PALETTE.ui.accent, align: "center" },
     )
+    if (game.savedRun) {
+      r.text(
+        `CONTINUE FROM SECTOR ${game.savedRun.level}   -   reset it from the pause menu`,
+        VIEW_W / 2,
+        VIEW_H / 2 + 100,
+        { size: 12, color: PALETTE.ui.good, align: "center" },
+      )
+    }
     if (Math.floor(game.gameTime * 2) % 2 === 0) {
       r.text(this.#prompt(game, "PRESS ENTER", "PRESS A OR START"), VIEW_W / 2, VIEW_H / 2 + 114, {
         size: 18,
@@ -776,15 +784,70 @@ export class GameView {
     }
   }
 
-  #paused() {
+  // Pause doubles as the settings menu, laid out like the shop so the two read the
+  // same way. A row wanting confirmation says so in place of its value.
+  #paused(game) {
     const r = this.renderer
-    r.rect(0, 0, VIEW_W, VIEW_H, { fill: "rgba(2,4,10,.5)" })
-    r.text("PAUSED", VIEW_W / 2, VIEW_H / 2, {
-      size: 40,
+    r.rect(0, 0, VIEW_W, VIEW_H, { fill: "rgba(2,4,10,.72)" })
+    r.text("PAUSED", VIEW_W / 2, 92, {
+      size: 34,
       bold: true,
       color: PALETTE.text.bright,
       align: "center",
       glow: 16,
     })
+
+    const leftX = VIEW_W / 2 - 190,
+      rightX = VIEW_W / 2 + 190,
+      top = 168,
+      rowHeight = 34
+    for (let i = 0; i < PAUSE_MENU.length; i++) {
+      const row = PAUSE_MENU[i],
+        y = top + i * rowHeight
+      const selected = game.pauseSelection === i
+      const asking = game.pauseConfirming === row.name
+      if (selected) {
+        r.rect(leftX - 16, y - 18, rightX - leftX + 32, rowHeight - 4, {
+          fill: asking ? "rgba(255,91,91,.16)" : "rgba(95,215,255,.12)",
+        })
+      }
+      r.text(`${selected ? "> " : "  "}${row.name}`, leftX, y, {
+        size: 15,
+        bold: selected,
+        color: asking ? PALETTE.ui.warn : selected ? PALETTE.text.bright : PALETTE.text.normal,
+      })
+      const value = asking ? row.confirm : row.value ? row.value(game) : ""
+      if (value) {
+        r.text(value, rightX, y, {
+          size: 14,
+          color: asking ? PALETTE.ui.warn : PALETTE.fx.flash,
+          align: "right",
+        })
+      }
+      // a scale gets arrows, so it is clear it is adjusted rather than pressed
+      if (selected && row.adjust && !asking) {
+        r.text("<", leftX + 244, y, { size: 13, color: PALETTE.text.muted })
+        r.text(">", rightX - 74, y, { size: 13, color: PALETTE.text.muted })
+      }
+    }
+
+    const hintY = top + PAUSE_MENU.length * rowHeight + 18
+    r.text(
+      this.#prompt(
+        game,
+        "UP / DOWN select    LEFT / RIGHT adjust    ENTER choose    P resume",
+        "DPAD select and adjust    A choose    BACK resume",
+      ),
+      VIEW_W / 2,
+      hintY,
+      { size: 11, color: PALETTE.text.muted, align: "center" },
+    )
+    if (game.pauseConfirming) {
+      r.text("press again to confirm", VIEW_W / 2, hintY + 20, {
+        size: 11,
+        color: PALETTE.ui.warn,
+        align: "center",
+      })
+    }
   }
 }

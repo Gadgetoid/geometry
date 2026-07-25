@@ -49,13 +49,22 @@ export const Sound = {
   // The silent buffer that unlocks the context in ensureContext goes straight to
   // the destination instead: it exists to be played, not heard.
   chain: null,
+  // 0..1, on top of MASTER_VOLUME. The pause menu sets it; the chain is updated in
+  // place so a change is heard immediately rather than at the next sound.
+  volume: 1,
+  setVolume(value) {
+    this.volume = Math.max(0, Math.min(1, value))
+    if (this.chain) {
+      this.chain.gain.gain.value = CONFIG.MASTER_VOLUME * this.volume
+    }
+  },
   output() {
     if (!this.ctx) {
       return null
     }
     if (!this.chain || this.chain.ctx !== this.ctx) {
       const gain = this.ctx.createGain()
-      gain.gain.value = CONFIG.MASTER_VOLUME
+      gain.gain.value = CONFIG.MASTER_VOLUME * this.volume
       gain.connect(this.softClip()).connect(this.ctx.destination)
       this.chain = { ctx: this.ctx, gain }
       this.thruster = null // its nodes belonged to the previous chain

@@ -12,6 +12,7 @@ import {
   PROGRESSION,
   HAZARD_TRAITS,
   SHIP_TYPES,
+  PAUSE_MENU,
   SHOP,
   POWERUP_TYPES,
   POWERUP_IDS,
@@ -37,7 +38,15 @@ import {
 import { Sound } from "./audio.js"
 import { PALETTE } from "./palette.js"
 import { Backdrop } from "./background.js"
-import { loadBest, saveBest } from "./persistence.js"
+import {
+  loadBest,
+  saveBest,
+  loadRun,
+  saveRun,
+  clearRun,
+  loadSettings,
+  saveSettings,
+} from "./persistence.js"
 import {
   Asteroid,
   Ore,
@@ -107,6 +116,13 @@ export class Game {
 
     this.shopSelection = 0
     this.shopSector = 1
+    this.pauseSelection = 0
+    this.pauseConfirming = null // a row waiting to be confirmed a second time
+    // Settings live here rather than on the things they affect, so one place holds
+    // them and main.js applies whatever changes. Loaded below.
+    this.settings = { volume: 0.8, sound: true, crt: true }
+    this.savedRun = null // the run left behind by a previous session, if any
+    this.exitRequested = false // main.js closes the window when this is set
     this.toast = null
     this.devMode = false
     this.paused = false
@@ -127,6 +143,17 @@ export class Game {
     this.viewCenter = { x: ARENA.cx, y: ARENA.cy } // world point the camera follows
 
     this.backdrop = new Backdrop()
+    loadSettings().then((stored) => {
+      if (stored) {
+        this.settings = { ...this.settings, ...stored }
+        this.applySound()
+      }
+    })
+    loadRun().then((run) => {
+      if (run && !this.player) {
+        this.savedRun = run
+      }
+    })
     // The stored best arrives asynchronously, which can land after a run has
     // already beaten it, so take the higher of the two rather than the loaded
     // one outright.
@@ -739,6 +766,7 @@ export class Game {
       totalBonus,
     }
     this.recordBest()
+    this.rememberRun()
     this.shopSelection = 0
     this.shopSector = this.level + 1
     this.phase = "shop"
@@ -788,6 +816,7 @@ export class Game {
     this.screenShake = 14
     if (this.lives <= 0) {
       this.recordBest()
+      this.forgetRun() // the run is over; nothing to come back to
       this.phase = "over"
       Sound.setThruster(false)
       return
@@ -1077,27 +1106,169 @@ export class Game {
     return touched
   }
 
+  // ---- settings --------------------------------------------------------
+  // Every setter keeps the value, tells whatever needs to know, and writes the lot
+  // back to storage. The renderer is main.js's business, so `crt` is only recorded
+  // here and picked up from there.
+  setVolume(value) {
+    this.settings.volume = clamp(Math.round(value * 10) / 10, 0, 1)
+    this.applySound()
+    this.rememberSettings()
+  }
+  setSound(on) {
+    this.settings.sound = !!on
+    this.applySound()
+    this.rememberSettings()
+  }
+  setCrt(on) {
+    this.settings.crt = !!on
+    this.rememberSettings()
+  }
+  applySound() {
+    Sound.enabled = this.settings.sound
+    Sound.setVolume(this.settings.volume)
+  }
+  rememberSettings() {
+    saveSettings({ ...this.settings })
+  }
+
+  // Ask to be closed. main.js does the closing, since the window is its business.
+  requestExit() {
+    Sound.setThruster(false)
+    this.exitRequested = true
+  }
+
+  // ---- the run in progress ---------------------------------------------
+  // Snapshotted at the shop, which is the one moment nothing is in flight: no
+  // asteroids mid-cut, no ore drifting, no rival halfway across the sector.
+  rememberRun() {
+    this.savedRun = {
+      level: this.level,
+      score: this.score,
+      lives: this.lives,
+      oreBalance: this.oreBalance,
+      rivalScore: this.rivalScore,
+      upgrades: { ...this.upgrades },
+    }
+    saveRun(this.savedRun)
+  }
+
+  forgetRun() {
+    this.savedRun = null
+    clearRun()
+  }
+
+  // Pick up where a previous session left off, at the shop before the sector that
+  // was next. Falls back to a fresh run if there is nothing to resume.
+  resumeRun() {
+    const run = this.savedRun
+    if (!run) {
+      this.startNewGame()
+      return
+    }
+    this.score = run.score
+    this.rivalScore = run.rivalScore || 0
+    this.lives = run.lives
+    this.oreBalance = run.oreBalance
+    this.upgrades = { ...freshUpgrades(), ...run.upgrades }
+    this.level = run.level
+    this.player = new PlayerShip(this)
+    if (this.upgrades.turret) {
+      this.player.installDefenseTurret()
+    }
+    this.stats = this.blankStats()
+    this.asteroids = []
+    this.oreChunks = []
+    this.projectiles = []
+    this.powerupPickups = []
+    this.rivals = []
+    this.particles = []
+    this.laserShots = []
+    this.summaryData = { level: run.level, resumed: true }
+    this.shopSelection = 0
+    this.shopSector = run.level
+    this.phase = "shop"
+  }
+
+  // Back to the title with nothing kept but the best score.
+  resetProgress() {
+    this.forgetRun()
+    this.player = null
+    this.paused = false
+    this.phase = "title"
+    this.pauseSelection = 0
+  }
+
   // ---- input intents ---------------------------------------------------
   // What a device asks the game to do, rather than which control was used, so a
   // keyboard and a gamepad drive exactly the same code. Each is safe to call in
   // any phase; the guards live here and not at the call site.
 
-  // Move the shop cursor, wrapping around the launch row at the end.
-  menuMove(delta) {
-    if (this.phase !== "shop") {
-      return
+  // Which list the cursor is in. The pause menu sits over a live sector, so it wins
+  // wherever both could apply.
+  menuRows() {
+    if (this.paused) {
+      return PAUSE_MENU.length
     }
-    const count = SHOP.length + 1
-    this.shopSelection = (this.shopSelection + delta + count) % count
+    return this.phase === "shop" ? SHOP.length + 1 : 0
   }
 
-  // Buy, launch, or start a run.
+  // Move the cursor, wrapping at both ends.
+  menuMove(delta) {
+    const rows = this.menuRows()
+    if (!rows) {
+      return
+    }
+    if (this.paused) {
+      this.pauseConfirming = null // moving away abandons a pending confirmation
+      this.pauseSelection = (this.pauseSelection + delta + rows) % rows
+    } else {
+      this.shopSelection = (this.shopSelection + delta + rows) % rows
+    }
+  }
+
+  // Act on the highlighted row: buy, launch, start a run, or work the pause menu.
+  // A row carrying `confirm` asks once and acts on the second press.
   menuConfirm() {
+    if (this.paused) {
+      const row = PAUSE_MENU[this.pauseSelection]
+      if (!row || !row.action) {
+        return
+      }
+      if (row.confirm && this.pauseConfirming !== row.name) {
+        this.pauseConfirming = row.name
+        return
+      }
+      this.pauseConfirming = null
+      row.action(this)
+      Sound.power()
+      return
+    }
     if (this.phase === "shop") {
       this.doShopAction()
     } else if (this.phase === "title" || this.phase === "over") {
-      this.startNewGame()
+      // Enter carries on from where a previous session stopped, if it left anything.
+      if (this.phase === "title" && this.savedRun) {
+        this.resumeRun()
+      } else {
+        this.startNewGame()
+      }
     }
+  }
+
+  // LEFT / RIGHT. In the pause menu it works the highlighted row's scale; in the dev
+  // shop it steps the sector. Returns whether it did anything, so a caller can stop.
+  menuAdjust(step) {
+    if (this.paused) {
+      const row = PAUSE_MENU[this.pauseSelection]
+      if (row && row.adjust) {
+        this.pauseConfirming = null
+        row.adjust(this, step)
+        return true
+      }
+      return false
+    }
+    return this.devSectorStep(step)
   }
 
   // Dev-only sector jump from the shop. Returns whether it handled the input, so
@@ -1115,6 +1286,8 @@ export class Game {
       return
     }
     this.paused = !this.paused
+    this.pauseSelection = 0
+    this.pauseConfirming = null
     if (this.paused) {
       Sound.setThruster(false)
     }
@@ -1149,7 +1322,7 @@ export class Game {
     const right = e.code === "ArrowRight" || e.code === "KeyD"
     if (left || right) {
       const step = this.pressedKeys.has("ShiftLeft") || this.pressedKeys.has("ShiftRight") ? 10 : 1
-      if (this.devSectorStep(right ? step : -step)) {
+      if (this.menuAdjust(right ? step : -step)) {
         this.pressedKeys.add(e.code)
         return
       }
