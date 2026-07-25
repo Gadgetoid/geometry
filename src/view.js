@@ -618,14 +618,20 @@ export class GameView {
     )
     if (game.savedRun) {
       r.text(
-        `CONTINUE FROM SECTOR ${game.savedRun.level}   -   reset it from the pause menu`,
+        `CONTINUE FROM SECTOR ${game.resumeSector()}   -   reset it from the pause menu`,
         VIEW_W / 2,
-        VIEW_H / 2 + 100,
+        VIEW_H / 2 + 104,
         { size: 12, color: PALETTE.ui.good, align: "center" },
       )
     }
+    // The prompt is the largest line here, so it sits clear of the one above it.
+    // It also names what pressing it will do, since a saved run is carried on from
+    // rather than replaced.
     if (Math.floor(game.gameTime * 2) % 2 === 0) {
-      r.text(this.#prompt(game, "PRESS ENTER", "PRESS A OR START"), VIEW_W / 2, VIEW_H / 2 + 114, {
+      const prompt = game.savedRun
+        ? this.#prompt(game, "PRESS ENTER TO CONTINUE", "PRESS A OR START TO CONTINUE")
+        : this.#prompt(game, "PRESS ENTER TO START", "PRESS A OR START")
+      r.text(prompt, VIEW_W / 2, VIEW_H / 2 + 140, {
         size: 18,
         bold: true,
         color: PALETTE.ui.good,
@@ -649,8 +655,12 @@ export class GameView {
       align: "center",
       glow: 16,
     })
+    // A resumed run has no sector behind it in this session, so there are no
+    // stats to report; only what was banked.
     r.text(
-      `accuracy ${Math.round(d.accuracy * 100)}%    mined ${d.mined}    ore this run ${d.ore}    damage ${d.damage}    bonus +${d.totalBonus}`,
+      d.resumed
+        ? "carrying on from your last session"
+        : `accuracy ${Math.round(d.accuracy * 100)}%    mined ${d.mined}    ore this run ${d.ore}    damage ${d.damage}    bonus +${d.totalBonus}`,
       VIEW_W / 2,
       82,
       { size: 12, color: PALETTE.text.dim, align: "center" },
