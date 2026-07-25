@@ -16,6 +16,14 @@ if (!renderer) {
     " create a WebGL2 context.</small></p>"
   throw new Error("WebGL2 unavailable")
 }
+// ?fullscreen drops the page frame and the help line so the canvas owns the
+// screen, for a Steam shortcut or anything else running this without a desktop
+// around it.
+const FULLSCREEN = new URLSearchParams(location.search).has("fullscreen")
+if (FULLSCREEN) {
+  document.body.classList.add("fullscreen")
+}
+
 const view = new GameView(renderer)
 const game = new Game()
 const gamepad = new GamepadInput(game)
@@ -32,7 +40,7 @@ const helpFor = {
 }
 let shownHelp = null
 function syncHelp() {
-  if (shownHelp === game.inputMode) {
+  if (FULLSCREEN || shownHelp === game.inputMode) {
     return
   }
   shownHelp = game.inputMode

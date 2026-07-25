@@ -65,6 +65,30 @@
       .crt-off .screen {
         border-radius: 8px;
       }
+      /* ?fullscreen: for a TV, a handheld, or Steam. The frame, the drop shadow
+         and the help line all go, and the canvas takes the whole viewport; the
+         view letterboxes within it, so an odd panel shape is still correct. The
+         CRT and SND buttons stay, because sound needs a real click to start and
+         there is no other way to ask for it. */
+      body.fullscreen {
+        grid-template-rows: 1fr;
+        background-image: none;
+      }
+      body.fullscreen .stage {
+        width: 100vw;
+        height: 100vh;
+        margin: 0;
+        aspect-ratio: auto;
+      }
+      body.fullscreen .screen,
+      body.fullscreen.crt-off .screen {
+        border-radius: 0;
+        box-shadow: none;
+      }
+      body.fullscreen .help,
+      body.fullscreen #btnDev {
+        display: none;
+      }
       .unsupported {
         display: grid;
         place-content: center;
