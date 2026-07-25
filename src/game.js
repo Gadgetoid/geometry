@@ -746,7 +746,8 @@ export class Game {
       if (sector < hazard.fromSector) {
         continue
       }
-      const weight = 1 + (hazard.weightPerSector || 0) * (sector - hazard.fromSector)
+      const growth = (hazard.weightPerSector || 0) * (sector - hazard.fromSector)
+      const weight = Math.min(1 + growth, hazard.weightCap ?? Infinity)
       for (let i = 0; i < weight; i++) {
         pool.push(hazard.traits)
       }

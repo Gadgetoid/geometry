@@ -315,7 +315,11 @@ export const PROGRESSION = {
 
 // Hazard traits a rock can spawn with. A trait joins the roll once its
 // `fromSector` is reached, and `weightPerSector` adds an extra entry for each
-// sector past that, so a trait can come to crowd out the others.
+// sector past that, so a trait can come to crowd out the others. `weightCap` is
+// how far that may go: growth with nothing to stop it does not crowd the others
+// out so much as delete them, and a hazard nobody meets any more may as well not
+// be in the game. Armed rocks at a cap of 5 are still three quarters of what a
+// late sector rolls, against 95% and rising without one.
 //
 // `gun` and `shield` name the modules to mount, so arming a rock differently is
 // an edit here rather than in the Asteroid constructor. `explosive` is a property
@@ -335,7 +339,7 @@ const ROCK_SHIELD = { shield: "standard" }
 export const HAZARD_TRAITS = [
   { traits: { explosive: true }, fromSector: 3 },
   { traits: { shield: ROCK_SHIELD }, fromSector: 4 },
-  { traits: { gun: ROCK_TURRETS }, fromSector: 5, weightPerSector: 1 },
+  { traits: { gun: ROCK_TURRETS }, fromSector: 5, weightPerSector: 1, weightCap: 5 },
   { traits: { gun: ROCK_TURRETS, shield: ROCK_SHIELD }, fromSector: 6 },
 ]
 

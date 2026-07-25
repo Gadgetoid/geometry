@@ -2425,6 +2425,51 @@ test("hazard traits are gated by sector", () => {
   }
 })
 
+test("no hazard survives to a late sector only to be crowded out of it", () => {
+  // A trait that grows without a cap does not crowd the others out so much as
+  // delete them: gun weight rising unchecked took explosive rocks from a fifth
+  // of the roll at sector 6 to a thirtieth by sector 30, which is a hazard
+  // nobody meets any more.
+  const game = new Game()
+  const key = (traits) => Object.keys(traits).sort().join("+") || "none"
+  const expected = new Set(HAZARD_TRAITS.map((h) => key(h.traits)))
+  for (const sector of [10, 20, 40, 80]) {
+    const tally = {}
+    seeded(1234, () => {
+      for (let i = 0; i < 4000; i++) {
+        const k = key(game.rollHazardTraits(sector))
+        tally[k] = (tally[k] || 0) + 1
+      }
+    })
+    for (const k of expected) {
+      const share = (tally[k] || 0) / 4000
+      assert.ok(
+        share > 0.04,
+        `at sector ${sector}, "${k}" is ${(share * 100).toFixed(1)}% of the roll`,
+      )
+    }
+  }
+})
+
+test("an armed rock still comes to dominate the roll", () => {
+  // The cap must not flatten the progression it is bounding: late sectors should
+  // still be mostly armed rocks.
+  const game = new Game()
+  const armedShare = (sector) => {
+    let armed = 0
+    seeded(99, () => {
+      for (let i = 0; i < 4000; i++) {
+        if (game.rollHazardTraits(sector).gun) {
+          armed++
+        }
+      }
+    })
+    return armed / 4000
+  }
+  assert.ok(armedShare(6) < armedShare(12), "armed rocks become more common with depth")
+  assert.ok(armedShare(20) > 0.6, `late sectors are mostly armed (${armedShare(20).toFixed(2)})`)
+})
+
 // ---- pause menu, settings and the saved run --------------------------------
 
 test("pause opens a menu, and the cursor wraps", () => {
