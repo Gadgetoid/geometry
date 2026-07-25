@@ -483,32 +483,26 @@ export class Game {
       // A shielded rock is struck on its bubble, as a shielded hull is: what the
       // view draws around it is what the shot has to reach. An unshielded one has
       // to be passed through to be cut, which is the crossing rule.
-      const shield = asteroid.shieldModule()
-      const shielded = asteroid.shieldUp() && shield.blocks("laser") && asteroid.energy > 0
-      const reached = shielded
-        ? segmentCircleEntry(
-            beam.a,
-            beam.b,
-            asteroid.center,
-            asteroid.shieldRadius() + halfWidth,
-          ) !== null
-        : countBeamCrossings(beam, asteroid.vertices) >= 2
+      const bubble = asteroid.blockingRadius("laser")
+      const reached =
+        bubble > 0
+          ? segmentCircleEntry(beam.a, beam.b, asteroid.center, bubble + halfWidth) !== null
+          : countBeamCrossings(beam, asteroid.vertices) >= 2
       if (!reached) {
         survivors.push(asteroid)
         continue
       }
-      if (shielded) {
-        asteroid.energy = Math.max(0, asteroid.energy - damage)
-        // flash the side facing the shooter and spark there
+      if (bubble > 0) {
+        // Drained through takeDamage, as a hull's shield is, so how much a shield
+        // loses to a hit is answered in one place. The flash and the spark land on
+        // the side facing the shooter.
         const toShooter = Math.atan2(beam.a.y - asteroid.center.y, beam.a.x - asteroid.center.x)
-        shield.hitAt(toShooter)
-        const ex = asteroid.center.x + Math.cos(toShooter) * asteroid.shieldRadius(),
-          ey = asteroid.center.y + Math.sin(toShooter) * asteroid.shieldRadius()
-        this.ring(ex, ey, 8, SHIELD_SPARK, 120, 0.35)
-        this.burst(ex, ey, 4, SHIELD_SPARK, 30, 120, 0.3)
-        if (shield.checkOverload(asteroid)) {
-          this.burst(asteroid.center.x, asteroid.center.y, 16, SHIELD_SPARK, 50, 210, 0.6)
+        const struck = {
+          x: asteroid.center.x + Math.cos(toShooter) * bubble,
+          y: asteroid.center.y + Math.sin(toShooter) * bubble,
         }
+        asteroid.takeDamage(damage, this, "laser", 0, struck)
+        this.burst(struck.x, struck.y, 4, SHIELD_SPARK, 30, 120, 0.3)
         didHit = true
         survivors.push(asteroid)
         continue
