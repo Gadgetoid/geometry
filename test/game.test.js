@@ -1690,3 +1690,27 @@ test("settings survive a reset of progress", () => {
   assert.equal(game.settings.volume, 0.3, "how loud the game is is not progress")
   assert.equal(game.settings.crt, false)
 })
+
+test("adjusting the volume plays a tone at the level just set", async () => {
+  const { Sound } = await import("../src/audio.js")
+  const game = liveGame()
+  // Catch the tone where it is asked for, and record the level the mixer was at,
+  // which is the point: a tone at the old level would tell the player nothing.
+  const heard = []
+  const realPower = Sound.power
+  Sound.power = () => heard.push(Sound.volume)
+  try {
+    game.togglePause()
+    game.pauseSelection = game.pauseMenu().findIndex((row) => row.name === "VOLUME")
+    game.setVolume(0.5)
+    assert.deepEqual(heard, [0.5], "setting it makes one tone, at the new level")
+    game.menuAdjust(1)
+    assert.equal(heard.length, 2, "and every adjustment makes one")
+    assert.ok(heard[1] > 0.5, "each at the level it just moved to")
+    game.menuAdjust(-1)
+    assert.equal(heard.length, 3)
+    assert.ok(Math.abs(heard[2] - 0.5) < 1e-9)
+  } finally {
+    Sound.power = realPower
+  }
+})

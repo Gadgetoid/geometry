@@ -1186,6 +1186,9 @@ export class Game {
   setVolume(value) {
     this.settings.volume = clamp(Math.round(value * 10) / 10, 0, 1)
     this.applySound()
+    // A blip at the level just set, so the slider can be heard and not only read.
+    // After applySound, or it would play at the level being left behind.
+    Sound.power()
     this.rememberSettings()
   }
   setSound(on) {
