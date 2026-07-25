@@ -5,7 +5,7 @@
 // the Renderer without touching game logic. Entities still paint themselves via
 // their own draw(renderer, game) methods.
 
-import { VIEW_W, VIEW_H, TAU, ARENA, SHOP, SHOP_DESC, POWERUP_TYPES } from "./config.js"
+import { VIEW_W, VIEW_H, TAU, ARENA, SHOP, POWERUP_TYPES } from "./config.js"
 import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
 import { PALETTE } from "./palette.js"
@@ -661,12 +661,11 @@ export class GameView {
       })
     }
     if (game.shopSelection < SHOP.length) {
-      r.text(
-        SHOP_DESC[SHOP[game.shopSelection].id],
-        VIEW_W / 2,
-        top + SHOP.length * rowHeight + 8,
-        { size: 12, color: PALETTE.text.soft, align: "center" },
-      )
+      r.text(SHOP[game.shopSelection].desc, VIEW_W / 2, top + SHOP.length * rowHeight + 8, {
+        size: 12,
+        color: PALETTE.text.soft,
+        align: "center",
+      })
     }
 
     const launchY = top + SHOP.length * rowHeight + 42,

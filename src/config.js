@@ -144,7 +144,8 @@ export const WEAPON_TYPES = {
 
 // ---------------------------------------------------------------------------
 // SHIELD TYPES - a shield turns incoming damage into energy drain (efficiency)
-// for the channels it blocks. e.g. a deflector stops shots but not lasers.
+// for the damage channels it `blocks`. e.g. a deflector stops shots but not
+// lasers. A new channel needs no change here beyond listing it.
 // ---------------------------------------------------------------------------
 // A shield overloads (switches off) when energy falls to `dropAt` of the host's
 // capacity, and only comes back once `recoverDelay` seconds have passed AND
@@ -153,8 +154,7 @@ export const WEAPON_TYPES = {
 export const SHIELD_TYPES = {
   standard: {
     efficiency: 1,
-    blocksLaser: true,
-    blocksProjectile: true,
+    blocks: ["laser", "projectile"],
     sides: 6,
     colour: PALETTE.shield.standard,
     dropAt: 0.18,
@@ -163,8 +163,7 @@ export const SHIELD_TYPES = {
   },
   deflector: {
     efficiency: 1,
-    blocksLaser: false,
-    blocksProjectile: true,
+    blocks: ["projectile"],
     sides: 6,
     colour: PALETTE.shield.deflector,
     dropAt: 0.18,
@@ -173,8 +172,7 @@ export const SHIELD_TYPES = {
   },
   player: {
     efficiency: 1,
-    blocksLaser: true,
-    blocksProjectile: true,
+    blocks: ["laser", "projectile"],
     sides: 6,
     colour: PALETTE.shield.standard,
     dropAt: 0.15,
@@ -390,28 +388,72 @@ export const POWERUP_TYPES = {
 
 export const POWERUP_IDS = Object.keys(POWERUP_TYPES)
 
+// Maximum powerup slots the ship can be fitted with.
+const MAX_SLOTS = 4
+
 export function freshUpgrades() {
   return { slots: 1, core: 0, shield: 0, laser: 0, magnet: 0, turret: false, reverse: false }
 }
 
+// ---------------------------------------------------------------------------
+// SHOP - one entry per purchasable upgrade, in menu order. Fields:
+//   id      key into game.upgrades
+//   name    menu label, desc the one-line explanation under it
+//   max     highest level for a levelled upgrade; omit for a one-off fitting
+//   cost    ore price, given the current game state
+//   apply   what buying it does
+// A levelled upgrade takes its cap from the effect table it indexes, so adding
+// a level means extending that array and nothing else.
+// ---------------------------------------------------------------------------
+const levelled = (id, name, desc, max, cost, apply) => ({
+  id,
+  name,
+  desc,
+  max,
+  cost: (g) => cost(g.upgrades[id]),
+  info: (g) => `LV ${g.upgrades[id]} / ${max}`,
+  maxed: (g) => g.upgrades[id] >= max,
+  apply: (g) => {
+    g.upgrades[id]++
+    if (apply) {
+      apply(g)
+    }
+  },
+})
+
+const fitting = (id, name, desc, price, apply) => ({
+  id,
+  name,
+  desc,
+  cost: () => price,
+  info: (g) => (g.upgrades[id] ? "INSTALLED" : "-"),
+  maxed: (g) => g.upgrades[id],
+  apply: (g) => {
+    g.upgrades[id] = true
+    if (apply) {
+      apply(g)
+    }
+  },
+})
+
 export const SHOP = [
-  {
-    id: "core",
-    name: "POWER CORE",
-    info: (g) => `LV ${g.upgrades.core} / 3`,
-    cost: (g) => 45 + g.upgrades.core * 55,
-    maxed: (g) => g.upgrades.core >= 3,
-    apply: (g) => {
-      g.upgrades.core++
+  levelled(
+    "core",
+    "POWER CORE",
+    "Bigger energy cell: more shields and more laser charge.",
+    CONFIG.CORE_MAX.length - 1,
+    (level) => 45 + level * 55,
+    (g) => {
       if (g.player) {
         g.player.energyMax = g.maxEnergy()
         g.player.energy = g.player.energyMax
       }
     },
-  },
+  ),
   {
     id: "life",
     name: "EXTRA LIFE",
+    desc: "One more spare ship.",
     info: (g) => `${g.lives} / ${CONFIG.MAX_LIVES}`,
     cost: () => 60,
     maxed: (g) => g.lives >= CONFIG.MAX_LIVES,
@@ -422,74 +464,45 @@ export const SHOP = [
   {
     id: "slot",
     name: "POWERUP SLOT",
-    info: (g) => `${g.upgrades.slots} / 4`,
+    desc: "Carry another powerup at once (keys 1-4).",
+    info: (g) => `${g.upgrades.slots} / ${MAX_SLOTS}`,
     cost: (g) => 30 * g.upgrades.slots,
-    maxed: (g) => g.upgrades.slots >= 4,
+    maxed: (g) => g.upgrades.slots >= MAX_SLOTS,
     apply: (g) => {
       g.upgrades.slots++
     },
   },
-  {
-    id: "shield",
-    name: "SHIELD PLATING",
-    info: (g) => `LV ${g.upgrades.shield} / 3`,
-    cost: (g) => 40 + g.upgrades.shield * 45,
-    maxed: (g) => g.upgrades.shield >= 3,
-    apply: (g) => {
-      g.upgrades.shield++
-    },
-  },
-  {
-    id: "laser",
-    name: "LASER SYSTEM",
-    info: (g) => `LV ${g.upgrades.laser} / 3`,
-    cost: (g) => 45 + g.upgrades.laser * 45,
-    maxed: (g) => g.upgrades.laser >= 3,
-    apply: (g) => {
-      g.upgrades.laser++
-    },
-  },
-  {
-    id: "magnet",
-    name: "ORE MAGNET",
-    info: (g) => `LV ${g.upgrades.magnet} / 3`,
-    cost: (g) => 35 + g.upgrades.magnet * 35,
-    maxed: (g) => g.upgrades.magnet >= 3,
-    apply: (g) => {
-      g.upgrades.magnet++
-    },
-  },
-  {
-    id: "turret",
-    name: "DEFENSE TURRET",
-    info: (g) => (g.upgrades.turret ? "INSTALLED" : "-"),
-    cost: () => 85,
-    maxed: (g) => g.upgrades.turret,
-    apply: (g) => {
-      g.upgrades.turret = true
+  levelled(
+    "shield",
+    "SHIELD PLATING",
+    "Your shield drains less energy per hit.",
+    CONFIG.SHIELD_EFFICIENCY.length - 1,
+    (level) => 40 + level * 45,
+  ),
+  levelled(
+    "laser",
+    "LASER SYSTEM",
+    "Lv1 charges faster, Lv2 costs less energy, Lv3 may shatter a rock straight to ore.",
+    CONFIG.LASER_RATE_MULT.length - 1,
+    (level) => 45 + level * 45,
+  ),
+  levelled(
+    "magnet",
+    "ORE MAGNET",
+    "Wider passive ore attraction, no powerup needed.",
+    CONFIG.MAGNET_RANGE.length - 1,
+    (level) => 35 + level * 35,
+  ),
+  fitting(
+    "turret",
+    "DEFENSE TURRET",
+    "A nose turret that auto-fires on rocks that drift close.",
+    85,
+    (g) => {
       if (g.player) {
         g.player.installDefenseTurret()
       }
     },
-  },
-  {
-    id: "reverse",
-    name: "REVERSE THRUST",
-    info: (g) => (g.upgrades.reverse ? "INSTALLED" : "-"),
-    cost: () => 55,
-    maxed: (g) => g.upgrades.reverse,
-    apply: (g) => {
-      g.upgrades.reverse = true
-    },
-  },
+  ),
+  fitting("reverse", "REVERSE THRUST", "Forward thrusters: hold DOWN or S to back away.", 55),
 ]
-export const SHOP_DESC = {
-  core: "Bigger energy cell: more shields and more laser charge.",
-  life: "One more spare ship.",
-  slot: "Carry another powerup at once (keys 1-4).",
-  shield: "Your shield drains less energy per hit.",
-  laser: "Lv1 charges faster, Lv2 costs less energy, Lv3 may shatter a rock straight to ore.",
-  magnet: "Wider passive ore attraction, no powerup needed.",
-  turret: "A nose turret that auto-fires on rocks that drift close.",
-  reverse: "Forward thrusters: hold DOWN or S to back away.",
-}

@@ -322,7 +322,8 @@ export const WEAPON_CONTROLLERS = {
   },
 
   // the player's nose turret. Arrow keys aim host.turretAim and fire on demand;
-  // with no input it auto-targets the nearest rock in range.
+  // with no input it auto-targets the nearest rock in range. The beam leaves
+  // the hull centre, where PlayerShip.draw puts the turret.
   defense(weapon, dt, game, host) {
     if (host.turretManual > 0) {
       if (host.turretFiring) {
@@ -363,7 +364,7 @@ export class Shield {
   }
 
   blocks(channel) {
-    return channel === "laser" ? this.type.blocksLaser : this.type.blocksProjectile
+    return this.type.blocks.includes(channel)
   }
 
   // Flash the side facing `angle` (world direction from the host centre).
@@ -537,6 +538,10 @@ export class Ship extends Entity {
     this.hardpoints = list.map((hp) => ({ local: hp.local, role: hp.role, module: null }))
   }
 
+  hardpointByRole(role) {
+    return this.hardpoints.find((hp) => hp.role === role) || null
+  }
+
   applyLoadout(loadout) {
     for (const entry of loadout) {
       const hp = this.hardpoints[entry.hp]
@@ -640,7 +645,8 @@ export class PlayerShip extends Ship {
     this.colour = PLAYER_TYPE.colour
     this.buildHardpoints(PLAYER_TYPE.hardpoints)
     this.applyLoadout(PLAYER_TYPE.loadout)
-    this.mainWeapon = this.hardpoints[0].module
+    this.nose = this.hardpointByRole("nose")
+    this.mainWeapon = this.nose.module
     this.energyMax = game.maxEnergy()
     this.energy = this.energyMax
     this.regen = 0 // regen handled explicitly (paused while charging/thrusting)
@@ -681,7 +687,7 @@ export class PlayerShip extends Ship {
   }
 
   installDefenseTurret() {
-    const hp = this.hardpoints.find((h) => h.role === "aux")
+    const hp = this.hardpointByRole("aux")
     if (hp && !hp.module) {
       hp.module = new Weapon("defenseLaser", "defense")
     }
@@ -700,7 +706,7 @@ export class PlayerShip extends Ship {
     }
     const chargeFrac = clamp(w.charge / w.type.chargeMax, 0, 1)
     const length = w.charge * this.beamLengthMult() + 40
-    const nose = this.mountWorld(this.hardpoints[0].local)
+    const nose = this.mountWorld(this.nose.local)
     const dir = { x: Math.cos(this.angle), y: Math.sin(this.angle) },
       nrm = { x: -dir.y, y: dir.x }
     const offsets =
@@ -1019,7 +1025,7 @@ export class PlayerShip extends Ship {
 
     const w = this.mainWeapon
     if (w && w.charge > 4) {
-      const nose = this.mountWorld(this.hardpoints[0].local)
+      const nose = this.mountWorld(this.nose.local)
       const length = w.charge * this.beamLengthMult() + 40
       const frac = clamp(w.charge / w.type.chargeMax, 0.3, 1)
       renderer.line(
