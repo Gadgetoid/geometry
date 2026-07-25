@@ -120,9 +120,15 @@ export class Game {
     this.viewCenter = { x: ARENA.cx, y: ARENA.cy } // world point the camera follows
 
     this.backdrop = new Backdrop()
+    // The stored best arrives asynchronously, which can land after a run has
+    // already beaten it, so take the higher of the two rather than the loaded
+    // one outright.
     loadBest().then((value) => {
       if (value) {
-        this.best = value
+        this.best = {
+          score: Math.max(this.best.score, value.score || 0),
+          sector: Math.max(this.best.sector, value.sector || 1),
+        }
       }
     })
   }
