@@ -330,6 +330,21 @@ export class Entity {
     return 0
   }
 
+  // The surface an incoming hit of this channel has to reach: the shield bubble
+  // while one is raised against it, and zero when the body's own outline is the
+  // surface. Every weapon asks this, so a shot and a beam cannot come to
+  // disagree about how big a shielded body is to aim at.
+  blockingRadius(channel) {
+    const shield = this.shieldModule()
+    const raised = shield && shield.up && shield.blocks(channel) && this.energy > 0
+    return raised ? this.shieldRadius() : 0
+  }
+
+  // The body's own outline in world space, for an exact hit test against it.
+  hitOutline() {
+    return []
+  }
+
   // World position of a hardpoint. Ships store a local offset; asteroids store
   // a world point that is rotated with the rock.
   hardpointWorld(hp) {
@@ -679,13 +694,7 @@ export class Projectile extends Entity {
     // The player is hit against its outline, as every other ship is: a circle
     // of `radius` is twice the hull's area and still leaves the nose outside it.
     const player = game.player
-    if (
-      player &&
-      this.owner !== player &&
-      player.inPlay() &&
-      this.#withinRadius(player.x, player.y, player.boundRadius) &&
-      pointInPolygon(this, player.worldOutline())
-    ) {
+    if (player && this.owner !== player && player.inPlay() && this.#reaches(player)) {
       this.dead = true
       game.burst(this.x, this.y, 8, PALETTE.weapon.bulletImpact, 40, 140, 0.4)
       game.screenShake = Math.max(game.screenShake, 5)
@@ -693,37 +702,40 @@ export class Projectile extends Entity {
       player.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
       return
     }
-    // A bounding-circle reject first: the exact polygon test is only worth its
-    // cost (and, for ships, building the world outline) on a near miss.
     for (const rival of game.rivals) {
-      if (
-        rival === this.owner ||
-        !rival.inPlay() ||
-        !this.#withinRadius(rival.x, rival.y, rival.boundRadius)
-      ) {
+      if (rival === this.owner || !rival.inPlay() || !this.#reaches(rival)) {
         continue
       }
-      if (pointInPolygon(this, rival.worldOutline())) {
-        this.dead = true
-        game.burst(this.x, this.y, 6, PALETTE.rival.hull, 40, 130, 0.4)
-        rival.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
-        return
-      }
+      this.dead = true
+      game.burst(this.x, this.y, 6, PALETTE.rival.hull, 40, 130, 0.4)
+      rival.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
+      return
     }
     for (const asteroid of game.asteroids) {
-      if (
-        asteroid === this.owner ||
-        !this.#withinRadius(asteroid.center.x, asteroid.center.y, asteroid.boundRadius)
-      ) {
+      if (asteroid === this.owner || !this.#reaches(asteroid)) {
         continue
       }
-      if (pointInPolygon(this, asteroid.vertices)) {
-        this.dead = true
-        game.burst(this.x, this.y, 5, PALETTE.rock.impact, 30, 110, 0.3)
-        asteroid.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
-        return
-      }
+      this.dead = true
+      game.burst(this.x, this.y, 5, PALETTE.rock.impact, 30, 110, 0.3)
+      asteroid.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
+      return
     }
+  }
+
+  // Has the shot reached the body? A raised shield is struck on the bubble the
+  // view draws, exactly as a beam is; without one the answer comes from the
+  // outline, since a circle around a hull covers the empty space beside it and
+  // still leaves the nose outside. A bounding-circle reject comes first, so the
+  // exact test only costs anything on a near miss.
+  #reaches(body) {
+    const bubble = body.blockingRadius("projectile")
+    if (bubble > 0) {
+      return this.#withinRadius(body.x, body.y, bubble)
+    }
+    return (
+      this.#withinRadius(body.x, body.y, body.boundRadius) &&
+      pointInPolygon(this, body.hitOutline())
+    )
   }
 
   #withinRadius(cx, cy, radius) {
@@ -823,6 +835,10 @@ export class Ship extends Entity {
       x: this.x + (p[0] * c - p[1] * s) * this.size,
       y: this.y + (p[0] * s + p[1] * c) * this.size,
     }))
+  }
+
+  hitOutline() {
+    return this.worldOutline()
   }
 
   mountWorld(local) {
@@ -1878,6 +1894,10 @@ export class Asteroid extends Entity {
   // type to carry one.
   shieldRadius() {
     return this.boundRadius + 10
+  }
+
+  hitOutline() {
+    return this.vertices
   }
 
   // The outline as convex parts, for bodyContact. A whole rock is a convex hull

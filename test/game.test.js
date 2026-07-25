@@ -16,6 +16,7 @@ import {
   Asteroid,
   Projectile,
   RivalShip,
+  Shield,
   resolveHullRockContact,
   rockMass,
 } from "../src/entities.js"
@@ -170,12 +171,25 @@ test("a rock reaches the nose, which sits beyond the old collision circle", () =
   assert.ok(game.stats.damage > 0, "contact on the nose must register")
 })
 
-test("a shot through the empty space beside the hull misses", () => {
+// A bare hull, so the outline is the surface a shot has to reach. With a shield
+// raised the bubble is the surface instead, which the next test covers. The
+// shield is left overloaded rather than merely down: at full energy it recovers
+// within the same frame, and the pose would be gone before the shot arrived.
+function bareHullGame() {
   const game = liveGame()
   const player = game.player
   player.angle = 0 // nose along +x, so the hull tapers to a point at the tail
   player.x = 400
   player.y = 320
+  const shield = player.shieldModule()
+  shield.up = false
+  shield.downTimer = 10
+  return game
+}
+
+test("a shot through the empty space beside a bare hull misses", () => {
+  const game = bareHullGame()
+  const player = game.player
   const tailX = Math.min(...player.worldOutline().map((p) => p.x))
   // Level with the tail but out at the full collision radius: this used to be
   // inside the circle, while the hull there is a single point.
@@ -185,13 +199,63 @@ test("a shot through the empty space beside the hull misses", () => {
   assert.equal(game.stats.damage, 0, "empty space beside the hull must not register")
 
   // ...and a shot on the hull itself still lands.
-  const game2 = liveGame()
-  game2.player.angle = 0
-  game2.player.x = 400
-  game2.player.y = 320
+  const game2 = bareHullGame()
   game2.projectiles = [new Projectile(400, 320, 0, 0, 100, null)]
   game2.advance(1 / 60)
   assert.ok(game2.stats.damage > 0, "a shot on the hull must land")
+})
+
+test("a shot is stopped by the shield bubble, on the same surface a beam is", () => {
+  const bubble = PLAYER_TYPE.size * PLAYER_TYPE.shieldScale
+  const shootFrom = (offset) => {
+    const game = liveGame()
+    const player = game.player
+    player.angle = 0
+    player.x = 400
+    player.y = 320
+    assert.ok(player.shieldUp(), "the bubble must actually be raised")
+    const bullet = new Projectile(200, 320 + offset, 900, 0, 100, null)
+    game.projectiles = [bullet]
+    for (let i = 0; i < 400 && !bullet.dead; i++) {
+      bullet.update(1 / 600, game)
+    }
+    return game.stats.damage > 0
+  }
+  // Well inside the drawn bubble but clear of the hull, which is 11 units deep:
+  // a shot here used to sail straight through the shield.
+  for (const offset of [0, 8, 14, 18, 21]) {
+    assert.ok(
+      shootFrom(offset),
+      `a shot ${offset} from the centre must strike a bubble of ${bubble}`,
+    )
+  }
+  // and outside it, nothing
+  for (const offset of [26, 34, 60]) {
+    assert.ok(!shootFrom(offset), `a shot ${offset} from the centre clears a bubble of ${bubble}`)
+  }
+})
+
+test("a shot strikes a shielded rock on its bubble too", () => {
+  const game = liveGame()
+  const rock = new Asteroid({
+    vertices: square(600, 320, 60),
+    traits: { shield: { shield: "standard" } },
+  })
+  // vertices skip hazard mounting, so mount the shield the way the spawner does
+  rock.hardpoints.push({ x: rock.center.x, y: rock.center.y, module: new Shield("standard") })
+  rock.refreshEnergy()
+  game.asteroids = [rock]
+  assert.ok(rock.shieldUp())
+  const bubble = rock.shieldRadius()
+  assert.ok(bubble > rock.boundRadius, "the bubble must stand clear of the outline")
+  // between the outline and the bubble: the gap a shot used to fly through
+  const bullet = new Projectile(200, 320 + (rock.boundRadius + bubble) / 2, 900, 0, 100, null)
+  game.projectiles = [bullet]
+  const before = rock.energy
+  for (let i = 0; i < 600 && !bullet.dead; i++) {
+    bullet.update(1 / 600, game)
+  }
+  assert.ok(rock.energy < before, "the shot must drain the shield it visibly struck")
 })
 
 test("the player's collision parts tile its drawn outline exactly", () => {
