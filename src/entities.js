@@ -1506,7 +1506,7 @@ export class RivalShip extends Ship {
     this.maxSpeed = type.maxSpeed
     this.turnRate = type.turnRate
     this.drag = type.drag
-    this.exhaustFactor = type.exhaustFactor
+    this.exhaustBacklog = 0 // fractional plumes carried between frames
     this.energyMax = type.energyMax
     this.energy = type.energyMax
     this.regen = type.regen
@@ -1615,17 +1615,7 @@ export class RivalShip extends Ship {
     this.vy *= Math.pow(this.drag, dt)
     this.integrate(dt)
 
-    const back = this.size * this.exhaustFactor
-    if (Math.random() < 0.4) {
-      game.emit(
-        this.x - Math.cos(this.angle) * back,
-        this.y - Math.sin(this.angle) * back,
-        -Math.cos(this.angle) * 40 + randRange(-20, 20),
-        -Math.sin(this.angle) * 40 + randRange(-20, 20),
-        0.4,
-        PALETTE.rival.hull,
-      )
-    }
+    this.#thrust(dt, game)
 
     for (let i = game.oreChunks.length - 1; i >= 0; i--) {
       if (
@@ -1650,6 +1640,36 @@ export class RivalShip extends Ship {
       !game.onScreen(this.x, this.y, this.boundRadius + CONFIG.RIVAL_DESPAWN_MARGIN)
     ) {
       this.dead = true
+    }
+  }
+
+  // Thruster plumes, one stream per mount in the type's `exhaust`. Every mount
+  // emits on every tick, so a ship with two nozzles shows two continuous streams
+  // rather than one that flickers between them. `rate` is plumes a second per
+  // stream, counted through a backlog so it does not vary with the frame rate.
+  #thrust(dt, game) {
+    const spec = this.type.exhaust
+    if (!spec) {
+      return
+    }
+    this.exhaustBacklog += spec.rate * dt
+    const back = this.angle + Math.PI
+    const bx = Math.cos(back),
+      by = Math.sin(back)
+    while (this.exhaustBacklog >= 1) {
+      this.exhaustBacklog -= 1
+      for (const mount of spec.mounts) {
+        const world = this.mountWorld(mount)
+        const spread = spec.spread ?? 20
+        game.emit(
+          world.x,
+          world.y,
+          bx * spec.speed + randRange(-spread, spread),
+          by * spec.speed + randRange(-spread, spread),
+          spec.life,
+          PALETTE.rival.hull,
+        )
+      }
     }
   }
 

@@ -398,6 +398,12 @@ export const SHIELD_TYPES = {
 // hull without floating far off it. A beam is stopped by that bubble, so this sets
 // how big a shielded ship is to shoot at as well as how big it looks.
 //
+// `exhaust` is the thruster: `mounts` are nozzle positions in local space, as
+// hardpoints are, and every one of them emits, so two mounts read as two streams.
+// `rate` is plumes a second per stream, `speed` how hard they are thrown back
+// (which is also how long each streak draws), `life` how long they linger and
+// `spread` how much they fan out.
+//
 // A beam cuts any unshielded hull, exactly as it cuts a rock. Nothing marks a
 // type as cuttable: the material's `minArea` decides what the cut leaves, so a
 // hull with halves above it comes apart into drifting wreckage and one too small
@@ -443,7 +449,7 @@ export const SHIP_TYPES = {
     maxSpeed: 190,
     turnRate: 2.6,
     drag: 0.4,
-    exhaustFactor: 1.17,
+    exhaust: { mounts: [[-1.17, 0]], rate: 26, speed: 55, life: 0.4, spread: 20 },
     lifeTime: [16, 26],
     energyMax: 90,
     regen: 22,
@@ -482,7 +488,18 @@ export const SHIP_TYPES = {
     maxSpeed: 44,
     turnRate: 0.17,
     drag: 0.94,
-    exhaustFactor: 1.7,
+    // twin nozzles set either side of the tail, throwing a long heavy plume: a
+    // single small stream read far too light for a hull this size
+    exhaust: {
+      mounts: [
+        [-1.78, -0.36],
+        [-1.78, 0.36],
+      ],
+      rate: 44,
+      speed: 150,
+      life: 0.62,
+      spread: 26,
+    },
     lifeTime: [34, 50],
     energyMax: 260,
     regen: 30,
