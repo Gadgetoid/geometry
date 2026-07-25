@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Launch GEOMETRY II full screen in the Chromium flatpak. This is what the Steam
-# shortcut runs, and it works the same from a desktop launcher or a terminal.
+# Launch GEOMETRY II full screen. This is what the Steam shortcut runs, and it
+# works the same from a desktop launcher or a terminal, on SteamOS or on a Mac.
+#
+# The browser is whatever browser.sh finds: the Chromium flatpak on a Deck, an
+# installed Chromium-based browser anywhere else.
 #
 # The game is vanilla ES modules, and a module script is subject to CORS even
 # over file://, so --allow-file-access-from-files is not optional: without it
@@ -13,6 +16,9 @@ set -euo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GAME_DIR="$(cd -- "$HERE/.." && pwd)"
+
+# shellcheck source=deck/browser.sh
+. "$HERE/browser.sh"
 
 # Paths are derived from where this script sits, so say so plainly if it has been
 # copied out of the game's deck/ folder rather than failing later on a mkdir.
@@ -38,11 +44,12 @@ esac
 PROFILE="${GEOMETRY_PROFILE:-$GAME_DIR/.chromium-profile}"
 mkdir -p "$PROFILE"
 
-exec /usr/bin/flatpak run \
-  --branch=stable \
-  --arch=x86_64 \
-  --command=/app/bin/chromium \
-  org.chromium.Chromium \
+if ! geometry_find_browser; then
+  geometry_no_browser_message "$0"
+  exit 1
+fi
+
+exec "${BROWSER_ARGV[@]}" \
   --app="$URL" \
   --user-data-dir="$PROFILE" \
   --allow-file-access-from-files \

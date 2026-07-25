@@ -1,6 +1,7 @@
-# Playing on a Steam Deck
+# Playing from Steam
 
-GEOMETRY II runs in the Chromium flatpak. From Desktop Mode, once:
+Written for a Steam Deck, where GEOMETRY II runs in the Chromium flatpak. From
+Desktop Mode, once:
 
 ```sh
 ./deck/install-on-deck.sh
@@ -50,6 +51,29 @@ Dropped from the NW.js recipe as irrelevant here: `--enable-node-worker`,
 tokens, which only exist to pass a file argument the launcher already knows.
 `--in-process-gpu` is left out because the sandboxed GPU process works; add it
 back if you ever get a black screen with the HUD still drawing.
+
+## On something other than a Deck
+
+The same scripts work on an ordinary Linux desktop and on a Mac. Only two parts are
+Linux-specific and both are skipped where they mean nothing: the flatpak permission,
+and the desktop entry. Steam keeps its shortcut file in the same format everywhere,
+so the shortcut and its artwork are created the same way.
+
+The browser is whatever `browser.sh` finds. It wants a Chromium-based one, because
+the game needs WebGL2 and the launcher passes Chromium's own flags: Chrome,
+Chromium, Brave or Edge. Point it at a specific binary with `GEOMETRY_BROWSER`.
+
+Two things are deliberately **not** downloaded into the app directory:
+
+- **flatpak**, because it cannot be. It is built on Linux namespaces and
+  bubblewrap, and there is no macOS build to fetch. On a Mac the flatpak path is
+  simply not used.
+- **a browser**, because you have one. Fetching a second couple of hundred
+  megabytes would mean shipping a browser nobody patches, and on macOS clearing
+  Gatekeeper's quarantine on it. Finding the installed one is better in every way.
+  If the game ever needs a browser nobody has, `npm install --no-save puppeteer`
+  fetches a known-good Chrome for Testing build, which is how the art capture tool
+  would get one.
 
 ## Controls
 

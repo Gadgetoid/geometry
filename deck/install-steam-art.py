@@ -45,6 +45,7 @@ STEAM_ROOTS = [
     "~/.steam/steam",
     "~/.local/share/Steam",
     "~/.var/app/com.valvesoftware.Steam/data/Steam",
+    "~/Library/Application Support/Steam",  # macOS
 ]
 
 # What Steam writes for a non-Steam shortcut. Absent fields are tolerated, but a
