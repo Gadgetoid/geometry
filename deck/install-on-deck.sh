@@ -19,6 +19,7 @@ FLATPAK_ID="org.chromium.Chromium"
 DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 DESKTOP_FILE="$DESKTOP_DIR/geometry-ii.desktop"
 ICON="$HERE/steam-art/icon.png"
+ART_INSTALLER="$HERE/install-steam-art.py"
 
 say() { printf '  %s\n' "$*"; }
 die() {
@@ -111,6 +112,26 @@ else
   echo "  * or in Steam: Games -> Add a Non-Steam Game -> Browse -> $LAUNCHER"
 fi
 
+# ---- library artwork ------------------------------------------------------
+# The desktop entry's icon is only read when the shortcut is created, and the
+# banner, grid tile and logo are not read from it at all: Steam keeps those in
+# userdata/<user>/config/grid/, named after the shortcut's appid. So attaching
+# them means finding the shortcut and copying the art in beside it.
+if [ -f "$ART_INSTALLER" ] && [ -f "$ICON" ]; then
+  if command -v python3 >/dev/null; then
+    echo
+    echo "Library artwork:"
+    if ! python3 "$ART_INSTALLER" --launcher "$LAUNCHER" --art "$HERE/steam-art"; then
+      say "Steam has not written the shortcut out yet."
+      say "Restart Steam, then run: $ART_INSTALLER --launcher $LAUNCHER --art $HERE/steam-art"
+    fi
+  else
+    echo
+    say "python3 is missing, so the artwork was not attached."
+    say "See deck/steam-art/README.md to attach it by hand."
+  fi
+fi
+
 cat <<'NOTES'
 
 Worth knowing:
@@ -121,8 +142,9 @@ Worth knowing:
     opens its audio device on a real click, which a gamepad press is not.
   * The high score lives in .chromium-profile beside the game files. Delete that
     folder to reset it.
-  * Library artwork (banner, grid tile, logo) is in deck/steam-art/. The icon is
-    already attached; see that folder's README for the other slots.
+  * Library artwork comes from deck/steam-art/ and is attached above. Steam reads
+    it from its own folder, so it only changes when install-steam-art.py runs;
+    re-run that after regenerating the art.
   * Re-running this is safe. It refreshes the permission, the entry and the icon,
     and will not add a second copy to your library. Close Steam first, because it
     rewrites its shortcut file on exit.

@@ -17,17 +17,34 @@ node tools/capture-steam-art.mjs
 | `logo.png`     | 1280x720 | `<appid>_logo.png`, transparent, sits over the hero |
 | `icon.png`     | 256x256  | `<appid>_icon.png`, and the desktop entry's icon    |
 
-`install-on-deck.sh` points the desktop entry at `icon.png`, so the shortcut has
-the right icon from the start. The rest have to be attached to the shortcut, in
-one of three ways:
+## Attaching it
 
-- **In Steam:** right-click the game, Manage, then set artwork per slot. Steam
-  picks the slot from where you drop it.
-- **Decky Loader + SteamGridDB plugin:** its "custom" tab uploads local files.
-- **By hand:** copy them into
-  `~/.steam/steam/userdata/<userid>/config/grid/` under the names in the table.
-  The appid is the shortcut's, which Steam assigns when the entry is added, so
-  the folder has to be read after that. Restart Steam afterwards.
+`install-on-deck.sh` does this for you, by running `install-steam-art.py`. Run
+that on its own after regenerating the art:
+
+```sh
+./deck/install-steam-art.py --launcher ./deck/geometry-ii.sh --art ./deck/steam-art
+```
+
+It has to go looking, because none of this comes from the desktop entry. Steam
+reads the entry's `Icon=` once, when the shortcut is created, and never again; and
+it does not read the banner, the grid tile or the logo from there at all. Those
+live in `userdata/<user>/config/grid/`, named after the appid Steam assigned the
+shortcut. So the script finds the shortcut by its launcher path in `shortcuts.vdf`,
+reads the appid out of it, and copies the art in beside it under the names above.
+It also sets the shortcut's own `icon` field, which is what the library list shows.
+
+Two consequences worth knowing:
+
+- **Close Steam first.** It holds `shortcuts.vdf` in memory and rewrites it on
+  exit, so edits made while it is running are lost. The script refuses to touch the
+  icon while Steam is up, and says so.
+- **A brand new shortcut may not be on disk yet**, for the same reason. If the
+  script says the launcher is not in any shortcut, restart Steam and run it again.
+
+`shortcuts.vdf` belongs to Steam, so the script will only rewrite one it can parse
+and re-serialise byte for byte first, and it keeps a `.geometry-backup` beside it.
+`--dry-run` shows what it would do and touches nothing.
 
 ## How the scenes are built
 
