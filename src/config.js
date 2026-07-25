@@ -340,8 +340,15 @@ export const PROGRESSION = {
 // A blaster rock lobs single heavy rounds; a flack rock throws a stream of light
 // ones. Adding `autocannon` alongside them would sit between the two.
 const ROCK_TURRETS = {
+  guns: [{ weapon: "blaster", controller: "turret" }],
+  count: [1, 3],
+  jitter: 0.3,
+  inset: [0.35, 0.7],
+}
+const ROCK_TURRETS_ADVANCED = {
   guns: [
     { weapon: "blaster", controller: "turret" },
+    { weapon: "autocannon", controller: "turret" },
     { weapon: "flakCannon", controller: "turret" },
   ],
   count: [1, 3],
@@ -355,6 +362,10 @@ export const HAZARD_TRAITS = [
   { traits: { shield: ROCK_SHIELD }, fromSector: 4 },
   { traits: { gun: ROCK_TURRETS }, fromSector: 5, weightPerSector: 1, weightCap: 5 },
   { traits: { gun: ROCK_TURRETS, shield: ROCK_SHIELD }, fromSector: 6 },
+  // Up the ante at later sectors by introducing more turret types
+  // TODO: maybe "guns" needs a "fromSectorOffset" or similar so these can be collapsed
+  { traits: { gun: ROCK_TURRETS_ADVANCED }, fromSector: 15, weightPerSector: 1, weightCap: 5 },
+  { traits: { gun: ROCK_TURRETS_ADVANCED, shield: ROCK_SHIELD }, fromSector: 16 },
 ]
 
 // ---------------------------------------------------------------------------
