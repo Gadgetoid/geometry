@@ -428,7 +428,10 @@ export class Game {
     const fullLen = Math.hypot(beam.b.x - beam.a.x, beam.b.y - beam.a.y)
     const reached = []
     const considerShip = (e) => {
-      const bubble = e.shieldUp() ? e.shieldRadius() : 0
+      // A shield only stands in the way of the channels it blocks. A deflector
+      // stops shots and not lasers, so a beam reaches the hull inside it, which
+      // is the same answer a shielded rock gives.
+      const bubble = e.blockingRadius("laser")
       const entry =
         bubble > 0
           ? segmentCircleEntry(beam.a, beam.b, e, bubble + halfWidth)
@@ -454,14 +457,16 @@ export class Game {
     // every rock it can cut, and stops at the first one it cannot. As for a rock,
     // severing means passing through: the beam must cross the outline at least
     // twice, so clipping the tip of a hull scorches it instead of severing its
-    // whole length along a line the shot never reached. A raised shield stops a
-    // beam; a hull about to come apart does not.
+    // whole length along a line the shot never reached. A shield that blocks the
+    // channel is what stops a beam; a hull about to come apart is not.
     const severed = []
     let blockDist = fullLen
     let blockShip = null
     for (const { ship, entry } of reached) {
       const cuttable =
-        ship.severable && !ship.shieldUp() && countBeamCrossings(beam, ship.worldOutline()) >= 2
+        ship.severable &&
+        ship.blockingRadius("laser") === 0 &&
+        countBeamCrossings(beam, ship.worldOutline()) >= 2
       if (!cuttable) {
         blockShip = ship
         blockDist = entry

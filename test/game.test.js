@@ -32,6 +32,7 @@ import {
   PLAYER_TYPE,
   POWERUP_TYPES,
   PROGRESSION,
+  SHIELD_TYPES,
   SHIP_PLATING,
   SHIP_SCALARS,
   SHOP,
@@ -1062,6 +1063,63 @@ test("a beam cuts every hull it passes through, as it cuts every rock", () => {
     [true, true, true, true],
     "a beam that cuts the nearest must cut the ones behind it too",
   )
+})
+
+test("a shield only stops the channels it blocks, whichever body carries it", () => {
+  // A deflector stops shots and not lasers. Asked of a rock and of a hull, the
+  // answer has to be the same one.
+  const blocksLaser = Object.keys(SHIELD_TYPES).find((key) =>
+    SHIELD_TYPES[key].blocks.includes("laser"),
+  )
+  const passesLaser = Object.keys(SHIELD_TYPES).find(
+    (key) => !SHIELD_TYPES[key].blocks.includes("laser"),
+  )
+  assert.ok(passesLaser, "some shield should let a laser through, or there is nothing to test")
+
+  const fire = (game) =>
+    game.applyBeam(
+      { a: { x: 200, y: 320 }, b: { x: 1000, y: 320 }, dir: { x: 1, y: 0 } },
+      game.player,
+      playerWeapon,
+      68,
+    )
+  // A hull: does the shield soak it, or does the beam reach the hull inside?
+  const hitShip = (shield) => {
+    const game = liveGame()
+    game.player.x = -9000
+    game.player.y = -9000
+    const ship = new RivalShip(500, 320, "scout", [{ hp: 2, shield }])
+    ship.angle = 0
+    game.rivals = [ship]
+    const energy = ship.energy,
+      hull = ship.hull
+    fire(game)
+    return { soaked: ship.energy < energy, reachedHull: ship.dead || ship.hull < hull }
+  }
+  // A rock: the same question, where reaching it means being cut apart.
+  const hitRock = (shield) => {
+    const game = liveGame()
+    game.player.x = -9000
+    game.player.y = -9000
+    const rock = new Asteroid({ vertices: square(500, 320, 70) })
+    rock.hardpoints.push({ x: rock.center.x, y: rock.center.y, module: new Shield(shield) })
+    rock.refreshEnergy()
+    game.asteroids = [rock]
+    const energy = rock.energy
+    fire(game)
+    return { soaked: rock.energy < energy, reachedHull: !game.asteroids.includes(rock) }
+  }
+  for (const [what, hit] of [
+    ["a hull", hitShip],
+    ["a rock", hitRock],
+  ]) {
+    const blocked = hit(blocksLaser)
+    assert.ok(blocked.soaked, `${what} with a laser-blocking shield must soak the beam`)
+    assert.ok(!blocked.reachedHull, `${what} with one must not be reached through it`)
+    const passed = hit(passesLaser)
+    assert.ok(!passed.soaked, `${what} with a shield that passes lasers must not soak one`)
+    assert.ok(passed.reachedHull, `${what} with one must be reached through it`)
+  }
 })
 
 test("a raised shield still stops the beam, and shelters what is behind it", () => {
