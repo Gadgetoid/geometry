@@ -207,11 +207,21 @@ def shortcut_exists(needles, name):
     return False
 
 
+# Steam's process is named differently per platform, and getting this wrong is
+# worse than not checking: the guard silently never fires, the file is written
+# underneath a live Steam, and Steam then overwrites it from memory on exit. In
+# between, its library shows the file's entries and its own together.
+STEAM_PROCESS_NAMES = ("steam", "steam_osx")
+
+
 def steam_is_running():
-    try:
-        return subprocess.run(["pgrep", "-x", "steam"], capture_output=True).returncode == 0
-    except FileNotFoundError:
-        return False
+    for name in STEAM_PROCESS_NAMES:
+        try:
+            if subprocess.run(["pgrep", "-x", name], capture_output=True).returncode == 0:
+                return True
+        except FileNotFoundError:
+            return False
+    return False
 
 
 def main():

@@ -35,6 +35,20 @@ and changes nothing. `--remove` takes matching entries and their artwork back ou
 Both keep a `.geometry-backup` and refuse to touch a file they cannot reproduce
 byte for byte. Close Steam first.
 
+### Duplicate entries that will not go away
+
+Steam keeps its own copy of the library while it runs, so a shortcut file edited
+underneath it and Steam's memory can disagree, and the search list then shows both.
+The extra rows are not in `shortcuts.vdf`, which is why the right-click menu has
+nothing to remove.
+
+They are not persisted, though. Quitting Steam writes its in-memory list back out, so
+quit it, check `--list` shows what you expect, and start it again. If a phantom row
+survives that, it is in Steam's app cache: quit Steam and delete
+`appcache/appinfo.vdf` under the Steam folder, which Steam rebuilds on the next start.
+
+The scripts will not edit Steam's files while Steam is running, and say so instead.
+
 `--add-if-missing` writes the shortcut record directly instead of asking Steam. On
 SteamOS there is `steamos-add-to-steam` to ask, so it is not used there. On macOS
 there is nothing to ask, so it is how the shortcut gets made, with the bundle as its

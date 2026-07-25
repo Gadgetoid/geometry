@@ -140,8 +140,12 @@ elif command -v steamos-add-to-steam >/dev/null && [ -f "$DESKTOP_FILE" ]; then
   fi
 else
   # Nothing to ask, so write the record. Its Exe is the .app bundle, which is the
-  # shape Steam stores and understands.
-  art_step --add-if-missing
+  # shape Steam stores and understands. This is the one path that writes Steam's own
+  # file, so it refuses while Steam is up rather than having its work discarded.
+  if ! art_step --add-if-missing; then
+    echo
+    echo "Quit Steam and run this again."
+  fi
 fi
 
 if [ "$PLATFORM" = Linux ]; then
