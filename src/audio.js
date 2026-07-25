@@ -1,5 +1,9 @@
 // Tiny synthesised sound effects, created lazily on first user gesture.
 
+import { randRange } from "./math.js"
+
+const COLLECT_DETUNE = 0.06 // ore pickup pitch spread, about a semitone either way
+
 export const Sound = {
   enabled: false,
   ctx: null,
@@ -179,8 +183,11 @@ export const Sound = {
     this.noise(0.6, 0.11, 340, 0.7, "lowpass") // full low rumble that decays: the boom
     this.noise(0.14, 0.05, 1100, 0.9) // initial crack
   },
+  // Ore pickup, detuned a little on each one so a stream of chunks shimmers
+  // instead of repeating the same note.
   collect() {
-    this.beep(880, 0.09, "sine", 0.05, 1320)
+    const pitch = randRange(1 - COLLECT_DETUNE, 1 + COLLECT_DETUNE)
+    this.beep(880 * pitch, 0.09, "sine", 0.05, 1320 * pitch)
   },
   power() {
     this.beep(520, 0.1, "square", 0.05, 780)
