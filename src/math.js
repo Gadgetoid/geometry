@@ -158,10 +158,14 @@ export function countBeamCrossings(beam, vertices) {
   return count
 }
 
+// Pieces smaller than this are numerical debris (a line grazing one vertex),
+// not a cut.
+const SLICE_MIN_AREA = 1e-6
+
 // Slice a simple polygon (convex OR concave) by the infinite line through
 // `pointOnLine` with the given `normal`. Returns an array of the resulting
 // pieces (each a fresh list of {x,y}); a clean cut yields two or more pieces, a
-// non-cutting line yields the single input polygon.
+// non-cutting or merely grazing line yields the single input polygon.
 //
 // Works by inserting the boundary/line intersection points, pairing them along
 // the line (even-odd: consecutive pairs bound interior chords), then walking the
@@ -244,7 +248,9 @@ export function slicePolygon(vertices, pointOnLine, normal) {
         viaBoundary = true // arrived by chord (or plain vertex) -> follow boundary
       }
     }
-    if (piece.length >= 3) {
+    // A line touching a single vertex traces a spur with no area alongside the
+    // intact polygon; callers must not see that as a cut piece.
+    if (piece.length >= 3 && polygonArea(piece) > SLICE_MIN_AREA) {
       pieces.push(piece)
     }
   }
