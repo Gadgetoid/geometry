@@ -589,6 +589,24 @@ test("damage taken is recorded even when the shield absorbs it", () => {
   assert.equal(game.stats.damage, 50, "the hit is still counted")
 })
 
+test("the accuracy bonus is withheld when nothing was fired", () => {
+  const game = liveGame()
+  game.level = 4
+  game.enterShop()
+  assert.equal(game.summaryData.accuracy, 0)
+  assert.equal(game.summaryData.accuracyBonus, 0, "no shots is not perfect accuracy")
+})
+
+test("the accuracy bonus scales with the hit fraction", () => {
+  const game = liveGame()
+  game.level = 4
+  game.stats.shots = 4
+  game.stats.hits = 3
+  game.enterShop()
+  assert.equal(game.summaryData.accuracy, 0.75)
+  assert.equal(game.summaryData.accuracyBonus, Math.round(0.75 * CONFIG.ACCURACY_BONUS))
+})
+
 test("the flawless bonus is withheld after taking a hit", () => {
   const game = liveGame()
   game.player.takeDamage(50, game, "projectile", 0, { x: game.player.x, y: game.player.y })

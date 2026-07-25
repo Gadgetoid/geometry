@@ -761,7 +761,9 @@ export class Game {
     this.oreBalance += remaining
     this.oreChunks.length = 0
 
-    const accuracy = this.stats.shots ? this.stats.hits / this.stats.shots : 1
+    // No shots means no accuracy to reward. Reading it as a perfect 1 paid the
+    // whole bonus for clearing a sector without firing.
+    const accuracy = this.stats.shots ? this.stats.hits / this.stats.shots : 0
     const accuracyBonus = Math.round(accuracy * CONFIG.ACCURACY_BONUS)
     const flawlessBonus = this.stats.damage <= 0 ? CONFIG.FLAWLESS_BONUS : 0
     const clearBonus = this.level * CONFIG.CLEAR_BONUS_PER_SECTOR
