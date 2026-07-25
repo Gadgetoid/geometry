@@ -134,7 +134,7 @@ export class GameView {
     r.clearFrame(PALETTE.space)
 
     // far background: nebula + planets (softened for depth of field)
-    const neb = game.nebula
+    const neb = game.backdrop.nebula
     r.nebula(c.x, c.y, neb.colorA, neb.colorB, neb.seed)
     r.pushView(cam.bg)
     this.#planets(game)
@@ -149,7 +149,7 @@ export class GameView {
     // world layer: arena, entities, effects (follows the ship)
     r.pushView(cam.world)
     if (game.phase === "title") {
-      for (const rock of game.menuAsteroids) {
+      for (const rock of game.backdrop.menuAsteroids) {
         r.strokePoly(rock.vertices, { color: `hsl(${rock.hue} 85% 66%)`, width: 1.6, glow: 10 })
       }
     } else {
@@ -198,7 +198,7 @@ export class GameView {
 
   #planets(game) {
     const r = this.renderer
-    for (const p of game.planets) {
+    for (const p of game.backdrop.planets) {
       r.planet(p.x, p.y, p.r, {
         base: p.base,
         hi: p.hi,
@@ -223,7 +223,7 @@ export class GameView {
     if (fade < 0.02) {
       return // invisible when nearly still
     }
-    for (const d of game.dust) {
+    for (const d of game.backdrop.dust) {
       r.line(d.x, d.y, d.x + pvx * d.z * 0.03, d.y + pvy * d.z * 0.03, {
         color: PALETTE.fx.dust,
         width: 1.1,
@@ -236,7 +236,7 @@ export class GameView {
 
   #stars(game) {
     const r = this.renderer
-    for (const star of game.stars) {
+    for (const star of game.backdrop.stars) {
       const twinkle = 0.55 + 0.45 * Math.sin(star.twinkle + game.gameTime * 1.5)
       const alpha = clamp((0.4 + 0.6 * star.depth) * twinkle, 0, 1)
       const size = star.depth * 2.6 + 0.7

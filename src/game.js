@@ -30,12 +30,12 @@ import {
   polygonArea,
   pointInPolygon,
   countBeamCrossings,
-  mulberry32,
 } from "./math.js"
 import { Sound } from "./audio.js"
 import { PALETTE } from "./palette.js"
+import { Backdrop } from "./background.js"
 import { loadBest, saveBest } from "./persistence.js"
-import { Asteroid, Ore, Powerup, PlayerShip, RivalShip, makeAsteroidPolygon } from "./entities.js"
+import { Asteroid, Ore, Powerup, PlayerShip, RivalShip } from "./entities.js"
 
 const PARTICLE_LIFE = 5 // global lifetime multiplier
 const PARTICLE_DRAG = 0.4 // velocity retained per second
@@ -56,65 +56,6 @@ const SLOT_KEYS = {
 const RIVALS_FROM_SECTOR = Math.min(
   ...Object.values(SHIP_TYPES).map((type) => type.spawn.fromSector),
 )
-
-// Planets live in a region larger than the viewport (so they sit well apart and
-// only a couple are on screen at once) and wrap within it as they drift.
-const PLANET_MARGIN_X = 560
-const PLANET_MARGIN_Y = 380
-
-// Palette for an ordinary world (rocky / gas / ice), tinted by the sector hue
-// for cohesion. The rare emissive worlds are handled separately so there is at
-// most one per sector. Returns { type, base, hi, atmo, emit } (type = uType).
-function ordinaryPalette(rng, baseHue) {
-  const jitter = (h, d) => Math.round((((h + (rng() * 2 - 1) * d) % 360) + 360) % 360)
-  const roll = rng()
-  if (roll < 0.35) {
-    // gas giant with banding
-    const h = jitter(baseHue, 25)
-    return {
-      type: 3,
-      base: `hsl(${h} 34% 26%)`,
-      hi: `hsl(${(h + 20) % 360} 40% 52%)`,
-      atmo: `hsl(${h} 45% 60%)`,
-      emit: "#000000",
-    }
-  }
-  if (roll < 0.55) {
-    // ice world (cool, high albedo)
-    const h = jitter(210, 30)
-    return {
-      type: 4,
-      base: `hsl(${h} 20% 40%)`,
-      hi: `hsl(${h} 14% 82%)`,
-      atmo: `hsl(${h} 40% 78%)`,
-      emit: "#000000",
-    }
-  }
-  // rocky world tinted by the sector hue
-  const h = jitter(baseHue, 35)
-  return {
-    type: 0,
-    base: `hsl(${h} 26% 22%)`,
-    hi: `hsl(${h} 30% 45%)`,
-    atmo: `hsl(${(h + 30) % 360} 34% 58%)`,
-    emit: "#000000",
-  }
-}
-
-// The rare, cool worlds: volcanic (glowing lava) and inhabited (city lights).
-function fancyPalette(type, baseHue, rng) {
-  if (type === 1) {
-    return { type: 1, base: "#241c18", hi: "#4a352a", atmo: "#7a3a24", emit: "#ff5a1e" }
-  }
-  const h = Math.round(baseHue + (rng() * 2 - 1) * 40 + 360) % 360
-  return {
-    type: 2,
-    base: `hsl(${h} 30% 15%)`,
-    hi: `hsl(${h} 26% 30%)`,
-    atmo: `hsl(${(h + 180) % 360} 40% 55%)`,
-    emit: "#ffd98a",
-  }
-}
 
 export class Game {
   constructor() {
@@ -153,7 +94,7 @@ export class Game {
     this.pressedKeys = new Set()
     this.viewCenter = { x: ARENA.cx, y: ARENA.cy } // world point the camera follows
 
-    this.initBackground()
+    this.backdrop = new Backdrop()
     loadBest().then((value) => {
       if (value) {
         this.best = value
@@ -595,7 +536,7 @@ export class Game {
   startLevel(sector) {
     this.level = sector
     this.plan = this.planLevel(sector)
-    this.regenSector(sector) // seeded backdrop for this sector's vibe
+    this.backdrop.regenSector(sector) // seeded backdrop for this sector's vibe
     this.asteroids = []
     this.oreChunks = []
     this.projectiles = []
@@ -771,183 +712,6 @@ export class Game {
     }
     if (type.apply) {
       type.apply(this, player, type)
-    }
-  }
-
-  // ---- background ------------------------------------------------------
-  initBackground() {
-    this.stars = []
-    for (let i = 0; i < 170; i++) {
-      const depth = Math.pow(Math.random(), 1.6) * 0.88 + 0.12
-      this.stars.push({
-        x: Math.random() * VIEW_W,
-        y: Math.random() * VIEW_H,
-        depth,
-        twinkle: Math.random() * TAU,
-        vx: randRange(-2, 2),
-        vy: randRange(-1.4, 1.4),
-      })
-    }
-    // Foreground stardust: near, fast-parallax motes that streak past as the
-    // ship moves, selling the sense of motion.
-    this.dust = []
-    for (let i = 0; i < 90; i++) {
-      this.dust.push({
-        x: Math.random() * VIEW_W,
-        y: Math.random() * VIEW_H,
-        z: randRange(0.55, 1), // parallax strength (near)
-      })
-    }
-    this.regenSector(1) // planets + nebula for the title / first sector
-    this.menuAsteroids = []
-    for (let i = 0; i < 7; i++) {
-      const x = randRange(90, VIEW_W - 90),
-        y = randRange(90, VIEW_H - 90)
-      this.menuAsteroids.push({
-        vertices: makeAsteroidPolygon(x, y, randRange(24, 50)),
-        center: { x, y },
-        spin: randRange(-0.4, 0.4),
-        vx: randRange(-16, 16),
-        vy: randRange(-12, 12),
-        hue: randInt(0, 359),
-      })
-    }
-  }
-
-  // Rebuild the backdrop for a sector: a seeded palette so each sector has its
-  // own repeatable vibe, evolving slowly as the base hue advances. Planets are
-  // spread over a jittered grid so they never clump.
-  regenSector(sector) {
-    const rng = mulberry32((Math.imul(sector, 2654435761) ^ 0x9e3779b9) >>> 0)
-    const rand = (a, b) => a + rng() * (b - a)
-    const baseHue = (sector * 43) % 360 // advances each sector for slow evolution
-    this.nebula = {
-      colorA: `hsl(${baseHue} 45% 16%)`,
-      colorB: `hsl(${(baseHue + 55) % 360} 40% 14%)`,
-      seed: rand(0, 30),
-    }
-
-    const marginX = PLANET_MARGIN_X,
-      marginY = PLANET_MARGIN_Y
-    const cols = 3,
-      rows = 2
-    const cellW = (VIEW_W + marginX * 2) / cols,
-      cellH = (VIEW_H + marginY * 2) / rows
-    const cells = []
-    for (let cy = 0; cy < rows; cy++) {
-      for (let cx = 0; cx < cols; cx++) {
-        cells.push([cx, cy])
-      }
-    }
-    for (let i = cells.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1))
-      ;[cells[i], cells[j]] = [cells[j], cells[i]]
-    }
-    const count = 3 + Math.floor(rng() * 2) // 3-4, one per grid cell, well spaced
-    // at most one rare emissive world per sector, and only sometimes
-    const fancyRoll = rng()
-    const fancyType = fancyRoll < 0.2 ? 1 : fancyRoll < 0.4 ? 2 : 0 // volcanic / city / none
-    const fancySlot = fancyType ? Math.floor(rng() * count) : -1
-    this.planets = []
-    for (let i = 0; i < count; i++) {
-      const [cx, cy] = cells[i]
-      const pal =
-        i === fancySlot ? fancyPalette(fancyType, baseHue, rng) : ordinaryPalette(rng, baseHue)
-      this.planets.push({
-        x: -marginX + cx * cellW + rand(cellW * 0.2, cellW * 0.8),
-        y: -marginY + cy * cellH + rand(cellH * 0.2, cellH * 0.8),
-        r: rand(50, 120),
-        depth: rand(0.05, 0.2), // far: barely parallaxes
-        seed: rand(0, 20),
-        light: rand(-Math.PI, Math.PI),
-        drift: rand(2, 6),
-        ...pal,
-      })
-    }
-  }
-
-  updateBackground(dt) {
-    const pvx = this.player && this.phase === "play" ? this.player.vx : 0
-    const pvy = this.player && this.phase === "play" ? this.player.vy : 0
-    for (const d of this.dust) {
-      // foreground: streaks past faster than the world (opposite to travel)
-      d.x -= pvx * d.z * 1.2 * dt
-      d.y -= pvy * d.z * 1.2 * dt
-      if (d.x < 0) {
-        d.x += VIEW_W
-      } else if (d.x > VIEW_W) {
-        d.x -= VIEW_W
-      }
-      if (d.y < 0) {
-        d.y += VIEW_H
-      } else if (d.y > VIEW_H) {
-        d.y -= VIEW_H
-      }
-    }
-    for (const star of this.stars) {
-      // stream opposite to travel, scaled by depth (near stars move most)
-      star.x += (star.vx - pvx * star.depth * 0.5) * dt
-      star.y += (star.vy - pvy * star.depth * 0.5) * dt
-      if (star.x < 0) {
-        star.x += VIEW_W
-      } else if (star.x > VIEW_W) {
-        star.x -= VIEW_W
-      }
-      if (star.y < 0) {
-        star.y += VIEW_H
-      } else if (star.y > VIEW_H) {
-        star.y -= VIEW_H
-      }
-    }
-    const marginX = PLANET_MARGIN_X,
-      marginY = PLANET_MARGIN_Y
-    for (const planet of this.planets) {
-      // distant parallax: planets drift and stream slowly opposite to travel
-      planet.x += (planet.drift * planet.depth - pvx * planet.depth * 0.6) * dt
-      planet.y += -pvy * planet.depth * 0.6 * dt
-      if (planet.x < -marginX) {
-        planet.x += VIEW_W + marginX * 2
-      } else if (planet.x > VIEW_W + marginX) {
-        planet.x -= VIEW_W + marginX * 2
-      }
-      if (planet.y < -marginY) {
-        planet.y += VIEW_H + marginY * 2
-      } else if (planet.y > VIEW_H + marginY) {
-        planet.y -= VIEW_H + marginY * 2
-      }
-    }
-  }
-
-  updateMenu(dt) {
-    const wrapRock = (rock, dx, dy) => {
-      for (const p of rock.vertices) {
-        p.x += dx
-        p.y += dy
-      }
-      rock.center.x += dx
-      rock.center.y += dy
-    }
-    for (const rock of this.menuAsteroids) {
-      const cosA = Math.cos(rock.spin * dt),
-        sinA = Math.sin(rock.spin * dt)
-      for (const p of rock.vertices) {
-        const dx = p.x - rock.center.x,
-          dy = p.y - rock.center.y
-        p.x = rock.center.x + dx * cosA - dy * sinA + rock.vx * dt
-        p.y = rock.center.y + dx * sinA + dy * cosA + rock.vy * dt
-      }
-      rock.center.x += rock.vx * dt
-      rock.center.y += rock.vy * dt
-      if (rock.center.x < -70) {
-        wrapRock(rock, VIEW_W + 140, 0)
-      } else if (rock.center.x > VIEW_W + 70) {
-        wrapRock(rock, -(VIEW_W + 140), 0)
-      }
-      if (rock.center.y < -70) {
-        wrapRock(rock, 0, VIEW_H + 140)
-      } else if (rock.center.y > VIEW_H + 70) {
-        wrapRock(rock, 0, -(VIEW_H + 140))
-      }
     }
   }
 
@@ -1197,9 +961,11 @@ export class Game {
   // paints via GameView after this returns.
   advance(dt) {
     this.gameTime += dt
-    this.updateBackground(dt)
+    // the backdrop only parallaxes against a ship that is actually flying
+    const flying = this.player && this.phase === "play"
+    this.backdrop.update(dt, flying ? this.player.vx : 0, flying ? this.player.vy : 0)
     if (this.phase === "title") {
-      this.updateMenu(dt)
+      this.backdrop.updateMenu(dt)
     } else if ((this.phase === "play" || this.phase === "clearing") && !this.paused) {
       this.update(dt)
     }
