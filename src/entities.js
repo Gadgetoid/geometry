@@ -11,6 +11,7 @@
 import {
   randRange,
   randInt,
+  pick,
   clamp,
   lerp,
   subtract,
@@ -615,7 +616,10 @@ export const WEAPON_CONTROLLERS = {
       return
     }
     const aim = Math.atan2(player.y - world.y, player.x - world.x)
-    weapon.fireProjectile(game, world.x, world.y, aim, host)
+    // A beam carries past the player, as it must to cut anything; a projectile
+    // ignores the reach and flies on its own speed.
+    const range = Math.hypot(player.x - world.x, player.y - world.y)
+    weapon.fire(game, host, world.x, world.y, aim, range + player.boundRadius + 20)
   },
 
   // cuts rocks for ore, firing along the host's facing when one is near
@@ -2014,6 +2018,9 @@ export class Asteroid extends Entity {
         const count = randInt(traits.gun.count[0], traits.gun.count[1])
         const jitter = traits.gun.jitter ?? 0.3
         const inset = traits.gun.inset ?? [0.35, 0.7]
+        // Each turret is rolled from the trait's pool, so one rock can carry a
+        // mix. A trait naming a single gun is that pool with one entry in it.
+        const guns = traits.gun.guns ?? [traits.gun]
         const phase = Math.random() * TAU
         for (let k = 0; k < count; k++) {
           const bearing = phase + (k / count) * TAU + randRange(-jitter, jitter)
@@ -2027,10 +2034,11 @@ export class Asteroid extends Entity {
             this.boundRadius * 2 + 1,
           )
           const out = reach * randRange(inset[0], inset[1])
+          const gun = pick(guns)
           this.hardpoints.push({
             x: this.center.x + ux * out,
             y: this.center.y + uy * out,
-            module: new Weapon(traits.gun.weapon, traits.gun.controller),
+            module: new Weapon(gun.weapon, gun.controller),
           })
         }
       }

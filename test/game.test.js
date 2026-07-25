@@ -18,6 +18,7 @@ import {
   Projectile,
   RivalShip,
   Shield,
+  Weapon,
   oreFromFragment,
   shapeContact,
   resolveHullRockContact,
@@ -2423,6 +2424,89 @@ test("hazard traits are gated by sector", () => {
     assert.equal(early.gun, undefined, "guns do not appear at sector 3")
     assert.equal(early.shield, undefined, "nor do shields")
   }
+})
+
+test("a rock rolls each turret from the trait's pool", () => {
+  const guns = [
+    { weapon: "blaster", controller: "turret" },
+    { weapon: "autocannon", controller: "turret" },
+  ]
+  const loadouts = new Set()
+  seeded(31, () => {
+    for (let i = 0; i < 200; i++) {
+      const rock = new Asteroid({
+        x: 0,
+        y: 0,
+        radius: 85,
+        traits: { gun: { guns, count: [3, 3] } },
+      })
+      const mounted = rock.hardpoints
+        .filter((hp) => hp.module && hp.module.kind === "weapon")
+        .map((hp) => hp.module.typeName)
+      assert.equal(mounted.length, 3)
+      for (const name of mounted) {
+        assert.ok(
+          guns.some((g) => g.weapon === name),
+          `${name} is not in the pool`,
+        )
+      }
+      loadouts.add(mounted.slice().sort().join("+"))
+    }
+  })
+  // three turrets from two kinds: all four mixes should turn up
+  assert.equal(loadouts.size, 4, `saw ${[...loadouts].join(", ")}`)
+})
+
+test("a trait naming one gun is a pool of one", () => {
+  // The shorthand has to keep working, or every existing trait and test breaks.
+  seeded(7, () => {
+    const rock = new Asteroid({
+      x: 0,
+      y: 0,
+      radius: 80,
+      traits: { gun: { weapon: "blaster", controller: "turret", count: [2, 2] } },
+    })
+    const mounted = rock.hardpoints.filter((hp) => hp.module && hp.module.kind === "weapon")
+    assert.equal(mounted.length, 2)
+    assert.ok(mounted.every((hp) => hp.module.typeName === "blaster"))
+  })
+})
+
+test("a beam in a turret slot fires as a beam, not as a broken projectile", () => {
+  // The controller used to call fireProjectile whatever it was given, and a beam
+  // type has no `speed`, so it launched rounds with a velocity of NaN.
+  const game = liveGame()
+  const player = game.player
+  player.x = 500
+  player.y = 400
+  const rock = new Asteroid({
+    vertices: square(500, 320, 70),
+    traits: { gun: { weapon: "minerLaser", controller: "turret", count: [1, 1] } },
+  })
+  // vertices skip hazard mounting, so mount it the way the spawner does
+  rock.hardpoints.push({
+    x: rock.center.x,
+    y: rock.center.y,
+    module: new Weapon("minerLaser", "turret"),
+  })
+  rock.refreshEnergy()
+  game.asteroids = [rock, new Asteroid({ vertices: square(500, -600, 60) })]
+  let fired = false
+  for (let i = 0; i < 300; i++) {
+    game.advance(1 / 60)
+    for (const shot of game.laserShots) {
+      if (shot.color === WEAPON_TYPES.minerLaser.colour) {
+        fired = true
+      }
+    }
+    for (const bullet of game.projectiles) {
+      assert.ok(
+        Number.isFinite(bullet.x) && Number.isFinite(bullet.vx),
+        `a round left with x=${bullet.x} vx=${bullet.vx}`,
+      )
+    }
+  }
+  assert.ok(fired, "it should have emitted a beam")
 })
 
 test("no hazard survives to a late sector only to be crowded out of it", () => {

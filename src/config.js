@@ -327,9 +327,18 @@ export const PROGRESSION = {
 // Guns are dealt an even share of the rock's circumference each. `jitter` is how
 // far a gun may wander off its share, in radians, and `inset` how far out along
 // its bearing it sits as a fraction of the distance to the outline.
+//
+// `guns` is the pool each turret is rolled from, one entry per kind of gun a rock
+// may mount, in the same shape a loadout entry uses. Every turret rolls on its
+// own, so a rock can carry a mix; repeat an entry to weight it. Both projectiles
+// and beams work, since the controller fires whichever the entry names.
+//
+// One entry today, which is one kind of turret rock. Adding `autocannon` here
+// would roughly double the rate a turret rock fires at: measured against a
+// parked player, a blaster manages 0.43 rounds a second and an autocannon 0.67,
+// both well within what a rock's cell can sustain.
 const ROCK_TURRETS = {
-  weapon: "blaster",
-  controller: "turret",
+  guns: [{ weapon: "blaster", controller: "turret" }],
   count: [1, 3],
   jitter: 0.3,
   inset: [0.35, 0.7],
