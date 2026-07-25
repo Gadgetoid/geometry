@@ -760,6 +760,14 @@ export function freshUpgrades() {
 // and renderer plumbing and a row cannot reach past the game's own API.
 // ---------------------------------------------------------------------------
 export const PAUSE_MENU = [
+  // Only offered while the sector is still being fought, and asked twice like the
+  // other rows that throw something away.
+  {
+    name: "EXIT SECTOR",
+    confirm: "LEAVE THIS SECTOR?",
+    available: (g) => g.canExitSector(),
+    action: (g) => g.exitSector(),
+  },
   {
     name: "VOLUME",
     value: (g) => `${Math.round(g.settings.volume * 100)}%`,

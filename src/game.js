@@ -85,6 +85,11 @@ const SECTOR_PHASES = new Set(["arriving", "play", "clearing", "departing"])
 // are not, because the ship is not really there.
 const FLYING_PHASES = new Set(["play", "clearing"])
 
+// Phases a sector can be walked out of. Once the last rock is gone the shop is
+// coming anyway, so there is nothing to bail out of and throwing the clear away by
+// accident would be a poor thing to allow.
+const EXITABLE_PHASES = new Set(["arriving", "play"])
+
 // A key code as a player would recognise it on their keyboard.
 function keyLabel(code) {
   if (code.startsWith("Key")) {
@@ -207,6 +212,11 @@ export class Game {
   // Is the ship being flown? Movement, firing and item use all follow this.
   canFly() {
     return FLYING_PHASES.has(this.phase)
+  }
+
+  // Is there a sector to walk out of?
+  canExitSector() {
+    return EXITABLE_PHASES.has(this.phase)
   }
 
   blankStats() {
@@ -807,25 +817,32 @@ export class Game {
     this.startLevel(1)
   }
 
-  enterShop() {
+  // Arriving at the shop, however the sector ended. Clearing it sweeps up the loose
+  // ore, pays the end-of-sector bonuses and offers the next sector. Walking out of
+  // one does none of that: the ore still on the field is left where it lies, nothing
+  // is paid, and the launch offers the same sector again, so the trip to the shop
+  // buys a better loadout for another attempt rather than skipping it.
+  enterShop(cleared = true) {
     this.oreVacuum = false
-    // sweep up any ore still on the field
-    const remaining = this.oreChunks.length
-    this.score += remaining * CONFIG.ORE_SCORE
-    this.stats.ore += remaining
-    this.oreBalance += remaining
+    if (cleared) {
+      const remaining = this.oreChunks.length
+      this.score += remaining * CONFIG.ORE_SCORE
+      this.stats.ore += remaining
+      this.oreBalance += remaining
+    }
     this.oreChunks.length = 0
 
     // No shots means no accuracy to reward. Reading it as a perfect 1 paid the
     // whole bonus for clearing a sector without firing.
     const accuracy = this.stats.shots ? this.stats.hits / this.stats.shots : 0
-    const accuracyBonus = Math.round(accuracy * CONFIG.ACCURACY_BONUS)
-    const flawlessBonus = this.stats.damage <= 0 ? CONFIG.FLAWLESS_BONUS : 0
-    const clearBonus = this.level * CONFIG.CLEAR_BONUS_PER_SECTOR
+    const accuracyBonus = cleared ? Math.round(accuracy * CONFIG.ACCURACY_BONUS) : 0
+    const flawlessBonus = cleared && this.stats.damage <= 0 ? CONFIG.FLAWLESS_BONUS : 0
+    const clearBonus = cleared ? this.level * CONFIG.CLEAR_BONUS_PER_SECTOR : 0
     const totalBonus = accuracyBonus + flawlessBonus + clearBonus
     this.score += totalBonus
     this.summaryData = {
       level: this.level,
+      bailed: !cleared,
       accuracy,
       mined: this.stats.mined,
       ore: this.stats.ore,
@@ -835,11 +852,24 @@ export class Game {
       clearBonus,
       totalBonus,
     }
+    this.shopSelection = 0
+    this.shopSector = cleared ? this.level + 1 : this.level
     this.recordBest()
     this.rememberRun()
-    this.shopSelection = 0
-    this.shopSector = this.level + 1
     this.phase = "shop"
+  }
+
+  // Walk out of a sector that is more than the ship can handle, and come back to it
+  // with whatever the shop can sell you.
+  exitSector() {
+    if (!this.canExitSector()) {
+      return
+    }
+    this.paused = false
+    this.pausePage = "root"
+    this.rebinding = null
+    Sound.setThruster(false)
+    this.enterShop(false)
   }
 
   doShopAction() {
@@ -1231,6 +1261,10 @@ export class Game {
   rememberRun() {
     this.savedRun = {
       level: this.level,
+      // Where the run carries on from, which is the sector after the one just
+      // cleared, or the same one again when it was walked out of.
+      next: this.shopSector,
+      bailed: !!(this.summaryData && this.summaryData.bailed),
       score: this.score,
       lives: this.lives,
       oreBalance: this.oreBalance,
@@ -1250,7 +1284,12 @@ export class Game {
   // Everything that names the saved run to the player goes through this, so the
   // title, the pause menu and the shop cannot disagree about which sector it is.
   resumeSector() {
-    return this.savedRun ? this.savedRun.level + 1 : 1
+    if (!this.savedRun) {
+      return 1
+    }
+    // `next` was added after the first saves were written, so fall back to the old
+    // meaning: a run was only ever snapshotted after clearing its sector.
+    return this.savedRun.next ?? this.savedRun.level + 1
   }
 
   // Pick up where a previous session left off, at the shop before the sector that
@@ -1277,7 +1316,7 @@ export class Game {
     this.rivals = []
     this.particles = []
     this.laserShots = []
-    this.summaryData = { level: run.level, resumed: true }
+    this.summaryData = { level: run.level, bailed: !!run.bailed, resumed: true }
     this.shopSelection = 0
     this.shopSector = this.resumeSector()
     this.phase = "shop"

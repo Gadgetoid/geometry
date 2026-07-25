@@ -1805,3 +1805,112 @@ test("taking a binding is silent, the label having already said so", async () =>
     Sound.power = realPower
   }
 })
+
+// ---- walking out of a sector ----------------------------------------------
+
+// A sector can be left before it is finished, which is the way out when it is more
+// than the ship can handle. It costs the end-of-sector bonuses and the loose ore,
+// and sends you back to the same sector rather than on to the next.
+function inSector(level = 6) {
+  const game = new Game()
+  game.startNewGame()
+  game.startLevel(level)
+  game.phase = "play"
+  beSolid(game.player)
+  return game
+}
+
+test("EXIT SECTOR is the first option in a sector, and is not offered elsewhere", () => {
+  const game = inSector()
+  game.toggleOptions()
+  assert.equal(game.pauseMenu()[0].name, "EXIT SECTOR", "it is what the cursor lands on")
+
+  // once the last rock is gone the shop is coming anyway, so there is nothing to
+  // walk out of and a stray press must not throw the clear away
+  for (const phase of ["clearing", "departing"]) {
+    game.phase = phase
+    assert.equal(game.canExitSector(), false, phase)
+    assert.ok(!game.pauseMenu().some((row) => row.name === "EXIT SECTOR"), phase)
+  }
+  game.phase = "play"
+  game.toggleOptions()
+  game.enterShop()
+  game.toggleOptions()
+  assert.ok(!game.pauseMenu().some((row) => row.name === "EXIT SECTOR"), "nor over the shop")
+})
+
+test("EXIT SECTOR asks twice, as the other rows that throw something away do", () => {
+  const game = inSector()
+  game.toggleOptions()
+  game.pauseSelection = 0
+  game.menuConfirm()
+  assert.equal(game.pauseConfirming, "EXIT SECTOR", "one press asks")
+  assert.equal(game.phase, "play", "and leaves the sector alone")
+  game.menuConfirm()
+  assert.equal(game.phase, "shop", "the second press does it")
+  assert.equal(game.paused, false, "and closes the menu behind it")
+})
+
+test("walking out pays no bonus and leaves the loose ore behind", () => {
+  const game = inSector()
+  game.stats = { shots: 10, hits: 10, damage: 0, ore: 4, mined: 3 }
+  game.oreBalance = 40
+  game.spawnOre(0, 0, 0, 0)
+  game.spawnOre(0, 0, 0, 0)
+  const before = game.score
+  game.exitSector()
+
+  assert.equal(game.score - before, 0, "no accuracy, flawless or clear bonus")
+  assert.equal(game.summaryData.totalBonus, 0)
+  assert.equal(game.summaryData.bailed, true, "so the screen can say so")
+  assert.equal(game.oreBalance, 40, "the chunks still on the field are left there")
+  assert.equal(game.oreChunks.length, 0)
+
+  // and clearing the same sector properly still pays and sweeps
+  const cleared = inSector()
+  cleared.stats = { shots: 10, hits: 10, damage: 0, ore: 4, mined: 3 }
+  cleared.oreBalance = 40
+  cleared.spawnOre(0, 0, 0, 0)
+  cleared.spawnOre(0, 0, 0, 0)
+  const clearedBefore = cleared.score
+  cleared.enterShop()
+  assert.ok(cleared.score - clearedBefore > 0, "the bonuses are paid")
+  assert.equal(cleared.summaryData.flawlessBonus, CONFIG.FLAWLESS_BONUS)
+  assert.equal(cleared.oreBalance, 42, "and the loose ore is swept up")
+})
+
+test("walking out sends you back to the same sector, and clearing to the next", () => {
+  const bailed = inSector(6)
+  bailed.exitSector()
+  assert.equal(bailed.shopSector, 6, "the launch offers the sector again")
+
+  const cleared = inSector(6)
+  cleared.enterShop()
+  assert.equal(cleared.shopSector, 7, "clearing moves on")
+})
+
+test("a run resumed after walking out comes back to the sector it left", () => {
+  for (const [what, cleared, expected] of [
+    ["walked out of 6", false, 6],
+    ["cleared 6", true, 7],
+  ]) {
+    const game = inSector(6)
+    if (cleared) {
+      game.enterShop()
+    } else {
+      game.exitSector()
+    }
+    const next = new Game()
+    next.savedRun = game.savedRun
+    next.resumeRun()
+    assert.equal(next.resumeSector(), expected, what)
+    assert.equal(next.shopSector, expected, `${what}: and the launch agrees`)
+    assert.equal(next.summaryData.bailed, !cleared, `${what}: the heading knows which it was`)
+  }
+})
+
+test("a saved run written before this still resumes the way it used to", () => {
+  const game = new Game()
+  game.savedRun = { level: 4, score: 100, lives: 3, oreBalance: 0, upgrades: {} }
+  assert.equal(game.resumeSector(), 5, "no `next` means the sector was cleared")
+})

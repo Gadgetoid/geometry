@@ -649,10 +649,11 @@ export class GameView {
       return
     }
     r.rect(0, 0, VIEW_W, VIEW_H, { fill: "rgba(2,4,10,.74)" })
-    r.text(`SECTOR ${d.level} CLEARED`, VIEW_W / 2, 58, {
+    // A sector walked out of was not cleared, and the screen should not say it was.
+    r.text(`SECTOR ${d.level} ${d.bailed ? "ABANDONED" : "CLEARED"}`, VIEW_W / 2, 58, {
       size: 30,
       bold: true,
-      color: PALETTE.ui.goodBright,
+      color: d.bailed ? PALETTE.ui.warn : PALETTE.ui.goodBright,
       align: "center",
       glow: 16,
     })
@@ -661,7 +662,9 @@ export class GameView {
     r.text(
       d.resumed
         ? "carrying on from your last session"
-        : `accuracy ${Math.round(d.accuracy * 100)}%    mined ${d.mined}    ore this run ${d.ore}    damage ${d.damage}    bonus +${d.totalBonus}`,
+        : d.bailed
+          ? `mined ${d.mined}    ore this run ${d.ore}    damage ${d.damage}    -    no bonus for a sector left unfinished`
+          : `accuracy ${Math.round(d.accuracy * 100)}%    mined ${d.mined}    ore this run ${d.ore}    damage ${d.damage}    bonus +${d.totalBonus}`,
       VIEW_W / 2,
       82,
       { size: 12, color: PALETTE.text.dim, align: "center" },
