@@ -150,8 +150,8 @@ if [ "$PLATFORM" = Linux ]; then
 On a Deck:
   * Set the controller layout to a Gamepad template, not Desktop, or the sticks
     arrive as a mouse and nothing steers.
-  * Sound starts off. Click SND once with the right trackpad; the game only opens
-    its audio device on a real click, which a gamepad press is not.
+  * Sound is on from the start, so a pad on its own is enough to play with; SND
+    still turns it off.
 DECK
 fi
 

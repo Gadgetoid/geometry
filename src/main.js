@@ -19,8 +19,9 @@ if (!renderer) {
 }
 // ?fullscreen drops the page frame and the help line so the canvas owns the
 // screen, for a Steam shortcut or anything else running this without a desktop
-// around it.
-const FULLSCREEN = new URLSearchParams(location.search).has("fullscreen")
+// around it. ?sound starts with audio already on, see below.
+const OPTIONS = new URLSearchParams(location.search)
+const FULLSCREEN = OPTIONS.has("fullscreen")
 if (FULLSCREEN) {
   document.body.classList.add("fullscreen")
 }
@@ -61,7 +62,8 @@ document.getElementById("btnCrt").addEventListener("click", (e) => {
   e.currentTarget.setAttribute("aria-pressed", String(!off))
 })
 
-document.getElementById("btnSnd").addEventListener("click", (e) => {
+const soundButton = document.getElementById("btnSnd")
+soundButton.addEventListener("click", (e) => {
   Sound.enabled = !Sound.enabled
   e.currentTarget.setAttribute("aria-pressed", String(Sound.enabled))
   if (Sound.enabled) {
@@ -70,6 +72,20 @@ document.getElementById("btnSnd").addEventListener("click", (e) => {
     Sound.power()
   }
 })
+
+// ?sound starts with audio on, rather than waiting to be asked for it.
+//
+// A browser will only open an audio device off a real user gesture, and a gamepad
+// button is not one, so a player holding only a pad has no way to turn sound on:
+// the button needs a pointer. The launcher passes this together with
+// --autoplay-policy=no-user-gesture-required, which is what allows the device to
+// open unprompted. Without that flag the context comes up suspended and stays
+// quiet until something is clicked, which is the same as not passing this at all.
+if (OPTIONS.has("sound")) {
+  Sound.enabled = true
+  Sound.ensureContext()
+  soundButton.setAttribute("aria-pressed", "true")
+}
 
 const devButton = document.getElementById("btnDev")
 if (!DEV_VISIBLE) {

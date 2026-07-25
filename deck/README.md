@@ -123,9 +123,18 @@ sticks arrive as a mouse and nothing steers.
 
 ## Sound
 
-Sound starts off and needs one click on **SND** with the right trackpad. The game
-only opens its audio device on a real click, and a gamepad press does not count
-as one to the browser.
+Sound is on from the start. **SND** still toggles it.
+
+Getting there takes two things together, because a browser will only open an audio
+device off a real user gesture and a gamepad button is not one, which left a player
+holding only a pad no way to ask for sound at all. The launcher passes `?sound`, which
+the game reads as "start with audio on", and
+`--autoplay-policy=no-user-gesture-required`, which is what allows the device to open
+unprompted. Either alone is not enough: without the flag the context comes up
+suspended and stays quiet until something is clicked.
+
+Opening `index.html` in an ordinary browser is unaffected. Sound stays off there until
+the button is pressed, which is the behaviour a web page should have.
 
 ## Running the hosted build instead
 

@@ -30,13 +30,16 @@ fi
 
 URL="${GEOMETRY_URL:-file://$GAME_DIR/index.html}"
 
-# ?fullscreen strips the page frame and the help line, so the canvas owns the
-# screen. Respect a URL that already asks for it, or already has a query string.
-case "$URL" in
-*fullscreen*) ;;
-*\?*) URL="$URL&fullscreen" ;;
-*) URL="$URL?fullscreen" ;;
-esac
+# What the game is asked for: ?fullscreen strips the page frame and the help line so
+# the canvas owns the screen, and ?sound starts with audio on, which the autoplay
+# flag below is what actually permits. A URL already carrying one is left alone.
+for option in fullscreen sound; do
+  case "$URL" in
+  *"$option"*) ;;
+  *\?*) URL="$URL&$option" ;;
+  *) URL="$URL?$option" ;;
+  esac
+done
 
 # A profile beside the game keeps the high score across launches. Chromium wants
 # a real directory it can write to; a throwaway one loses the score every time,

@@ -2,7 +2,11 @@ import js from "@eslint/js"
 import globals from "globals"
 
 export default [
-  { ignores: ["node_modules/**"] },
+  {
+    // Generated at runtime, not ours to lint: the browser profile the launcher
+    // makes, and the macOS app bundle wrapped around it.
+    ignores: ["node_modules/**", ".chromium-profile/**", "**/*.app/**", ".art-plates/**"],
+  },
   js.configs.recommended,
   {
     files: ["**/*.js", "**/*.mjs"],

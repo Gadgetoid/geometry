@@ -1,2 +1,6 @@
 node_modules/
 theory.html
+.chromium-profile/
+*.app/
+.art-plates/
+deck/steam-art/*.png
