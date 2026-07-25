@@ -229,11 +229,22 @@ export class Game {
     return loadout
   }
 
+  // Bring a rival in from beyond the boundary on the given bearing, clear of the
+  // ring by its own reach so the whole hull starts out of bounds and is seen
+  // flying in. It is faced inward on arrival: nothing sets a heading otherwise,
+  // and a frigate turning at 0.17 rad/s would spend a third of its life coming
+  // about before it ever reached the sector.
+  #enterRival(name, bearing, loadout) {
+    const ship = new RivalShip(0, 0, name, loadout)
+    const distance = ARENA.radius + ship.boundRadius + CONFIG.RIVAL_ENTRY_MARGIN
+    ship.x = ARENA.cx + Math.cos(bearing) * distance
+    ship.y = ARENA.cy + Math.sin(bearing) * distance
+    ship.angle = bearing + Math.PI
+    this.rivals.push(ship)
+  }
+
   spawnRival() {
-    // enter from the arena boundary at a random bearing
-    const edgeAngle = randRange(0, TAU),
-      x = ARENA.cx + Math.cos(edgeAngle) * (ARENA.radius - 20),
-      y = ARENA.cy + Math.sin(edgeAngle) * (ARENA.radius - 20)
+    const bearing = randRange(0, TAU)
     // roll each gated ship type in turn, then fall back to the basic rival
     let fallbackName = null
     for (const [name, type] of Object.entries(SHIP_TYPES)) {
@@ -246,12 +257,11 @@ export class Game {
         this.countRivals(name) < type.spawn.maxConcurrent &&
         Math.random() < type.spawn.chance
       ) {
-        this.rivals.push(new RivalShip(x, y, name))
+        this.#enterRival(name, bearing)
         return
       }
     }
-    const fallback = SHIP_TYPES[fallbackName]
-    this.rivals.push(new RivalShip(x, y, fallbackName, this.rollLoadout(fallback)))
+    this.#enterRival(fallbackName, bearing, this.rollLoadout(SHIP_TYPES[fallbackName]))
   }
 
   shatterToOre(asteroid) {

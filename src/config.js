@@ -90,6 +90,7 @@ export const CONFIG = {
   CONTACT_SLOP: 0.5,
   CONTACT_BIAS: 0.35,
   AST_MASS_AREA: 3200, // rock area per unit of mass, for collision response
+  RIVAL_ENTRY_MARGIN: 80, // how far past its own hull a rival starts, outside the boundary
   AST_DRAG: 0.985, // velocity retained per second
   AST_SPIN_DRAG: 0.82,
   AST_BOUNDARY_BOUNCE: 1.9, // rocks are repelled hard off the arena wall
