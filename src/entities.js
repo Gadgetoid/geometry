@@ -35,6 +35,7 @@ import {
   SHIELD_TYPES,
   SHIP_TYPES,
   PLAYER_TYPE,
+  AST_SHAPE,
   POWERUP_TYPES,
   SHIELD_SPARK,
 } from "./config.js"
@@ -1203,15 +1204,54 @@ export class RivalShip extends Ship {
 // Asteroid: a convex polygon with hardpoints (guns/shield) that are kept when
 // it splits, so an asteroid with two guns becomes two with one gun each.
 // ---------------------------------------------------------------------------
+// Build an asteroid silhouette: scatter a few overlapping circles ("lobes"),
+// sample a ring of jittered points around each, and take the convex hull of the
+// lot. One lobe reads as a rounded rock, two as a peanut or a wedge, three as
+// something lumpier, so a field has a mix of characters.
+//
+// The hull is convex by construction, which is what keeps slicing well-behaved,
+// and it is then scaled about its centroid to the area a circle of `radius`
+// implies. That separates the two concerns: lobe layout decides the shape,
+// `radius` decides the size, and a caller always gets the size it asked for.
 export function makeAsteroidPolygon(cx, cy, radius) {
-  const pointCount = randInt(7, 11),
-    points = []
-  for (let i = 0; i < pointCount; i++) {
-    const angle = Math.random() * TAU,
-      r = radius * randRange(0.68, 1.12)
-    points.push({ x: Math.cos(angle) * r, y: Math.sin(angle) * r })
+  const shape = AST_SHAPE
+  const lobes = [{ x: 0, y: 0, r: radius * randRange(shape.firstLobeRadius[0], 1) }]
+  const lobeCount = randInt(shape.lobes[0], shape.lobes[1])
+  for (let i = 1; i < lobeCount; i++) {
+    // hang each further lobe off one already placed, close enough to overlap
+    const anchor = lobes[randInt(0, lobes.length - 1)]
+    const r = radius * randRange(shape.lobeRadius[0], shape.lobeRadius[1])
+    const angle = Math.random() * TAU
+    const gap = (anchor.r + r) * randRange(shape.lobeSpread[0], shape.lobeSpread[1])
+    lobes.push({
+      x: anchor.x + Math.cos(angle) * gap,
+      y: anchor.y + Math.sin(angle) * gap,
+      r,
+    })
   }
-  return convexHull(points).map((p) => ({ x: cx + p.x, y: cy + p.y }))
+
+  const points = []
+  for (const lobe of lobes) {
+    const count = randInt(shape.pointsPerLobe[0], shape.pointsPerLobe[1])
+    const phase = Math.random() * TAU
+    for (let i = 0; i < count; i++) {
+      const angle = phase + (i / count) * TAU + randRange(-shape.angleJitter, shape.angleJitter)
+      const r = lobe.r * randRange(shape.radiusJitter[0], shape.radiusJitter[1])
+      points.push({ x: lobe.x + Math.cos(angle) * r, y: lobe.y + Math.sin(angle) * r })
+    }
+  }
+
+  const hull = convexHull(points)
+  const area = polygonArea(hull)
+  if (hull.length < 3 || area <= 0) {
+    return hull.map((p) => ({ x: cx + p.x, y: cy + p.y })) // degenerate, leave as is
+  }
+  const centre = polygonCentroid(hull)
+  const scale = Math.sqrt((Math.PI * radius * radius * shape.areaFactor) / area)
+  return hull.map((p) => ({
+    x: cx + (p.x - centre.x) * scale,
+    y: cy + (p.y - centre.y) * scale,
+  }))
 }
 
 export class Asteroid extends Entity {
@@ -1508,12 +1548,9 @@ export class Asteroid extends Entity {
     if (shielded) {
       return PALETTE.rock.shielded
     }
-    const t = clamp(
-      (this.area - CONFIG.AST_MIN_AREA) /
-        (3.14 * CONFIG.AST_MAX_R * CONFIG.AST_MAX_R - CONFIG.AST_MIN_AREA),
-      0,
-      1,
-    )
+    // hue ramps from the smallest surviving piece to the largest a sector spawns
+    const largest = AST_SHAPE.areaFactor * Math.PI * CONFIG.AST_MAX_R * CONFIG.AST_MAX_R
+    const t = clamp((this.area - CONFIG.AST_MIN_AREA) / (largest - CONFIG.AST_MIN_AREA), 0, 1)
     return `hsl(${lerp(PALETTE.rock.sizeWarm, PALETTE.rock.sizeCool, t).toFixed(0)} 92% ${lerp(60, 72, t).toFixed(0)}%)`
   }
 

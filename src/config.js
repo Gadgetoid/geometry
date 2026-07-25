@@ -56,9 +56,8 @@ export const CONFIG = {
   ORE_VACUUM_GRAB_RADIUS: 42, // wider grab while sweeping a cleared sector
 
   // asteroids
-  AST_MIN_R: 26,
-  AST_MAX_R: 60,
-  AST_MIN_AREA: 1650,
+  AST_MAX_R: 50,
+  AST_MIN_AREA: 1650, // a cut piece smaller than this shatters straight to ore
   AST_MAX_SPEED: 340,
   SPLIT_IMPULSE: 55, // gentle push so cut halves drift apart, not fling
   ORE_ENERGY: 9, // energy refunded per ore collected
@@ -103,6 +102,25 @@ export const CONFIG = {
   LASER_RATE_MULT: [1, 1.45, 1.45, 1.45],
   LASER_COST_MULT: [1, 1, 0.55, 0.55],
   LASER_INSTA_CHANCE: [0, 0, 0, 0.5],
+}
+
+// ---------------------------------------------------------------------------
+// ASTEROID SHAPE - how makeAsteroidPolygon builds a silhouette. It hulls a ring
+// of points around each of `lobes` overlapping circles, so one lobe gives a
+// rounded rock and three give something lumpy and elongated. Widen `lobeSpread`
+// for longer, more angular rocks; raise `pointsPerLobe` for smoother outlines.
+// `areaFactor` is how much of pi * radius^2 the finished hull fills, and the
+// hull is scaled to hit it exactly, so shape and size stay independent.
+// ---------------------------------------------------------------------------
+export const AST_SHAPE = {
+  lobes: [1, 3],
+  firstLobeRadius: [0.75, 1], // fraction of the requested radius
+  lobeRadius: [0.35, 0.9],
+  lobeSpread: [0.5, 1.05], // centre separation, as a fraction of the two radii summed
+  pointsPerLobe: [4, 6], // few points per lobe keeps the outline faceted
+  angleJitter: 0.28, // radians, so the ring is not evenly spaced
+  radiusJitter: [0.78, 1.08],
+  areaFactor: 0.84,
 }
 
 // ---------------------------------------------------------------------------
