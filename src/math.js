@@ -359,10 +359,10 @@ export function supportDistance(vertices, centre, ux, uy) {
   return far
 }
 
-// How far along a->b the segment first enters the polygon, or null if it never
-// does. Zero when `a` is already inside. Used to stop a beam at the near face
-// of a ship rather than at a circle drawn around it.
-export function segmentPolygonEntry(a, b, vertices) {
+// How far along a->b the centreline first enters the polygon, or null if it
+// never does. Zero when `a` is already inside. Used to stop a beam at the near
+// face of a ship rather than at a circle drawn around it.
+function segmentCentrelineEntry(a, b, vertices) {
   if (vertices.length < 3) {
     return null
   }
@@ -378,6 +378,54 @@ export function segmentPolygonEntry(a, b, vertices) {
     const along = Math.hypot(hit.x - a.x, hit.y - a.y)
     if (nearest === null || along < nearest) {
       nearest = along
+    }
+  }
+  return nearest
+}
+
+// How far along a->b a beam of the given half-width first touches the polygon,
+// or null if it never does. A beam is a capsule and not a line: the view draws
+// it `2 * halfWidth` across, so a shot whose bright edge covers a hull is a shot
+// that connects. Testing the centreline instead leaves a beam visibly laid over
+// a ship registering nothing.
+//
+// The reachable region is the polygon grown by halfWidth, which is the union of
+// the polygon itself, a disc at every vertex and a slab along every edge. Each
+// is solved exactly and the nearest contact wins, so no part of the outline is
+// approximated.
+export function segmentPolygonEntry(a, b, vertices, halfWidth = 0) {
+  const direct = segmentCentrelineEntry(a, b, vertices)
+  if (halfWidth <= 0 || direct === 0) {
+    return direct
+  }
+  let nearest = direct
+  const consider = (value) => {
+    if (value !== null && (nearest === null || value < nearest)) {
+      nearest = value
+    }
+  }
+  for (let i = 0; i < vertices.length; i++) {
+    const p = vertices[i],
+      q = vertices[(i + 1) % vertices.length]
+    consider(segmentCircleEntry(a, b, p, halfWidth))
+    let nx = -(q.y - p.y),
+      ny = q.x - p.x
+    const len = Math.hypot(nx, ny)
+    if (len < 1e-9) {
+      continue
+    }
+    nx /= len
+    ny /= len
+    for (const side of [halfWidth, -halfWidth]) {
+      const hit = segmentIntersection(
+        a,
+        b,
+        { x: p.x + nx * side, y: p.y + ny * side },
+        { x: q.x + nx * side, y: q.y + ny * side },
+      )
+      if (hit) {
+        consider(Math.hypot(hit.x - a.x, hit.y - a.y))
+      }
     }
   }
   return nearest

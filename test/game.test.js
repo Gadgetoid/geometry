@@ -38,6 +38,7 @@ import {
   convexPartition,
   countBeamCrossings,
   mulberry32,
+  pointInPolygon,
   polygonArea,
 } from "../src/math.js"
 
@@ -609,6 +610,32 @@ test("a hull and a rock agree on what counts as a cut", () => {
   assert.equal(hullCut, rockCut, "a hull and a rock must treat a grazing beam alike")
 })
 
+// The gap between a beam's centreline and a polygon, measured independently of
+// the beam code: walk the outline densely and take the nearest point-to-segment
+// distance. Zero when the centreline is on or inside the outline.
+function gapToOutline(beam, outline) {
+  const toSegment = (p) => {
+    const dx = beam.b.x - beam.a.x,
+      dy = beam.b.y - beam.a.y
+    const len2 = dx * dx + dy * dy || 1
+    const t = clampUnit(((p.x - beam.a.x) * dx + (p.y - beam.a.y) * dy) / len2)
+    return Math.hypot(p.x - (beam.a.x + dx * t), p.y - (beam.a.y + dy * t))
+  }
+  if (pointInPolygon({ x: beam.a.x, y: beam.a.y }, outline)) {
+    return 0
+  }
+  let best = Infinity
+  for (let i = 0; i < outline.length; i++) {
+    const a = outline[i],
+      b = outline[(i + 1) % outline.length]
+    for (let t = 0; t <= 1.0001; t += 0.002) {
+      best = Math.min(best, toSegment({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }))
+    }
+  }
+  return best
+}
+const clampUnit = (t) => (t < 0 ? 0 : t > 1 ? 1 : t)
+
 // A beam registers on the surface the view actually draws: the shield bubble
 // while one is raised, the hull outline when none is. Neither used to be true of
 // the player, which answered on a circle of `radius` sized `width * 0.6 + radius`,
@@ -634,22 +661,58 @@ function beamPastPlayer(offset, weaponType, { shielded }) {
     b: { x: 400 + offset, y: 320 + 300 },
     dir: { x: 0, y: 1 },
   }
-  const crossesHull = countBeamCrossings(beam, player.worldOutline()) >= 1
+  const gap = gapToOutline(beam, player.worldOutline())
   game.applyBeam(beam, shooter, { type: weaponType })
-  return { crossesHull, landed: game.stats.damage > 0 }
+  return { gap, landed: game.stats.damage > 0 }
 }
 
 test("a beam hits an unshielded player where its hull actually is", () => {
+  // A beam is as thick to the simulation as the core the view draws, so it lands
+  // when the hull comes within half that width of the centreline. Offsets are
+  // kept clear of the boundary itself, which is a coin toss either way.
+  const reaches = (weaponType, gap) => gap < weaponType.width / 2 - 0.5
+  const clear = (weaponType, gap) => gap > weaponType.width / 2 + 0.5
   // The widest beam in the game: its old hit circle was ~10x the hull's area.
-  for (const offset of [-14, -8, 0, 8, 14, 20, 26]) {
+  for (const offset of [-14, -8, 0, 8, 14, 20, 40]) {
     const r = beamPastPlayer(offset, WEAPON_TYPES.cannonLaser, { shielded: false })
-    assert.equal(r.landed, r.crossesHull, `cannonLaser at offset ${offset}`)
+    if (reaches(WEAPON_TYPES.cannonLaser, r.gap)) {
+      assert.ok(r.landed, `cannonLaser at offset ${offset}, ${r.gap.toFixed(2)} from the hull`)
+    } else if (clear(WEAPON_TYPES.cannonLaser, r.gap)) {
+      assert.ok(!r.landed, `cannonLaser at offset ${offset}, ${r.gap.toFixed(2)} from the hull`)
+    }
   }
   // The narrowest: its old circle stopped short of the nose.
   for (const offset of [-12, 0, 12, 16, 18, 20]) {
     const r = beamPastPlayer(offset, WEAPON_TYPES.minerLaser, { shielded: false })
-    assert.equal(r.landed, r.crossesHull, `minerLaser at offset ${offset}`)
+    if (reaches(WEAPON_TYPES.minerLaser, r.gap)) {
+      assert.ok(r.landed, `minerLaser at offset ${offset}, ${r.gap.toFixed(2)} from the hull`)
+    } else if (clear(WEAPON_TYPES.minerLaser, r.gap)) {
+      assert.ok(!r.landed, `minerLaser at offset ${offset}, ${r.gap.toFixed(2)} from the hull`)
+    }
   }
+})
+
+test("a beam laid over a hull registers, rather than needing its centreline on it", () => {
+  // The gap that used to be a clean miss: the hull inside the beam's bright core
+  // but not under its centreline.
+  const laser = WEAPON_TYPES.playerLaser
+  const game = liveGame()
+  const scout = new RivalShip(500, 320, "scout", []) // unarmed, unshielded
+  scout.angle = 0
+  game.rivals = [scout]
+  const nose = Math.max(...scout.worldOutline().map((p) => p.y))
+  // just outside the outline, well inside the drawn core
+  const beam = {
+    a: { x: 200, y: nose + laser.width * 0.25 },
+    b: { x: 900, y: nose + laser.width * 0.25 },
+    dir: { x: 1, y: 0 },
+  }
+  const gap = gapToOutline(beam, scout.worldOutline())
+  assert.ok(gap > 0, "the centreline must genuinely miss the hull")
+  assert.ok(gap < laser.width / 2, `and lie inside the drawn core (${gap.toFixed(2)})`)
+  const before = scout.hull
+  game.applyBeam(beam, game.player, playerWeapon, 68)
+  assert.ok(scout.dead || scout.hull < before, "a beam laid over the hull must register")
 })
 
 test("a beam hits a shielded player on the bubble the view draws", () => {

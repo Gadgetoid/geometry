@@ -393,10 +393,12 @@ export class Game {
   // type's). Cuts unshielded rocks, drains energy from anything with a
   // laser-blocking shield, damages ships within the beam's width, and never
   // harms the attacker. Returns didHit.
-  // Where a beam first enters a bare hull, or null. The enclosing circle is only a
-  // broadphase reject here; the answer comes from the outline.
-  #hullEntry(beam, ship, width) {
-    const reach = width * 0.6 + ship.boundRadius
+  // Where a beam first touches a bare hull, or null. The enclosing circle is only
+  // a broadphase reject here; the answer comes from the outline, widened by the
+  // beam's own half-width so the shot is as thick to the simulation as it is on
+  // screen.
+  #hullEntry(beam, ship, halfWidth) {
+    const reach = halfWidth + ship.boundRadius
     const along = (ship.x - beam.a.x) * beam.dir.x + (ship.y - beam.a.y) * beam.dir.y
     if (along < 0) {
       return null
@@ -406,12 +408,15 @@ export class Game {
     if (Math.hypot(ship.x - cx, ship.y - cy) >= reach) {
       return null
     }
-    return segmentPolygonEntry(beam.a, beam.b, ship.worldOutline())
+    return segmentPolygonEntry(beam.a, beam.b, ship.worldOutline(), halfWidth)
   }
 
   applyBeam(beam, attacker, weapon, damage = weapon.type.damage) {
     let didHit = false
-    const width = weapon.type.width || 2.4
+    // The beam is a capsule this thick either side of its centreline, which is
+    // the bright core the view draws. Every surface it can strike is grown by it,
+    // so a shot that visibly laps a target is a shot that connects.
+    const halfWidth = (weapon.type.width || 2.4) / 2
 
     // The beam stops at the first ship it strikes: find the nearest ship whose
     // body the beam enters, remember it so we can damage exactly that one, and
@@ -428,7 +433,9 @@ export class Game {
     const considerShip = (e) => {
       const bubble = e.shieldUp() ? e.shieldRadius() : 0
       const entry =
-        bubble > 0 ? segmentCircleEntry(beam.a, beam.b, e, bubble) : this.#hullEntry(beam, e, width)
+        bubble > 0
+          ? segmentCircleEntry(beam.a, beam.b, e, bubble + halfWidth)
+          : this.#hullEntry(beam, e, halfWidth)
       if (entry !== null && entry < blockDist) {
         blockDist = entry
         blockShip = e
@@ -474,7 +481,12 @@ export class Game {
       const shield = asteroid.shieldModule()
       const shielded = asteroid.shieldUp() && shield.blocks("laser") && asteroid.energy > 0
       const reached = shielded
-        ? segmentCircleEntry(beam.a, beam.b, asteroid.center, asteroid.shieldRadius()) !== null
+        ? segmentCircleEntry(
+            beam.a,
+            beam.b,
+            asteroid.center,
+            asteroid.shieldRadius() + halfWidth,
+          ) !== null
         : countBeamCrossings(beam, asteroid.vertices) >= 2
       if (!reached) {
         survivors.push(asteroid)
