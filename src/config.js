@@ -128,6 +128,17 @@ export const CONFIG = {
   FLAWLESS_BONUS: 800, // for taking no damage
   CLEAR_BONUS_PER_SECTOR: 150,
 
+  // audio. Every effect is mixed through MASTER_VOLUME, so its own level only sets
+  // where it sits against the others and this one number sets how loud the game is.
+  // Individual levels are deliberately small, which left the mix around 20 dB below
+  // where it should be until this was applied.
+  MASTER_VOLUME: 6,
+  // Amplitude above which the mix bends toward full scale instead of running past
+  // it. Below this the signal is untouched, so a single effect is exactly its own
+  // level; several loud ones at once are curved back rather than clipping, which is
+  // a far worse noise than being slightly quiet.
+  AUDIO_SOFT_CLIP: 0.7,
+
   // base damage values referenced by weapon types
   DMG_AST_GUN: 120,
   DMG_RIVAL_GUN: 130,

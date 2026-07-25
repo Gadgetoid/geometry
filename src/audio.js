@@ -1,6 +1,7 @@
 // Tiny synthesised sound effects, created lazily on first user gesture.
 
 import { randRange } from "./math.js"
+import { CONFIG } from "./config.js"
 
 const COLLECT_DETUNE = 0.06 // ore pickup pitch spread, about a semitone either way
 
@@ -41,6 +42,58 @@ export const Sound = {
     }
   },
 
+  // Where every voice plays: one gain for the level of the whole mix, then a
+  // limiter so a pile-up of explosions is squashed rather than clipped. Each
+  // effect's own level only decides where it sits against the others.
+  //
+  // The silent buffer that unlocks the context in ensureContext goes straight to
+  // the destination instead: it exists to be played, not heard.
+  chain: null,
+  output() {
+    if (!this.ctx) {
+      return null
+    }
+    if (!this.chain || this.chain.ctx !== this.ctx) {
+      const gain = this.ctx.createGain()
+      gain.gain.value = CONFIG.MASTER_VOLUME
+      gain.connect(this.softClip()).connect(this.ctx.destination)
+      this.chain = { ctx: this.ctx, gain }
+      this.thruster = null // its nodes belonged to the previous chain
+    }
+    return this.chain.gain
+  },
+
+  // A shaper that is exactly linear below AUDIO_SOFT_CLIP and bends smoothly toward
+  // full scale above it, so it can never put out more than full scale and never
+  // colours anything quieter than the threshold.
+  //
+  // A compressor node would be the obvious choice and is the wrong one: Chrome's
+  // took about 11 dB off a signal sitting at its own knee, so what came out had
+  // little to do with the level asked for. This curve is arithmetic, and measurable.
+  softClip() {
+    const shaper = this.ctx.createWaveShaper()
+    const threshold = CONFIG.AUDIO_SOFT_CLIP
+    const points = 2048
+    const curve = new Float32Array(points)
+    for (let i = 0; i < points; i++) {
+      const x = (i / (points - 1)) * 2 - 1
+      const size = Math.abs(x)
+      const shaped =
+        size <= threshold
+          ? size
+          : threshold + (1 - threshold) * Math.tanh((size - threshold) / (1 - threshold))
+      curve[i] = Math.sign(x) * shaped
+    }
+    shaper.curve = curve
+    // Deliberately not oversampled. Oversampling would keep the harmonics the bend
+    // makes from aliasing, but its interpolation overshoots the curve, and a pile-up
+    // of effects measured 1.16 out of a curve that tops out at 0.93 - which the
+    // device then clips hard. Aliasing only happens while the mix is saturating,
+    // where it is buried; going over full scale is audible as a crack.
+    shaper.oversample = "none"
+    return shaper
+  },
+
   beep(freq, duration, wave, volume, endFreq) {
     if (!this.enabled) {
       return
@@ -60,7 +113,7 @@ export const Sound = {
       }
       gain.gain.setValueAtTime(volume || 0.05, now)
       gain.gain.exponentialRampToValueAtTime(0.0001, now + duration)
-      osc.connect(gain).connect(this.ctx.destination)
+      osc.connect(gain).connect(this.output())
       osc.start(now)
       osc.stop(now + duration)
     } catch {
@@ -95,7 +148,7 @@ export const Sound = {
       const gain = this.ctx.createGain()
       gain.gain.setValueAtTime(volume || 0.04, now)
       gain.gain.exponentialRampToValueAtTime(0.0001, now + duration)
-      src.connect(filter).connect(gain).connect(this.ctx.destination)
+      src.connect(filter).connect(gain).connect(this.output())
       src.start(now)
       src.stop(now + duration)
     } catch {
@@ -140,7 +193,7 @@ export const Sound = {
         filter.Q.value = 0.7
         const gain = this.ctx.createGain()
         gain.gain.value = 0
-        src.connect(filter).connect(gain).connect(this.ctx.destination)
+        src.connect(filter).connect(gain).connect(this.output())
         src.start()
         this.thruster = { gain }
       }
