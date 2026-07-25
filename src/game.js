@@ -486,6 +486,8 @@ export class Game {
     if (parts.length < 2) {
       return false
     }
+    const material = ship.type.debrisMaterial || null
+    const debrisMinArea = (material && material.minArea) || CONFIG.AST_MIN_AREA
     // the frigate's autocannon turrets, in world space, to hand to the pieces
     const guns = []
     for (const hp of ship.hardpoints) {
@@ -509,7 +511,7 @@ export class Game {
       this.burst(centre.x, centre.y, randInt(6, 10), PALETTE.fx.ember, 30, 130, 0.5)
       // a gunless sliver just becomes ore; a piece with turrets survives as a
       // gun-rock so it can keep firing, even if small
-      if (area < CONFIG.SHIP_DEBRIS_MIN_AREA && mine.length === 0) {
+      if (area < debrisMinArea && mine.length === 0) {
         for (let k = 0; k < 3; k++) {
           this.spawnOre(
             centre.x + randRange(-12, 12),
@@ -528,6 +530,8 @@ export class Game {
           spin: randRange(-1.2, 1.2),
           hardpoints: mine,
           tint: ship.colour, // keep the frigate's colour on the debris
+          material, // plating: survives smaller, and burns where it is torn
+          burnFrom: { point: beam.a, normal: cutNormal },
         }),
       )
     }

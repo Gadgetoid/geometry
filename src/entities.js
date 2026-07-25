@@ -46,6 +46,7 @@ import { Sound } from "./audio.js"
 import { PALETTE } from "./palette.js"
 
 const SINGLE_BEAM_OFFSETS = [0] // the player's laser without the multi powerup
+const CUT_EDGE_TOLERANCE = 0.5 // world units, for spotting vertices left on the cut line
 
 // ---------------------------------------------------------------------------
 // Base entity: position, velocity, energy pool, hardpoints, uniform damage.
@@ -1464,6 +1465,23 @@ export class Asteroid extends Entity {
     this.tint = opts.tint || null // overrides the rock palette (e.g. frigate debris)
     this.recompute()
 
+    // What this piece is made of. Rock is the default and carries no material;
+    // anything else (ship plating today) describes how small a fragment of it
+    // can survive and whether a fresh cut face catches fire. It travels with the
+    // piece, so a fragment of a fragment is made of the same stuff.
+    // `burnFrom` is the cut line that exposed faces on this piece specifically.
+    // Faces are held as vertex index pairs, so they follow it as it drifts.
+    this.material = opts.material || null
+    this.burn = 0
+    this.burnFaces = []
+    this.burnBacklog = 0
+    if (this.burnSpec && opts.burnFrom) {
+      this.burnFaces = this.#facesOnLine(opts.burnFrom.point, opts.burnFrom.normal)
+      if (this.burnFaces.length) {
+        this.burn = this.burnSpec.seconds
+      }
+    }
+
     if (!opts.vertices) {
       // Fresh rock: mount modules on hardpoints. Gun rocks get 1-3 turrets; a
       // shield takes the centre. Turret points are placed by lerping from the
@@ -1514,6 +1532,70 @@ export class Asteroid extends Entity {
     this.boundRadius = boundingRadius(this.vertices, this.center)
     this.x = this.center.x
     this.y = this.center.y
+  }
+
+  // Edges with both ends sitting on the given line: the faces a cut opened up,
+  // as opposed to the piece's share of the original hull.
+  #facesOnLine(point, normal) {
+    const onLine = (p) =>
+      Math.abs((p.x - point.x) * normal.x + (p.y - point.y) * normal.y) < CUT_EDGE_TOLERANCE
+    const edges = []
+    for (let i = 0; i < this.vertices.length; i++) {
+      const j = (i + 1) % this.vertices.length
+      if (onLine(this.vertices[i]) && onLine(this.vertices[j])) {
+        edges.push([i, j])
+      }
+    }
+    return edges
+  }
+
+  // Smallest fragment of this material that survives a cut; below it, ore.
+  get minArea() {
+    return (this.material && this.material.minArea) || CONFIG.AST_MIN_AREA
+  }
+  // Non-null when this material burns where it is cut.
+  get burnSpec() {
+    return (this.material && this.material.burn) || null
+  }
+
+  // How hot the cut faces still are, 1 just after the cut down to 0 when out.
+  get heat() {
+    return this.burnSpec && this.burn > 0 ? this.burn / this.burnSpec.seconds : 0
+  }
+
+  // Fire licking off the raw faces, thinning out as the piece burns itself out.
+  #burnFaces(dt, game) {
+    this.burn = Math.max(0, this.burn - dt)
+    const heat = this.heat
+    this.burnBacklog += this.burnSpec.rate * heat * dt
+    while (this.burnBacklog >= 1) {
+      this.burnBacklog -= 1
+      const [i, j] = this.burnFaces[randInt(0, this.burnFaces.length - 1)]
+      const a = this.vertices[i],
+        b = this.vertices[j]
+      const along = Math.random()
+      const px = a.x + (b.x - a.x) * along,
+        py = a.y + (b.y - a.y) * along
+      // face outward, away from the body of the piece
+      let nx = -(b.y - a.y),
+        ny = b.x - a.x
+      const len = Math.hypot(nx, ny) || 1
+      nx /= len
+      ny /= len
+      if ((px - this.center.x) * nx + (py - this.center.y) * ny < 0) {
+        nx = -nx
+        ny = -ny
+      }
+      const speed = randRange(18, 62) * (0.45 + 0.55 * heat)
+      game.emit(
+        px,
+        py,
+        this.vx + nx * speed + randRange(-16, 16),
+        this.vy + ny * speed + randRange(-16, 16),
+        randRange(0.16, 0.38),
+        Math.random() < 0.35 ? PALETTE.fx.ember : PALETTE.fx.fire,
+      )
+    }
   }
 
   // Move the whole rock: outline, mounted hardpoints and centre together.
@@ -1586,6 +1668,9 @@ export class Asteroid extends Entity {
       }
     }
 
+    if (this.burn > 0) {
+      this.#burnFaces(dt, game)
+    }
     this.updateWeapons(dt, game) // gun emplacements fire via their turret controller
     if (this.fuse != null) {
       this.fuse -= dt
@@ -1612,7 +1697,7 @@ export class Asteroid extends Entity {
       const mag = Math.hypot(impulse.x, impulse.y) || 1
       const ix = (impulse.x / mag) * side * CONFIG.SPLIT_IMPULSE,
         iy = (impulse.y / mag) * side * CONFIG.SPLIT_IMPULSE
-      if (area < CONFIG.AST_MIN_AREA) {
+      if (area < this.minArea) {
         const oreCount = clamp(Math.round(area / CONFIG.ORE_PER_FRAGMENT_AREA) + 1, 1, 4)
         for (let k = 0; k < oreCount; k++) {
           game.spawnOre(
@@ -1638,6 +1723,9 @@ export class Asteroid extends Entity {
         hardpoints: mine,
         energy: this.energy,
         tint: this.tint,
+        // same stuff as the parent, and this cut opens fresh faces on it
+        material: this.material,
+        burnFrom: { point: beam.a, normal: cutNormal },
       })
       fragments.push(frag)
     }
@@ -1753,6 +1841,20 @@ export class Asteroid extends Entity {
 
   draw(renderer, game) {
     renderer.strokePoly(this.vertices, { color: this.colour(), width: 1.7, glow: 11 })
+    if (this.burn > 0) {
+      // the raw face still glowing, cooling as it burns out
+      const heat = this.heat
+      for (const [i, j] of this.burnFaces) {
+        const a = this.vertices[i],
+          b = this.vertices[j]
+        renderer.line(a.x, a.y, b.x, b.y, {
+          color: PALETTE.fx.fire,
+          width: 1.6 + 1.8 * heat,
+          glow: 10 + 16 * heat,
+          alpha: 0.35 + 0.55 * heat,
+        })
+      }
+    }
     if (this.explosive) {
       const pulse = 0.5 + 0.5 * Math.sin(game.gameTime * 6)
       renderer.circle(this.center.x, this.center.y, 4 + 2 * pulse, {
