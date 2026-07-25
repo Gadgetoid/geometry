@@ -30,6 +30,7 @@ import {
   polygonArea,
   pointInPolygon,
   countBeamCrossings,
+  convexContact,
 } from "./math.js"
 import { Sound } from "./audio.js"
 import { PALETTE } from "./palette.js"
@@ -469,7 +470,6 @@ export class Game {
           vx: ship.vx + ix,
           vy: ship.vy + iy,
           spin: randRange(-1.2, 1.2),
-          fragment: true,
           hardpoints: mine,
           tint: ship.colour, // keep the frigate's colour on the debris
         }),
@@ -823,55 +823,49 @@ export class Game {
     }
   }
 
+  // Rock against rock: reject on the enclosing circles, then solve the real
+  // outlines. Overlap is eased out over a few frames rather than corrected in
+  // one step, so a contact settles instead of flicking apart, and a small slop
+  // is tolerated so resting rocks do not jitter against each other.
   resolveAsteroidCollisions() {
     const list = this.asteroids
     for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length; j++) {
         const a = list[i],
           b = list[j]
-        if (
-          (a.noCollideTimer && a.noCollideTimer > 0) ||
-          (b.noCollideTimer && b.noCollideTimer > 0)
-        ) {
+        const dx = b.center.x - a.center.x,
+          dy = b.center.y - a.center.y
+        const reach = a.boundRadius + b.boundRadius
+        if (dx * dx + dy * dy >= reach * reach) {
           continue
         }
-        const nx = b.center.x - a.center.x,
-          ny = b.center.y - a.center.y
-        const dist = Math.hypot(nx, ny),
-          minDist = a.collideRadius + b.collideRadius
-        if (dist > 1e-3 && dist < minDist) {
-          const ux = nx / dist,
-            uy = ny / dist,
-            overlap = minDist - dist
-          for (const p of a.vertices) {
-            p.x -= (ux * overlap) / 2
-            p.y -= (uy * overlap) / 2
-          }
-          a.center.x -= (ux * overlap) / 2
-          a.center.y -= (uy * overlap) / 2
-          for (const p of b.vertices) {
-            p.x += (ux * overlap) / 2
-            p.y += (uy * overlap) / 2
-          }
-          b.center.x += (ux * overlap) / 2
-          b.center.y += (uy * overlap) / 2
-          const relativeNormalVel = (b.vx - a.vx) * ux + (b.vy - a.vy) * uy
-          if (relativeNormalVel < 0) {
-            a.vx += ux * relativeNormalVel
-            a.vy += uy * relativeNormalVel
-            b.vx -= ux * relativeNormalVel
-            b.vy -= uy * relativeNormalVel
-            if (Math.abs(relativeNormalVel) > 60) {
-              this.burst(
-                (a.center.x + b.center.x) / 2,
-                (a.center.y + b.center.y) / 2,
-                3,
-                PALETTE.rock.impact,
-                30,
-                90,
-                0.3,
-              )
-            }
+        const contact = convexContact(a.vertices, b.vertices, a.center, b.center)
+        if (!contact) {
+          continue
+        }
+        const ux = contact.nx,
+          uy = contact.ny
+        const push = Math.max(0, contact.depth - CONFIG.CONTACT_SLOP) * CONFIG.CONTACT_BIAS * 0.5
+        if (push > 0) {
+          a.translate(-ux * push, -uy * push)
+          b.translate(ux * push, uy * push)
+        }
+        const relativeNormalVel = (b.vx - a.vx) * ux + (b.vy - a.vy) * uy
+        if (relativeNormalVel < 0) {
+          a.vx += ux * relativeNormalVel
+          a.vy += uy * relativeNormalVel
+          b.vx -= ux * relativeNormalVel
+          b.vy -= uy * relativeNormalVel
+          if (Math.abs(relativeNormalVel) > 60) {
+            this.burst(
+              (a.center.x + b.center.x) / 2,
+              (a.center.y + b.center.y) / 2,
+              3,
+              PALETTE.rock.impact,
+              30,
+              90,
+              0.3,
+            )
           }
         }
       }

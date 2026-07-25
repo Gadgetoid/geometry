@@ -20,6 +20,9 @@ import {
   distanceToSegment,
   countBeamCrossings,
   slicePolygon,
+  circlePolygonContact,
+  convexContact,
+  supportDistance,
 } from "../src/math.js"
 
 const point = (x, y) => ({ x, y })
@@ -208,4 +211,123 @@ test("slicePolygon passes through degenerate input", () => {
   const pieces = slicePolygon(line, point(0, 0), point(0, 1))
   assert.equal(pieces.length, 1)
   assert.equal(pieces[0].length, 2)
+})
+
+// ---------------------------------------------------------------------------
+// Contact solving
+// ---------------------------------------------------------------------------
+
+// Independent overlap test, deliberately not sharing code with convexContact:
+// any edge crossing, or either polygon containing the other's vertex.
+function polygonsOverlap(a, b) {
+  for (let i = 0; i < a.length; i++) {
+    for (let j = 0; j < b.length; j++) {
+      const hit = segmentIntersection(a[i], a[(i + 1) % a.length], b[j], b[(j + 1) % b.length])
+      if (hit) {
+        return true
+      }
+    }
+  }
+  return pointInPolygon(a[0], b) || pointInPolygon(b[0], a)
+}
+
+const shifted = (poly, dx, dy) => poly.map((p) => point(p.x + dx, p.y + dy))
+
+test("supportDistance measures reach in a direction", () => {
+  const centre = point(5, 5)
+  closeTo(supportDistance(SQUARE, centre, 1, 0), 5)
+  closeTo(supportDistance(SQUARE, centre, 0, 1), 5)
+  const diag = Math.SQRT1_2
+  closeTo(supportDistance(SQUARE, centre, diag, diag), Math.hypot(5, 5), 1e-9)
+})
+
+test("circlePolygonContact ignores a circle that is clear", () => {
+  assert.equal(circlePolygonContact(20, 5, 3, SQUARE), null)
+  // exactly touching counts as clear
+  assert.equal(circlePolygonContact(13, 5, 3, SQUARE), null)
+})
+
+test("circlePolygonContact pushes an overlapping circle straight out", () => {
+  const hit = circlePolygonContact(12, 5, 3, SQUARE)
+  closeTo(hit.nx, 1)
+  closeTo(hit.ny, 0)
+  closeTo(hit.depth, 1)
+})
+
+test("circlePolygonContact ejects a circle whose centre is inside", () => {
+  const hit = circlePolygonContact(5, 2, 3, SQUARE)
+  // nearest boundary is the bottom edge, two away, so it leaves downward
+  closeTo(hit.nx, 0)
+  closeTo(hit.ny, -1)
+  closeTo(hit.depth, 5)
+})
+
+test("circlePolygonContact reaches a thin sliver a bounding circle would miss", () => {
+  // 60 x 4 sliver: its enclosing circle has radius ~30, so a circle sitting 20
+  // above the centre is well inside that circle but nowhere near the polygon
+  const sliver = [point(-30, -2), point(30, -2), point(30, 2), point(-30, 2)]
+  assert.equal(circlePolygonContact(0, 20, 5, sliver), null)
+  const hit = circlePolygonContact(0, 5, 5, sliver)
+  closeTo(hit.depth, 2)
+  closeTo(hit.ny, 1)
+})
+
+test("convexContact ignores separated polygons", () => {
+  assert.equal(convexContact(SQUARE, shifted(SQUARE, 20, 0), point(5, 5), point(25, 5)), null)
+  assert.equal(convexContact(SQUARE, shifted(SQUARE, 0, 40), point(5, 5), point(5, 45)), null)
+})
+
+test("convexContact reports the shallowest separating push", () => {
+  const b = shifted(SQUARE, 8, 0)
+  const hit = convexContact(SQUARE, b, point(5, 5), point(13, 5))
+  closeTo(hit.depth, 2)
+  closeTo(hit.nx, 1)
+  closeTo(hit.ny, 0)
+})
+
+test("convexContact normal always points from a to b", () => {
+  const b = shifted(SQUARE, -8, 0)
+  const hit = convexContact(SQUARE, b, point(5, 5), point(-3, 5))
+  closeTo(hit.depth, 2)
+  closeTo(hit.nx, -1)
+  closeTo(hit.ny, 0)
+})
+
+test("convexContact separates an overlapping pair in one application", () => {
+  const b = shifted(SQUARE, 7, 3)
+  const hit = convexContact(SQUARE, b, point(5, 5), point(12, 8))
+  assert.ok(hit, "expected an overlap")
+  // overlap is 3 wide in x against 7 tall in y, so the shallow way out is +x
+  closeTo(hit.depth, 3)
+  closeTo(hit.nx, 1)
+  // the push lands them exactly flush, so nudge past that to test separation
+  const clear = shifted(b, hit.nx * (hit.depth + 1e-6), hit.ny * (hit.depth + 1e-6))
+  assert.equal(polygonsOverlap(SQUARE, clear), false)
+})
+
+test("convexContact agrees with an independent overlap test on random hulls", () => {
+  const rng = mulberry32(4242)
+  let overlapping = 0
+  for (let i = 0; i < 500; i++) {
+    const hull = (ox, oy) =>
+      convexHull(
+        Array.from({ length: 7 }, () => {
+          const a = rng() * Math.PI * 2
+          const r = 10 + rng() * 25
+          return point(ox + Math.cos(a) * r, oy + Math.sin(a) * r)
+        }),
+      )
+    const a = hull(0, 0)
+    const b = hull((rng() - 0.5) * 90, (rng() - 0.5) * 90)
+    const expected = polygonsOverlap(a, b)
+    const hit = convexContact(a, b, polygonCentroid(a), polygonCentroid(b))
+    assert.equal(!!hit, expected, `disagreed on pair ${i}`)
+    if (hit) {
+      overlapping++
+      // applying the push must actually resolve the overlap
+      const moved = shifted(b, hit.nx * (hit.depth + 1e-6), hit.ny * (hit.depth + 1e-6))
+      assert.equal(polygonsOverlap(a, moved), false, `push did not separate pair ${i}`)
+    }
+  }
+  assert.ok(overlapping > 50, `expected a decent number of overlaps, got ${overlapping}`)
 })

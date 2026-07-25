@@ -147,6 +147,134 @@ export function distanceToSegment(px, py, ax, ay, bx, by) {
   return Math.hypot(px - cx, py - cy)
 }
 
+// ---------------------------------------------------------------------------
+// Contact solving. Collision is broadphase then narrowphase: callers reject
+// cheaply with an enclosing circle, then call one of these for the exact
+// answer. Each returns the push needed to separate the pair - a unit normal
+// and a penetration depth - or null when they are genuinely apart.
+//
+// A circle proxy is not good enough on its own here: an asteroid can be long
+// and thin, and a circle around it is mostly empty space, so the ship would
+// stop against nothing and freshly cut halves would shove each other apart.
+// ---------------------------------------------------------------------------
+
+// Nearest point to (px, py) anywhere on the polygon's boundary.
+function closestPointOnBoundary(px, py, vertices) {
+  let bestSq = Infinity,
+    bx = vertices[0].x,
+    by = vertices[0].y
+  for (let i = 0; i < vertices.length; i++) {
+    const a = vertices[i],
+      b = vertices[(i + 1) % vertices.length]
+    const dx = b.x - a.x,
+      dy = b.y - a.y
+    const lenSq = dx * dx + dy * dy || 1
+    let t = ((px - a.x) * dx + (py - a.y) * dy) / lenSq
+    t = t < 0 ? 0 : t > 1 ? 1 : t
+    const cx = a.x + t * dx,
+      cy = a.y + t * dy
+    const distSq = (px - cx) * (px - cx) + (py - cy) * (py - cy)
+    if (distSq < bestSq) {
+      bestSq = distSq
+      bx = cx
+      by = cy
+    }
+  }
+  return { x: bx, y: by, dist: Math.sqrt(bestSq) }
+}
+
+// Circle against a polygon. The normal points the way the circle must move.
+export function circlePolygonContact(cx, cy, radius, vertices) {
+  if (vertices.length < 3) {
+    return null
+  }
+  const near = closestPointOnBoundary(cx, cy, vertices)
+  const inside = pointInPolygon({ x: cx, y: cy }, vertices)
+  if (!inside && near.dist >= radius) {
+    return null
+  }
+  const span = near.dist || 1e-6
+  if (inside) {
+    // centre is within the polygon: leave through the nearest edge
+    return { nx: (near.x - cx) / span, ny: (near.y - cy) / span, depth: radius + near.dist }
+  }
+  return { nx: (cx - near.x) / span, ny: (cy - near.y) / span, depth: radius - near.dist }
+}
+
+// Separating axis test for two convex polygons. The normal points from `a`
+// toward `b`, so `b` moves along it and `a` against it.
+export function convexContact(a, b, centreA, centreB) {
+  if (a.length < 3 || b.length < 3) {
+    return null
+  }
+  // Each candidate axis is oriented from a toward b up front, so its overlap
+  // has one unambiguous meaning: how far b must travel along it to clear a.
+  // Choosing the axis first and the direction afterwards can pair a depth with
+  // the opposite normal, which pushes the shapes further together.
+  const toBx = centreB.x - centreA.x,
+    toBy = centreB.y - centreA.y
+  let bestDepth = Infinity,
+    bestX = 0,
+    bestY = 0
+  for (const poly of [a, b]) {
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i],
+        q = poly[(i + 1) % poly.length]
+      let nx = -(q.y - p.y),
+        ny = q.x - p.x
+      const len = Math.hypot(nx, ny)
+      if (len < 1e-9) {
+        continue
+      }
+      nx /= len
+      ny /= len
+      if (toBx * nx + toBy * ny < 0) {
+        nx = -nx
+        ny = -ny
+      }
+      let aMax = -Infinity,
+        bMin = Infinity
+      for (const v of a) {
+        const d = v.x * nx + v.y * ny
+        if (d > aMax) {
+          aMax = d
+        }
+      }
+      for (const v of b) {
+        const d = v.x * nx + v.y * ny
+        if (d < bMin) {
+          bMin = d
+        }
+      }
+      const depth = aMax - bMin
+      if (depth <= 0) {
+        return null // a gap on this axis means they are apart
+      }
+      if (depth < bestDepth) {
+        bestDepth = depth
+        bestX = nx
+        bestY = ny
+      }
+    }
+  }
+  if (bestDepth === Infinity) {
+    return null
+  }
+  return { nx: bestX, ny: bestY, depth: bestDepth }
+}
+
+// How far the polygon reaches from `centre` in direction (ux, uy).
+export function supportDistance(vertices, centre, ux, uy) {
+  let far = 0
+  for (const p of vertices) {
+    const d = (p.x - centre.x) * ux + (p.y - centre.y) * uy
+    if (d > far) {
+      far = d
+    }
+  }
+  return far
+}
+
 // How many polygon edges a beam segment crosses.
 export function countBeamCrossings(beam, vertices) {
   let count = 0

@@ -24,6 +24,8 @@ import {
   boundingRadius,
   perpendicular,
   slicePolygon,
+  circlePolygonContact,
+  supportDistance,
 } from "./math.js"
 import {
   TAU,
@@ -936,23 +938,26 @@ export class PlayerShip extends Ship {
       }
     }
 
-    // Asteroid collision: treat the rock as a circle, push the ship back out to
-    // the surface, and reflect its inward velocity so it glances off rather than
+    // Asteroid collision: reject on the rock's enclosing circle, then solve
+    // against its actual outline, so the ship touches the hull it can see and
+    // not a circle around a long thin chunk. It is pushed out to the surface
+    // and its inward velocity reflected, so it glances off rather than
     // tunnelling through. Momentum transfers to the rock; contact grinds energy.
     for (const asteroid of game.asteroids) {
-      const nx = this.x - asteroid.center.x,
-        ny = this.y - asteroid.center.y
-      const dist = Math.hypot(nx, ny) || 1
-      const minDist = asteroid.collideRadius + this.radius
-      if (dist >= minDist) {
+      const dx = this.x - asteroid.center.x,
+        dy = this.y - asteroid.center.y
+      const reach = asteroid.boundRadius + this.radius
+      if (dx * dx + dy * dy >= reach * reach) {
         continue
       }
-      const ux = nx / dist,
-        uy = ny / dist
-      // separate: pop the ship onto the surface
-      const overlap = minDist - dist
-      this.x += ux * overlap
-      this.y += uy * overlap
+      const contact = circlePolygonContact(this.x, this.y, this.radius, asteroid.vertices)
+      if (!contact) {
+        continue
+      }
+      const ux = contact.nx,
+        uy = contact.ny
+      this.x += ux * contact.depth
+      this.y += uy * contact.depth
       // reflect the inward component of velocity (a glancing bounce)
       const vn = this.vx * ux + this.vy * uy
       if (vn < 0) {
@@ -1263,7 +1268,6 @@ export class Asteroid extends Entity {
     this.spin = opts.spin || 0
     this.explosive = opts.vertices ? !!opts.explosive : !!(opts.traits && opts.traits.explosive)
     this.fuse = null
-    this.noCollideTimer = opts.fragment ? 0.55 : 0
     this.hardpoints = opts.hardpoints || []
     this.tint = opts.tint || null // overrides the rock palette (e.g. frigate debris)
     this.recompute()
@@ -1314,15 +1318,24 @@ export class Asteroid extends Entity {
   recompute() {
     this.center = polygonCentroid(this.vertices)
     this.area = polygonArea(this.vertices)
+    // encloses every vertex, so it is the broadphase reject for contacts
     this.boundRadius = boundingRadius(this.vertices, this.center)
-    // Rocks collide as circles, sized between the area-equivalent radius and
-    // the bounding radius. The area-equivalent radius sits well inside the
-    // drawn outline of a spiky hull and collapses entirely for a long sliver
-    // (a cut frigate half reads as a fraction of its length); the bounding
-    // radius wraps that sliver in mostly empty space. The two agree on a
-    // circle, so the blend only matters as a shape gets less round.
-    const areaRadius = Math.sqrt(Math.max(this.area, 1) / Math.PI)
-    this.collideRadius = lerp(areaRadius, this.boundRadius, CONFIG.AST_COLLIDE_BLEND)
+    this.x = this.center.x
+    this.y = this.center.y
+  }
+
+  // Move the whole rock: outline, mounted hardpoints and centre together.
+  translate(dx, dy) {
+    for (const p of this.vertices) {
+      p.x += dx
+      p.y += dy
+    }
+    for (const hp of this.hardpoints) {
+      hp.x += dx
+      hp.y += dy
+    }
+    this.center.x += dx
+    this.center.y += dy
     this.x = this.center.x
     this.y = this.center.y
   }
@@ -1348,9 +1361,6 @@ export class Asteroid extends Entity {
     this.vx *= Math.pow(CONFIG.AST_DRAG, dt)
     this.vy *= Math.pow(CONFIG.AST_DRAG, dt)
     this.spin *= Math.pow(CONFIG.AST_SPIN_DRAG, dt)
-    if (this.noCollideTimer) {
-      this.noCollideTimer = Math.max(0, this.noCollideTimer - dt)
-    }
     const speed = Math.hypot(this.vx, this.vy)
     if (speed > CONFIG.AST_MAX_SPEED) {
       this.vx *= CONFIG.AST_MAX_SPEED / speed
@@ -1364,27 +1374,18 @@ export class Asteroid extends Entity {
     const dcx = this.center.x - ARENA.cx,
       dcy = this.center.y - ARENA.cy
     const cdist = Math.hypot(dcx, dcy)
-    const limit = ARENA.radius - this.collideRadius
-    if (cdist > limit && cdist > 0) {
+    if (cdist > 0) {
       const ux = dcx / cdist,
         uy = dcy / cdist
-      const over = cdist - limit
-      for (const p of this.vertices) {
-        p.x -= ux * over
-        p.y -= uy * over
-      }
-      for (const hp of this.hardpoints) {
-        hp.x -= ux * over
-        hp.y -= uy * over
-      }
-      this.center.x -= ux * over
-      this.center.y -= uy * over
-      this.x = this.center.x
-      this.y = this.center.y
-      const vn = this.vx * ux + this.vy * uy
-      if (vn > 0) {
-        this.vx -= CONFIG.AST_BOUNDARY_BOUNCE * vn * ux
-        this.vy -= CONFIG.AST_BOUNDARY_BOUNCE * vn * uy
+      // the outermost vertex in the outward direction is what must stay inside
+      const over = cdist + supportDistance(this.vertices, this.center, ux, uy) - ARENA.radius
+      if (over > 0) {
+        this.translate(-ux * over, -uy * over)
+        const vn = this.vx * ux + this.vy * uy
+        if (vn > 0) {
+          this.vx -= CONFIG.AST_BOUNDARY_BOUNCE * vn * ux
+          this.vy -= CONFIG.AST_BOUNDARY_BOUNCE * vn * uy
+        }
       }
     }
 
@@ -1437,7 +1438,6 @@ export class Asteroid extends Entity {
         vx: this.vx + ix,
         vy: this.vy + iy,
         spin: this.spin + randRange(-2, 2),
-        fragment: true,
         hardpoints: mine,
         energy: this.energy,
         tint: this.tint,
