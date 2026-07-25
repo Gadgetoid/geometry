@@ -208,11 +208,11 @@ export const GAMEPAD = {
 // never leave a player unable to reach the menu and put it back.
 // ---------------------------------------------------------------------------
 export const BINDABLE_CONTROLS = [
-  { id: "thrust", name: "THRUST", defaults: { keys: ["Space"], buttons: 7 } },
+  { id: "thrust", name: "THRUST", defaults: { keys: ["KeyW"], buttons: 7 } },
   { id: "turnLeft", name: "TURN LEFT", defaults: { keys: ["KeyA"] } },
   { id: "turnRight", name: "TURN RIGHT", defaults: { keys: ["KeyD"] } },
   { id: "reverse", name: "REVERSE", defaults: { keys: ["KeyS"], buttons: 4 } },
-  { id: "fire", name: "FIRE LASER", defaults: { keys: ["KeyW"], buttons: 6 } },
+  { id: "fire", name: "FIRE LASER", defaults: { keys: ["Space"], buttons: 6 } },
   { id: "turretLeft", name: "TURRET LEFT", defaults: { keys: ["ArrowLeft"] } },
   { id: "turretRight", name: "TURRET RIGHT", defaults: { keys: ["ArrowRight"] } },
   { id: "turretFire", name: "TURRET FIRE", defaults: { keys: ["ArrowUp"], buttons: 5 } },
