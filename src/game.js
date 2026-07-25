@@ -109,7 +109,7 @@ export class Game {
     return CONFIG.CORE_MAX[this.upgrades.core]
   }
   showToast(text) {
-    this.toast = { text, life: 2.6 }
+    this.toast = { text, life: CONFIG.TOAST_TIME }
   }
 
   // Is a world point within the visible viewport (centred on viewCenter)?
@@ -613,9 +613,9 @@ export class Game {
     this.oreChunks.length = 0
 
     const accuracy = this.stats.shots ? this.stats.hits / this.stats.shots : 1
-    const accuracyBonus = Math.round(accuracy * 500)
-    const flawlessBonus = this.stats.damage < 1 ? 800 : 0
-    const clearBonus = this.level * 150
+    const accuracyBonus = Math.round(accuracy * CONFIG.ACCURACY_BONUS)
+    const flawlessBonus = this.stats.damage < 1 ? CONFIG.FLAWLESS_BONUS : 0
+    const clearBonus = this.level * CONFIG.CLEAR_BONUS_PER_SECTOR
     const totalBonus = accuracyBonus + flawlessBonus + clearBonus
     this.score += totalBonus
     this.summaryData = {
@@ -747,13 +747,13 @@ export class Game {
     this.player.update(dt, this)
     // camera eases toward the ship, clamped so it never scrolls far past the
     // arena edge (a band of the out-of-bounds zone stays visible, no more)
-    const follow = Math.min(1, dt * 6)
+    const follow = Math.min(1, dt * CONFIG.CAMERA_FOLLOW)
     this.viewCenter.x += (this.player.x - this.viewCenter.x) * follow
     this.viewCenter.y += (this.player.y - this.viewCenter.y) * follow
     const dcx = this.viewCenter.x - ARENA.cx,
       dcy = this.viewCenter.y - ARENA.cy
     const camDist = Math.hypot(dcx, dcy)
-    const maxCamDist = ARENA.radius - 140
+    const maxCamDist = ARENA.radius - CONFIG.CAMERA_MARGIN
     if (camDist > maxCamDist) {
       this.viewCenter.x = ARENA.cx + (dcx / camDist) * maxCamDist
       this.viewCenter.y = ARENA.cy + (dcy / camDist) * maxCamDist
@@ -789,7 +789,7 @@ export class Game {
 
     if (this.phase === "play" && this.asteroids.length === 0) {
       this.phase = "clearing"
-      this.clearTimer = 2.4
+      this.clearTimer = CONFIG.CLEAR_DELAY
       this.oreVacuum = true
     } else if (this.phase === "clearing") {
       this.clearTimer -= dt

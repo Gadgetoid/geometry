@@ -37,6 +37,15 @@ export const CONFIG = {
   INVIN_TIME: 2.0,
   START_LIVES: 3,
   MAX_LIVES: 6,
+  REVERSE_ACCEL_MULT: 0.6, // reverse thrust is weaker than forward
+  BOUNDARY_RESTITUTION: 0.35, // bounce off the arena wall
+  ROCK_RESTITUTION: 0.5, // bounce off an asteroid
+  EXHAUST_WASH_RANGE: 150, // thruster wash shoves rocks caught behind the ship
+  EXHAUST_WASH_FORCE: 160,
+  TURRET_AIM_RATE: 3.0, // radians/sec while swinging the turret by hand
+  TURRET_MANUAL_HOLD: 1.5, // seconds of manual control after the last input
+  ORE_GRAB_RADIUS: 8, // added to the ship radius when collecting ore
+  ORE_VACUUM_GRAB_RADIUS: 42, // wider grab while sweeping a cleared sector
 
   // asteroids
   AST_MIN_R: 26,
@@ -56,6 +65,20 @@ export const CONFIG = {
   AST_REGEN: 12, // shielded/armed rocks recover energy slowly
   AST_ENERGY_SHIELD: 100,
   AST_ENERGY_GUN: 50,
+  AST_DRAG: 0.985, // velocity retained per second
+  AST_SPIN_DRAG: 0.82,
+  AST_BOUNDARY_BOUNCE: 1.9, // rocks are repelled hard off the arena wall
+  ORE_LIFE: 24, // seconds before an uncollected chunk expires
+  POWERUP_LIFE: 26,
+
+  // camera, pacing and end-of-sector scoring
+  CAMERA_FOLLOW: 6, // how quickly the view eases toward the ship
+  CAMERA_MARGIN: 140, // how far inside the arena edge the view stops
+  CLEAR_DELAY: 2.4, // seconds of ore sweep-up after the last rock
+  TOAST_TIME: 2.6,
+  ACCURACY_BONUS: 500, // scaled by hit fraction
+  FLAWLESS_BONUS: 800, // for taking no damage
+  CLEAR_BONUS_PER_SECTOR: 150,
 
   // base damage values referenced by weapon types
   DMG_AST_GUN: 120,

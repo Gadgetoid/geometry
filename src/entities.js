@@ -774,11 +774,11 @@ export class PlayerShip extends Ship {
     if (canControl && game.upgrades.turret) {
       let active = false
       if (keys.has("ArrowLeft")) {
-        this.turretAim -= 3.0 * dt
+        this.turretAim -= CONFIG.TURRET_AIM_RATE * dt
         active = true
       }
       if (keys.has("ArrowRight")) {
-        this.turretAim += 3.0 * dt
+        this.turretAim += CONFIG.TURRET_AIM_RATE * dt
         active = true
       }
       if (keys.has("ArrowUp")) {
@@ -786,7 +786,7 @@ export class PlayerShip extends Ship {
         active = true
       }
       if (active) {
-        this.turretManual = 1.5
+        this.turretManual = CONFIG.TURRET_MANUAL_HOLD
       }
     }
 
@@ -808,7 +808,7 @@ export class PlayerShip extends Ship {
       // exhaust wash gently shoves rocks caught behind the thruster away
       const bx = Math.cos(back),
         by = Math.sin(back)
-      const range = 150
+      const range = CONFIG.EXHAUST_WASH_RANGE
       for (const a of game.asteroids) {
         const dx = a.center.x - this.x,
           dy = a.center.y - this.y
@@ -822,7 +822,8 @@ export class PlayerShip extends Ship {
         if (align < 0.25) {
           continue
         }
-        const push = (160 * (1 - dist / range) * align) / clamp(a.area / 3200, 0.5, 4)
+        const push =
+          (CONFIG.EXHAUST_WASH_FORCE * (1 - dist / range) * align) / clamp(a.area / 3200, 0.5, 4)
         a.vx += ux * push * dt
         a.vy += uy * push * dt
       }
@@ -830,8 +831,8 @@ export class PlayerShip extends Ship {
 
     this.reversing = canControl && game.upgrades.reverse && !this.thrusting && keys.has("KeyS")
     if (this.reversing) {
-      this.vx -= Math.cos(this.angle) * CONFIG.ACCEL * 0.6 * dt
-      this.vy -= Math.sin(this.angle) * CONFIG.ACCEL * 0.6 * dt
+      this.vx -= Math.cos(this.angle) * CONFIG.ACCEL * CONFIG.REVERSE_ACCEL_MULT * dt
+      this.vy -= Math.sin(this.angle) * CONFIG.ACCEL * CONFIG.REVERSE_ACCEL_MULT * dt
       if (this.energy > 0) {
         this.energy -= CONFIG.THRUST_COST * dt
       }
@@ -857,7 +858,7 @@ export class PlayerShip extends Ship {
     this.vy *= Math.pow(CONFIG.SPEED_DRAG, dt)
     this.integrate(dt)
     const wasBoundary = this.atBoundary
-    this.atBoundary = this.confine(0.35, this.radius)
+    this.atBoundary = this.confine(CONFIG.BOUNDARY_RESTITUTION, this.radius)
     if (this.atBoundary && !wasBoundary && this.impactSfx <= 0) {
       Sound.bump() // energy shield glancing the arena wall
       this.impactSfx = 0.15
@@ -895,7 +896,8 @@ export class PlayerShip extends Ship {
     this.updateWeapons(dt, game)
 
     // Collect ore (wider grab while vacuuming a cleared sector).
-    const grabRadius = game.oreVacuum ? this.radius + 42 : this.radius + 8
+    const grabRadius =
+      this.radius + (game.oreVacuum ? CONFIG.ORE_VACUUM_GRAB_RADIUS : CONFIG.ORE_GRAB_RADIUS)
     for (let i = game.oreChunks.length - 1; i >= 0; i--) {
       const chunk = game.oreChunks[i]
       if (Math.hypot(chunk.x - this.x, chunk.y - this.y) < grabRadius) {
@@ -945,7 +947,7 @@ export class PlayerShip extends Ship {
       // reflect the inward component of velocity (a glancing bounce)
       const vn = this.vx * ux + this.vy * uy
       if (vn < 0) {
-        const restitution = 0.5
+        const restitution = CONFIG.ROCK_RESTITUTION
         this.vx -= (1 + restitution) * vn * ux
         this.vy -= (1 + restitution) * vn * uy
         const massFactor = clamp(asteroid.area / 3200, 0.4, 4)
@@ -1287,9 +1289,9 @@ export class Asteroid extends Entity {
     for (const hp of this.hardpoints) {
       rotate(hp)
     } // hardpoints rotate/translate with the rock
-    this.vx *= Math.pow(0.985, dt)
-    this.vy *= Math.pow(0.985, dt)
-    this.spin *= Math.pow(0.82, dt)
+    this.vx *= Math.pow(CONFIG.AST_DRAG, dt)
+    this.vy *= Math.pow(CONFIG.AST_DRAG, dt)
+    this.spin *= Math.pow(CONFIG.AST_SPIN_DRAG, dt)
     if (this.noCollideTimer) {
       this.noCollideTimer = Math.max(0, this.noCollideTimer - dt)
     }
@@ -1325,8 +1327,8 @@ export class Asteroid extends Entity {
       this.y = this.center.y
       const vn = this.vx * ux + this.vy * uy
       if (vn > 0) {
-        this.vx -= 1.9 * vn * ux
-        this.vy -= 1.9 * vn * uy
+        this.vx -= CONFIG.AST_BOUNDARY_BOUNCE * vn * ux
+        this.vy -= CONFIG.AST_BOUNDARY_BOUNCE * vn * uy
       }
     }
 
@@ -1545,7 +1547,7 @@ export class Ore extends Entity {
     this.vy = vy
     this.spin = randRange(-3, 3)
     this.angle = Math.random() * TAU
-    this.life = 24
+    this.life = CONFIG.ORE_LIFE
     this.size = randRange(4, 6.5)
   }
 
@@ -1601,7 +1603,7 @@ export class Powerup extends Entity {
     this.vy = vy
     this.type = type
     this.angle = 0
-    this.life = 26
+    this.life = CONFIG.POWERUP_LIFE
   }
 
   update(dt) {
