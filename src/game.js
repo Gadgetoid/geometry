@@ -1196,8 +1196,15 @@ export class Game {
     this.rememberSettings()
   }
   setSound(on) {
+    const was = this.settings.sound
     this.settings.sound = !!on
     this.applySound()
+    // Switching it on plays a tone, which is the only way the setting can show what
+    // it did. Switching it off cannot, and re-confirming a setting that has not
+    // moved would blip on every keypress along a menu row.
+    if (this.settings.sound && !was) {
+      Sound.power()
+    }
     this.rememberSettings()
   }
   setCrt(on) {
@@ -1402,7 +1409,6 @@ export class Game {
     table[pending.action] = device === "keys" ? [input] : input
     this.rebinding = null
     this.rememberBindings()
-    Sound.power()
     return true
   }
 
@@ -1500,7 +1506,9 @@ export class Game {
       }
       this.pauseConfirming = null
       row.action(this)
-      Sound.power()
+      // No sound for working a menu row. The only tones in here are the ones that
+      // are themselves the answer: how loud the game is, and whether it is audible
+      // at all. Anything else and BACK would blip at you.
       return
     }
     if (this.phase === "shop") {

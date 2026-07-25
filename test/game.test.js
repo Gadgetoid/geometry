@@ -1735,3 +1735,65 @@ test("adjusting the volume plays a tone at the level just set", async () => {
     Sound.power = realPower
   }
 })
+
+// Working a menu row is silent. The only tones the options menu makes are the ones
+// that are themselves the answer: how loud the game is, and whether it is audible.
+test("the options menu is silent except where the sound is the setting", async () => {
+  const { Sound } = await import("../src/audio.js")
+  const heard = []
+  const realPower = Sound.power
+  Sound.power = () => heard.push(true)
+  try {
+    const game = liveGame()
+    game.toggleOptions()
+    const choose = (name) => {
+      const rows = game.pauseMenu()
+      game.pauseSelection = rows.findIndex((row) => row.name === name)
+      heard.length = 0
+      game.menuConfirm()
+      return heard.length
+    }
+    const adjust = (name, step) => {
+      const rows = game.pauseMenu()
+      game.pauseSelection = rows.findIndex((row) => row.name === name)
+      heard.length = 0
+      game.menuAdjust(step)
+      return heard.length
+    }
+
+    assert.equal(choose("CRT FILTER"), 0, "toggling the CRT filter is not an audio change")
+    assert.equal(adjust("CRT FILTER", 1), 0, "and neither is nudging it")
+    assert.equal(choose("CONTROLS"), 0, "opening a sub page is silent")
+    assert.equal(choose("BACK"), 0, "and so is leaving one")
+
+    // sound off, then on: only the switch on can be heard, and it is
+    game.setSound(true)
+    assert.equal(adjust("SOUND", -1), 0, "switching it off cannot announce itself")
+    assert.equal(game.settings.sound, false)
+    assert.equal(adjust("SOUND", 1), 1, "switching it on plays a tone")
+    assert.equal(game.settings.sound, true)
+    assert.equal(adjust("SOUND", 1), 0, "and holding right does not blip on every press")
+    assert.equal(choose("SOUND"), 0, "toggling it back off is silent")
+    assert.equal(choose("SOUND"), 1, "and on again is not")
+  } finally {
+    Sound.power = realPower
+  }
+})
+
+test("taking a binding is silent, the label having already said so", async () => {
+  const { Sound } = await import("../src/audio.js")
+  const heard = []
+  const realPower = Sound.power
+  Sound.power = () => heard.push(true)
+  try {
+    const game = liveGame()
+    game.toggleOptions()
+    game.openPausePage("controls")
+    game.beginRebind("keys", "thrust")
+    game.captureBinding("keys", "KeyI")
+    assert.deepEqual(game.bindings.keys.thrust, ["KeyI"], "the binding was taken")
+    assert.equal(heard.length, 0)
+  } finally {
+    Sound.power = realPower
+  }
+})

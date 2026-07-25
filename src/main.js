@@ -71,9 +71,9 @@ soundButton.addEventListener("click", (e) => {
   game.setSound(!game.settings.sound)
   e.currentTarget.setAttribute("aria-pressed", String(game.settings.sound))
   if (game.settings.sound) {
-    // resume + unlock the context inside this gesture, then a confirmation blip
+    // The device only opens inside a real gesture, so unlock it here. setSound
+    // makes the confirmation tone itself.
     Sound.ensureContext()
-    Sound.power()
   }
 })
 
