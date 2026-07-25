@@ -1596,7 +1596,11 @@ export class Game {
       if (row && row.section) {
         return this.#stepColumn(rows, step)
       }
-      return this.#stepPair(rows, step)
+      // The loose rows sit two to a line only beneath such columns. A page that
+      // is one column all the way down has no line to move along, so a sideways
+      // press on a row with no scale does nothing at all - it must not walk the
+      // cursor down the page, least of all onto a row that throws a run away.
+      return rows.some((entry) => entry.section) ? this.#stepPair(rows, step) : false
     }
     if (this.devSectorStep(step)) {
       return true

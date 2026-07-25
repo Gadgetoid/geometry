@@ -1711,6 +1711,29 @@ test("the rows below the columns pair up on their own line", () => {
   assert.equal(game.menuAdjust(1), false, "nor to the right of RESET")
 })
 
+test("a sideways press holds the cursor still on a page laid out in one column", () => {
+  // The pairing above is for the line beneath the columns. The root page is one
+  // column all the way down, where a sideways press used to walk the cursor
+  // onto the next row - including, from CONTROLS, straight onto RESET PROGRESS.
+  const game = liveGame()
+  game.toggleOptions()
+  const rows = game.pauseMenu()
+  assert.ok(
+    !rows.some((row) => row.section),
+    "the root page must have no columns for this to be the case being tested",
+  )
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].adjust) {
+      continue // a row with a scale is what left and right are for
+    }
+    for (const step of [1, -1]) {
+      game.pauseSelection = i
+      assert.equal(game.menuAdjust(step), false, `"${rows[i].name}" has nothing to adjust`)
+      assert.equal(game.pauseSelection, i, `"${rows[i].name}" must hold the cursor still`)
+    }
+  }
+})
+
 test("a waiting row swallows left and right too", () => {
   const game = liveGame()
   game.toggleOptions()
