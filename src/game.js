@@ -350,10 +350,17 @@ export class Game {
     if (this.player && attacker !== this.player) {
       considerShip(this.player, this.player.radius)
     }
-    // An unshielded frigate is sliced in two like a rock (see below) rather than
-    // blocking the beam, so it is not truncated against.
+    // An unshielded sliceable hull is cut in two like a rock (see below) rather
+    // than blocking the beam, so it is not truncated against. As for a rock, the
+    // beam has to pass through: it must cross the outline at least twice, so
+    // clipping the tip of a hull scorches it instead of severing its whole
+    // length along a line the shot never reached.
     const blockShielded = blockShip && blockShip.shieldModule() && blockShip.shieldModule().up
-    const cuttable = blockShip && blockShip.type.sliceable && !blockShielded
+    const cuttable =
+      blockShip &&
+      blockShip.type.sliceable &&
+      !blockShielded &&
+      countBeamCrossings(beam, blockShip.worldOutline()) >= 2
     if (blockShip && !cuttable) {
       beam.b.x = beam.a.x + beam.dir.x * blockDist
       beam.b.y = beam.a.y + beam.dir.y * blockDist
