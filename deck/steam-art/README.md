@@ -26,11 +26,19 @@ that on its own after regenerating the art:
 ./deck/install-steam-art.py --launcher ./deck/geometry-ii.sh --art ./deck/steam-art
 ```
 
-Add `--add-if-missing` and it will create the shortcut too, which is what makes a
-first install one pass instead of two. Handing the entry to Steam and then trying to
-attach artwork cannot work in one go: Steam keeps `shortcuts.vdf` in memory and only
-writes it out when it exits, so the shortcut is nowhere on disk for the artwork to
-attach to yet.
+Steam holds `shortcuts.vdf` in memory and writes it out in its own time, so a
+shortcut it has just been given is not on disk yet for artwork to attach to. `--wait
+SECONDS` waits for it to appear, which is how the installer gets both done in one
+run.
+
+`--add-if-missing` writes the record here instead of asking Steam for it. It is a
+last resort: on macOS a shortcut Steam had not created itself became a library entry
+Steam would not treat as a shortcut and would not remove. Prefer adding the game
+through Steam and attaching artwork to what Steam wrote, which also guarantees the
+appid is the one Steam is really using.
+
+`--list` prints what Steam has and changes nothing; `--remove` takes an entry and its
+artwork back out.
 
 It has to go looking, because none of this comes from the desktop entry. Steam
 reads the entry's `Icon=` once, when the shortcut is created, and never again; and

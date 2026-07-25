@@ -90,51 +90,59 @@ fi
 # Everything above is safe to repeat: the override, the profile and the desktop
 # entry are all written in place.
 #
-# The Steam side is one job, not two, because the artwork can only be attached once
-# the shortcut exists on disk. install-steam-art.py therefore does both: it creates
-# the shortcut if there is not one, reads the appid back out, and copies the art in
-# beside it. Handing the entry to Steam instead means Steam holds it in memory until
-# it exits, and the artwork has nowhere to go until then, which is what made a first
-# install take two passes.
+# Steam creates the shortcut, not this script. A record Steam wrote itself is one it
+# reliably recognises, and its appid is then certainly the one its artwork should be
+# named after. Writing the record here instead is possible, and install-steam-art.py
+# will do it with --add-if-missing, but on macOS that produced a library entry Steam
+# would not treat as a shortcut and would not let go of, so it is not the default.
 #
-# It needs Steam closed, since Steam rewrites that file on the way out.
-steam_step_done=false
+# The cost is that Steam keeps shortcuts.vdf in memory and writes it out in its own
+# time, so the artwork step waits for the shortcut to appear rather than assuming it.
+art_step() {
+  python3 "$ART_INSTALLER" --launcher "$LAUNCHER" --art "$HERE/steam-art" "$@"
+}
+
+have_art_step=false
 if [ -f "$ART_INSTALLER" ] && command -v python3 >/dev/null; then
-  echo
-  echo "Steam:"
-  if python3 "$ART_INSTALLER" \
-    --launcher "$LAUNCHER" --art "$HERE/steam-art" --add-if-missing; then
-    steam_step_done=true
-  fi
+  have_art_step=true
 fi
 
-if [ "$steam_step_done" = true ]; then
-  echo
-  if pgrep -x steam >/dev/null 2>&1; then
-    echo "Done. Restart Steam to see it."
-  else
-    echo "Done. Start Steam and GEOMETRY II will be in your library, artwork and all."
-  fi
-elif pgrep -x steam >/dev/null 2>&1; then
-  # Steam is up, so its files cannot be written underneath it. Adding through Steam
-  # itself still works, and the artwork can be attached once it closes.
-  if command -v steamos-add-to-steam >/dev/null && [ -f "$DESKTOP_FILE" ]; then
-    say "Steam is running, so adding the shortcut through Steam instead."
-    steamos-add-to-steam "$DESKTOP_FILE" || die "steamos-add-to-steam refused the entry."
-    echo
-    echo "Added, without artwork. Close Steam and run this again to attach it."
-  else
-    echo
-    echo "Close Steam and run this again; it cannot write Steam's files underneath it."
+echo
+echo "Steam:"
+if [ "$have_art_step" = false ]; then
+  say "python3 or install-steam-art.py is missing, so artwork cannot be attached"
+fi
+
+if [ "$have_art_step" = true ] && art_step --list 2>/dev/null | grep -q "matches this game"; then
+  # already in the library: just refresh the artwork against Steam's own appid
+  art_step
+elif command -v steamos-add-to-steam >/dev/null && [ -f "$DESKTOP_FILE" ]; then
+  say "asking Steam to add the shortcut"
+  steamos-add-to-steam "$DESKTOP_FILE" || die "steamos-add-to-steam refused the entry."
+  if [ "$have_art_step" = true ]; then
+    if ! art_step --wait 30; then
+      echo
+      echo "Added. Steam has not written the shortcut out yet, so the artwork is"
+      echo "still to do: close Steam, then run"
+      echo "  $ART_INSTALLER --launcher $LAUNCHER --art $HERE/steam-art"
+    fi
   fi
 else
-  echo
-  echo "Could not finish the Steam step. Add it by hand:"
-  [ -f "$DESKTOP_FILE" ] &&
-    echo "  * in Dolphin, right-click $DESKTOP_FILE and pick \"Add to Steam\""
-  echo "  * or in Steam: Games -> Add a Non-Steam Game -> Browse -> $LAUNCHER"
-  [ -f "$ART_INSTALLER" ] || say "install-steam-art.py is missing, so artwork was skipped."
-  command -v python3 >/dev/null || say "python3 is missing, so artwork was skipped."
+  # No helper to ask, which is every platform but SteamOS. Steam's own dialog is
+  # the reliable way in, and the artwork attaches to it afterwards.
+  cat <<MANUAL
+
+Add it to Steam once, then the artwork goes on:
+
+  1. Steam -> Games -> Add a Non-Steam Game... -> Browse
+     pick $LAUNCHER
+  2. quit Steam, so it writes the shortcut to disk
+  3. run this again, or just:
+     $ART_INSTALLER --launcher $LAUNCHER --art $HERE/steam-art
+
+On a Mac, Add a Non-Steam Game only lists .app bundles by default; set the file
+filter to All Files, or drag $LAUNCHER onto the dialog.
+MANUAL
 fi
 
 if [ "$PLATFORM" = Linux ]; then
@@ -157,8 +165,11 @@ Worth knowing:
     it from its own folder, so it only changes when install-steam-art.py runs;
     re-run that after regenerating the art.
   * Re-running this is safe: it refreshes everything in place and will not add a
-    second copy. Close Steam first, because it rewrites its shortcut file on exit,
-    and because the shortcut and its artwork go in together in one pass.
+    second copy. Close Steam first, because it rewrites its shortcut file on exit
+    and would otherwise discard anything written underneath it.
+  * install-steam-art.py --list shows what Steam has, and --remove takes an entry
+    and its artwork back out again. Both keep a backup and refuse to touch a file
+    they cannot reproduce exactly.
   * To run the hosted build instead of these files, set GEOMETRY_URL in the
     Steam shortcut's launch options:
       GEOMETRY_URL=https://gadgetoid.github.io/geometry/ %command%

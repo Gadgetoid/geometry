@@ -12,11 +12,32 @@ desktop entry and hands it to Steam. The game then appears in your library and
 launches into Game Mode like anything else.
 
 `deck/geometry-ii.sh` is what the shortcut runs, and it works on its own too.
-`deck/install-steam-art.py` creates the Steam shortcut and attaches the library
-artwork, in one pass; the installer calls it. Run it again by hand after
-regenerating the art. **Close Steam before either**: it rewrites its shortcut file
-on exit, so anything written underneath it is lost, and a shortcut it has only just
-accepted is not on disk yet for artwork to attach to.
+`deck/install-steam-art.py` attaches the library artwork to the Steam shortcut; the
+installer calls it. Run it again by hand after regenerating the art. **Close Steam
+before either**: it rewrites its shortcut file on exit, so anything written
+underneath it is lost.
+
+Steam creates the shortcut, not these scripts. A record Steam wrote itself is one it
+reliably recognises, and its appid is certainly the one the artwork should be named
+after. On SteamOS the installer asks Steam to add it and then waits for Steam to
+write it out, so it all happens in one run. Everywhere else, add it once through
+Steam's own dialog and run the installer again.
+
+## If a shortcut goes wrong
+
+```sh
+./deck/install-steam-art.py --launcher ./deck/geometry-ii.sh --art ./deck/steam-art --list
+./deck/install-steam-art.py --launcher ./deck/geometry-ii.sh --art ./deck/steam-art --remove
+```
+
+`--list` shows every shortcut Steam has, with the appid its artwork is named after,
+and changes nothing. `--remove` takes matching entries and their artwork back out.
+Both keep a `.geometry-backup` and refuse to touch a file they cannot reproduce
+byte for byte. Close Steam first.
+
+`--add-if-missing` writes the shortcut record directly instead of asking Steam. It
+exists, but it is a last resort: on macOS a record Steam had not created itself gave
+a library entry Steam would not treat as a shortcut and would not let go of.
 
 ## Why these flags
 

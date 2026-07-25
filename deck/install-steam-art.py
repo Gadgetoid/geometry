@@ -10,9 +10,13 @@ So this finds the shortcut by the launcher path, takes its appid, copies the art
 into place under the names Steam looks for, and points the shortcut's icon field at
 icon.png.
 
-With --add-if-missing it will also create the shortcut, which is what makes a
-first-time install work in one pass: handing the entry to Steam instead means Steam
-holds it in memory and the artwork has nowhere to attach until it exits.
+--wait waits for Steam to write out a shortcut it has just been given, which is the
+usual way to get the shortcut and its artwork done in one go.
+
+--add-if-missing writes the shortcut record here instead of asking Steam to. It is a
+last resort: a record Steam did not create itself is not always recognised as a
+shortcut, and on macOS it produced a library entry that could not be removed. Prefer
+letting Steam add the game and then attaching the artwork to what Steam wrote.
 
 shortcuts.vdf is a binary file belonging to another program, so it is only
 rewritten when it can be parsed and re-serialised byte for byte first, a backup is
@@ -25,6 +29,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import zlib
 
 # Steam's binary VDF: 0x00 opens a nested map, 0x01 a string, 0x02 a 32-bit int,
@@ -142,6 +147,65 @@ def shortcut_appid(entry):
     return derive_appid(exe[2], name[2])
 
 
+def matches(entry, launcher, name):
+    """Is this entry ours?
+
+    Compared loosely on purpose. steamos-add-to-steam and this script do not
+    necessarily store Exe the same way - quoting differs, and it may point at the
+    desktop entry rather than the launcher - so an exact string compare will miss a
+    shortcut that is already there and a second one gets created beside it.
+    """
+    exe = field(entry, "exe")
+    appname = field(entry, "AppName")
+    if exe:
+        if launcher in exe[2] or os.path.basename(launcher) in exe[2]:
+            return True
+    if name and appname and appname[2].strip().casefold() == name.strip().casefold():
+        return True
+    return False
+
+
+def describe(entry):
+    parts = []
+    for key in ("AppName", "Exe", "StartDir", "icon", "LaunchOptions", "FlatpakAppID"):
+        found = field(entry, key)
+        if found and found[2] != "":
+            parts.append(f"      {key} = {found[2]}")
+    appid_field = field(entry, "appid")
+    appid = shortcut_appid(entry)
+    if appid is not None:
+        stored = "stored" if appid_field else "derived, this record has no appid field"
+        parts.append(f"      appid = {appid} ({stored})")
+        # Steam expects a shortcut id to have the top bit set. One that does not
+        # can collide with a real Steam appid, which is how a shortcut ends up
+        # looking like an installed game that cannot be removed.
+        if not appid & 0x80000000:
+            parts.append("      ^^ this appid has no high bit: Steam may read it as a real app")
+    else:
+        parts.append("      appid = could not be determined")
+    return "\n".join(parts)
+
+
+def shortcut_files():
+    found = []
+    for root in STEAM_ROOTS:
+        found += glob.glob(os.path.expanduser(f"{root}/userdata/*/config/shortcuts.vdf"))
+    return sorted(found)
+
+
+def shortcut_exists(launcher, name):
+    """Is the shortcut on disk yet? Used while waiting for Steam to write it out."""
+    for path in shortcut_files():
+        try:
+            items, _ = parse_map(open(path, "rb").read(), 0)
+        except (ValueError, IndexError, OSError):
+            continue
+        shortcuts = field(items, "shortcuts")
+        if shortcuts and any(matches(e, launcher, name) for _, _, e in shortcuts[2]):
+            return True
+    return False
+
+
 def steam_is_running():
     try:
         return subprocess.run(["pgrep", "-x", "steam"], capture_output=True).returncode == 0
@@ -155,21 +219,42 @@ def main():
     parser.add_argument("--art", required=True, help="folder holding the captured PNGs")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
+        "--wait",
+        type=float,
+        default=0,
+        metavar="SECONDS",
+        help="wait this long for Steam to write out a shortcut it was just given",
+    )
+    parser.add_argument(
         "--add-if-missing",
         action="store_true",
-        help="create the shortcut when there is none, so a first install needs one pass",
+        help="write the shortcut record directly; a last resort, see the notes above",
     )
     parser.add_argument("--name", default="GEOMETRY II", help="name for a shortcut it creates")
+    parser.add_argument(
+        "--list", action="store_true", help="show every shortcut Steam has, and change nothing"
+    )
+    parser.add_argument(
+        "--remove", action="store_true", help="delete matching shortcuts and their artwork"
+    )
     args = parser.parse_args()
 
     launcher = os.path.abspath(args.launcher)
     art_dir = os.path.abspath(args.art)
     icon = os.path.join(art_dir, "icon.png")
 
-    files = []
-    for root in STEAM_ROOTS:
-        files += glob.glob(os.path.expanduser(f"{root}/userdata/*/config/shortcuts.vdf"))
+    # Steam holds shortcuts.vdf in memory and writes it out in its own time, so a
+    # shortcut it has just accepted is not on disk immediately. Waiting is what
+    # turns "add it, then run this again" into one command.
+    if args.wait and not args.list and not shortcut_exists(launcher, args.name):
+        deadline = time.monotonic() + args.wait
+        print(f"  waiting up to {args.wait:.0f}s for Steam to write the shortcut out")
+        while time.monotonic() < deadline:
+            time.sleep(1)
+            if shortcut_exists(launcher, args.name):
+                break
 
+    files = shortcut_files()
     running = steam_is_running()
 
     # A Steam account with no shortcuts at all has no shortcuts.vdf, so fall back
@@ -212,14 +297,55 @@ def main():
             continue
         changed = False
 
+        if args.list:
+            print(f"  {path}")
+            print(f"    round-trips cleanly: {faithful}")
+            if not shortcuts[2]:
+                print("    no shortcuts")
+            for _, index, entry in shortcuts[2]:
+                mark = " <- matches this game" if matches(entry, launcher, args.name) else ""
+                print(f"    [{index}]{mark}")
+                print(describe(entry))
+            touched += 1
+            continue
+
+        if args.remove:
+            keep, dropped = [], []
+            for item in shortcuts[2]:
+                (dropped if matches(item[2], launcher, args.name) else keep).append(item)
+            if not dropped:
+                print(f"  nothing matching in {path}")
+                continue
+            if running:
+                print("  Steam is running; close it before removing anything")
+                return 1
+            if not faithful:
+                print(f"  not touching {path}: it did not round-trip cleanly")
+                continue
+            grid = os.path.join(os.path.dirname(path), "grid")
+            for _, _, entry in dropped:
+                name = field(entry, "AppName")
+                appid = shortcut_appid(entry)
+                print(f'  removing "{name[2] if name else "?"}" (appid {appid})')
+                for _, pattern in ART_SLOTS:
+                    art = os.path.join(grid, pattern.format(appid=appid))
+                    if os.path.exists(art):
+                        print(f"    dropping grid/{os.path.basename(art)}")
+                        if not args.dry_run:
+                            os.remove(art)
+            # Steam indexes entries by their position, so the survivors are
+            # renumbered from zero rather than left with a hole where one was.
+            shortcuts[2][:] = [(MAP, str(i), item[2]) for i, item in enumerate(keep)]
+            changed = not args.dry_run
+            touched += 1
+            if args.dry_run:
+                print("    (dry run, nothing written)")
+
         # Create the shortcut if it is not there. Doing it here rather than handing
         # it to Steam is what lets the artwork be attached in the same pass: Steam
         # keeps shortcuts.vdf in memory and only writes it out when it exits, so a
         # shortcut it has just accepted is not yet anywhere this can find it.
-        present = any(
-            field(entry, "exe") and launcher in field(entry, "exe")[2]
-            for _, _, entry in shortcuts[2]
-        )
+        present = any(matches(entry, launcher, args.name) for _, _, entry in shortcuts[2])
         if not present and args.add_if_missing:
             if running:
                 print("  Steam is running, so the shortcut cannot be written; close it first")
@@ -244,8 +370,7 @@ def main():
                 changed = True
                 print(f'  created shortcut "{args.name}", appid {appid}')
         for _, _, entry in shortcuts[2]:
-            exe = field(entry, "exe")
-            if not exe or launcher not in exe[2]:
+            if not matches(entry, launcher, args.name):
                 continue
             appid = shortcut_appid(entry)
             if appid is None:
