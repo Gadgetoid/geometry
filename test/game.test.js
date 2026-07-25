@@ -20,6 +20,7 @@ import {
   rockMass,
 } from "../src/entities.js"
 import {
+  ARENA,
   CONFIG,
   PLAYER_TYPE,
   POWERUP_TYPES,
@@ -356,6 +357,74 @@ test("a rival with no player to hunt still steers somewhere", () => {
   game.rivals = [frigate]
   game.player = null
   assert.doesNotThrow(() => frigate.update(1 / 60, game))
+})
+
+// A rival is outside the arena while it flies in and again while it flies out.
+// Out there it took beams, bullets and blasts like anything else, and cutting one
+// down left debris that the arena confinement then teleported hundreds of units
+// into the field on its first frame. It also fired from out there, which is the
+// same disagreement the other way round.
+function rivalBeyondTheRing(typeName, beyond) {
+  const game = liveGame()
+  // a rock parked far away, so the sector does not count as cleared
+  game.asteroids = [new Asteroid({ vertices: square(ARENA.cx + 3000, ARENA.cy + 3000, 40) })]
+  const distance = ARENA.radius + beyond
+  const rival = new RivalShip(ARENA.cx + distance, ARENA.cy, typeName, [])
+  rival.angle = Math.PI
+  rival.vx = 0
+  rival.vy = 0
+  game.rivals = [rival]
+  const player = game.player
+  player.x = ARENA.cx + distance - 400
+  player.y = ARENA.cy
+  player.angle = 0
+  return { game, rival, player }
+}
+
+test("a rival beyond the arena cannot be harmed, whatever reaches it", () => {
+  for (const typeName of ["scout", "frigate"]) {
+    const { game, rival, player } = rivalBeyondTheRing(typeName, 140)
+    assert.equal(rival.insideArena(), false, `${typeName} must be fully outside the ring`)
+
+    // a charged beam straight through it
+    const beam = {
+      a: { x: player.x, y: player.y },
+      dir: { x: 1, y: 0 },
+      b: { x: player.x + 900, y: player.y },
+    }
+    game.applyBeam(beam, player, playerWeapon, 400)
+    assert.equal(rival.dead, false, `${typeName} must survive a beam out of bounds`)
+    assert.equal(game.asteroids.length, 1, `${typeName} must leave no debris out of bounds`)
+
+    // and a shot, and a blast
+    rival.takeDamage(1e6, game, "projectile")
+    assert.equal(rival.dead, false, `${typeName} must survive a shot out of bounds`)
+    assert.equal(rival.energy, rival.energyMax, "and must not even lose shield energy")
+  }
+})
+
+test("a rival beyond the arena holds its fire", () => {
+  const { game, rival } = rivalBeyondTheRing("scout", 200)
+  rival.hardpoints[1].module = new RivalShip(0, 0, "scout", [
+    { hp: 1, weapon: "autocannon", controller: "turret" },
+  ]).hardpoints[1].module
+  rival.hardpoints[1].module.cooldown = 0
+  // put it on screen and make the player a valid target, so nothing else gates it
+  game.viewCenter.x = rival.x
+  game.viewCenter.y = rival.y
+  game.player.invincible = 0
+  game.advance(1 / 60)
+  assert.equal(game.projectiles.length, 0, "nothing may be fired from outside the ring")
+
+  // ...and once it reaches the field, it does fire
+  rival.x = ARENA.cx
+  rival.y = ARENA.cy
+  game.viewCenter.x = ARENA.cx
+  game.viewCenter.y = ARENA.cy
+  assert.equal(rival.insideArena(), true)
+  rival.hardpoints[1].module.cooldown = 0
+  game.advance(1 / 60)
+  assert.ok(game.projectiles.length > 0, "a rival in the field fires as before")
 })
 
 test("whether a rival hunts is declared on its type", () => {

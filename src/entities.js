@@ -300,6 +300,15 @@ export class Entity {
     return null
   }
 
+  // Has any part of this body reached inside the arena? Rocks and the player are
+  // confined and so always have; a rival is outside it while flying in and again
+  // while flying out, and out there it is not really in the sector.
+  insideArena() {
+    const dx = this.x - ARENA.cx,
+      dy = this.y - ARENA.cy
+    return Math.hypot(dx, dy) - this.boundRadius <= ARENA.radius
+  }
+
   // Is a shield raised over this entity?
   shieldUp() {
     const shield = this.shieldModule()
@@ -442,7 +451,10 @@ export class Weapon {
 
   update(dt, game, host, world) {
     this.tick(dt)
-    if (!this.ready || !game.canFly() || host.leaving) {
+    // A host outside the arena holds fire, for the same reason it cannot be shot
+    // out there: it is on its way in or on its way out and not yet part of the
+    // fight. Rocks and the player are confined, so this only gates a rival.
+    if (!this.ready || !game.canFly() || host.leaving || !host.insideArena()) {
       return
     }
     const controller = WEAPON_CONTROLLERS[this.controller]
@@ -1504,6 +1516,17 @@ export class RivalShip extends Ship {
     this.buildHardpoints(type.hardpoints)
     this.applyLoadout(loadout || type.loadout || [])
     this.hunts = !!type.hunts
+  }
+
+  // Outside the arena a rival cannot be harmed at all, whatever the channel. It is
+  // flying in or flying out and not really in the sector, so this mirrors the
+  // player being intangible mid-warp. Wreckage left out there would be snapped
+  // back into the field by the arena confinement the moment it existed.
+  takeDamage(amount, game, channel, scoreOnKill, impact) {
+    if (!this.insideArena()) {
+      return false
+    }
+    return super.takeDamage(amount, game, channel, scoreOnKill, impact)
   }
 
   // Hull hits chip the hull down rather than destroying outright, so the laser

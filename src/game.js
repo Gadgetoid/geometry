@@ -396,8 +396,10 @@ export class Game {
         blockShip = e
       }
     }
+    // A rival outside the arena is passed straight through: it cannot be cut and
+    // cannot be damaged out there, so it must not truncate the beam either.
     for (const rival of this.rivals) {
-      if (rival !== attacker && !rival.dead) {
+      if (rival !== attacker && !rival.dead && rival.insideArena()) {
         considerShip(rival)
       }
     }
