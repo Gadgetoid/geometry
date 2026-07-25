@@ -1398,40 +1398,38 @@ test("left and right cross between the binding columns", () => {
   game.toggleOptions()
   game.openPausePage("controls")
   const rows = game.pauseMenu()
-  const indexOf = (section, name) =>
-    rows.findIndex((row) => row.section === section && row.name === name)
 
-  // crossing stays on the control, which is not the same as staying on the row
-  // number: the pad column is missing the ones it steers with a stick
-  game.pauseSelection = indexOf("KEYBOARD", "REVERSE")
-  assert.equal(game.menuAdjust(1), true, "the press is handled")
-  assert.equal(rows[game.pauseSelection].section, "GAMEPAD")
-  assert.equal(rows[game.pauseSelection].name, "REVERSE", "the same control, not the same row")
-  // and back again, still on it
-  game.menuAdjust(-1)
-  assert.equal(rows[game.pauseSelection].section, "KEYBOARD")
-  assert.equal(rows[game.pauseSelection].name, "REVERSE", "so a round trip lands where it began")
-
-  for (const name of ["THRUST", "FIRE LASER", "TURRET FIRE", "POWERUP 3"]) {
-    game.pauseSelection = indexOf("KEYBOARD", name)
-    game.menuAdjust(1)
-    assert.equal(rows[game.pauseSelection].name, name, `${name} crosses to itself`)
-    assert.equal(rows[game.pauseSelection].section, "GAMEPAD")
+  // The nth row of one column becomes the nth row of the other. Nothing cleverer:
+  // the columns do not hold the same controls, and a row that moved to wherever its
+  // own control happened to sit would jump about unpredictably.
+  const keyboard = rows.filter((row) => row.section === "KEYBOARD")
+  const gamepad = rows.filter((row) => row.section === "GAMEPAD")
+  for (let n = 0; n < gamepad.length; n++) {
+    game.pauseSelection = rows.indexOf(keyboard[n])
+    assert.equal(game.menuAdjust(1), true, "the press is handled")
+    assert.equal(rows[game.pauseSelection], gamepad[n], `row ${n} crosses to row ${n}`)
+    game.menuAdjust(-1)
+    assert.equal(rows[game.pauseSelection], keyboard[n], `and back to row ${n}`)
   }
 })
 
-test("a control the pad has no row for crosses to the nearest one it does", () => {
+test("crossing to a shorter column lands on its last row", () => {
   const game = liveGame()
   game.toggleOptions()
   game.openPausePage("controls")
   const rows = game.pauseMenu()
-  // TURN LEFT is a stick on a pad, so there is no row of its own to land on
-  game.pauseSelection = rows.findIndex(
-    (row) => row.section === "KEYBOARD" && row.name === "TURN LEFT",
-  )
-  assert.equal(game.menuAdjust(1), true)
-  assert.equal(rows[game.pauseSelection].section, "GAMEPAD", "it still crosses")
-  assert.ok(rows[game.pauseSelection].name, "and lands on a real row")
+  const keyboard = rows.filter((row) => row.section === "KEYBOARD")
+  const gamepad = rows.filter((row) => row.section === "GAMEPAD")
+  assert.ok(keyboard.length > gamepad.length, "the keyboard column must be the longer one")
+  for (let n = gamepad.length; n < keyboard.length; n++) {
+    game.pauseSelection = rows.indexOf(keyboard[n])
+    game.menuAdjust(1)
+    assert.equal(
+      rows[game.pauseSelection],
+      gamepad[gamepad.length - 1],
+      `keyboard row ${n} has no opposite number, so it clamps`,
+    )
+  }
 })
 
 test("there is nothing to the left of the first column or the right of the last", () => {

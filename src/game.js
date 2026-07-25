@@ -1440,7 +1440,6 @@ export class Game {
         }
         rows.push({
           section: device.name,
-          control: control.id,
           name: control.name,
           waiting: () =>
             this.rebinding &&
@@ -1560,10 +1559,9 @@ export class Game {
     return false
   }
 
-  // Move to the neighbouring section, staying on the same control where that
-  // control appears there. Not every control does - a pad steers with a stick, so
-  // it has no TURN LEFT row - and those fall back to the same distance down the
-  // column, clamped to its length.
+  // Move to the same place in the neighbouring column: the nth row here becomes the
+  // nth row there. The columns are different lengths, so a shorter one lands on its
+  // last row.
   #stepColumn(rows, step) {
     const sections = [...new Set(rows.map((row) => row.section).filter(Boolean))]
     const from = rows[this.pauseSelection]
@@ -1571,15 +1569,9 @@ export class Game {
     if (target === undefined) {
       return false
     }
+    const within = rows.filter((row) => row.section === from.section).indexOf(from)
     const landing = rows.filter((row) => row.section === target)
-    const sameControl = landing.find((row) => row.control === from.control)
-    let chosen = sameControl
-    if (!chosen) {
-      const column = rows.filter((row) => row.section === from.section)
-      const within = column.indexOf(from)
-      chosen = landing[Math.min(within, landing.length - 1)]
-    }
-    this.pauseSelection = rows.indexOf(chosen)
+    this.pauseSelection = rows.indexOf(landing[Math.min(within, landing.length - 1)])
     this.pauseConfirming = null
     return true
   }
