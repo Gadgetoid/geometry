@@ -443,19 +443,58 @@ export class WebGLRenderer extends Renderer {
     this.warp = [0, 0, 0] // ripple centre in uv plus strength
     this.eye = [HALF_W, HALF_H]
     this.passZ = 0
+    this.contextLost = false
 
     // vertex scratch: builders write straight in, #flush uploads batch.count
     // floats and rewinds. Grows on demand and is reused for the session.
     this.batch = { prog: null, data: new Float32Array(1 << 16), count: 0 }
+
+    this.#buildGpuState()
+
+    // A driver reset, a GPU switch or a long spell in a background tab can take
+    // the context away, and every object built from it with it. Preventing the
+    // default on the loss event is what lets the browser hand back a restored
+    // context; everything is then rebuilt from scratch.
+    canvas.addEventListener("webglcontextlost", (event) => {
+      event.preventDefault()
+      this.contextLost = true
+    })
+    canvas.addEventListener("webglcontextrestored", () => {
+      this.#buildGpuState()
+      this.contextLost = false
+    })
+
+    // The atlas is rasterised from a system monospace stack, which needs no
+    // loading, but a font can still settle after first paint. Rebuild once when
+    // it does, so glyph metrics always match what the page ended up with.
+    if (typeof document !== "undefined" && document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => {
+        if (!this.contextLost) {
+          this.#initAtlas()
+        }
+      })
+    }
+  }
+
+  // (Re)create everything owned by the GL context. Safe to call again after the
+  // context is restored, when all previous handles are dead.
+  #buildGpuState() {
+    const gl = this.gl
+    this.batch.prog = null
+    this.batch.count = 0
     this.vboCapacity = 0
     this.uniformCache = new Map() // program -> (name -> location)
-
     this.#initPrograms()
     this.#initBuffers()
     this.#initTargets()
     this.#initAtlas()
     gl.disable(gl.DEPTH_TEST)
     gl.enable(gl.BLEND)
+  }
+
+  // Nothing can be drawn while the context is gone; main.js skips the frame.
+  get ready() {
+    return !this.contextLost
   }
 
   #initPrograms() {

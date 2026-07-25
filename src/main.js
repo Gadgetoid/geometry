@@ -88,7 +88,10 @@ function loop(timestamp) {
     dt = 0.05
   } // clamp so a stalled tab doesn't teleport everything
   game.advance(dt)
-  view.render(game)
+  // the simulation still runs while a lost GPU context is being restored
+  if (renderer.ready) {
+    view.render(game)
+  }
   requestAnimationFrame(loop)
 }
 requestAnimationFrame(loop)
