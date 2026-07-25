@@ -19,12 +19,12 @@ import {
   dot,
   pointInPolygon,
   convexHull,
+  convexPartition,
   polygonArea,
   polygonCentroid,
   boundingRadius,
   perpendicular,
   slicePolygon,
-  circlePolygonContact,
   convexContact,
   supportDistance,
 } from "./math.js"
@@ -46,7 +46,138 @@ import { Sound } from "./audio.js"
 import { PALETTE } from "./palette.js"
 
 const SINGLE_BEAM_OFFSETS = [0] // the player's laser without the multi powerup
-const CUT_EDGE_TOLERANCE = 0.5 // world units, for spotting vertices left on the cut line
+
+// Mass a rock's area implies, in the same units as a ship type's `mass`.
+export function rockMass(area) {
+  return clamp(area / CONFIG.AST_MASS_AREA, CONFIG.AST_MASS_RANGE[0], CONFIG.AST_MASS_RANGE[1])
+}
+
+// Contact between two bodies, each given as a list of convex parts that tile its
+// real outline. Callers reject on the enclosing circles first. Returns the push
+// `b` must take (and `a` resist), or null when they are apart.
+//
+// The two halves of the answer are measured differently, and both matter:
+//
+// Whether they touch at all is decided part against part, which is exact for any
+// outline. A separating-axis test on a concave outline reports a contact across
+// its notch, which is what a plain SAT call on a cut hull would do.
+//
+// How far to push is then measured over each body as a whole: for a candidate
+// axis, how far must b travel along it before it clears every part of a. The
+// axis needing least travel wins, so the result is the smallest push that
+// separates the bodies completely. Answering with one part pair's own push
+// instead is wrong either way round - the shallowest pair stops as soon as it
+// alone is clear and leaves the others interpenetrating, while the deepest pair
+// names the one axis that is worst to push along.
+export function bodyContact(partsA, centreA, partsB, centreB) {
+  let touching = false
+  for (const a of partsA) {
+    for (const b of partsB) {
+      if (convexContact(a, b, centreA, centreB)) {
+        touching = true
+        break
+      }
+    }
+    if (touching) {
+      break
+    }
+  }
+  if (!touching) {
+    return null
+  }
+  // Axes are oriented from a toward b up front, so an overlap has one meaning:
+  // how far b must travel along it to clear a.
+  const toBx = centreB.x - centreA.x,
+    toBy = centreB.y - centreA.y
+  let bestDepth = Infinity,
+    bestX = 0,
+    bestY = 0
+  for (const parts of [partsA, partsB]) {
+    for (const poly of parts) {
+      for (let i = 0; i < poly.length; i++) {
+        const p = poly[i],
+          q = poly[(i + 1) % poly.length]
+        let nx = -(q.y - p.y),
+          ny = q.x - p.x
+        const len = Math.hypot(nx, ny)
+        if (len < 1e-9) {
+          continue
+        }
+        nx /= len
+        ny /= len
+        if (toBx * nx + toBy * ny < 0) {
+          nx = -nx
+          ny = -ny
+        }
+        let aMax = -Infinity,
+          bMin = Infinity
+        for (const part of partsA) {
+          for (const v of part) {
+            const d = v.x * nx + v.y * ny
+            if (d > aMax) {
+              aMax = d
+            }
+          }
+        }
+        for (const part of partsB) {
+          for (const v of part) {
+            const d = v.x * nx + v.y * ny
+            if (d < bMin) {
+              bMin = d
+            }
+          }
+        }
+        const depth = aMax - bMin
+        if (depth > 0 && depth < bestDepth) {
+          bestDepth = depth
+          bestX = nx
+          bestY = ny
+        }
+      }
+    }
+  }
+  if (bestDepth === Infinity) {
+    return null
+  }
+  return { nx: bestX, ny: bestY, depth: bestDepth }
+}
+
+// Hull against hull. Ships are solid to each other as well as to rocks, so a
+// frigate cannot be flown through and two rivals cannot occupy the same space.
+// Each is pushed apart in inverse proportion to its mass and the closing speed
+// is reflected, so a scout bounces off a frigate and barely moves it. Returns
+// the closing speed, or a token positive value when they touch without closing,
+// so a caller can tell contact from clear air; 0 means apart.
+export function resolveShipPair(a, b) {
+  const dx = b.x - a.x,
+    dy = b.y - a.y
+  const reach = a.boundRadius + b.boundRadius
+  if (dx * dx + dy * dy >= reach * reach) {
+    return 0
+  }
+  const contact = bodyContact(a.collisionOutline(), a, b.collisionOutline(), b)
+  if (!contact) {
+    return 0
+  }
+  const ux = contact.nx,
+    uy = contact.ny
+  const total = a.mass + b.mass
+  const push = Math.max(0, contact.depth - CONFIG.CONTACT_SLOP)
+  a.x -= ux * push * (b.mass / total)
+  a.y -= uy * push * (b.mass / total)
+  b.x += ux * push * (a.mass / total)
+  b.y += uy * push * (a.mass / total)
+  const vn = (b.vx - a.vx) * ux + (b.vy - a.vy) * uy
+  if (vn >= 0) {
+    return Number.MIN_VALUE // touching, but already separating
+  }
+  const j = (-(1 + CONFIG.SHIP_RESTITUTION) * vn) / (1 / a.mass + 1 / b.mass)
+  a.vx -= (j * ux) / a.mass
+  a.vy -= (j * uy) / a.mass
+  b.vx += (j * ux) / b.mass
+  b.vy += (j * uy) / b.mass
+  return -vn
+}
 
 // ---------------------------------------------------------------------------
 // Base entity: position, velocity, energy pool, hardpoints, uniform damage.
@@ -465,11 +596,14 @@ export class Projectile extends Entity {
       this.dead = true
       return
     }
+    // The player is hit against its outline, as every other ship is: a circle
+    // of `radius` is twice the hull's area and still leaves the nose outside it.
     const player = game.player
     if (
       player &&
       this.owner !== player &&
-      Math.hypot(this.x - player.x, this.y - player.y) < player.radius + 3
+      this.#withinRadius(player.x, player.y, player.boundRadius) &&
+      pointInPolygon(this, player.worldOutline())
     ) {
       this.dead = true
       game.burst(this.x, this.y, 8, PALETTE.weapon.bulletImpact, 40, 140, 0.4)
@@ -536,10 +670,10 @@ export class Ship extends Entity {
   }
 
   // Set the hull outline, the bounding circle broadphase tests use, and the
-  // convex proxy contacts are solved against. Both hulls are concave (the scout
-  // is a dart, the frigate has a waist) and a separating-axis test needs convex
-  // shapes, so collision uses their convex hull: the frigate keeps its length,
-  // which a single circle could never represent.
+  // convex parts contacts are solved against. Every hull here is concave (the
+  // player and the scout are darts with a notched tail, the frigate has a
+  // waist), so the outline is partitioned into convex parts that tile it
+  // exactly. Contacts then match the hull that is drawn, at any angle.
   setOutline(outlineLocal, size) {
     this.outlineLocal = outlineLocal
     this.size = size
@@ -548,17 +682,18 @@ export class Ship extends Entity {
       furthest = Math.max(furthest, Math.hypot(p[0], p[1]))
     }
     this.boundRadius = furthest * size
-    this.collisionLocal = convexHull(outlineLocal.map(([x, y]) => ({ x, y })))
+    this.collisionParts = convexPartition(outlineLocal.map(([x, y]) => ({ x, y })))
   }
 
-  // The convex collision proxy in world space.
+  // The hull in world space as convex parts, for bodyContact.
   collisionOutline() {
-    const c = Math.cos(this.angle),
-      s = Math.sin(this.angle)
-    return this.collisionLocal.map((p) => ({
-      x: this.x + (p.x * c - p.y * s) * this.size,
-      y: this.y + (p.x * s + p.y * c) * this.size,
-    }))
+    const world = this.worldOutline()
+    return this.collisionParts.map((part) => part.map((i) => world[i]))
+  }
+
+  // Mass for collision response, in the same units as a rock's.
+  get mass() {
+    return this.type.mass ?? 1
   }
 
   buildHardpoints(list) {
@@ -1024,78 +1159,106 @@ export class PlayerShip extends Ship {
       }
     }
 
-    // Asteroid collision: reject on the rock's enclosing circle, then solve
-    // against its actual outline, so the ship touches the hull it can see and
-    // not a circle around a long thin chunk. It is pushed out to the surface
-    // and its inward velocity reflected, so it glances off rather than
-    // tunnelling through. Momentum transfers to the rock; contact grinds energy.
-    for (const asteroid of game.asteroids) {
-      if (!this.solid) {
-        break // mid-warp the ship is not really here yet
-      }
-      const dx = this.x - asteroid.center.x,
-        dy = this.y - asteroid.center.y
-      const reach = asteroid.boundRadius + this.radius
-      if (dx * dx + dy * dy >= reach * reach) {
-        continue
-      }
-      const contact = circlePolygonContact(this.x, this.y, this.radius, asteroid.vertices)
-      if (!contact) {
-        continue
-      }
-      const ux = contact.nx,
-        uy = contact.ny
-      this.x += ux * contact.depth
-      this.y += uy * contact.depth
+    this.#hitRocks(dt, game)
+  }
 
-      // The bounce is against the rock's surface as it is actually moving, not
-      // against a stationary obstacle: a rock that drifts or spins into a still
-      // ship must carry it away. Judging the approach by the ship's own
-      // velocity alone left it embedded, grinding its energy away every frame.
-      const impact = { x: this.x - ux * this.radius, y: this.y - uy * this.radius }
-      const leverX = impact.x - asteroid.center.x,
-        leverY = impact.y - asteroid.center.y
-      const surfaceVx = asteroid.vx - asteroid.spin * leverY,
-        surfaceVy = asteroid.vy + asteroid.spin * leverX
-      const vn = (this.vx - surfaceVx) * ux + (this.vy - surfaceVy) * uy
-      const closingSpeed = Math.max(0, -vn)
-      if (vn < 0) {
-        const rockMass = clamp(asteroid.area / CONFIG.AST_MASS_AREA, 0.4, 4)
-        // a rock resists a shove off its centre less the further out it lands
-        const inertia = 0.5 * rockMass * Math.max(asteroid.boundRadius, 1) ** 2
-        const lever = leverX * uy - leverY * ux
-        const share = 1 + 1 / rockMass + (lever * lever) / inertia
-        const j = (-(1 + CONFIG.ROCK_RESTITUTION) * vn) / share
-        this.vx += j * ux
-        this.vy += j * uy
-        asteroid.vx -= (j * ux) / rockMass
-        asteroid.vy -= (j * uy) / rockMass
-        asteroid.spin -= (leverX * j * uy - leverY * j * ux) / inertia
-        if (-vn > 45 && this.impactSfx <= 0) {
-          Sound.bump() // knock on contact with a rock
-          this.impactSfx = 0.15
-        }
-      }
-      if (this.invincible <= 0 && this.buffTime("booster") <= 0) {
-        game.screenShake = Math.max(game.screenShake, 3)
-        if (this.fxCooldown <= 0) {
-          game.burst(this.x, this.y, 4, PALETTE.player.lowEnergy, 30, 90, 0.35)
-        }
-        // A steady grind for as long as contact lasts, plus a knock scaled to
-        // how hard it landed. Contact is a frame or two now that the bounce
-        // works, so without the second term a full-speed ram would cost the
-        // same as brushing past.
-        const grind = CONFIG.DMG_AST_GUN * dt * CONFIG.ROCK_GRIND_DAMAGE
-        let slam = 0
-        if (closingSpeed > 0 && this.slamCooldown <= 0) {
-          slam = closingSpeed * CONFIG.ROCK_IMPACT_DAMAGE
-          this.slamCooldown = CONFIG.ROCK_IMPACT_COOLDOWN
-        }
-        // flash the shield on the side facing the rock
-        this.takeDamage(grind + slam, game, "projectile", 0, impact)
-      }
-      break
+  // Asteroid collision: reject on the rock's enclosing circle, then solve the
+  // hull against the rock's real outline, both as convex parts, so the ship
+  // touches what it can see. It is pushed out to the surface and its inward
+  // velocity reflected, so it glances off rather than tunnelling through.
+  // Momentum transfers to the rock; contact grinds energy.
+  //
+  // Every touching rock is resolved, and the sweep repeats, so a ship shoved
+  // into a corner is separated from both rocks instead of being pushed out of
+  // one and back into the other. Damage is charged once per frame however many
+  // rocks are touching, so a corner is not doubly punishing.
+  #hitRocks(dt, game) {
+    if (!this.solid) {
+      return // mid-warp the ship is not really here yet
     }
+    let worstImpact = null
+    let closingSpeed = 0
+    let touching = false
+    for (let sweep = 0; sweep < CONFIG.CONTACT_ITERATIONS; sweep++) {
+      let moved = false
+      for (const asteroid of game.asteroids) {
+        const dx = this.x - asteroid.center.x,
+          dy = this.y - asteroid.center.y
+        const reach = asteroid.boundRadius + this.boundRadius
+        if (dx * dx + dy * dy >= reach * reach) {
+          continue
+        }
+        const contact = bodyContact(
+          asteroid.convexParts(),
+          asteroid.center,
+          this.collisionOutline(),
+          this,
+        )
+        if (!contact) {
+          continue
+        }
+        touching = true
+        moved = true
+        const ux = contact.nx,
+          uy = contact.ny
+        this.x += ux * contact.depth
+        this.y += uy * contact.depth
+
+        // The bounce is against the rock's surface as it is actually moving, not
+        // against a stationary obstacle: a rock that drifts or spins into a still
+        // ship must carry it away. Judging the approach by the ship's own
+        // velocity alone left it embedded, grinding its energy away every frame.
+        const impact = { x: this.x - ux * this.radius, y: this.y - uy * this.radius }
+        const leverX = impact.x - asteroid.center.x,
+          leverY = impact.y - asteroid.center.y
+        const surfaceVx = asteroid.vx - asteroid.spin * leverY,
+          surfaceVy = asteroid.vy + asteroid.spin * leverX
+        const vn = (this.vx - surfaceVx) * ux + (this.vy - surfaceVy) * uy
+        if (vn < 0) {
+          closingSpeed = Math.max(closingSpeed, -vn)
+          worstImpact = impact
+          const mass = rockMass(asteroid.area)
+          // a rock resists a shove off its centre less the further out it lands
+          const inertia = 0.5 * mass * Math.max(asteroid.boundRadius, 1) ** 2
+          const lever = leverX * uy - leverY * ux
+          const share = this.mass + 1 / mass + (lever * lever) / inertia
+          const j = (-(1 + CONFIG.ROCK_RESTITUTION) * vn) / share
+          this.vx += (j * ux) / this.mass
+          this.vy += (j * uy) / this.mass
+          asteroid.vx -= (j * ux) / mass
+          asteroid.vy -= (j * uy) / mass
+          asteroid.spin -= (leverX * j * uy - leverY * j * ux) / inertia
+          if (-vn > 45 && this.impactSfx <= 0) {
+            Sound.bump() // knock on contact with a rock
+            this.impactSfx = 0.15
+          }
+        } else if (!worstImpact) {
+          worstImpact = impact
+        }
+      }
+      if (!moved) {
+        break
+      }
+    }
+    if (!touching || this.invincible > 0 || this.buffField("collisionImmune", false)) {
+      return
+    }
+    game.screenShake = Math.max(game.screenShake, 3)
+    if (this.fxCooldown <= 0) {
+      game.burst(this.x, this.y, 4, PALETTE.player.lowEnergy, 30, 90, 0.35)
+    }
+    // A steady grind for as long as contact lasts, plus a knock scaled to how
+    // hard it landed. Contact is a frame or two now that the bounce works, so
+    // without the second term a full-speed ram would cost the same as brushing
+    // past.
+    const grind = CONFIG.DMG_AST_GUN * dt * CONFIG.ROCK_GRIND_DAMAGE
+    let slam = 0
+    if (closingSpeed > 0 && this.slamCooldown <= 0) {
+      slam = closingSpeed * CONFIG.ROCK_IMPACT_DAMAGE
+      this.slamCooldown = CONFIG.ROCK_IMPACT_COOLDOWN
+    }
+    // flash the shield on the side facing the rock
+    this.takeDamage(grind + slam, game, "projectile", 0, worstImpact)
   }
 
   // Materialising or dissolving: a portal pulses at the arrival point, then the
@@ -1355,10 +1518,9 @@ export class RivalShip extends Ship {
   }
 
   // Rivals are solid: they shoulder rocks aside instead of flying through them.
-  // Contact is against the rock's outline and the ship's convex proxy, so a
-  // frigate's length is respected rather than a circle around it.
+  // Contact is the rock's outline against the ship's, both as convex parts, so
+  // a frigate's length and waist are respected.
   #bounceOffRocks(game) {
-    let hull = null
     for (const asteroid of game.asteroids) {
       const dx = this.x - asteroid.center.x,
         dy = this.y - asteroid.center.y
@@ -1366,8 +1528,12 @@ export class RivalShip extends Ship {
       if (dx * dx + dy * dy >= reach * reach) {
         continue
       }
-      hull = hull || this.collisionOutline()
-      const contact = convexContact(asteroid.vertices, hull, asteroid.center, this)
+      const contact = bodyContact(
+        asteroid.convexParts(),
+        asteroid.center,
+        this.collisionOutline(),
+        this,
+      )
       if (!contact) {
         continue
       }
@@ -1375,20 +1541,22 @@ export class RivalShip extends Ship {
         uy = contact.ny
       this.x += ux * contact.depth
       this.y += uy * contact.depth
-      hull = null // the ship moved, so the cached proxy is stale
-      // approach measured against the rock's surface, spin included, as for the player
-      const surfaceVx = asteroid.vx - asteroid.spin * dy,
-        surfaceVy = asteroid.vy + asteroid.spin * dx
+      // approach measured at the contact against the rock's moving surface,
+      // spin included, as for the player
+      const impactX = this.x - ux * this.boundRadius - asteroid.center.x,
+        impactY = this.y - uy * this.boundRadius - asteroid.center.y
+      const surfaceVx = asteroid.vx - asteroid.spin * impactY,
+        surfaceVy = asteroid.vy + asteroid.spin * impactX
       const vn = (this.vx - surfaceVx) * ux + (this.vy - surfaceVy) * uy
       if (vn >= 0) {
         continue
       }
-      const rockMass = clamp(asteroid.area / CONFIG.AST_MASS_AREA, 0.4, 4)
-      const j = (-(1 + CONFIG.ROCK_RESTITUTION) * vn) / (1 + 1 / rockMass)
-      this.vx += j * ux
-      this.vy += j * uy
-      asteroid.vx -= (j * ux) / rockMass
-      asteroid.vy -= (j * uy) / rockMass
+      const mass = rockMass(asteroid.area)
+      const j = (-(1 + CONFIG.ROCK_RESTITUTION) * vn) / (this.mass + 1 / mass)
+      this.vx += (j * ux) / this.mass
+      this.vy += (j * uy) / this.mass
+      asteroid.vx -= (j * ux) / mass
+      asteroid.vy -= (j * uy) / mass
     }
   }
 
@@ -1534,11 +1702,29 @@ export class Asteroid extends Entity {
     this.y = this.center.y
   }
 
+  // Mass for collision response, in the same units as a ship type's.
+  get mass() {
+    return rockMass(this.area)
+  }
+
+  // The outline as convex parts, for bodyContact. A whole rock is a convex hull
+  // by construction and needs no splitting, but a piece cut from a ship carries
+  // the hull's concavity, and a separating-axis test on a concave shape reports
+  // contacts across the notch. The partition is by vertex index, so it survives
+  // the piece drifting and spinning and is only rebuilt when a cut makes a new
+  // outline.
+  convexParts() {
+    if (!this.parts) {
+      this.parts = convexPartition(this.vertices)
+    }
+    return this.parts.map((part) => part.map((i) => this.vertices[i]))
+  }
+
   // Edges with both ends sitting on the given line: the faces a cut opened up,
   // as opposed to the piece's share of the original hull.
   #facesOnLine(point, normal) {
     const onLine = (p) =>
-      Math.abs((p.x - point.x) * normal.x + (p.y - point.y) * normal.y) < CUT_EDGE_TOLERANCE
+      Math.abs((p.x - point.x) * normal.x + (p.y - point.y) * normal.y) < CONFIG.CUT_EDGE_TOLERANCE
     const edges = []
     for (let i = 0; i < this.vertices.length; i++) {
       const j = (i + 1) % this.vertices.length

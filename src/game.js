@@ -30,14 +30,21 @@ import {
   polygonArea,
   pointInPolygon,
   countBeamCrossings,
-  convexContact,
   segmentPolygonEntry,
 } from "./math.js"
 import { Sound } from "./audio.js"
 import { PALETTE } from "./palette.js"
 import { Backdrop } from "./background.js"
 import { loadBest, saveBest } from "./persistence.js"
-import { Asteroid, Ore, Powerup, PlayerShip, RivalShip } from "./entities.js"
+import {
+  Asteroid,
+  Ore,
+  Powerup,
+  PlayerShip,
+  RivalShip,
+  bodyContact,
+  resolveShipPair,
+} from "./entities.js"
 
 const PARTICLE_LIFE = 5 // global lifetime multiplier
 const PARTICLE_DRAG = 0.4 // velocity retained per second
@@ -856,6 +863,7 @@ export class Game {
     for (const rival of this.rivals) {
       rival.update(dt, this)
     }
+    this.resolveShipCollisions()
     this.rivals = this.rivals.filter((r) => !r.dead)
     this.updateParticles(dt)
     for (let i = this.laserShots.length - 1; i >= 0; i--) {
@@ -911,52 +919,118 @@ export class Game {
   }
 
   // Rock against rock: reject on the enclosing circles, then solve the real
-  // outlines. Overlap is eased out over a few frames rather than corrected in
-  // one step, so a contact settles instead of flicking apart, and a small slop
-  // is tolerated so resting rocks do not jitter against each other.
+  // outlines as convex parts. Overlap is eased out over a few frames rather
+  // than corrected in one step, so a contact settles instead of flicking apart,
+  // and a small slop is tolerated so resting rocks do not jitter.
+  //
+  // The response is mass-weighted from each rock's area and uses
+  // ROCK_RESTITUTION, so a boulder shrugs off a chip instead of swapping
+  // velocities with it, and a pair settles instead of bouncing forever.
+  // Several sweeps run per frame, so a rock wedged between two others is
+  // separated from both.
   resolveAsteroidCollisions() {
     const list = this.asteroids
-    for (let i = 0; i < list.length; i++) {
-      for (let j = i + 1; j < list.length; j++) {
-        const a = list[i],
-          b = list[j]
-        const dx = b.center.x - a.center.x,
-          dy = b.center.y - a.center.y
-        const reach = a.boundRadius + b.boundRadius
-        if (dx * dx + dy * dy >= reach * reach) {
-          continue
-        }
-        const contact = convexContact(a.vertices, b.vertices, a.center, b.center)
-        if (!contact) {
-          continue
-        }
-        const ux = contact.nx,
-          uy = contact.ny
-        const push = Math.max(0, contact.depth - CONFIG.CONTACT_SLOP) * CONFIG.CONTACT_BIAS * 0.5
-        if (push > 0) {
-          a.translate(-ux * push, -uy * push)
-          b.translate(ux * push, uy * push)
-        }
-        const relativeNormalVel = (b.vx - a.vx) * ux + (b.vy - a.vy) * uy
-        if (relativeNormalVel < 0) {
-          a.vx += ux * relativeNormalVel
-          a.vy += uy * relativeNormalVel
-          b.vx -= ux * relativeNormalVel
-          b.vy -= uy * relativeNormalVel
-          if (Math.abs(relativeNormalVel) > 60) {
-            this.burst(
-              (a.center.x + b.center.x) / 2,
-              (a.center.y + b.center.y) / 2,
-              3,
-              PALETTE.rock.impact,
-              30,
-              90,
-              0.3,
-            )
+    for (let sweep = 0; sweep < CONFIG.CONTACT_ITERATIONS; sweep++) {
+      let touched = false
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          if (this.#resolveRockPair(list[i], list[j], sweep === 0)) {
+            touched = true
           }
         }
       }
+      if (!touched) {
+        return
+      }
     }
+  }
+
+  // One rock pair. `spark` gates the impact effect to the first sweep, so a
+  // contact does not emit particles once per iteration.
+  #resolveRockPair(a, b, spark) {
+    const dx = b.center.x - a.center.x,
+      dy = b.center.y - a.center.y
+    const reach = a.boundRadius + b.boundRadius
+    if (dx * dx + dy * dy >= reach * reach) {
+      return false
+    }
+    const contact = bodyContact(a.convexParts(), a.center, b.convexParts(), b.center)
+    if (!contact) {
+      return false
+    }
+    const ux = contact.nx,
+      uy = contact.ny
+    const massA = a.mass,
+      massB = b.mass
+    const total = massA + massB
+    const push = Math.max(0, contact.depth - CONFIG.CONTACT_SLOP) * CONFIG.CONTACT_BIAS
+    if (push > 0) {
+      // the lighter rock gives way, in inverse proportion to mass
+      a.translate((-ux * push * massB) / total, (-uy * push * massB) / total)
+      b.translate((ux * push * massA) / total, (uy * push * massA) / total)
+    }
+    const closing = (b.vx - a.vx) * ux + (b.vy - a.vy) * uy
+    if (closing < 0) {
+      const j = (-(1 + CONFIG.ROCK_RESTITUTION) * closing) / (1 / massA + 1 / massB)
+      a.vx -= (j * ux) / massA
+      a.vy -= (j * uy) / massA
+      b.vx += (j * ux) / massB
+      b.vy += (j * uy) / massB
+      if (spark && -closing > 60) {
+        this.burst(
+          (a.center.x + b.center.x) / 2,
+          (a.center.y + b.center.y) / 2,
+          3,
+          PALETTE.rock.impact,
+          30,
+          90,
+          0.3,
+        )
+      }
+    }
+    return true
+  }
+
+  // Hull against hull: every ship pair, the player included. Without this a
+  // rival could be flown straight through, and two rivals could sit inside one
+  // another indefinitely.
+  resolveShipCollisions() {
+    const ships = this.player && this.player.solid ? [this.player, ...this.rivals] : this.rivals
+    for (let sweep = 0; sweep < CONFIG.CONTACT_ITERATIONS; sweep++) {
+      if (!this.#shipSweep(ships, sweep === 0)) {
+        return
+      }
+    }
+  }
+
+  // One pass over every ship pair. `spark` gates the impact effect to the first
+  // sweep so a contact does not flare once per iteration.
+  #shipSweep(ships, spark) {
+    let touched = false
+    for (let i = 0; i < ships.length; i++) {
+      for (let j = i + 1; j < ships.length; j++) {
+        if (ships[i].dead || ships[j].dead) {
+          continue
+        }
+        const closing = resolveShipPair(ships[i], ships[j])
+        if (closing > 0) {
+          touched = true
+        }
+        if (spark && closing > 60) {
+          this.burst(
+            (ships[i].x + ships[j].x) / 2,
+            (ships[i].y + ships[j].y) / 2,
+            4,
+            PALETTE.rival.hullSpark,
+            30,
+            110,
+            0.3,
+          )
+          this.screenShake = Math.max(this.screenShake, 4)
+        }
+      }
+    }
+    return touched
   }
 
   // ---- input -----------------------------------------------------------
