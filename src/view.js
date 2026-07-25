@@ -798,12 +798,105 @@ export class GameView {
     }
   }
 
+  // One menu row: its name on the left and, on the right, either what it is set to,
+  // what it is waiting for, or the question it is asking.
+  #menuRow(game, row, selected, x0, x1, y, size) {
+    const r = this.renderer
+    const asking = game.pauseConfirming === row.name
+    const waiting = row.waiting ? row.waiting() : null
+    if (selected) {
+      r.rect(x0 - 12, y - 14, x1 - x0 + 26, size + 12, {
+        fill: asking || waiting ? "rgba(255,91,91,.16)" : "rgba(95,215,255,.12)",
+      })
+    }
+    r.text(`${selected ? "> " : "  "}${row.name}`, x0, y, {
+      size,
+      bold: selected,
+      color: asking ? PALETTE.ui.warn : selected ? PALETTE.text.bright : PALETTE.text.normal,
+    })
+    const value = asking ? row.confirm : waiting || (row.value ? row.value(game) : "")
+    if (value) {
+      r.text(value, x1, y, {
+        size: size - 1,
+        color: asking || waiting ? PALETTE.ui.warn : PALETTE.fx.flash,
+        align: "right",
+      })
+    }
+    return asking || waiting
+  }
+
+  // The control bindings, one column per device. There are twenty of them, which is
+  // more than fits down one side, and a column per device is the grouping a player
+  // wants anyway. The cursor still runs through the rows in order, so it moves down
+  // the keyboard column and on into the gamepad one.
+  #controls(game, rows) {
+    const r = this.renderer
+    const columns = []
+    rows.forEach((row, index) => {
+      const key = row.section || ""
+      let column = columns.find((c) => c.section === key)
+      if (!column) {
+        column = { section: key, rows: [] }
+        columns.push(column)
+      }
+      column.rows.push({ row, index })
+    })
+    // the unsectioned rows (reset, back) sit under the columns rather than beside
+    const sectioned = columns.filter((c) => c.section)
+    const loose = columns.filter((c) => !c.section).flatMap((c) => c.rows)
+
+    const top = 150
+    const rowHeight = 24
+    const width = 300
+    const gap = 60
+    const totalWidth = sectioned.length * width + (sectioned.length - 1) * gap
+    let deepest = top
+    sectioned.forEach((column, columnIndex) => {
+      const x0 = VIEW_W / 2 - totalWidth / 2 + columnIndex * (width + gap)
+      const x1 = x0 + width
+      r.text(column.section, x0 + width / 2, top - 16, {
+        size: 13,
+        bold: true,
+        color: PALETTE.ui.accent,
+        align: "center",
+        glow: 8,
+      })
+      r.line(x0 - 6, top - 8, x1 + 6, top - 8, {
+        color: PALETTE.ui.accent,
+        width: 1.2,
+        glow: 6,
+        alpha: 0.7,
+      })
+      column.rows.forEach(({ row, index }, rowIndex) => {
+        const y = top + 8 + rowIndex * rowHeight
+        this.#menuRow(game, row, game.pauseSelection === index, x0, x1, y, 12)
+        deepest = Math.max(deepest, y)
+      })
+    })
+
+    let y = deepest + 40
+    for (const { row, index } of loose) {
+      this.#menuRow(
+        game,
+        row,
+        game.pauseSelection === index,
+        VIEW_W / 2 - 150,
+        VIEW_W / 2 + 150,
+        y,
+        14,
+      )
+      y += 30
+    }
+    return y
+  }
+
   // Pause doubles as the settings menu, laid out like the shop so the two read the
   // same way. A row wanting confirmation says so in place of its value.
   #paused(game) {
     const r = this.renderer
     r.rect(0, 0, VIEW_W, VIEW_H, { fill: "rgba(2,4,10,.72)" })
-    r.text("PAUSED", VIEW_W / 2, 92, {
+    const onControls = game.pausePage === "controls"
+    r.text(onControls ? "CONTROLS" : "PAUSED", VIEW_W / 2, 92, {
       size: 34,
       bold: true,
       color: PALETTE.text.bright,
@@ -812,6 +905,22 @@ export class GameView {
     })
 
     const rows = game.pauseMenu()
+    if (onControls) {
+      const hintY = this.#controls(game, rows) + 6
+      r.text(
+        game.rebinding
+          ? this.#prompt(game, "ESC cancels", "BACK cancels")
+          : this.#prompt(
+              game,
+              "UP / DOWN select    ENTER rebind    ESC back    P, ENTER and ESC cannot be bound",
+              "DPAD select    A rebind    BACK back    the menu controls cannot be bound",
+            ),
+        VIEW_W / 2,
+        hintY,
+        { size: 11, color: game.rebinding ? PALETTE.ui.warn : PALETTE.text.muted, align: "center" },
+      )
+      return
+    }
     const leftX = VIEW_W / 2 - 190,
       rightX = VIEW_W / 2 + 190,
       top = 168,
@@ -820,25 +929,7 @@ export class GameView {
       const row = rows[i],
         y = top + i * rowHeight
       const selected = game.pauseSelection === i
-      const asking = game.pauseConfirming === row.name
-      if (selected) {
-        r.rect(leftX - 16, y - 18, rightX - leftX + 32, rowHeight - 4, {
-          fill: asking ? "rgba(255,91,91,.16)" : "rgba(95,215,255,.12)",
-        })
-      }
-      r.text(`${selected ? "> " : "  "}${row.name}`, leftX, y, {
-        size: 15,
-        bold: selected,
-        color: asking ? PALETTE.ui.warn : selected ? PALETTE.text.bright : PALETTE.text.normal,
-      })
-      const value = asking ? row.confirm : row.value ? row.value(game) : ""
-      if (value) {
-        r.text(value, rightX, y, {
-          size: 14,
-          color: asking ? PALETTE.ui.warn : PALETTE.fx.flash,
-          align: "right",
-        })
-      }
+      const asking = this.#menuRow(game, row, selected, leftX, rightX, y, 15)
       // a scale gets arrows, so it is clear it is adjusted rather than pressed
       if (selected && row.adjust && !asking) {
         r.text("<", leftX + 244, y, { size: 13, color: PALETTE.text.muted })

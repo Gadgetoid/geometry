@@ -1339,12 +1339,17 @@ export class Game {
   // well. A row that refuses an input keeps waiting rather than binding nothing.
   captureBinding(device, input) {
     const pending = this.rebinding
-    if (!pending || pending.device !== device) {
+    if (!pending) {
       return false
     }
+    // ESCAPE abandons a wait on either device, since a keyboard is always to hand
+    // and a pad has no obvious cancel of its own beyond BACK.
     if (device === "keys" && input === "Escape") {
       this.rebinding = null
       return true
+    }
+    if (pending.device !== device) {
+      return false
     }
     const reserved = device === "keys" ? RESERVED_KEYS : RESERVED_BUTTONS
     if (reserved.has(input)) {
@@ -1382,7 +1387,51 @@ export class Game {
   // The pause rows that belong here. A row can rule itself out, so the menu does not
   // offer anything that would do nothing when pressed.
   pauseMenu() {
+    if (this.pausePage === "controls") {
+      return this.controlRows()
+    }
     return PAUSE_MENU.filter((row) => !row.available || row.available(this))
+  }
+
+  // Move between pages of the pause menu, landing the cursor at the top.
+  openPausePage(page) {
+    this.pausePage = page
+    this.pauseSelection = 0
+    this.pauseConfirming = null
+    this.rebinding = null
+  }
+
+  // One row per bindable control per device, each carrying its device as a section
+  // so the view can head the groups without the cursor having to land on a heading.
+  // A control with no default for a device is not offered there.
+  controlRows() {
+    const rows = []
+    for (const device of BINDING_DEVICES) {
+      for (const control of BINDABLE_CONTROLS) {
+        if (control.defaults[device.id] === undefined) {
+          continue
+        }
+        rows.push({
+          section: device.name,
+          name: control.name,
+          waiting: () =>
+            this.rebinding &&
+            this.rebinding.device === device.id &&
+            this.rebinding.action === control.id
+              ? device.prompt
+              : null,
+          value: (g) => g.bindingLabel(device.id, control.id),
+          action: (g) => g.beginRebind(device.id, control.id),
+        })
+      }
+    }
+    rows.push({
+      name: "RESET TO DEFAULTS",
+      confirm: "RESTORE EVERY CONTROL?",
+      action: (g) => g.resetBindings(),
+    })
+    rows.push({ name: "BACK", action: (g) => g.openPausePage("root") })
+    return rows
   }
 
   // Which list the cursor is in. The pause menu sits over a live sector, so it wins
@@ -1394,10 +1443,11 @@ export class Game {
     return this.phase === "shop" ? SHOP.length + 1 : 0
   }
 
-  // Move the cursor, wrapping at both ends.
+  // Move the cursor, wrapping at both ends. A row waiting for a key or button holds
+  // it still, so the input that lands is the binding and not a cursor move.
   menuMove(delta) {
     const rows = this.menuRows()
-    if (!rows) {
+    if (!rows || this.rebinding) {
       return
     }
     if (this.paused) {
@@ -1467,8 +1517,10 @@ export class Game {
       return
     }
     this.paused = !this.paused
+    this.pausePage = "root"
     this.pauseSelection = 0
     this.pauseConfirming = null
+    this.rebinding = null
     if (this.paused) {
       Sound.setThruster(false)
     }
@@ -1525,6 +1577,13 @@ export class Game {
       this.menuMove(1)
     } else if (e.code === "Enter") {
       this.menuConfirm()
+    } else if (e.code === "Escape" && this.paused) {
+      // back out one step: off a sub page, or out of the menu altogether
+      if (this.pausePage === "root") {
+        this.togglePause()
+      } else {
+        this.openPausePage("root")
+      }
     }
     if (e.code === "KeyP") {
       this.togglePause()

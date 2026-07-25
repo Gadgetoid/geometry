@@ -21,6 +21,8 @@ import {
 } from "../src/entities.js"
 import {
   ARENA,
+  BINDABLE_CONTROLS,
+  BINDING_DEVICES,
   CONFIG,
   HAZARD_TRAITS,
   PLAYER_TYPE,
@@ -1266,6 +1268,106 @@ test("a binding reads in the menu the way a player would say it", () => {
   assert.equal(game.bindingLabel("keys", "slot1"), "1 / NUM 1")
   assert.equal(game.bindingLabel("buttons", "thrust"), "BUTTON 6")
   assert.equal(game.bindingLabel("buttons", "turnLeft"), "-", "nothing bound reads as a dash")
+})
+
+test("the controls page offers every bindable control, in device sections", () => {
+  const game = liveGame()
+  game.togglePause()
+  const root = game.pauseMenu()
+  const controls = root.find((row) => row.name === "CONTROLS")
+  assert.ok(controls, "the pause menu offers a way in")
+  controls.action(game)
+  assert.equal(game.pausePage, "controls")
+  assert.equal(game.pauseSelection, 0, "and lands the cursor at the top")
+
+  const rows = game.pauseMenu()
+  const sections = [...new Set(rows.map((row) => row.section).filter(Boolean))]
+  assert.deepEqual(
+    sections,
+    BINDING_DEVICES.map((d) => d.name),
+  )
+  for (const device of BINDING_DEVICES) {
+    const offered = rows.filter((row) => row.section === device.name).map((row) => row.name)
+    const expected = BINDABLE_CONTROLS.filter((c) => c.defaults[device.id] !== undefined).map(
+      (c) => c.name,
+    )
+    assert.deepEqual(offered, expected, `${device.name} section`)
+  }
+  assert.ok(rows.some((row) => row.name === "RESET TO DEFAULTS"))
+  assert.ok(rows.some((row) => row.name === "BACK"))
+})
+
+test("BACK returns to the root page", () => {
+  const game = liveGame()
+  game.togglePause()
+  game.openPausePage("controls")
+  const back = game.pauseMenu().find((row) => row.name === "BACK")
+  back.action(game)
+  assert.equal(game.pausePage, "root")
+  assert.ok(game.pauseMenu().some((row) => row.name === "RESUME"))
+})
+
+test("choosing a control row waits for a key, and the row says so", () => {
+  const game = liveGame()
+  game.togglePause()
+  game.openPausePage("controls")
+  const row = game.pauseMenu().find((r) => r.section === "KEYBOARD" && r.name === "THRUST")
+  assert.equal(row.waiting(), null, "not waiting until it is chosen")
+  row.action(game)
+  assert.equal(row.waiting(), "PRESS A KEY")
+  // the gamepad row for the same control is not the one waiting
+  const padRow = game.pauseMenu().find((r) => r.section === "GAMEPAD" && r.name === "THRUST")
+  assert.equal(padRow.waiting(), null)
+})
+
+test("the cursor holds still while a row waits for its key", () => {
+  const game = liveGame()
+  game.togglePause()
+  game.openPausePage("controls")
+  game.pauseSelection = 3
+  game.pauseMenu()[3].action(game)
+  game.menuMove(1)
+  assert.equal(game.pauseSelection, 3, "moving is refused so the input lands on the binding")
+})
+
+test("resetting from the menu restores every control and asks first", () => {
+  const game = liveGame()
+  game.bindings.keys.thrust = ["KeyI"]
+  game.togglePause()
+  game.openPausePage("controls")
+  const rows = game.pauseMenu()
+  const reset = rows.findIndex((row) => row.name === "RESET TO DEFAULTS")
+  game.pauseSelection = reset
+  game.menuConfirm()
+  assert.equal(game.pauseConfirming, "RESET TO DEFAULTS", "it asks once")
+  assert.deepEqual(game.bindings.keys.thrust, ["KeyI"], "and changes nothing yet")
+  game.menuConfirm()
+  assert.deepEqual(game.bindings.keys.thrust, ["KeyW"], "the second press does it")
+})
+
+test("closing the pause menu leaves the controls page behind", () => {
+  const game = liveGame()
+  game.togglePause()
+  game.openPausePage("controls")
+  game.beginRebind("keys", "thrust")
+  game.togglePause() // close
+  game.togglePause() // and reopen
+  assert.equal(game.pausePage, "root", "reopens at the root")
+  assert.equal(game.rebinding, null, "with nothing left waiting")
+})
+
+test("escape backs out of the page, and cancels a wait before it does", () => {
+  const game = liveGame()
+  game.togglePause()
+  game.openPausePage("controls")
+  game.beginRebind("buttons", "thrust")
+  game.onKeyDown({ code: "Escape", preventDefault() {} })
+  assert.equal(game.rebinding, null, "the wait is abandoned")
+  assert.equal(game.pausePage, "controls", "without leaving the page")
+  game.onKeyDown({ code: "Escape", preventDefault() {} })
+  assert.equal(game.pausePage, "root", "a second press backs out")
+  game.onKeyDown({ code: "Escape", preventDefault() {} })
+  assert.equal(game.paused, false, "and a third closes the menu")
 })
 
 test("sector plans follow PROGRESSION", () => {

@@ -750,6 +750,7 @@ export function freshUpgrades() {
 //   adjust  optional (game, step) => run on LEFT / RIGHT, for anything on a scale
 //   confirm optional prompt; ENTER once asks, ENTER again does it
 //   available optional (game) => whether the row belongs here at all
+//   section optional heading this row sits under, for a page that groups them
 // Everything goes through a method on Game, so this file stays free of the audio
 // and renderer plumbing and a row cannot reach past the game's own API.
 // ---------------------------------------------------------------------------
@@ -772,6 +773,7 @@ export const PAUSE_MENU = [
     action: (g) => g.setCrt(!g.settings.crt),
     adjust: (g, step) => g.setCrt(step > 0),
   },
+  { name: "CONTROLS", value: () => ">", action: (g) => g.openPausePage("controls") },
   {
     name: "RESET PROGRESS",
     value: (g) => (g.savedRun ? `SECTOR ${g.resumeSector()}` : "-"),
