@@ -1,0 +1,2954 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GEOMETRY II - SHIP EDITOR</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+        --cyan: #5fd7ff;
+        --amber: #ffb14b;
+        --green: #57e39a;
+        --red: #ff5b5b;
+        --edge: #1c3050;
+        --panel: #070c16;
+        --text: #bcd0ee;
+        --dim: #7fa0c8;
+        --muted: #5f79a6;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: #02040a;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 12px;
+        display: grid;
+        grid-template-columns: 1fr 400px;
+        grid-template-rows: 100%;
+        overflow: hidden;
+      }
+      .stage {
+        position: relative;
+        min-width: 0;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #02040a;
+        touch-action: none;
+      }
+      .tools {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        max-width: calc(100% - 20px);
+      }
+      .status {
+        position: absolute;
+        bottom: 10px;
+        left: 12px;
+        right: 12px;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--muted);
+        pointer-events: none;
+        text-shadow: 0 0 6px #02040a;
+      }
+      .status .warn {
+        color: var(--amber);
+      }
+      button,
+      select,
+      input {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text);
+        background: rgba(10, 20, 38, 0.75);
+        border: 1px solid var(--edge);
+        border-radius: 5px;
+        padding: 5px 8px;
+        letter-spacing: 0.06em;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover,
+      select:hover {
+        color: #fff;
+        border-color: var(--cyan);
+      }
+      button[aria-pressed="true"] {
+        color: #02040a;
+        background: var(--cyan);
+        border-color: var(--cyan);
+      }
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible {
+        outline: 1px solid var(--cyan);
+        outline-offset: 1px;
+      }
+      input[type="number"],
+      input[type="text"] {
+        width: 100%;
+        padding: 4px 6px;
+      }
+      input[type="checkbox"] {
+        width: auto;
+        accent-color: var(--cyan);
+      }
+      input:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .side {
+        border-left: 1px solid var(--edge);
+        background: var(--panel);
+        overflow-y: auto;
+        padding: 10px 12px 40px;
+      }
+      h1 {
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        color: var(--cyan);
+        margin: 2px 0 10px;
+      }
+      h1 span {
+        color: var(--muted);
+        letter-spacing: 0.06em;
+      }
+      section {
+        border-top: 1px solid var(--edge);
+        padding: 10px 0;
+      }
+      h2 {
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        color: var(--dim);
+        margin: 0 0 8px;
+        font-weight: 600;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px 8px;
+      }
+      .row.one {
+        grid-template-columns: 1fr;
+      }
+      .row.three {
+        grid-template-columns: 1fr 1fr 1fr;
+      }
+      label {
+        display: block;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        margin-bottom: 2px;
+      }
+      .inline {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .inline label {
+        margin: 0;
+      }
+      .node {
+        border: 1px solid var(--edge);
+        border-radius: 6px;
+        padding: 7px;
+        margin-bottom: 6px;
+        background: rgba(10, 20, 38, 0.35);
+      }
+      .node.sel {
+        border-color: var(--cyan);
+      }
+      .node header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+        color: var(--cyan);
+        font-size: 10px;
+        letter-spacing: 0.14em;
+      }
+      .node header button {
+        padding: 2px 6px;
+        font-size: 10px;
+      }
+      .facts {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 2px 10px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .facts b {
+        color: var(--muted);
+        font-weight: 400;
+        letter-spacing: 0.06em;
+      }
+      textarea {
+        width: 100%;
+        height: 260px;
+        font-family: var(--mono);
+        font-size: 10.5px;
+        line-height: 1.5;
+        color: var(--text);
+        background: #040810;
+        border: 1px solid var(--edge);
+        border-radius: 6px;
+        padding: 8px;
+        resize: vertical;
+        white-space: pre;
+      }
+      .banner {
+        border: 1px solid var(--amber);
+        border-radius: 6px;
+        padding: 7px 9px;
+        margin-bottom: 8px;
+        color: var(--amber);
+        line-height: 1.5;
+      }
+      .banner code {
+        color: #fff;
+      }
+      .note {
+        color: var(--muted);
+        line-height: 1.6;
+        margin: 6px 0 0;
+      }
+      .bad {
+        color: var(--red);
+      }
+      .ok {
+        color: var(--green);
+      }
+      .keys {
+        color: var(--muted);
+        line-height: 1.8;
+      }
+      .keys b {
+        color: var(--dim);
+        font-weight: 400;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <canvas id="view"></canvas>
+      <div class="tools" id="tools"></div>
+      <div class="status">
+        <span id="statusLeft"></span>
+        <span id="statusRight"></span>
+      </div>
+    </div>
+
+    <div class="side">
+      <h1>SHIP EDITOR <span id="source"></span></h1>
+      <div id="banner" hidden class="banner"></div>
+
+      <section>
+        <h2>SHIP</h2>
+        <div class="row">
+          <div>
+            <label for="preset">LOAD</label>
+            <select id="preset"></select>
+          </div>
+          <div>
+            <label for="kind">TARGET</label>
+            <select id="kind">
+              <option value="rival">SHIP_DESIGNS</option>
+              <option value="player">PLAYER_DESIGN</option>
+            </select>
+          </div>
+          <div>
+            <label for="key">KEY</label>
+            <input id="key" type="text" spellcheck="false" />
+          </div>
+          <div>
+            <label for="colour">COLOUR</label>
+            <select id="colour"></select>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>VIEW</h2>
+        <div class="row">
+          <div>
+            <label for="grid">GRID (LOCAL)</label>
+            <select id="grid"></select>
+          </div>
+          <div>
+            <label for="ghost">PLAYER GHOST</label>
+            <select id="ghost">
+              <option value="origin">AT ORIGIN</option>
+              <option value="beside">BESIDE</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+          <div>
+            <label for="wheelMode">TWO FINGERS / WHEEL</label>
+            <select id="wheelMode">
+              <option value="pan">PAN, PINCH ZOOMS</option>
+              <option value="zoom">ZOOM</option>
+            </select>
+          </div>
+        </div>
+        <div class="row" style="margin-top: 6px">
+          <div class="inline">
+            <input type="checkbox" id="optSnap" checked /><label for="optSnap">SNAP</label>
+          </div>
+          <div class="inline">
+            <input type="checkbox" id="optParts" /><label for="optParts">CONVEX PARTS</label>
+          </div>
+          <div class="inline">
+            <input type="checkbox" id="optShield" checked /><label for="optShield"
+              >SHIELD / BOUNDS</label
+            >
+          </div>
+          <div class="inline">
+            <input type="checkbox" id="optPlume" checked /><label for="optPlume">PLUME</label>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>HARDPOINTS</h2>
+        <div id="hardpoints"></div>
+        <button id="addHardpoint">+ HARDPOINT</button>
+      </section>
+
+      <section id="exhaustSection">
+        <h2>EXHAUST</h2>
+        <div id="exhaustFields" class="row"></div>
+        <div id="exhaustMounts" style="margin-top: 8px"></div>
+        <button id="addMount">+ MOUNT</button>
+      </section>
+
+      <section id="statFields"></section>
+
+      <section id="derivedFields"></section>
+
+      <section>
+        <h2>GEOMETRY</h2>
+        <div class="facts" id="facts"></div>
+        <p class="note" id="warnings"></p>
+      </section>
+
+      <section>
+        <h2>CONFIG.JS SNIPPET</h2>
+        <textarea id="out" spellcheck="false"></textarea>
+        <div class="row" style="margin-top: 6px">
+          <button id="copy">COPY</button>
+          <button id="load">LOAD FROM SNIPPET</button>
+        </div>
+        <p class="note">
+          The design only, as config.js states it: the derived settings are left out unless they
+          have been overridden above. LOAD reads a pasted <code>SHIP_DESIGNS</code> entry or
+          <code>PLAYER_DESIGN</code> back in, so a ship already in config.js can be edited by
+          pasting it over the text above.
+        </p>
+      </section>
+
+      <section>
+        <h2>KEYS</h2>
+        <p class="keys">
+          <b>V</b> select / move &nbsp; <b>O</b> outline point &nbsp; <b>H</b> hardpoint &nbsp;
+          <b>E</b> exhaust &nbsp; <b>X</b> delete<br />
+          <b>DRAG</b> move node, empty space boxes a selection<br />
+          <b>TWO FINGERS</b> or <b>WHEEL</b> pan &nbsp; <b>PINCH</b> or <b>CMD</b>+wheel zoom &nbsp;
+          <b>SHIFT</b>+wheel pan sideways<br />
+          <b>MIDDLE</b> or <b>SPACE</b>+drag pan &nbsp; <b>ESC</b> clear selection<br />
+          <b>SHIFT</b> add to the selection, by click or by box: a mirror seam, or several nodes to
+          drag at once<br />
+          <b>ALT</b> ignore snap while dragging &nbsp; <b>ARROWS</b> nudge selection (SHIFT x5)<br />
+          <b>RIGHT CLICK</b> delete node &nbsp; <b>DEL</b> delete selection &nbsp;
+          <b>F</b> fit<br />
+          <b>CTRL+Z</b> / <b>CTRL+SHIFT+Z</b> undo / redo
+        </p>
+      </section>
+    </div>
+
+    <script type="module">
+      // Standalone editor for the ship definitions in src/config.js. It reads the
+      // game's own registries and geometry helpers where it can, so hull area,
+      // convex partitioning and the weapon/shield lists are the ones the game
+      // uses, and writes nothing: the output is a snippet to paste into config.js.
+      //
+      // Coordinates are the config's own: outline points, hardpoint `local` and
+      // exhaust `mounts` are in local units, multiplied by the type's `size` to
+      // reach world units, with +y downward as the game draws it.
+
+      // A snapshot, used only when the modules cannot be loaded (opening this file
+      // straight off disk without --allow-file-access-from-files). Enough to keep
+      // the editor usable; the banner says the lists may have drifted.
+      const SNAPSHOT = {
+        weapons: {
+          blaster: { kind: "projectile", colour: "#ffb14b" },
+          autocannon: { kind: "projectile", colour: "#ffb14b" },
+          minerLaser: { kind: "beam", colour: "#ffb060" },
+          cannonLaser: { kind: "beam", colour: "#ff4d6d" },
+          defenseLaser: { kind: "beam", colour: "#9ff5c8" },
+          playerLaser: { kind: "beam", colour: "#eaf4ff" },
+        },
+        shields: { standard: {}, deflector: {}, player: {} },
+        controllers: ["manual", "turret", "miner", "hunter", "defense"],
+        palette: {
+          player: { hull: "#5fd7ff" },
+          rival: { hull: "#ff9a3c", frigateHull: "#ff8a3c" },
+        },
+        shipTypes: {},
+        playerType: {
+          outline: [
+            [1.4, 0],
+            [-0.8, -0.85],
+            [-0.4, 0],
+            [-0.8, 0.85],
+          ],
+          size: 13,
+          mass: 1,
+          shieldScale: 1.9,
+          hardpoints: [
+            { local: [1.4, 0], role: "nose" },
+            { local: [0, 0], role: "core" },
+            { local: [0.2, 0], role: "aux" },
+          ],
+          loadout: [
+            { hp: 0, weapon: "playerLaser", controller: "manual" },
+            { hp: 1, shield: "player" },
+          ],
+          fittings: { turret: { hp: 2, weapon: "defenseLaser", controller: "defense" } },
+        },
+        debrisMinArea: 1650,
+      }
+
+      let live = true
+      let WEAPON_TYPES = SNAPSHOT.weapons
+      let SHIELD_TYPES = SNAPSHOT.shields
+      let CONTROLLERS = SNAPSHOT.controllers
+      let PALETTE = SNAPSHOT.palette
+      let SHIP_TYPES = SNAPSHOT.shipTypes
+      let PLAYER_TYPE = SNAPSHOT.playerType
+      let DEBRIS_MIN_AREA = SNAPSHOT.debrisMinArea
+      let convexPartition = null
+      // The game works a ship's settings out from its shape and three numbers, so
+      // the editor asks it rather than restating the relationships.
+      let deriveShipStats = null
+      let SHIP_SCALARS = null
+      const SHARED_SHAPES = []
+
+      try {
+        const [config, math, entities, palette] = await Promise.all([
+          import("./src/config.js"),
+          import("./src/math.js"),
+          import("./src/entities.js"),
+          import("./src/palette.js"),
+        ])
+        WEAPON_TYPES = config.WEAPON_TYPES
+        SHIELD_TYPES = config.SHIELD_TYPES
+        SHIP_TYPES = config.SHIP_TYPES
+        PLAYER_TYPE = config.PLAYER_TYPE
+        DEBRIS_MIN_AREA = config.CONFIG.SHIP_DEBRIS_MIN_AREA
+        CONTROLLERS = Object.keys(entities.WEAPON_CONTROLLERS)
+        PALETTE = palette.PALETTE
+        convexPartition = math.convexPartition
+        deriveShipStats = config.deriveShipStats
+        SHIP_SCALARS = config.SHIP_SCALARS
+        // Outlines config.js keeps as a named constant, so a design that still uses
+        // one is written out by its name instead of being forked into a copy.
+        for (const [name, value] of Object.entries(config)) {
+          if (name.endsWith("_SHAPE") && Array.isArray(value)) {
+            SHARED_SHAPES.push([name, value])
+          }
+        }
+      } catch (err) {
+        live = false
+        const banner = document.getElementById("banner")
+        banner.hidden = false
+        banner.innerHTML =
+          "src/config.js could not be imported, so the weapon, shield and preset lists are a " +
+          "built-in snapshot and may have drifted. Serve the folder " +
+          "(<code>python3 -m http.server</code>) or launch with " +
+          "<code>--allow-file-access-from-files</code> to read the real registries.<br />" +
+          String(err)
+      }
+      document.getElementById("source").textContent = live ? "src/config.js" : "snapshot (offline)"
+
+      // ---- geometry ---------------------------------------------------------
+
+      const ring = (points) => points.map(([x, y]) => ({ x, y }))
+
+      function polygonArea(points) {
+        let sum = 0
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i]
+          const q = points[(i + 1) % points.length]
+          sum += p[0] * q[1] - q[0] * p[1]
+        }
+        return Math.abs(sum) / 2
+      }
+
+      function centroid(points) {
+        let area = 0
+        let cx = 0
+        let cy = 0
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i]
+          const q = points[(i + 1) % points.length]
+          const w = p[0] * q[1] - q[0] * p[1]
+          area += w
+          cx += (p[0] + q[0]) * w
+          cy += (p[1] + q[1]) * w
+        }
+        if (Math.abs(area) < 1e-9) {
+          return [0, 0]
+        }
+        return [cx / (3 * area), cy / (3 * area)]
+      }
+
+      function segmentsCross(a, b, c, d) {
+        const side = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        const d1 = side(a, b, c)
+        const d2 = side(a, b, d)
+        const d3 = side(c, d, a)
+        const d4 = side(c, d, b)
+        return d1 > 0 !== d2 > 0 && d3 > 0 !== d4 > 0
+      }
+
+      // Non-adjacent edge pairs that cross. A self-intersecting outline draws and
+      // partitions badly, so it is worth naming rather than leaving to be noticed.
+      function selfIntersections(points) {
+        const n = points.length
+        let count = 0
+        for (let i = 0; i < n; i++) {
+          for (let j = i + 1; j < n; j++) {
+            if (i === j || (i + 1) % n === j || (j + 1) % n === i) {
+              continue
+            }
+            const cross = segmentsCross(
+              points[i],
+              points[(i + 1) % n],
+              points[j],
+              points[(j + 1) % n],
+            )
+            if (cross) {
+              count++
+            }
+          }
+        }
+        return count
+      }
+
+      function pointInPolygon(point, points) {
+        let inside = false
+        for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+          const a = points[i]
+          const b = points[j]
+          if (
+            a[1] > point[1] !== b[1] > point[1] &&
+            point[0] < ((b[0] - a[0]) * (point[1] - a[1])) / (b[1] - a[1]) + a[0]
+          ) {
+            inside = !inside
+          }
+        }
+        return inside
+      }
+
+      // Closest point on segment a-b to p, and how far away it is.
+      function closestOnSegment(p, a, b) {
+        const dx = b[0] - a[0]
+        const dy = b[1] - a[1]
+        const len2 = dx * dx + dy * dy
+        const t =
+          len2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0
+        const point = [a[0] + dx * t, a[1] + dy * t]
+        return { point, distance: Math.hypot(p[0] - point[0], p[1] - point[1]) }
+      }
+
+      function distanceToOutline(p, points) {
+        let best = Infinity
+        for (let i = 0; i < points.length; i++) {
+          best = Math.min(
+            best,
+            closestOnSegment(p, points[i], points[(i + 1) % points.length]).distance,
+          )
+        }
+        return best
+      }
+
+      // ---- state -----------------------------------------------------------
+
+      const ROLES = ["nose", "gun", "core", "aux"]
+      const GRID_STEPS = [0.5, 0.25, 0.2, 0.1, 0.05, 0.025, 0.01]
+
+      // The stated fields of a ship design, in the order config.js writes them, so
+      // the sidebar and the snippet are driven from one list. `kinds` says which
+      // targets carry the field: the player's design is a short one, since how it
+      // flies is CONFIG's business and not the hull's.
+      const STAT_GROUPS = [
+        {
+          title: "SHAPE AND THREE NUMBERS",
+          fields: [
+            { path: "size", label: "SIZE", step: 1 },
+            { path: "mass", label: "MASS", step: 0.1 },
+            { path: "power", label: "POWER", step: 0.1, kinds: ["rival"] },
+            { path: "armour", label: "ARMOUR", step: 0.1, kinds: ["rival"] },
+          ],
+        },
+        {
+          title: "ENERGY",
+          kinds: ["rival"],
+          fields: [
+            { path: "energyMax", label: "ENERGY MAX", step: 10 },
+            { path: "regen", label: "REGEN", step: 1 },
+          ],
+        },
+        {
+          title: "SPAWN",
+          kinds: ["rival"],
+          // How the spawner reaches a type, written where its settings are, since
+          // the two ways in are exclusive and only one design can take the second.
+          note:
+            "A rolled type is offered once FROM SECTOR is reached, at CHANCE each time a rival is " +
+            "due, up to MAX AT ONCE alive. Exactly one design is the fallback, flown in when no " +
+            "roll lands; its chance and max are never read.",
+          fields: [
+            { path: "spawn.fromSector", label: "FROM SECTOR", step: 1 },
+            {
+              path: "spawn.fallback",
+              label: "REACHED BY",
+              type: "choice",
+              options: [
+                [false, "A ROLL"],
+                [true, "BEING THE FALLBACK"],
+              ],
+            },
+            { path: "spawn.chance", label: "CHANCE", step: 0.05, rolledOnly: true },
+            { path: "spawn.maxConcurrent", label: "MAX AT ONCE", step: 1, rolledOnly: true },
+            { path: "lifeTime.0", label: "LIFETIME MIN", step: 1 },
+            { path: "lifeTime.1", label: "LIFETIME MAX", step: 1 },
+            { path: "hunts", label: "HUNTS PLAYER", type: "bool" },
+          ],
+        },
+        {
+          title: "SCORE AND DEBRIS",
+          kinds: ["rival"],
+          fields: [
+            { path: "killScore", label: "KILL SCORE", step: 10 },
+            { path: "blastScore", label: "BLAST SCORE", step: 10 },
+            { path: "oreDrop", label: "ORE DROP", step: 1 },
+            { path: "debris.particles", label: "DEBRIS BITS", step: 1 },
+            { path: "debris.speed", label: "DEBRIS SPEED", step: 10 },
+            { path: "debris.ring", label: "DEBRIS RING", step: 1 },
+            { path: "debris.shake", label: "SHAKE", step: 1 },
+          ],
+        },
+      ]
+
+      const EXHAUST_FIELDS = [
+        { path: "exhaust.rate", label: "RATE", step: 1 },
+        { path: "exhaust.speed", label: "SPEED", step: 5 },
+        { path: "exhaust.life", label: "LIFE", step: 0.02 },
+        { path: "exhaust.spread", label: "SPREAD", step: 1 },
+      ]
+
+      // What deriveShipStats works out from the shape and the three numbers. Each
+      // can be overridden, which states it on the design and keeps that value; the
+      // player's design states none of them, so only the two shape fields show.
+      const DERIVED_FIELDS = [
+        { path: "accel", label: "ACCEL", step: 1, kinds: ["rival"] },
+        { path: "maxSpeed", label: "MAX SPEED", step: 1, kinds: ["rival"] },
+        { path: "turnRate", label: "TURN RATE", step: 0.01, kinds: ["rival"] },
+        { path: "drag", label: "DRAG", step: 0.01, kinds: ["rival"] },
+        { path: "hull", label: "HULL HP", step: 10, kinds: ["rival"] },
+        { path: "rockContact", label: "ROCK CONTACT", step: 0.05, kinds: ["rival"] },
+        { path: "shieldScale", label: "SHIELD SCALE", step: 0.05 },
+        { path: "hullWidth", label: "HULL WIDTH", step: 0.1 },
+      ]
+
+      function blankShip() {
+        return {
+          kind: "rival",
+          key: "newship",
+          colour: "rival.hull",
+          outline: [
+            [1.3, 0],
+            [-0.8, -0.9],
+            [-0.45, 0],
+            [-0.8, 0.9],
+          ],
+          hardpoints: [
+            { local: [1.3, 0], role: "nose", mount: freshMount() },
+            { local: [0, 0], role: "core", mount: freshMount() },
+          ],
+          exhaust: { mounts: [[-1.1, 0]], rate: 26, speed: 55, life: 0.4, spread: 20 },
+          size: 14,
+          mass: 1,
+          power: 1,
+          armour: 1,
+          overrides: {},
+          energyMax: 90,
+          regen: 22,
+          lifeTime: [16, 26],
+          spawn: { fromSector: 4, chance: 0.3, maxConcurrent: 1, fallback: false },
+          hunts: false,
+          killScore: 400,
+          blastScore: 200,
+          oreDrop: 5,
+          debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
+        }
+      }
+
+      function freshMount() {
+        return {
+          module: "none",
+          weapon: Object.keys(WEAPON_TYPES)[0],
+          controller: CONTROLLERS.includes("turret") ? "turret" : CONTROLLERS[0],
+          shield: Object.keys(SHIELD_TYPES)[0],
+          rolled: false,
+          rollKey: "",
+          chancePerSector: 0.15,
+          chanceCap: 0.85,
+        }
+      }
+
+      // The design as config.js states it: the shape, the three numbers, and any
+      // derived field that has been overridden. This is what the snippet writes
+      // out and what the derived stats are worked out from.
+      function design(state = ship) {
+        const out = {
+          outline: state.outline.map((p) => p.slice()),
+          size: Number(state.size),
+          mass: Number(state.mass),
+        }
+        if (state.kind === "rival") {
+          out.power = Number(state.power)
+          out.armour = Number(state.armour)
+        }
+        for (const [path, value] of Object.entries(state.overrides || {})) {
+          if (value !== null && value !== undefined) {
+            out[path] = Number(value)
+          }
+        }
+        return out
+      }
+
+      // Every derived field for the design as it stands. The shape fields are
+      // worked out here because the player's hull takes those two and no more.
+      function derived(state = ship) {
+        if (!SHIP_SCALARS) {
+          return null
+        }
+        const spec = design(state)
+        const reach = spec.outline.reduce((far, [x, y]) => Math.max(far, Math.hypot(x, y)), 0)
+        const shape = {
+          shieldScale: reach * SHIP_SCALARS.shieldClearance,
+          hullWidth: SHIP_SCALARS.hullWidthBase + spec.size * SHIP_SCALARS.hullWidthPerSize,
+        }
+        if (state.kind === "player" || !deriveShipStats) {
+          return { ...shape, ...spec }
+        }
+        return deriveShipStats(spec)
+      }
+
+      // Read an existing type back into editable state, folding its loadout,
+      // `arms` and `fittings` onto the hardpoints they mount to. A type carries
+      // its derived stats as ordinary fields, so a field is taken as an override
+      // only where it differs from what the shape and the three numbers give.
+      function fromType(type, kind, key) {
+        const ship = Object.assign(blankShip(), { kind, key })
+        ship.outline = type.outline.map((p) => p.slice())
+        ship.colour = paletteNameFor(type.colour) || type.colour || "rival.hull"
+        for (const group of STAT_GROUPS) {
+          for (const field of group.fields) {
+            const value = getPath(type, field.path)
+            if (value !== undefined) {
+              setPath(ship, field.path, value)
+            }
+          }
+        }
+        ship.overrides = {}
+        const base = derived(ship)
+        for (const field of DERIVED_FIELDS) {
+          const stated = type[field.path]
+          if (stated !== undefined && base && Math.abs(stated - base[field.path]) > 1e-9) {
+            ship.overrides[field.path] = stated
+          }
+        }
+        ship.hardpoints = (type.hardpoints || []).map((hp) => ({
+          local: hp.local.slice(),
+          role: hp.role || "",
+          mount: freshMount(),
+        }))
+        const mountEntry = (entry, rollKey) => {
+          const hp = ship.hardpoints[entry.hp]
+          if (!hp) {
+            return
+          }
+          hp.mount.module = entry.weapon ? "weapon" : entry.shield ? "shield" : "none"
+          if (entry.weapon) {
+            hp.mount.weapon = entry.weapon
+            hp.mount.controller = entry.controller || hp.mount.controller
+          }
+          if (entry.shield) {
+            hp.mount.shield = entry.shield
+          }
+          if (rollKey !== undefined) {
+            hp.mount.rolled = true
+            hp.mount.rollKey = rollKey
+            hp.mount.chancePerSector = entry.chancePerSector ?? hp.mount.chancePerSector
+            hp.mount.chanceCap = entry.chanceCap ?? hp.mount.chanceCap
+          }
+        }
+        for (const entry of type.loadout || []) {
+          mountEntry(entry)
+        }
+        for (const [name, entry] of Object.entries(type.arms || type.fittings || {})) {
+          mountEntry(entry, name)
+        }
+        if (type.exhaust) {
+          ship.exhaust = {
+            mounts: type.exhaust.mounts.map((m) => m.slice()),
+            rate: type.exhaust.rate,
+            speed: type.exhaust.speed,
+            life: type.exhaust.life,
+            spread: type.exhaust.spread ?? 20,
+          }
+        }
+        return ship
+      }
+
+      function getPath(object, path) {
+        return path
+          .split(".")
+          .reduce((node, part) => (node == null ? undefined : node[part]), object)
+      }
+
+      function setPath(object, path, value) {
+        const parts = path.split(".")
+        const last = parts.pop()
+        let node = object
+        for (const part of parts) {
+          if (node[part] == null) {
+            node[part] = {}
+          }
+          node = node[part]
+        }
+        node[last] = value
+      }
+
+      // Every hex colour in PALETTE, by its dotted name, so the snippet can refer
+      // to the vocabulary instead of pasting a literal.
+      function paletteOptions(node = PALETTE, prefix = "") {
+        const out = []
+        for (const [name, value] of Object.entries(node)) {
+          const path = prefix ? `${prefix}.${name}` : name
+          if (typeof value === "string" && value.startsWith("#")) {
+            out.push(path)
+          } else if (value && typeof value === "object") {
+            out.push(...paletteOptions(value, path))
+          }
+        }
+        return out
+      }
+
+      const PALETTE_NAMES = paletteOptions()
+
+      function paletteNameFor(colour) {
+        return PALETTE_NAMES.find((name) => getPath(PALETTE, name) === colour)
+      }
+
+      function shipColour() {
+        return getPath(PALETTE, ship.colour) || ship.colour || "#5fd7ff"
+      }
+
+      let ship = blankShip()
+      // Selected nodes, most recently picked last. Shift-click adds to it, which
+      // is how the two points a mirror folds about are named.
+      let selection = []
+      const isSelected = (type, index) =>
+        selection.some((node) => node.type === type && node.index === index)
+      const selectedVertices = () =>
+        selection.filter((node) => node.type === "vertex").map((node) => node.index)
+      let tool = "select"
+      const options = {
+        snap: true,
+        grid: 0.05,
+        ghost: "origin",
+        parts: false,
+        shield: true,
+        plume: true,
+        wheel: "pan", // a trackpad's two-finger drag, and a mouse wheel with it
+      }
+      const view = { x: 0, y: 0, scale: 12 }
+      const undoStack = []
+      const redoStack = []
+
+      const STORAGE_KEY = "geometry-ship-editor"
+
+      function save() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ ship, options }))
+        } catch {
+          /* a private window without storage still edits fine */
+        }
+      }
+
+      function restore() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null")
+          if (saved && saved.ship && Array.isArray(saved.ship.outline)) {
+            ship = Object.assign(blankShip(), saved.ship)
+            Object.assign(options, saved.options || {})
+            return true
+          }
+        } catch {
+          /* fall through to a fresh ship */
+        }
+        return false
+      }
+
+      // Snapshots are taken before a gesture rather than after an edit, so an
+      // unchanged one is dropped: focusing a field and typing nothing should not
+      // cost an undo.
+      function pushUndo() {
+        const snapshot = JSON.stringify(ship)
+        if (undoStack[undoStack.length - 1] === snapshot) {
+          return
+        }
+        undoStack.push(snapshot)
+        if (undoStack.length > 100) {
+          undoStack.shift()
+        }
+        redoStack.length = 0
+      }
+
+      function undo(stack, other) {
+        if (!stack.length) {
+          return
+        }
+        other.push(JSON.stringify(ship))
+        ship = JSON.parse(stack.pop())
+        selection = []
+        rebuild()
+      }
+
+      // ---- canvas ----------------------------------------------------------
+
+      const canvas = document.getElementById("view")
+      const ctx = canvas.getContext("2d")
+
+      function resize() {
+        const dpr = window.devicePixelRatio || 1
+        canvas.width = Math.round(canvas.clientWidth * dpr)
+        canvas.height = Math.round(canvas.clientHeight * dpr)
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      }
+
+      const screenW = () => canvas.clientWidth
+      const screenH = () => canvas.clientHeight
+
+      // local units -> world units -> screen pixels
+      const worldOf = (local) => [local[0] * ship.size, local[1] * ship.size]
+      const toScreen = (world) => [
+        screenW() / 2 + (world[0] - view.x) * view.scale,
+        screenH() / 2 + (world[1] - view.y) * view.scale,
+      ]
+      const localToScreen = (local) => toScreen(worldOf(local))
+      const screenToWorld = (sx, sy) => [
+        (sx - screenW() / 2) / view.scale + view.x,
+        (sy - screenH() / 2) / view.scale + view.y,
+      ]
+      const screenToLocal = (sx, sy) => {
+        const world = screenToWorld(sx, sy)
+        return [world[0] / ship.size, world[1] / ship.size]
+      }
+
+      function snap(local, force) {
+        if (!options.snap || force) {
+          return local
+        }
+        const step = options.grid
+        return [Math.round(local[0] / step) * step, Math.round(local[1] / step) * step]
+      }
+
+      function fitView() {
+        const points = ship.outline.concat(
+          ship.hardpoints.map((hp) => hp.local),
+          ship.exhaust.mounts,
+        )
+        let reach = 1
+        for (const p of points) {
+          reach = Math.max(reach, Math.abs(p[0]), Math.abs(p[1]))
+        }
+        const world = Math.max(1, reach * ship.size * 2.6)
+        view.x = 0
+        view.y = 0
+        view.scale = Math.min(screenW(), screenH()) / world
+      }
+
+      function drawGrid() {
+        const stepWorld = options.grid * ship.size
+        const [left, top] = screenToWorld(0, 0)
+        const [right, bottom] = screenToWorld(screenW(), screenH())
+        const lines = (spacing, colour, width) => {
+          if (spacing * view.scale < 5) {
+            return
+          }
+          ctx.strokeStyle = colour
+          ctx.lineWidth = width
+          ctx.beginPath()
+          const firstX = Math.ceil(left / spacing) * spacing
+          for (let x = firstX; x <= right; x += spacing) {
+            const sx = Math.round(toScreen([x, 0])[0]) + 0.5
+            ctx.moveTo(sx, 0)
+            ctx.lineTo(sx, screenH())
+          }
+          const firstY = Math.ceil(top / spacing) * spacing
+          for (let y = firstY; y <= bottom; y += spacing) {
+            const sy = Math.round(toScreen([0, y])[1]) + 0.5
+            ctx.moveTo(0, sy)
+            ctx.lineTo(screenW(), sy)
+          }
+          ctx.stroke()
+        }
+        lines(stepWorld, "#0c1626", 1)
+        lines(ship.size, "#16273f", 1)
+
+        // the axes the local coordinates are measured from
+        ctx.strokeStyle = "#28405f"
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        const origin = toScreen([0, 0])
+        ctx.moveTo(0, Math.round(origin[1]) + 0.5)
+        ctx.lineTo(screenW(), Math.round(origin[1]) + 0.5)
+        ctx.moveTo(Math.round(origin[0]) + 0.5, 0)
+        ctx.lineTo(Math.round(origin[0]) + 0.5, screenH())
+        ctx.stroke()
+      }
+
+      function strokePath(points, colour, width, glow, dash) {
+        if (points.length < 2) {
+          return
+        }
+        ctx.save()
+        ctx.setLineDash(dash || [])
+        ctx.strokeStyle = colour
+        ctx.lineWidth = width
+        ctx.shadowBlur = glow || 0
+        ctx.shadowColor = colour
+        ctx.beginPath()
+        points.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)))
+        ctx.closePath()
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      function circle(x, y, r, { fill, stroke, width = 1, glow = 0, dash } = {}) {
+        ctx.save()
+        ctx.setLineDash(dash || [])
+        ctx.shadowBlur = glow
+        ctx.beginPath()
+        ctx.arc(x, y, Math.max(0.5, r), 0, Math.PI * 2)
+        if (fill) {
+          ctx.fillStyle = fill
+          ctx.shadowColor = fill
+          ctx.fill()
+        }
+        if (stroke) {
+          ctx.strokeStyle = stroke
+          ctx.shadowColor = stroke
+          ctx.lineWidth = width
+          ctx.stroke()
+        }
+        ctx.restore()
+      }
+
+      function label(text, x, y, colour) {
+        ctx.save()
+        ctx.font = "10px ui-monospace, Menlo, monospace"
+        ctx.fillStyle = colour
+        ctx.shadowBlur = 4
+        ctx.shadowColor = "#02040a"
+        ctx.fillText(text, x, y)
+        ctx.restore()
+      }
+
+      function drawGhost() {
+        if (options.ghost === "off" || !PLAYER_TYPE.outline) {
+          return
+        }
+        const size = PLAYER_TYPE.size
+        let offset = [0, 0]
+        if (options.ghost === "beside") {
+          const reach = ship.outline.reduce((m, p) => Math.max(m, Math.abs(p[1])), 0) * ship.size
+          offset = [0, reach + size * 2.2]
+        }
+        const points = PLAYER_TYPE.outline.map((p) =>
+          toScreen([p[0] * size + offset[0], p[1] * size + offset[1]]),
+        )
+        strokePath(points, "rgba(95, 215, 255, 0.45)", 1.2, 0, [4, 3])
+        const tail = toScreen([-1.1 * size + offset[0], offset[1] + size * 0.1])
+        label("PLAYER (SIZE " + size + ")", tail[0] - 30, tail[1] + 14, "rgba(95, 215, 255, 0.5)")
+      }
+
+      function drawParts() {
+        if (!options.parts || !convexPartition || ship.outline.length < 4) {
+          return
+        }
+        const parts = convexPartition(ring(ship.outline))
+        for (const part of parts) {
+          const points = part.map((i) => localToScreen(ship.outline[i]))
+          strokePath(points, "rgba(87, 227, 154, 0.35)", 1, 0, [2, 3])
+        }
+        const first = localToScreen(ship.outline[0])
+        label(
+          `${parts.length} CONVEX PART${parts.length === 1 ? "" : "S"}`,
+          first[0] + 8,
+          first[1] - 8,
+          "rgba(87, 227, 154, 0.6)",
+        )
+      }
+
+      function drawBounds() {
+        if (!options.shield) {
+          return
+        }
+        const origin = toScreen([0, 0])
+        let reach = 0
+        for (const p of ship.outline) {
+          reach = Math.max(reach, Math.hypot(p[0], p[1]))
+        }
+        circle(origin[0], origin[1], reach * ship.size * view.scale, {
+          stroke: "rgba(191, 208, 238, 0.22)",
+          dash: [3, 4],
+        })
+        const stats = derived()
+        if (stats) {
+          circle(origin[0], origin[1], ship.size * stats.shieldScale * view.scale, {
+            stroke: "rgba(159, 232, 255, 0.3)",
+            dash: [6, 5],
+          })
+        }
+      }
+
+      const plume = []
+      let plumeBacklog = 0
+
+      function updatePlume(dt) {
+        if (!options.plume || !ship.exhaust.mounts.length || ship.kind === "player") {
+          plume.length = 0
+          return
+        }
+        // Mirrors the game: `rate` plumes a second per mount, thrown along -x with
+        // `spread` of jitter, aged with the same drag and lifetime multiplier.
+        const spec = ship.exhaust
+        plumeBacklog += spec.rate * dt
+        while (plumeBacklog >= 1) {
+          plumeBacklog -= 1
+          for (const mount of spec.mounts) {
+            const world = worldOf(mount)
+            plume.push({
+              x: world[0],
+              y: world[1],
+              vx: -spec.speed + (Math.random() * 2 - 1) * spec.spread,
+              vy: (Math.random() * 2 - 1) * spec.spread,
+              life: spec.life * 5,
+              maxLife: spec.life * 5,
+            })
+          }
+        }
+        const drag = Math.pow(0.4, dt)
+        for (let i = plume.length - 1; i >= 0; i--) {
+          const p = plume[i]
+          p.life -= dt
+          if (p.life <= 0) {
+            plume.splice(i, 1)
+            continue
+          }
+          p.x += p.vx * dt
+          p.y += p.vy * dt
+          p.vx *= drag
+          p.vy *= drag
+        }
+      }
+
+      function drawPlume() {
+        ctx.save()
+        ctx.lineCap = "round"
+        ctx.lineWidth = 1.6
+        ctx.shadowBlur = 8
+        ctx.shadowColor = "#ff9a3c"
+        for (const p of plume) {
+          const from = toScreen([p.x, p.y])
+          const to = toScreen([p.x - p.vx * 0.03, p.y - p.vy * 0.03])
+          ctx.globalAlpha = Math.max(0, Math.min(1, p.life / p.maxLife))
+          ctx.strokeStyle = "#ff9a3c"
+          ctx.beginPath()
+          ctx.moveTo(from[0], from[1])
+          ctx.lineTo(to[0], to[1])
+          ctx.stroke()
+        }
+        ctx.restore()
+      }
+
+      function drawHull() {
+        const colour = shipColour()
+        const points = ship.outline.map(localToScreen)
+        const stats = derived()
+        strokePath(points, colour, Math.max(1.4, ((stats && stats.hullWidth) || 1.8) * 0.9), 12)
+      }
+
+      function drawNodes() {
+        const colour = shipColour()
+        // edge midpoints, where a click in outline mode inserts
+        if (tool === "outline") {
+          for (let i = 0; i < ship.outline.length; i++) {
+            const a = localToScreen(ship.outline[i])
+            const b = localToScreen(ship.outline[(i + 1) % ship.outline.length])
+            circle((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 2.5, { stroke: "rgba(87,227,154,0.5)" })
+          }
+        }
+        ship.outline.forEach((p, i) => {
+          const [x, y] = localToScreen(p)
+          const active = isSelected("vertex", i)
+          const hot = hover && hover.type === "vertex" && hover.index === i
+          ctx.save()
+          ctx.fillStyle = active ? "#ffffff" : hot ? colour : "#0a1426"
+          ctx.strokeStyle = active ? "#ffffff" : colour
+          ctx.lineWidth = 1.4
+          ctx.beginPath()
+          ctx.rect(x - 3.5, y - 3.5, 7, 7)
+          ctx.fill()
+          ctx.stroke()
+          ctx.restore()
+          if (active) {
+            label(`${i}: ${fmt(p[0])}, ${fmt(p[1])}`, x + 8, y - 6, "#ffffff")
+          }
+        })
+
+        // The seam a mirror would fold about, drawn as soon as both ends are held.
+        const seam = selectedVertices()
+        if (seam.length === 2) {
+          const a = localToScreen(ship.outline[seam[0]])
+          const b = localToScreen(ship.outline[seam[1]])
+          ctx.save()
+          ctx.setLineDash([5, 4])
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.5)"
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(a[0], a[1])
+          ctx.lineTo(b[0], b[1])
+          ctx.stroke()
+          ctx.restore()
+          label(
+            "MIRROR SEAM",
+            (a[0] + b[0]) / 2 + 6,
+            (a[1] + b[1]) / 2 - 6,
+            "rgba(255,255,255,0.6)",
+          )
+        }
+
+        ship.exhaust.mounts.forEach((m, i) => {
+          const [x, y] = localToScreen(m)
+          const active = isSelected("exhaust", i)
+          const colour = active ? "#ffffff" : "#ff9a3c"
+          ctx.save()
+          ctx.strokeStyle = colour
+          ctx.lineWidth = 1.4
+          ctx.shadowBlur = 8
+          ctx.shadowColor = colour
+          ctx.beginPath()
+          ctx.moveTo(x + 4, y - 4)
+          ctx.lineTo(x - 5, y)
+          ctx.lineTo(x + 4, y + 4)
+          ctx.stroke()
+          ctx.restore()
+          if (active) {
+            label(`EX${i}: ${fmt(m[0])}, ${fmt(m[1])}`, x + 8, y - 6, "#ffffff")
+          }
+        })
+
+        ship.hardpoints.forEach((hp, i) => {
+          const [x, y] = localToScreen(hp.local)
+          const active = isSelected("hardpoint", i)
+          const loose =
+            !pointInPolygon(hp.local, ship.outline) &&
+            distanceToOutline(hp.local, ship.outline) > 0.02
+          const colour = active ? "#ffffff" : loose ? "#ff5b5b" : "#9ff5c8"
+          circle(x, y, 5, { stroke: colour, width: 1.4, glow: 8 })
+          circle(x, y, 1.4, { fill: colour })
+          const mount = hp.mount
+          if (mount.module === "weapon") {
+            const weapon = WEAPON_TYPES[mount.weapon] || {}
+            const weaponColour = weapon.colour || "#ffb14b"
+            if (weapon.kind === "projectile") {
+              circle(x, y, 8, { stroke: weaponColour, width: 1.2, glow: 6, dash: [2, 2] })
+            } else {
+              ctx.save()
+              ctx.strokeStyle = weaponColour
+              ctx.lineWidth = 1.6
+              ctx.shadowBlur = 10
+              ctx.shadowColor = weaponColour
+              ctx.beginPath()
+              ctx.moveTo(x, y)
+              ctx.lineTo(x + 16, y)
+              ctx.stroke()
+              ctx.restore()
+            }
+          } else if (mount.module === "shield") {
+            circle(x, y, 9, { stroke: "#9fe8ff", width: 1, glow: 6, dash: [1, 3] })
+          }
+          label(`${i} ${hp.role || "-"}`, x + 8, y + 12, active ? "#ffffff" : "#7fa0c8")
+        })
+
+        const origin = toScreen([0, 0])
+        circle(origin[0], origin[1], 2, { fill: "#5f79a6" })
+        const c = centroid(ship.outline)
+        const cs = localToScreen(c)
+        circle(cs[0], cs[1], 3, { stroke: "rgba(255, 177, 75, 0.7)", width: 1 })
+        label("CENTROID", cs[0] + 6, cs[1] - 4, "rgba(255, 177, 75, 0.6)")
+      }
+
+      function drawScaleBar() {
+        // a plain world-unit ruler, so the ghost is not the only sense of scale
+        const target = 100
+        const px = target * view.scale
+        const y = screenH() - 34
+        ctx.save()
+        ctx.strokeStyle = "#5f79a6"
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(16, y)
+        ctx.lineTo(16 + px, y)
+        ctx.moveTo(16, y - 4)
+        ctx.lineTo(16, y + 4)
+        ctx.moveTo(16 + px, y - 4)
+        ctx.lineTo(16 + px, y + 4)
+        ctx.stroke()
+        ctx.restore()
+        label(`${target} WORLD UNITS`, 16, y - 8, "#5f79a6")
+      }
+
+      function drawMarquee() {
+        if (!drag || !drag.marquee) {
+          return
+        }
+        const box = drag.marquee
+        ctx.save()
+        ctx.setLineDash([4, 3])
+        ctx.strokeStyle = "rgba(95, 215, 255, 0.8)"
+        ctx.fillStyle = "rgba(95, 215, 255, 0.08)"
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.rect(box.sx, box.sy, box.x - box.sx, box.y - box.sy)
+        ctx.fill()
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // The point being worked on: the one under the cursor mid-drag, or a lone
+      // selected node once it has been dropped.
+      function heldNode() {
+        if (drag && drag.node) {
+          return drag.node
+        }
+        return selection.length === 1 ? selection[0] : null
+      }
+
+      // What the point being moved lines up with. Alignment is judged on screen, so
+      // it means what it looks like whether or not the grid is snapping.
+      function drawAlignmentGuides(held) {
+        if (!drag || !drag.node) {
+          return
+        }
+        const moving = new Set(drag.nodes.map((node) => `${node.type}:${node.index}`))
+        const [hx, hy] = localToScreen(localOf(held))
+        const columns = []
+        const rows = []
+        for (const node of nodesForPicking()) {
+          if (moving.has(`${node.type}:${node.index}`)) {
+            continue // it is being carried along, so its alignment says nothing
+          }
+          const [x, y] = localToScreen(node.local)
+          if (Math.abs(x - hx) <= 1.5) {
+            columns.push([x, y])
+          }
+          if (Math.abs(y - hy) <= 1.5) {
+            rows.push([x, y])
+          }
+        }
+        ctx.save()
+        ctx.setLineDash([3, 4])
+        ctx.strokeStyle = "rgba(159, 232, 255, 0.4)"
+        ctx.lineWidth = 1
+        // One line per axis, reaching the furthest point it lines up with.
+        if (columns.length) {
+          const far = columns.reduce((a, b) => (Math.abs(b[1] - hy) > Math.abs(a[1] - hy) ? b : a))
+          const overshoot = far[1] > hy ? 14 : -14
+          ctx.beginPath()
+          ctx.moveTo(hx, hy)
+          ctx.lineTo(hx, far[1] + overshoot)
+          ctx.stroke()
+        }
+        if (rows.length) {
+          const far = rows.reduce((a, b) => (Math.abs(b[0] - hx) > Math.abs(a[0] - hx) ? b : a))
+          const overshoot = far[0] > hx ? 14 : -14
+          ctx.beginPath()
+          ctx.moveTo(hx, hy)
+          ctx.lineTo(far[0] + overshoot, hy)
+          ctx.stroke()
+        }
+        ctx.restore()
+        for (const [x, y] of columns.concat(rows)) {
+          circle(x, y, 6, { stroke: "rgba(159, 232, 255, 0.55)", width: 1 })
+        }
+      }
+
+      // The angle the point makes with the two outline edges meeting at it, taking
+      // the lesser of the inside and outside angle, which is the wedge between the
+      // edges however the outline is wound.
+      function drawVertexAngle(held) {
+        if (held.type !== "vertex" || ship.outline.length < 3) {
+          return
+        }
+        const n = ship.outline.length
+        const here = localToScreen(ship.outline[held.index])
+        const before = localToScreen(ship.outline[(held.index - 1 + n) % n])
+        const after = localToScreen(ship.outline[(held.index + 1) % n])
+        const toBefore = Math.atan2(before[1] - here[1], before[0] - here[0])
+        const toAfter = Math.atan2(after[1] - here[1], after[0] - here[0])
+        if (!Number.isFinite(toBefore) || !Number.isFinite(toAfter)) {
+          return
+        }
+        // The short way round between the two edges is the lesser angle.
+        let sweep = toAfter - toBefore
+        while (sweep <= -Math.PI) {
+          sweep += Math.PI * 2
+        }
+        while (sweep > Math.PI) {
+          sweep -= Math.PI * 2
+        }
+        const radius = 22
+        ctx.save()
+        ctx.strokeStyle = "rgba(255, 207, 92, 0.75)"
+        ctx.lineWidth = 1.2
+        ctx.beginPath()
+        ctx.arc(here[0], here[1], radius, toBefore, toBefore + sweep, sweep < 0)
+        ctx.stroke()
+        ctx.restore()
+        // Along the bisector, clear of the coordinate label sitting above the point.
+        const middle = toBefore + sweep / 2
+        label(
+          `${Math.round((Math.abs(sweep) * 180) / Math.PI)}°`,
+          here[0] + Math.cos(middle) * (radius + 18) - 8,
+          here[1] + Math.sin(middle) * (radius + 18) + 4,
+          "rgba(255, 207, 92, 0.9)",
+        )
+      }
+
+      function drawHeldPoint() {
+        const held = heldNode()
+        if (!held) {
+          return
+        }
+        drawAlignmentGuides(held)
+        drawVertexAngle(held)
+      }
+
+      let hover = null
+      let lastFrame = performance.now()
+
+      function frame(now) {
+        const dt = Math.min(0.05, (now - lastFrame) / 1000)
+        lastFrame = now
+        updatePlume(dt)
+        ctx.clearRect(0, 0, screenW(), screenH())
+        drawGrid()
+        drawGhost()
+        drawBounds()
+        drawPlume()
+        drawHull()
+        drawParts()
+        drawHeldPoint()
+        drawNodes()
+        drawMarquee()
+        drawScaleBar()
+        requestAnimationFrame(frame)
+      }
+
+      // ---- picking and pointer input ---------------------------------------
+
+      function nodesForPicking() {
+        const nodes = []
+        ship.outline.forEach((p, index) => nodes.push({ type: "vertex", index, local: p }))
+        ship.hardpoints.forEach((hp, index) =>
+          nodes.push({ type: "hardpoint", index, local: hp.local }),
+        )
+        ship.exhaust.mounts.forEach((m, index) => nodes.push({ type: "exhaust", index, local: m }))
+        return nodes
+      }
+
+      // What a click grabs where several nodes sit on the same point, which is
+      // usual: a nose hardpoint is normally on the nose vertex. The tool decides,
+      // and SELECT favours the outline, since a hardpoint or a mount can also be
+      // moved from its own row in the sidebar and an outline point cannot.
+      const PREFERRED_NODE = {
+        select: "vertex",
+        outline: "vertex",
+        hardpoint: "hardpoint",
+        exhaust: "exhaust",
+        delete: "vertex",
+      }
+
+      function pick(sx, sy, limit = 9) {
+        const wanted = PREFERRED_NODE[tool]
+        let best = null
+        let bestDistance = limit
+        for (const node of nodesForPicking()) {
+          const [x, y] = localToScreen(node.local)
+          const distance = Math.hypot(x - sx, y - sy)
+          const closer = distance < bestDistance - 0.5
+          const tied = Math.abs(distance - bestDistance) <= 0.5
+          if (closer || (tied && best && node.type === wanted && best.type !== wanted)) {
+            best = node
+            bestDistance = Math.min(distance, bestDistance)
+          }
+        }
+        return best
+      }
+
+      function localOf(node) {
+        if (node.type === "vertex") {
+          return ship.outline[node.index]
+        }
+        if (node.type === "hardpoint") {
+          return ship.hardpoints[node.index].local
+        }
+        return ship.exhaust.mounts[node.index]
+      }
+
+      function insertVertex(local) {
+        let bestEdge = 0
+        let bestDistance = Infinity
+        for (let i = 0; i < ship.outline.length; i++) {
+          const { distance } = closestOnSegment(
+            local,
+            ship.outline[i],
+            ship.outline[(i + 1) % ship.outline.length],
+          )
+          if (distance < bestDistance) {
+            bestDistance = distance
+            bestEdge = i
+          }
+        }
+        ship.outline.splice(bestEdge + 1, 0, local)
+        return bestEdge + 1
+      }
+
+      function removeNode(node) {
+        if (node.type === "vertex") {
+          if (ship.outline.length <= 3) {
+            setStatus("an outline needs at least three points", true)
+            return false
+          }
+          ship.outline.splice(node.index, 1)
+        } else if (node.type === "hardpoint") {
+          ship.hardpoints.splice(node.index, 1)
+        } else {
+          ship.exhaust.mounts.splice(node.index, 1)
+        }
+        return true
+      }
+
+      let drag = null
+
+      // Begin a drag of everything selected, keeping the offsets between them and
+      // putting the node under the cursor on the grid.
+      function beginDrag(node) {
+        const nodes = selection.slice()
+        drag = {
+          node,
+          nodes,
+          anchor: localOf(node).slice(),
+          from: nodes.map((picked) => localOf(picked).slice()),
+        }
+      }
+
+      canvas.addEventListener("pointerdown", (event) => {
+        canvas.setPointerCapture(event.pointerId)
+        const sx = event.offsetX
+        const sy = event.offsetY
+        if (event.button === 1 || spaceHeld) {
+          drag = { pan: true, sx, sy, from: [view.x, view.y] }
+          return
+        }
+        if (event.button === 2) {
+          const node = pick(sx, sy)
+          if (node) {
+            pushUndo()
+            if (removeNode(node)) {
+              selection = []
+              rebuild()
+            }
+          }
+          return
+        }
+        if (event.button !== 0) {
+          return
+        }
+        const node = pick(sx, sy)
+        if (tool === "delete") {
+          if (node) {
+            pushUndo()
+            if (removeNode(node)) {
+              selection = []
+              rebuild()
+            }
+          }
+          return
+        }
+        if (node) {
+          // Shift adds to the selection and does not drag, so a pair can be picked
+          // out without either of them moving.
+          if (event.shiftKey) {
+            selection = isSelected(node.type, node.index)
+              ? selection.filter(
+                  (picked) => !(picked.type === node.type && picked.index === node.index),
+                )
+              : selection.concat({ type: node.type, index: node.index })
+            setStatus(`${selection.length} selected`)
+            refreshSidebarSelection()
+            return
+          }
+          pushUndo()
+          if (!isSelected(node.type, node.index)) {
+            selection = [{ type: node.type, index: node.index }]
+          }
+          beginDrag({ type: node.type, index: node.index })
+          refreshSidebarSelection()
+          return
+        }
+        const local = snap(screenToLocal(sx, sy), event.altKey)
+        if (tool === "outline") {
+          pushUndo()
+          const index = insertVertex(local)
+          selection = [{ type: "vertex", index }]
+          beginDrag(selection[0])
+          rebuild()
+        } else if (tool === "hardpoint") {
+          pushUndo()
+          ship.hardpoints.push({ local, role: "gun", mount: freshMount() })
+          selection = [{ type: "hardpoint", index: ship.hardpoints.length - 1 }]
+          beginDrag(selection[0])
+          rebuild()
+        } else if (tool === "exhaust") {
+          pushUndo()
+          ship.exhaust.mounts.push(local)
+          selection = [{ type: "exhaust", index: ship.exhaust.mounts.length - 1 }]
+          beginDrag(selection[0])
+          rebuild()
+        } else {
+          // Empty space in SELECT drags a box around whatever it covers. Shift
+          // keeps what is already picked, so a box can be added to a pair.
+          drag = { marquee: { sx, sy, x: sx, y: sy }, add: event.shiftKey }
+          if (!event.shiftKey) {
+            selection = []
+            refreshSidebarSelection()
+          }
+        }
+      })
+
+      // Every node whose marker falls inside the box.
+      function nodesInBox(marquee) {
+        const left = Math.min(marquee.sx, marquee.x)
+        const right = Math.max(marquee.sx, marquee.x)
+        const top = Math.min(marquee.sy, marquee.y)
+        const bottom = Math.max(marquee.sy, marquee.y)
+        return nodesForPicking().filter((node) => {
+          const [x, y] = localToScreen(node.local)
+          return x >= left && x <= right && y >= top && y <= bottom
+        })
+      }
+
+      canvas.addEventListener("pointermove", (event) => {
+        const sx = event.offsetX
+        const sy = event.offsetY
+        hover = pick(sx, sy)
+        canvas.style.cursor =
+          drag && drag.pan ? "grabbing" : spaceHeld ? "grab" : hover ? "move" : "crosshair"
+        if (drag && drag.pan) {
+          view.x = drag.from[0] - (sx - drag.sx) / view.scale
+          view.y = drag.from[1] - (sy - drag.sy) / view.scale
+        } else if (drag && drag.marquee) {
+          drag.marquee.x = sx
+          drag.marquee.y = sy
+        } else if (drag && drag.node) {
+          // The node under the cursor lands on the snapped point; anything else
+          // selected keeps its offset from it.
+          const local = snap(screenToLocal(sx, sy), event.altKey)
+          const shift = [local[0] - drag.anchor[0], local[1] - drag.anchor[1]]
+          drag.nodes.forEach((picked, i) => {
+            const target = localOf(picked)
+            target[0] = round(drag.from[i][0] + shift[0])
+            target[1] = round(drag.from[i][1] + shift[1])
+          })
+        }
+        const local = screenToLocal(sx, sy)
+        setStatus(
+          `LOCAL ${fmt(local[0])}, ${fmt(local[1])}   WORLD ${Math.round(local[0] * ship.size)}, ` +
+            `${Math.round(local[1] * ship.size)}   GRID ${options.grid}${options.snap ? "" : " (OFF)"}`,
+        )
+      })
+
+      canvas.addEventListener("pointerup", () => {
+        if (drag && drag.node) {
+          rebuild()
+        } else if (drag && drag.marquee) {
+          const box = drag.marquee
+          // A box small enough to be a click is one: it just clears the selection.
+          if (Math.abs(box.x - box.sx) > 3 || Math.abs(box.y - box.sy) > 3) {
+            const caught = nodesInBox(box).map((node) => ({ type: node.type, index: node.index }))
+            selection = drag.add
+              ? selection.concat(caught.filter((node) => !isSelected(node.type, node.index)))
+              : caught
+            setStatus(selection.length ? `${selection.length} selected` : "nothing in the box")
+            refreshSidebarSelection()
+          }
+        }
+        drag = null
+      })
+
+      canvas.addEventListener("contextmenu", (event) => event.preventDefault())
+
+      function zoomAt(sx, sy, deltaY) {
+        const before = screenToWorld(sx, sy)
+        // A wheel notch arrives as one big delta and a trackpad as a stream of
+        // small ones, so a notch is stepped more gently per event than a pinch.
+        const rate = Math.abs(deltaY) > 40 ? 0.0015 : 0.01
+        const factor = Math.exp(-deltaY * rate)
+        view.scale = Math.max(0.5, Math.min(400, view.scale * factor))
+        const after = screenToWorld(sx, sy)
+        view.x += before[0] - after[0]
+        view.y += before[1] - after[1]
+      }
+
+      // A trackpad's two-finger drag is a wheel event, not a pointer drag, so this
+      // is where panning with one lives. A pinch is a wheel event too, with ctrl
+      // set, which is the same thing ctrl or cmd with a mouse wheel asks for.
+      canvas.addEventListener(
+        "wheel",
+        (event) => {
+          event.preventDefault()
+          if (event.ctrlKey || event.metaKey || options.wheel === "zoom") {
+            zoomAt(event.offsetX, event.offsetY, event.deltaY)
+            return
+          }
+          // Shift swaps the axis for a wheel with no sideways travel of its own,
+          // as it does in any scrolling view.
+          const sideways = event.shiftKey && !event.deltaX
+          view.x += (sideways ? event.deltaY : event.deltaX) / view.scale
+          view.y += (sideways ? 0 : event.deltaY) / view.scale
+        },
+        { passive: false },
+      )
+
+      // Held space pans, since a left-drag on empty space now draws a selection
+      // box. A middle-drag pans as well, for a mouse that has the button.
+      let spaceHeld = false
+      window.addEventListener("keyup", (event) => {
+        if (event.code === "Space") {
+          spaceHeld = false
+        }
+      })
+      window.addEventListener("blur", () => {
+        spaceHeld = false
+      })
+
+      window.addEventListener("keydown", (event) => {
+        const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)
+        if (typing) {
+          return
+        }
+        if (event.code === "Space") {
+          event.preventDefault()
+          spaceHeld = true
+          return
+        }
+        const key = event.key.toLowerCase()
+        if (key === "escape" && selection.length) {
+          selection = []
+          refreshSidebarSelection()
+          setStatus("selection cleared")
+          return
+        }
+        if ((event.ctrlKey || event.metaKey) && key === "z") {
+          event.preventDefault()
+          if (event.shiftKey) {
+            undo(redoStack, undoStack)
+          } else {
+            undo(undoStack, redoStack)
+          }
+          return
+        }
+        const tools = { v: "select", o: "outline", h: "hardpoint", e: "exhaust", x: "delete" }
+        if (tools[key]) {
+          setTool(tools[key])
+          return
+        }
+        if (key === "f") {
+          fitView()
+          return
+        }
+        if (key === "g") {
+          options.snap = !options.snap
+          document.getElementById("optSnap").checked = options.snap
+          save()
+          return
+        }
+        if ((key === "delete" || key === "backspace") && selection.length) {
+          event.preventDefault()
+          pushUndo()
+          // Highest index first, so removing one does not shift the next.
+          let removed = 0
+          for (const node of selection.slice().sort((a, b) => b.index - a.index)) {
+            removed += removeNode(node) ? 1 : 0
+          }
+          if (removed) {
+            selection = []
+            rebuild()
+          }
+          return
+        }
+        const nudges = {
+          arrowleft: [-1, 0],
+          arrowright: [1, 0],
+          arrowup: [0, -1],
+          arrowdown: [0, 1],
+        }
+        if (nudges[key] && selection.length) {
+          event.preventDefault()
+          pushUndo()
+          const step = options.grid * (event.shiftKey ? 5 : 1)
+          for (const node of selection) {
+            const target = localOf(node)
+            target[0] = round(target[0] + nudges[key][0] * step)
+            target[1] = round(target[1] + nudges[key][1] * step)
+          }
+          rebuild()
+        }
+      })
+
+      // ---- sidebar ---------------------------------------------------------
+
+      const round = (n) => Number(n.toFixed(5))
+      const fmt = (n) => String(round(Number(n) || 0))
+
+      function setStatus(text, warn) {
+        const node = document.getElementById("statusLeft")
+        node.textContent = text
+        node.className = warn ? "warn" : ""
+      }
+
+      const TOOLS = [
+        ["select", "SELECT (V)"],
+        ["outline", "OUTLINE (O)"],
+        ["hardpoint", "HARDPOINT (H)"],
+        ["exhaust", "EXHAUST (E)"],
+        ["delete", "DELETE (X)"],
+      ]
+
+      function buildTools() {
+        const bar = document.getElementById("tools")
+        bar.innerHTML = ""
+        for (const [id, name] of TOOLS) {
+          const button = document.createElement("button")
+          button.textContent = name
+          button.dataset.tool = id
+          button.addEventListener("click", () => setTool(id))
+          bar.append(button)
+        }
+        const spacer = document.createElement("span")
+        spacer.style.width = "10px"
+        bar.append(spacer)
+        const extra = [
+          [
+            "MIRROR",
+            mirrorOutline,
+            "Fold the outline about a seam: shift-click the two points the halves meet at, or " +
+              "leave nothing selected to use the two points on the centreline. The half kept is " +
+              "the one left of the seam running from the first point picked to the second.",
+            "mirror",
+          ],
+          [
+            "REVERSE",
+            () => {
+              pushUndo()
+              ship.outline.reverse()
+              rebuild()
+            },
+            "Reverse the winding of the outline.",
+          ],
+          ["CENTRE", centreOutline, "Move everything so the hull's centroid is on the origin."],
+          ["FIT (F)", fitView, "Fit the whole ship in the view."],
+        ]
+        for (const [name, action, hint, id] of extra) {
+          const button = document.createElement("button")
+          button.textContent = name
+          button.title = hint
+          if (id) {
+            button.dataset.action = id
+          }
+          button.addEventListener("click", action)
+          bar.append(button)
+        }
+        setTool(tool)
+        refreshMirrorButton()
+      }
+
+      // The mirror button says which seam it would use, so what shift-click is for
+      // is visible before it is needed.
+      function refreshMirrorButton() {
+        const button = document.querySelector("#tools button[data-action=mirror]")
+        if (!button) {
+          return
+        }
+        const picked = selectedVertices().length
+        const onAxis = ship.outline.filter(([, y]) => Math.abs(y) <= 1e-6).length
+        if (picked === 2) {
+          button.textContent = "MIRROR: 2 PICKED"
+        } else if (picked === 0 && onAxis === 2) {
+          button.textContent = "MIRROR: CENTRELINE"
+        } else {
+          button.textContent = "MIRROR: SHIFT-CLICK 2"
+        }
+      }
+
+      function setTool(id) {
+        tool = id
+        for (const button of document.querySelectorAll("#tools button[data-tool]")) {
+          button.setAttribute("aria-pressed", String(button.dataset.tool === id))
+        }
+        document.getElementById("statusRight").textContent = `TOOL: ${id.toUpperCase()}`
+      }
+
+      // Rebuild the outline from one of its halves, so a symmetric hull only has
+      // to be drawn once. The two points the halves meet at are the seam: pick
+      // them with shift-click, or leave nothing selected and the two points
+      // sitting on the centreline are taken instead.
+      //
+      // The half kept is the one to the left of the seam as it runs from the first
+      // point to the second, which for a nose-to-tail seam on the centreline is
+      // the top half.
+      function mirrorOutline() {
+        const eps = 1e-6
+        const picked = selectedVertices()
+        let seam = picked
+        if (picked.length === 0) {
+          seam = ship.outline.map((p, i) => i).filter((i) => Math.abs(ship.outline[i][1]) <= eps)
+          if (seam.length !== 2) {
+            setStatus(
+              "shift-click the two points the halves meet at, or put exactly two points on the " +
+                `centreline (${seam.length} are on it now)`,
+              true,
+            )
+            return
+          }
+        } else if (picked.length !== 2) {
+          setStatus(`a seam is two outline points, and ${picked.length} are selected`, true)
+          return
+        }
+        const [a, b] = seam
+        const from = ship.outline[a]
+        const to = ship.outline[b]
+        const dx = to[0] - from[0]
+        const dy = to[1] - from[1]
+        const len2 = dx * dx + dy * dy
+        if (len2 < eps) {
+          setStatus(
+            "those two points are in the same place, so there is no seam to fold about",
+            true,
+          )
+          return
+        }
+        // Distance from the seam, signed: negative on the side that is kept.
+        const side = (p) => ((p[0] - from[0]) * dy - (p[1] - from[1]) * dx) / Math.sqrt(len2)
+        const reflect = (p) => {
+          const t = ((p[0] - from[0]) * dx + (p[1] - from[1]) * dy) / len2
+          const foot = [from[0] + dx * t, from[1] + dy * t]
+          return [round(2 * foot[0] - p[0]), round(2 * foot[1] - p[1])]
+        }
+        const chain = (start, end) => {
+          const out = []
+          for (let i = start; ; i = (i + 1) % ship.outline.length) {
+            out.push(i)
+            if (i === end) {
+              return out
+            }
+          }
+        }
+        const meanSide = (list) =>
+          list.reduce((sum, i) => sum + side(ship.outline[i]), 0) / list.length
+        const forward = chain(a, b)
+        const backward = chain(b, a)
+        const source = meanSide(forward) <= meanSide(backward) ? forward : backward
+        const points = source.map((i) => ship.outline[i].slice())
+        if (points.length < 3) {
+          setStatus("the half being kept has no points between the two seam points", true)
+          return
+        }
+        const mirrored = points.slice(1, -1).reverse().map(reflect)
+        pushUndo()
+        ship.outline = points.concat(mirrored)
+        selection = []
+        rebuild()
+        setStatus(`outline mirrored about the seam through points ${a} and ${b}`)
+      }
+
+      // Move the outline so its centroid sits on the origin, which is the point the
+      // hull rotates about.
+      function centreOutline() {
+        const [cx, cy] = centroid(ship.outline)
+        pushUndo()
+        const shift = ([x, y]) => [round(x - cx), round(y - cy)]
+        ship.outline = ship.outline.map(shift)
+        ship.hardpoints.forEach((hp) => (hp.local = shift(hp.local)))
+        ship.exhaust.mounts = ship.exhaust.mounts.map(shift)
+        rebuild()
+        setStatus("outline centred on its centroid")
+      }
+
+      function numberField(parent, field) {
+        const wrap = document.createElement("div")
+        const id = `f-${field.path.replace(/\./g, "-")}`
+        if (field.type === "bool") {
+          wrap.className = "inline"
+          const input = document.createElement("input")
+          input.type = "checkbox"
+          input.id = id
+          input.checked = !!getPath(ship, field.path)
+          input.addEventListener("change", () => {
+            pushUndo()
+            setPath(ship, field.path, input.checked)
+            refreshOutput()
+            save()
+          })
+          const text = document.createElement("label")
+          text.htmlFor = id
+          text.textContent = field.label
+          wrap.append(input, text)
+        } else if (field.type === "choice") {
+          const text = document.createElement("label")
+          text.htmlFor = id
+          text.textContent = field.label
+          const select = document.createElement("select")
+          select.id = id
+          field.options.forEach(([, name], index) => {
+            const option = document.createElement("option")
+            option.value = String(index)
+            option.textContent = name
+            select.append(option)
+          })
+          const current = field.options.findIndex(
+            ([value]) => value === (getPath(ship, field.path) ?? field.options[0][0]),
+          )
+          select.value = String(Math.max(0, current))
+          select.addEventListener("change", () => {
+            pushUndo()
+            setPath(ship, field.path, field.options[Number(select.value)][0])
+            rebuild() // the fields the choice governs are enabled or greyed by it
+          })
+          wrap.append(text, select)
+        } else {
+          const text = document.createElement("label")
+          text.htmlFor = id
+          text.textContent = field.label
+          const input = document.createElement("input")
+          input.type = "number"
+          input.id = id
+          input.step = field.step ?? 1
+          input.value = getPath(ship, field.path) ?? 0
+          if (field.rolledOnly && ship.spawn.fallback) {
+            input.disabled = true
+            input.title = "the fallback is flown in when no roll lands, so this is never read"
+          }
+          input.addEventListener("input", () => {
+            setPath(ship, field.path, Number(input.value))
+            buildDerived() // size, mass, power and armour all move the derived settings
+            refreshFacts()
+            refreshOutput()
+            save()
+          })
+          input.addEventListener("focus", pushUndo)
+          wrap.append(text, input)
+        }
+        parent.append(wrap)
+      }
+
+      function buildStats() {
+        const host = document.getElementById("statFields")
+        host.innerHTML = ""
+        for (const group of STAT_GROUPS) {
+          if (group.kinds && !group.kinds.includes(ship.kind)) {
+            continue
+          }
+          const heading = document.createElement("h2")
+          heading.textContent = group.title
+          const row = document.createElement("div")
+          row.className = "row"
+          for (const field of group.fields) {
+            if (field.kinds && !field.kinds.includes(ship.kind)) {
+              continue
+            }
+            numberField(row, field)
+          }
+          host.append(heading, row)
+          if (group.note) {
+            const note = document.createElement("p")
+            note.className = "note"
+            note.textContent = group.note
+            host.append(note)
+          }
+        }
+      }
+
+      // The settings deriveShipStats works out, each with the switch that states
+      // it on the design instead. Editing the outline moves these, which is the
+      // point of showing them beside it.
+      function buildDerived() {
+        const host = document.getElementById("derivedFields")
+        host.innerHTML = ""
+        const heading = document.createElement("h2")
+        heading.textContent = "DERIVED FROM THE SHAPE"
+        host.append(heading)
+        const stats = derived()
+        if (!stats) {
+          const note = document.createElement("p")
+          note.className = "note"
+          note.textContent = "the derived settings need src/config.js, which did not load"
+          host.append(note)
+          return
+        }
+        const row = document.createElement("div")
+        row.className = "row"
+        for (const field of DERIVED_FIELDS) {
+          if (field.kinds && !field.kinds.includes(ship.kind)) {
+            continue
+          }
+          const overridden = ship.overrides[field.path] !== undefined
+          const wrap = document.createElement("div")
+          const head = document.createElement("div")
+          head.className = "inline"
+          head.style.marginBottom = "2px"
+          const text = document.createElement("label")
+          text.textContent = field.label
+          head.append(text)
+          // The player's shape settings are spread over its design, so stating one
+          // there would have no effect and the switch is not offered.
+          if (ship.kind !== "player") {
+            const toggle = document.createElement("input")
+            toggle.type = "checkbox"
+            toggle.checked = overridden
+            toggle.title = "state this value on the design instead of deriving it"
+            toggle.addEventListener("change", () => {
+              pushUndo()
+              if (toggle.checked) {
+                ship.overrides[field.path] = round(stats[field.path])
+              } else {
+                delete ship.overrides[field.path]
+              }
+              rebuild()
+            })
+            head.append(toggle)
+          }
+          const input = document.createElement("input")
+          input.type = "number"
+          input.step = field.step ?? 1
+          input.value = round(stats[field.path])
+          input.disabled = !overridden
+          input.addEventListener("focus", pushUndo)
+          input.addEventListener("input", () => {
+            ship.overrides[field.path] = Number(input.value)
+            refreshFacts()
+            refreshOutput()
+            save()
+          })
+          wrap.append(head, input)
+          row.append(wrap)
+        }
+        host.append(row)
+      }
+
+      function buildExhaust() {
+        const section = document.getElementById("exhaustSection")
+        section.hidden = ship.kind === "player"
+        const fields = document.getElementById("exhaustFields")
+        fields.innerHTML = ""
+        for (const field of EXHAUST_FIELDS) {
+          numberField(fields, field)
+        }
+        const host = document.getElementById("exhaustMounts")
+        host.innerHTML = ""
+        ship.exhaust.mounts.forEach((mount, index) => {
+          const node = document.createElement("div")
+          node.className = "node" + (isSelected("exhaust", index) ? " sel" : "")
+          const header = document.createElement("header")
+          header.innerHTML = `<span>MOUNT ${index}</span>`
+          const remove = document.createElement("button")
+          remove.textContent = "REMOVE"
+          remove.addEventListener("click", () => {
+            pushUndo()
+            ship.exhaust.mounts.splice(index, 1)
+            selection = []
+            rebuild()
+          })
+          header.append(remove)
+          const row = document.createElement("div")
+          row.className = "row"
+          row.append(coordInput("X", mount, 0), coordInput("Y", mount, 1))
+          node.append(header, row)
+          node.addEventListener("click", () => {
+            selection = [{ type: "exhaust", index }]
+            refreshSidebarSelection()
+          })
+          host.append(node)
+        })
+      }
+
+      function coordInput(name, target, axis) {
+        const wrap = document.createElement("div")
+        const text = document.createElement("label")
+        text.textContent = name
+        const input = document.createElement("input")
+        input.type = "number"
+        input.step = options.grid
+        input.value = target[axis]
+        input.addEventListener("focus", pushUndo)
+        input.addEventListener("input", () => {
+          target[axis] = Number(input.value)
+          refreshFacts()
+          refreshOutput()
+          save()
+        })
+        wrap.append(text, input)
+        return wrap
+      }
+
+      function selectField(name, values, current, onChange) {
+        const wrap = document.createElement("div")
+        const text = document.createElement("label")
+        text.textContent = name
+        const select = document.createElement("select")
+        for (const value of values) {
+          const option = document.createElement("option")
+          option.value = value
+          option.textContent = value
+          select.append(option)
+        }
+        select.value = current
+        select.addEventListener("change", () => {
+          pushUndo()
+          onChange(select.value)
+        })
+        wrap.append(text, select)
+        return wrap
+      }
+
+      function buildHardpoints() {
+        const host = document.getElementById("hardpoints")
+        host.innerHTML = ""
+        ship.hardpoints.forEach((hp, index) => {
+          const node = document.createElement("div")
+          node.className = "node" + (isSelected("hardpoint", index) ? " sel" : "")
+          const header = document.createElement("header")
+          header.innerHTML = `<span>HP ${index}</span>`
+          const remove = document.createElement("button")
+          remove.textContent = "REMOVE"
+          remove.addEventListener("click", () => {
+            pushUndo()
+            ship.hardpoints.splice(index, 1)
+            selection = []
+            rebuild()
+          })
+          header.append(remove)
+          node.append(header)
+
+          const coords = document.createElement("div")
+          coords.className = "row"
+          coords.append(coordInput("X", hp.local, 0), coordInput("Y", hp.local, 1))
+          node.append(coords)
+
+          const roleRow = document.createElement("div")
+          roleRow.className = "row"
+          const roleWrap = document.createElement("div")
+          const roleLabel = document.createElement("label")
+          roleLabel.textContent = "ROLE"
+          const roleInput = document.createElement("input")
+          roleInput.type = "text"
+          roleInput.setAttribute("list", "roles")
+          roleInput.value = hp.role
+          roleInput.addEventListener("focus", pushUndo)
+          roleInput.addEventListener("input", () => {
+            hp.role = roleInput.value.trim()
+            refreshOutput()
+            save()
+          })
+          roleWrap.append(roleLabel, roleInput)
+          roleRow.append(
+            roleWrap,
+            selectField("MODULE", ["none", "weapon", "shield"], hp.mount.module, (value) => {
+              hp.mount.module = value
+              rebuild()
+            }),
+          )
+          node.append(roleRow)
+
+          if (hp.mount.module === "weapon") {
+            const row = document.createElement("div")
+            row.className = "row"
+            row.append(
+              selectField("WEAPON", Object.keys(WEAPON_TYPES), hp.mount.weapon, (value) => {
+                hp.mount.weapon = value
+                rebuild()
+              }),
+              selectField("CONTROLLER", CONTROLLERS, hp.mount.controller, (value) => {
+                hp.mount.controller = value
+                rebuild()
+              }),
+            )
+            node.append(row)
+          } else if (hp.mount.module === "shield") {
+            const row = document.createElement("div")
+            row.className = "row one"
+            row.append(
+              selectField("SHIELD", Object.keys(SHIELD_TYPES), hp.mount.shield, (value) => {
+                hp.mount.shield = value
+                rebuild()
+              }),
+            )
+            node.append(row)
+          }
+
+          if (hp.mount.module !== "none") {
+            const optional = document.createElement("div")
+            optional.className = "inline"
+            optional.style.marginTop = "6px"
+            const check = document.createElement("input")
+            check.type = "checkbox"
+            check.id = `rolled-${index}`
+            check.checked = hp.mount.rolled
+            check.addEventListener("change", () => {
+              pushUndo()
+              hp.mount.rolled = check.checked
+              if (check.checked && !hp.mount.rollKey) {
+                hp.mount.rollKey = hp.mount.module === "shield" ? "shield" : hp.role || "gun"
+              }
+              rebuild()
+            })
+            const text = document.createElement("label")
+            text.htmlFor = check.id
+            text.textContent = ship.kind === "player" ? "SHOP FITTING" : "ROLLED AS AN ARM"
+            optional.append(check, text)
+            node.append(optional)
+
+            if (hp.mount.rolled) {
+              const row = document.createElement("div")
+              row.className = ship.kind === "player" ? "row one" : "row three"
+              const keyWrap = document.createElement("div")
+              const keyLabel = document.createElement("label")
+              keyLabel.textContent = ship.kind === "player" ? "UPGRADE ID" : "ARM KEY"
+              const keyInput = document.createElement("input")
+              keyInput.type = "text"
+              keyInput.value = hp.mount.rollKey
+              keyInput.addEventListener("focus", pushUndo)
+              keyInput.addEventListener("input", () => {
+                hp.mount.rollKey = keyInput.value.trim()
+                refreshOutput()
+                save()
+              })
+              keyWrap.append(keyLabel, keyInput)
+              row.append(keyWrap)
+              if (ship.kind !== "player") {
+                const chanceWrap = document.createElement("div")
+                const chanceLabel = document.createElement("label")
+                chanceLabel.textContent = "PER SECTOR"
+                const chance = document.createElement("input")
+                chance.type = "number"
+                chance.step = 0.01
+                chance.value = hp.mount.chancePerSector
+                chance.addEventListener("focus", pushUndo)
+                chance.addEventListener("input", () => {
+                  hp.mount.chancePerSector = Number(chance.value)
+                  refreshOutput()
+                  save()
+                })
+                chanceWrap.append(chanceLabel, chance)
+                const capWrap = document.createElement("div")
+                const capLabel = document.createElement("label")
+                capLabel.textContent = "CAP"
+                const cap = document.createElement("input")
+                cap.type = "number"
+                cap.step = 0.05
+                cap.value = hp.mount.chanceCap
+                cap.addEventListener("focus", pushUndo)
+                cap.addEventListener("input", () => {
+                  hp.mount.chanceCap = Number(cap.value)
+                  refreshOutput()
+                  save()
+                })
+                capWrap.append(capLabel, cap)
+                row.append(chanceWrap, capWrap)
+              }
+              node.append(row)
+            }
+          }
+
+          node.addEventListener("click", (event) => {
+            if (event.target.tagName === "BUTTON") {
+              return
+            }
+            selection = [{ type: "hardpoint", index }]
+            refreshSidebarSelection()
+          })
+          host.append(node)
+        })
+      }
+
+      function refreshSidebarSelection() {
+        refreshMirrorButton()
+        for (const node of document.querySelectorAll(".node")) {
+          node.classList.remove("sel")
+        }
+        for (const picked of selection) {
+          if (picked.type === "vertex") {
+            continue // an outline point has no row of its own
+          }
+          const list = picked.type === "hardpoint" ? "hardpoints" : "exhaustMounts"
+          const rows = document.getElementById(list).children
+          if (rows[picked.index]) {
+            rows[picked.index].classList.add("sel")
+          }
+        }
+      }
+
+      // Which designs already in config.js claim the fallback slot, in table order.
+      // The spawner keeps the last one it walks past and never rolls a fallback
+      // type, so a second claim silently costs one of the two every spawn.
+      function fallbackClaims() {
+        return Object.entries(SHIP_TYPES)
+          .filter(([, type]) => type.spawn && type.spawn.fallback)
+          .map(([name]) => name)
+      }
+
+      // The sector rivals first arrive in at all, which is the lowest fromSector
+      // across the table, this design included.
+      function rivalsFromSector() {
+        const sectors = Object.entries(SHIP_TYPES)
+          .filter(([name]) => name !== ship.key)
+          .map(([, type]) => (type.spawn ? type.spawn.fromSector : Infinity))
+        sectors.push(Number(ship.spawn.fromSector))
+        return Math.min(...sectors)
+      }
+
+      function refreshFacts() {
+        const facts = document.getElementById("facts")
+        const localArea = polygonArea(ship.outline)
+        const worldArea = localArea * ship.size * ship.size
+        let reach = 0
+        for (const p of ship.outline) {
+          reach = Math.max(reach, Math.hypot(p[0], p[1]))
+        }
+        const parts = convexPartition ? convexPartition(ring(ship.outline)).length : null
+        const [cx, cy] = centroid(ship.outline)
+        const stats = derived()
+        const rows = [
+          ["POINTS", `${ship.outline.length} outline, ${ship.hardpoints.length} hardpoints`],
+          ["AREA", `${round(localArea)} local, ${Math.round(worldArea)} world`],
+          ["BOUND RADIUS", `${round(reach * ship.size)} world (${round(reach)} local)`],
+          ["CENTROID", `${fmt(cx)}, ${fmt(cy)} local`],
+        ]
+        if (stats) {
+          rows.push(["SHIELD RADIUS", `${round(ship.size * stats.shieldScale)} world`])
+        }
+        if (parts !== null) {
+          rows.push(["CONVEX PARTS", String(parts)])
+        }
+        rows.push([
+          "CUT HALVES",
+          worldArea / 2 >= DEBRIS_MIN_AREA
+            ? `drift as wreckage (half ${Math.round(worldArea / 2)} >= ${DEBRIS_MIN_AREA})`
+            : `destroyed, no wreckage (half ${Math.round(worldArea / 2)} < ${DEBRIS_MIN_AREA})`,
+        ])
+        if (ship.kind === "rival") {
+          const first = rivalsFromSector()
+          const mine = Number(ship.spawn.fromSector) <= first
+          rows.push(["RIVALS FROM", `sector ${first}${mine ? " (this design sets it)" : ""}`])
+          const claims = fallbackClaims()
+          rows.push(["FALLBACK IS", claims.length ? claims.join(", ") : "nothing in config.js yet"])
+        }
+        facts.innerHTML = rows
+          .map(([name, value]) => `<b>${name}</b><span>${value}</span>`)
+          .join("")
+
+        const warnings = []
+        const crossings = selfIntersections(ship.outline)
+        if (crossings) {
+          warnings.push(`outline self-intersects (${crossings} edge pairs cross)`)
+        }
+        const loose = ship.hardpoints
+          .map((hp, i) => [hp, i])
+          .filter(
+            ([hp]) =>
+              !pointInPolygon(hp.local, ship.outline) &&
+              distanceToOutline(hp.local, ship.outline) > 0.02,
+          )
+          .map(([, i]) => i)
+        if (loose.length) {
+          warnings.push(`hardpoint ${loose.join(", ")} sits off the hull`)
+        }
+        if (Math.hypot(cx, cy) > 0.35) {
+          warnings.push("centroid is well off the origin, so the hull pivots about its edge")
+        }
+        if (ship.kind === "rival" && !ship.exhaust.mounts.length) {
+          warnings.push("no exhaust mounts, so the ship draws no thruster plume")
+        }
+        if (ship.kind === "rival") {
+          const rivals = fallbackClaims().filter((name) => name !== ship.key)
+          if (ship.spawn.fallback && rivals.length) {
+            warnings.push(
+              `${rivals.join(" and ")} already claims the fallback slot, and only the last ` +
+                "claim in the table is used: one of them will never spawn",
+            )
+          }
+          if (!ship.spawn.fallback && !(Number(ship.spawn.chance) > 0)) {
+            warnings.push("a rolled type with no chance is never picked")
+          }
+          if (!ship.spawn.fallback && !(Number(ship.spawn.maxConcurrent) >= 1)) {
+            warnings.push("max at once below 1 leaves no room for the roll to land")
+          }
+        }
+        const roles = ship.hardpoints.map((hp) => hp.role)
+        if (ship.kind === "player" && !roles.includes("nose")) {
+          warnings.push("PLAYER_TYPE needs a hardpoint with the nose role for its main laser")
+        }
+        const node = document.getElementById("warnings")
+        node.className = warnings.length ? "note bad" : "note ok"
+        node.textContent = warnings.length ? warnings.join(" / ") : "nothing to flag"
+      }
+
+      // ---- snippet ---------------------------------------------------------
+
+      // The snippet is written the way prettier would print it, so pasting it in
+      // leaves the file already formatted. `indent` is always the indent of the
+      // line the value starts on and `prefix` what precedes it there.
+
+      // An object stays on one line while it fits, and breaks one pair per line
+      // when it does not.
+      function braces(pairs, indent, prefix = "") {
+        const inline = `{ ${pairs.join(", ")} }`
+        if (!inline.includes("\n") && indent + prefix.length + inline.length + 1 <= 100) {
+          return inline
+        }
+        const pad = " ".repeat(indent + 2)
+        return `{\n${pairs.map((pair) => `${pad}${pair},`).join("\n")}\n${" ".repeat(indent)}}`
+      }
+
+      // An array of arrays or objects is broken one per line as soon as it holds
+      // more than one of them, however short they are.
+      function composite(items, indent) {
+        if (items.length <= 1) {
+          return `[${items.join(", ")}]`
+        }
+        const pad = " ".repeat(indent + 2)
+        return `[\n${items.map((item) => `${pad}${item},`).join("\n")}\n${" ".repeat(indent)}]`
+      }
+
+      function pointList(points, indent) {
+        return composite(
+          points.map(([x, y]) => `[${fmt(x)}, ${fmt(y)}]`),
+          indent,
+        )
+      }
+
+      function mountPairs(hp, index, rolled) {
+        const pairs = [`hp: ${index}`]
+        if (hp.mount.module === "weapon") {
+          pairs.push(`weapon: "${hp.mount.weapon}"`)
+          if (hp.mount.controller) {
+            pairs.push(`controller: "${hp.mount.controller}"`)
+          }
+        } else {
+          pairs.push(`shield: "${hp.mount.shield}"`)
+        }
+        if (rolled && ship.kind !== "player") {
+          pairs.push(`chancePerSector: ${round(hp.mount.chancePerSector)}`)
+          pairs.push(`chanceCap: ${round(hp.mount.chanceCap)}`)
+        }
+        return pairs
+      }
+
+      function colourExpression() {
+        return PALETTE_NAMES.includes(ship.colour) ? `PALETTE.${ship.colour}` : `"${ship.colour}"`
+      }
+
+      // The name of the shared constant this outline still is, if it is one.
+      function sharedShapeName(outline) {
+        const same = (a, b) =>
+          a.length === b.length && a.every((p, i) => p[0] === b[i][0] && p[1] === b[i][1])
+        const match = SHARED_SHAPES.find(([, points]) => same(outline, points))
+        return match ? match[0] : null
+      }
+
+      function shipBody(indent) {
+        const pad = " ".repeat(indent)
+        const lines = []
+        const push = (text) => lines.push(`${pad}${text}`)
+        const shared = sharedShapeName(ship.outline)
+        push(`outline: ${shared || pointList(ship.outline, indent)},`)
+        push(`colour: ${colourExpression()},`)
+        push(`size: ${round(ship.size)},`)
+        push(`mass: ${round(ship.mass)},`)
+        if (ship.kind === "rival") {
+          push(`power: ${round(ship.power)},`)
+          push(`armour: ${round(ship.armour)},`)
+          // Anything stated here is kept in place of what the shape would give.
+          for (const field of DERIVED_FIELDS) {
+            const value = ship.overrides[field.path]
+            if (value !== undefined) {
+              push(`${field.path}: ${round(value)},`)
+            }
+          }
+          if (ship.exhaust.mounts.length) {
+            const pairs = [
+              `mounts: ${pointList(ship.exhaust.mounts, indent + 2)}`,
+              `rate: ${round(ship.exhaust.rate)}`,
+              `speed: ${round(ship.exhaust.speed)}`,
+              `life: ${round(ship.exhaust.life)}`,
+              `spread: ${round(ship.exhaust.spread)}`,
+            ]
+            push(`exhaust: ${braces(pairs, indent, "exhaust: ")},`)
+          }
+          push(`lifeTime: [${round(ship.lifeTime[0])}, ${round(ship.lifeTime[1])}],`)
+          push(`energyMax: ${round(ship.energyMax)},`)
+          push(`regen: ${round(ship.regen)},`)
+        }
+
+        const hardpoints = ship.hardpoints.map(
+          (hp) => `{ local: [${fmt(hp.local[0])}, ${fmt(hp.local[1])}], role: "${hp.role}" }`,
+        )
+        push(`hardpoints: ${composite(hardpoints, indent)},`)
+
+        const loadout = ship.hardpoints
+          .map((hp, index) => ({ hp, index }))
+          .filter(({ hp }) => hp.mount.module !== "none" && !hp.mount.rolled)
+          .map(({ hp, index }) => braces(mountPairs(hp, index, false), indent + 2))
+        if (loadout.length) {
+          push(`loadout: ${composite(loadout, indent)},`)
+        }
+
+        const rolled = ship.hardpoints
+          .map((hp, index) => ({ hp, index }))
+          .filter(({ hp }) => hp.mount.module !== "none" && hp.mount.rolled)
+        if (rolled.length) {
+          push(`${ship.kind === "player" ? "fittings" : "arms"}: {`)
+          for (const { hp, index } of rolled) {
+            const key = hp.mount.rollKey || `mount${index}`
+            const entry = braces(mountPairs(hp, index, true), indent + 2, `${key}: `)
+            lines.push(`${pad}  ${key}: ${entry},`)
+          }
+          push(`},`)
+        }
+
+        if (ship.kind === "rival") {
+          const spawn = [`fromSector: ${round(ship.spawn.fromSector)}`]
+          if (ship.spawn.fallback) {
+            spawn.push("fallback: true")
+          } else {
+            spawn.push(`chance: ${round(ship.spawn.chance)}`)
+            spawn.push(`maxConcurrent: ${round(ship.spawn.maxConcurrent)}`)
+          }
+          push(`spawn: ${braces(spawn, indent, "spawn: ")},`)
+          if (ship.hunts) {
+            push(`hunts: true,`)
+          }
+          push(`debrisMaterial: SHIP_PLATING,`)
+          const debris = [
+            `particles: ${round(ship.debris.particles)}`,
+            `speed: ${round(ship.debris.speed)}`,
+            `ring: ${round(ship.debris.ring)}`,
+            `shake: ${round(ship.debris.shake)}`,
+          ]
+          push(`debris: ${braces(debris, indent, "debris: ")},`)
+          push(`killScore: ${round(ship.killScore)},`)
+          push(`blastScore: ${round(ship.blastScore)},`)
+          push(`oreDrop: ${round(ship.oreDrop)},`)
+        }
+        return lines.join("\n")
+      }
+
+      function snippet() {
+        if (ship.kind === "player") {
+          return `const PLAYER_DESIGN = {\n${shipBody(2)}\n}\n`
+        }
+        const key = ship.key || "newship"
+        return `// in SHIP_DESIGNS:\n  ${key}: {\n${shipBody(4)}\n  },\n`
+      }
+
+      function refreshOutput() {
+        document.getElementById("out").value = snippet()
+      }
+
+      // Read a pasted design back in. It refers to names config.js has in scope,
+      // so those are handed to it as arguments: PALETTE, SHIP_PLATING, CONFIG and
+      // every shared outline constant, the last of these being how a design that
+      // names one instead of listing its points comes back whole. Anything else it
+      // names is a parse error the message reports.
+      function loadSnippet() {
+        const text = document.getElementById("out").value
+        const body = text.replace(/^\s*(\/\/[^\n]*\n)*/, "").trim()
+        const objects = []
+        const assignment = /^(export\s+)?const\s+PLAYER_(DESIGN|TYPE)\s*=\s*/
+        const player = assignment.test(body)
+        const source = player ? body.replace(assignment, "") : `{${body.replace(/,\s*$/, "")}}`
+        try {
+          const shapeNames = SHARED_SHAPES.map(([name]) => name)
+          const make = new Function(
+            "PALETTE",
+            "SHIP_PLATING",
+            "CONFIG",
+            ...shapeNames,
+            `return (${source})`,
+          )
+          const value = make(
+            PALETTE,
+            { minArea: DEBRIS_MIN_AREA },
+            { SHIP_DEBRIS_MIN_AREA: DEBRIS_MIN_AREA },
+            ...SHARED_SHAPES.map(([, points]) => points),
+          )
+          if (player) {
+            objects.push(["player", value])
+          } else {
+            for (const [key, type] of Object.entries(value)) {
+              objects.push([key, type])
+            }
+          }
+        } catch (err) {
+          setStatus(`could not read that snippet: ${err.message}`, true)
+          return
+        }
+        const [key, type] = objects[0] || []
+        if (!type || !Array.isArray(type.outline) || type.outline.length < 3) {
+          setStatus("that snippet has no outline of at least three points in it", true)
+          return
+        }
+        pushUndo()
+        ship = fromType(type, player ? "player" : "rival", player ? "player" : key)
+        selection = []
+        rebuild()
+        fitView()
+        setStatus(`loaded ${key}`)
+      }
+
+      // ---- wiring ----------------------------------------------------------
+
+      function buildPresets() {
+        const select = document.getElementById("preset")
+        select.innerHTML = ""
+        const add = (value, name) => {
+          const option = document.createElement("option")
+          option.value = value
+          option.textContent = name
+          select.append(option)
+        }
+        add("", "PICK A PRESET")
+        for (const name of Object.keys(SHIP_TYPES)) {
+          add(`rival:${name}`, `SHIP_TYPES.${name}`)
+        }
+        if (PLAYER_TYPE.outline) {
+          add("player:player", "PLAYER_TYPE")
+        }
+        add("blank:new", "BLANK DART")
+        select.value = ""
+        select.addEventListener("change", () => {
+          const [kind, name] = select.value.split(":")
+          if (!kind) {
+            return
+          }
+          pushUndo()
+          if (kind === "blank") {
+            ship = blankShip()
+          } else {
+            const type = kind === "player" ? PLAYER_TYPE : SHIP_TYPES[name]
+            ship = fromType(type, kind, name)
+          }
+          selection = []
+          select.value = ""
+          rebuild()
+          fitView()
+        })
+      }
+
+      function buildColours() {
+        const select = document.getElementById("colour")
+        select.innerHTML = ""
+        for (const name of PALETTE_NAMES) {
+          const option = document.createElement("option")
+          option.value = name
+          option.textContent = `${name}  ${getPath(PALETTE, name)}`
+          select.append(option)
+        }
+        select.addEventListener("change", () => {
+          pushUndo()
+          ship.colour = select.value
+          refreshOutput()
+          save()
+        })
+      }
+
+      function buildGrid() {
+        const select = document.getElementById("grid")
+        for (const step of GRID_STEPS) {
+          const option = document.createElement("option")
+          option.value = String(step)
+          option.textContent = String(step)
+          select.append(option)
+        }
+        select.addEventListener("change", () => {
+          options.grid = Number(select.value)
+          rebuild()
+        })
+      }
+
+      function bindOptions() {
+        const bind = (id, name) => {
+          const input = document.getElementById(id)
+          input.checked = options[name]
+          input.addEventListener("change", () => {
+            options[name] = input.checked
+            save()
+          })
+        }
+        bind("optSnap", "snap")
+        bind("optParts", "parts")
+        bind("optShield", "shield")
+        bind("optPlume", "plume")
+        const ghost = document.getElementById("ghost")
+        ghost.value = options.ghost
+        ghost.addEventListener("change", () => {
+          options.ghost = ghost.value
+          save()
+        })
+        const wheelMode = document.getElementById("wheelMode")
+        wheelMode.value = options.wheel
+        wheelMode.addEventListener("change", () => {
+          options.wheel = wheelMode.value
+          save()
+        })
+        const kind = document.getElementById("kind")
+        kind.addEventListener("change", () => {
+          pushUndo()
+          ship.kind = kind.value
+          rebuild()
+        })
+        const key = document.getElementById("key")
+        key.addEventListener("focus", pushUndo)
+        key.addEventListener("input", () => {
+          ship.key = key.value.trim()
+          // The key says which design in the table this one is, so renaming it can
+          // put it in conflict with what config.js already holds.
+          refreshFacts()
+          refreshOutput()
+          save()
+        })
+        document.getElementById("addHardpoint").addEventListener("click", () => {
+          pushUndo()
+          ship.hardpoints.push({ local: [0, 0], role: "gun", mount: freshMount() })
+          selection = [{ type: "hardpoint", index: ship.hardpoints.length - 1 }]
+          rebuild()
+        })
+        document.getElementById("addMount").addEventListener("click", () => {
+          pushUndo()
+          ship.exhaust.mounts.push([-1, 0])
+          selection = [{ type: "exhaust", index: ship.exhaust.mounts.length - 1 }]
+          rebuild()
+        })
+        document.getElementById("copy").addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(snippet())
+            setStatus("snippet copied")
+          } catch {
+            document.getElementById("out").select()
+            setStatus("clipboard refused, the snippet is selected instead", true)
+          }
+        })
+        document.getElementById("load").addEventListener("click", loadSnippet)
+      }
+
+      // Everything the sidebar shows, after any change that adds or removes a node.
+      function rebuild() {
+        document.getElementById("kind").value = ship.kind
+        document.getElementById("key").value = ship.key
+        document.getElementById("colour").value = PALETTE_NAMES.includes(ship.colour)
+          ? ship.colour
+          : PALETTE_NAMES[0]
+        document.getElementById("grid").value = String(options.grid)
+        buildHardpoints()
+        buildExhaust()
+        buildStats()
+        buildDerived()
+        refreshFacts()
+        refreshOutput()
+        refreshSidebarSelection()
+        save()
+      }
+
+      const roles = document.createElement("datalist")
+      roles.id = "roles"
+      for (const role of ROLES) {
+        const option = document.createElement("option")
+        option.value = role
+        roles.append(option)
+      }
+      document.body.append(roles)
+
+      // Whatever was saved is read back before the controls are built, since each
+      // of them is filled in from the options as it is made.
+      const restored = restore()
+      buildPresets()
+      buildColours()
+      buildGrid()
+      bindOptions()
+      buildTools()
+      if (!restored && SHIP_TYPES.scout) {
+        ship = fromType(SHIP_TYPES.scout, "rival", "scout")
+      }
+      rebuild()
+      resize()
+      fitView()
+      window.addEventListener("resize", () => {
+        resize()
+      })
+      setStatus("pick a tool, or drag a node")
+      requestAnimationFrame(frame)
+    </script>
+  </body>
+</html>
