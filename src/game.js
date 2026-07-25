@@ -63,6 +63,7 @@ import {
   PlayerShip,
   RivalShip,
   bodyContact,
+  oreFromFragment,
   resolveShipPair,
 } from "./entities.js"
 
@@ -660,8 +661,9 @@ export class Game {
       const mine = guns.filter((g) => pointInPolygon(g, partVerts))
       // a gunless sliver just becomes ore; a piece with turrets survives as a
       // gun-rock so it can keep firing, even if small
-      if (polygonArea(partVerts) < debrisMinArea && mine.length === 0) {
-        slivers.push({ centre, drift })
+      const area = polygonArea(partVerts)
+      if (area < debrisMinArea && mine.length === 0) {
+        slivers.push({ centre, drift, area })
       } else {
         wreckage.push({ partVerts, centre, drift, mine })
       }
@@ -693,7 +695,9 @@ export class Game {
     }
     for (const sliver of slivers) {
       this.burst(sliver.centre.x, sliver.centre.y, randInt(10, 16), PALETTE.fx.fire, 40, 190, 0.75)
-      for (let k = 0; k < 3; k++) {
+      // by area, as a rock fragment is: a splinter off a nose was paying the same
+      // as half a hull
+      for (let k = 0; k < oreFromFragment(sliver.area); k++) {
         this.spawnOre(
           sliver.centre.x + randRange(-12, 12),
           sliver.centre.y + randRange(-12, 12),

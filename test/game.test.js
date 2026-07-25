@@ -17,6 +17,7 @@ import {
   Projectile,
   RivalShip,
   Shield,
+  oreFromFragment,
   resolveHullRockContact,
   rockMass,
 } from "../src/entities.js"
@@ -815,6 +816,34 @@ test("an unshielded hull does not stop a beam reaching the rocks behind it", () 
       `${typeName} must not shield the rock behind it`,
     )
   }
+})
+
+test("a sliver cut off a hull is worth what a rock fragment its size is worth", () => {
+  // Both go through oreFromFragment, so the two cannot drift apart; check the
+  // rule is actually reached from the hull path rather than trusting that.
+  const sliverOre = (halfWidth) => {
+    const game = liveGame()
+    game.player.x = -9000
+    game.player.y = -9000
+    const scout = new RivalShip(500, 320, "scout", [])
+    scout.angle = 0
+    game.rivals = [scout]
+    // shave a strip off one side: too small to survive, and carrying no turret
+    const beam = {
+      a: { x: 300, y: 320 + halfWidth },
+      b: { x: 900, y: 320 + halfWidth },
+      dir: { x: 1, y: 0 },
+    }
+    game.applyBeam(beam, game.player, playerWeapon, 68)
+    return game.oreChunks.length
+  }
+  // A thin shaving is worth less than a thick one, where both used to pay 3.
+  const thin = sliverOre(10)
+  const thick = sliverOre(2)
+  assert.ok(thin > 0, "a sliver still pays something")
+  assert.ok(thick >= thin, `a bigger sliver pays at least as much (${thin} vs ${thick})`)
+  assert.equal(oreFromFragment(CONFIG.SHIP_DEBRIS_MIN_AREA - 1), 2)
+  assert.equal(oreFromFragment(10), 1, "a splinter is worth one chunk, not three")
 })
 
 test("a beam cuts every hull it passes through, as it cuts every rock", () => {

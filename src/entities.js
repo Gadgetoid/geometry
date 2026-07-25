@@ -52,6 +52,14 @@ export function rockMass(area) {
   return clamp(area / CONFIG.AST_MASS_AREA, CONFIG.AST_MASS_RANGE[0], CONFIG.AST_MASS_RANGE[1])
 }
 
+// What a piece too small to survive a cut is worth: one chunk per
+// ORE_PER_FRAGMENT_AREA of it, so a piece just under the threshold yields a
+// handful and a splinter yields one. Shared, so a sliver cut off a hull and a
+// rock fragment of the same size are worth the same.
+export function oreFromFragment(area) {
+  return clamp(Math.round(area / CONFIG.ORE_PER_FRAGMENT_AREA) + 1, 1, 4)
+}
+
 // Contact between two bodies, each given as a list of convex parts that tile its
 // real outline. Callers reject on the enclosing circles first. Returns the push
 // `b` must take (and `a` resist), or null when they are apart.
@@ -2109,7 +2117,7 @@ export class Asteroid extends Entity {
       const ix = (impulse.x / mag) * side * CONFIG.SPLIT_IMPULSE,
         iy = (impulse.y / mag) * side * CONFIG.SPLIT_IMPULSE
       if (area < this.minArea) {
-        const oreCount = clamp(Math.round(area / CONFIG.ORE_PER_FRAGMENT_AREA) + 1, 1, 4)
+        const oreCount = oreFromFragment(area)
         for (let k = 0; k < oreCount; k++) {
           game.spawnOre(
             centre.x + randRange(-10, 10),
