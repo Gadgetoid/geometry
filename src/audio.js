@@ -215,9 +215,10 @@ export const Sound = {
   fire(pitch = 1) {
     this.beep(680 * pitch, 0.22, "sawtooth", 0.06, 120 * pitch)
   },
-  // Rising whine as the frigate cannon charges up.
-  charge() {
-    this.beep(180, 0.85, "sawtooth", 0.035, 720)
+  // Rising whine as the frigate cannon charges up, over the wind-up it is
+  // telegraphing, so the two cannot come to disagree about how long that is.
+  charge(seconds = 0.85) {
+    this.beep(180, seconds, "sawtooth", 0.035, 720)
   },
   // Frigate main gun: a big, low "pew" with a sub layer and a breath of noise.
   bigLaser() {

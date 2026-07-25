@@ -560,7 +560,7 @@ export const WEAPON_CONTROLLERS = {
     ) {
       weapon.charging = weapon.type.chargeTime || 0.8
       weapon.chargeDuration = weapon.charging
-      Sound.charge()
+      Sound.charge(weapon.chargeDuration)
     }
   },
 

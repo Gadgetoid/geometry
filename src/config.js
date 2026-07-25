@@ -150,7 +150,7 @@ export const CONFIG = {
   // base damage values referenced by weapon types
   DMG_AST_GUN: 120,
   DMG_RIVAL_GUN: 130,
-  DMG_FRIGATE_LASER: 300,
+  DMG_FRIGATE_LASER: 420,
 
   // upgrade effects, indexed by upgrade level
   SHIELD_EFFICIENCY: [1, 0.72, 0.5, 0.32], // energy drained per point of damage (player shield plating)
@@ -392,11 +392,14 @@ export const WEAPON_TYPES = {
     damage: CONFIG.DMG_FRIGATE_LASER,
     energy: 70,
     reload: [2.4, 3.8],
-    length: 560,
+    // A siege gun: it outranges everything else in the sector and hits hard
+    // enough to strip a shield outright, and pays for it with a long wind-up
+    // that is the player's cue to break the firing arc.
+    length: 780,
     width: 26,
     glow: 30,
     arc: 0.42,
-    chargeTime: 0.9, // telegraphs with a growing glow before firing
+    chargeTime: 1.5, // telegraphs with a growing glow before firing
     sound: "bigLaser",
     shotLife: 0.55, // the flash lingers longer than an ordinary beam
     colour: PALETTE.rival.cannonBeam,
