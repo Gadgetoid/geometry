@@ -290,18 +290,36 @@ test("the dpad walks the shop and A confirms", () => {
   assert.equal(game.phase, "arriving", "A launched from the shop")
 })
 
-test("START and BACK reach the options menu from the shop", () => {
-  for (const button of ["confirm", "pause"]) {
-    const game = liveGame()
-    game.enterShop()
-    const input = new GamepadInput(game)
-    assert.equal(game.paused, false)
-    input.apply(readPad(pad({ buttons: { [B[button]]: 1 } })))
-    assert.equal(game.paused, true, `${button} opened the options menu over the shop`)
-    assert.equal(game.phase, "shop", "and did not leave the shop")
-    // the options rows take over from the shop's while it is open
-    assert.ok(game.pauseMenu().some((row) => row.name === "CONTROLS"))
-  }
+test("BACK reaches the options menu from the shop", () => {
+  const game = liveGame()
+  game.enterShop()
+  const input = new GamepadInput(game)
+  assert.equal(game.paused, false)
+  input.apply(readPad(pad({ buttons: { [B.pause]: 1 } })))
+  assert.equal(game.paused, true, "BACK opened the options menu over the shop")
+  assert.equal(game.phase, "shop", "and did not leave the shop")
+  // the options rows take over from the shop's while it is open
+  assert.ok(game.pauseMenu().some((row) => row.name === "CONTROLS"))
+})
+
+// START pauses during play, and confirms everywhere else. Routing it to the options
+// menu wherever one could be opened took the launch away from a pad: pressing it at
+// the shop opened the menu instead, so the run never left the sector it was on.
+test("START launches from the shop, and pauses only in a sector", () => {
+  const launching = liveGame()
+  launching.level = 2
+  launching.enterShop()
+  launching.shopSelection = SHOP.length // the launch row
+  const input = new GamepadInput(launching)
+  input.apply(readPad(pad({ buttons: { [B.confirm]: 1 } })))
+  assert.equal(launching.phase, "arriving", "START launched")
+  assert.equal(launching.level, 3, "into the next sector")
+  assert.equal(launching.paused, false, "and opened no menu")
+
+  const flying = liveGame()
+  const flyingInput = new GamepadInput(flying)
+  flyingInput.apply(readPad(pad({ buttons: { [B.confirm]: 1 } })))
+  assert.equal(flying.paused, true, "in a sector it opens the options menu")
 })
 
 test("START still starts a run from the title, where there is nothing to pause", () => {

@@ -1682,11 +1682,13 @@ export class Game {
     }
   }
 
-  // START on a pad. It opens the options menu wherever there is one to open, and
-  // otherwise confirms, so it still starts a run from the title screen where there
-  // is nothing to pause and the prompt says to press it.
+  // START on a pad. Pausing is something done during play, so it opens the options
+  // menu in a sector and confirms everywhere else: it starts a run from the title
+  // and launches from the shop, both of which it has always done and the prompts
+  // still say it does. The options menu is reachable over the shop by BACK, by
+  // ESCAPE, and by its own row on the launch line.
   padStart() {
-    if (this.canOpenOptions()) {
+    if (this.inSector()) {
       this.toggleOptions()
     } else {
       this.menuConfirm()

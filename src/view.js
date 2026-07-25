@@ -748,7 +748,7 @@ export class GameView {
       this.#prompt(
         game,
         "UP / DOWN select    LEFT / RIGHT launch or options    ENTER choose    ESC options",
-        "DPAD select    A choose    START / BACK options",
+        "DPAD select    A / START choose    BACK options",
       ),
       VIEW_W / 2,
       launchY + 26,
