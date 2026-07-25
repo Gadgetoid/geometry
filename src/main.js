@@ -4,7 +4,7 @@ import { Canvas2DRenderer } from "./renderer.js"
 import { WebGLRenderer } from "./glrenderer.js"
 import { GameView } from "./view.js"
 import { Game } from "./game.js"
-import { DEV_VISIBLE } from "./config.js"
+import { DEV_VISIBLE, POWERUP_TYPES, SHOP } from "./config.js"
 import { Sound } from "./audio.js"
 
 const canvas = document.getElementById("game")
@@ -17,6 +17,17 @@ if (usingGL) {
 }
 const view = new GameView(renderer)
 const game = new Game()
+
+// Debug / test handle: lets the browser console and the smoke test inspect and
+// drive live state without reaching into module scope.
+window.__geometry = {
+  game,
+  view,
+  renderer,
+  backend: usingGL ? "webgl2" : "canvas2d",
+  POWERUP_TYPES,
+  SHOP,
+}
 
 addEventListener("keydown", (e) => game.onKeyDown(e))
 addEventListener("keyup", (e) => game.onKeyUp(e))

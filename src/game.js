@@ -12,7 +12,7 @@ import {
   SHIP_TYPES,
   SHOP,
   POWERUP_TYPES,
-  POWERUP_LABEL,
+  POWERUP_IDS,
   SHIELD_SPARK,
   freshUpgrades,
 } from "./config.js"
@@ -226,7 +226,7 @@ export class Game {
   }
 
   spawnPowerup() {
-    const type = pick(POWERUP_TYPES)
+    const type = pick(POWERUP_IDS)
     // just beyond a screen edge near the camera, drifting in toward the player
     const c = this.viewCenter
     const angle = randRange(0, TAU)
@@ -724,39 +724,20 @@ export class Game {
   }
 
   usePowerupSlot(index) {
-    const p = this.player,
-      type = p.items[index]
-    if (type === undefined) {
+    const player = this.player,
+      id = player.items[index]
+    if (id === undefined) {
       return
     }
-    p.items.splice(index, 1)
+    const type = POWERUP_TYPES[id]
+    player.items.splice(index, 1)
     Sound.power()
-    this.showToast(`${POWERUP_LABEL[type]} ACTIVATED`)
-    if (type === "repel") {
-      for (const asteroid of this.asteroids) {
-        const d = normalize(subtract(asteroid.center, p))
-        asteroid.vx += d.x * 300
-        asteroid.vy += d.y * 300
-        asteroid.spin += randRange(-3, 3)
-      }
-      for (const bullet of this.projectiles) {
-        const d = normalize(subtract(bullet, p))
-        const s = Math.max(CONFIG.BULLET_SPEED, Math.hypot(bullet.vx, bullet.vy))
-        bullet.vx = d.x * s
-        bullet.vy = d.y * s
-      }
-      this.ring(p.x, p.y, 40, "#ff6bd0", 260, 0.7)
-      this.screenShake = 9
-    } else if (type === "refuel") {
-      p.energy = this.maxEnergy()
-      this.ring(p.x, p.y, 24, "#57e39a", 150, 0.6)
-    } else if (type === "booster") {
-      p.boosterTime = 6.5
-      this.burst(p.x, p.y, 20, "#ffcf5c", 40, 140, 0.6)
-    } else if (type === "multi") {
-      p.multiTime = 9
-    } else if (type === "magnet") {
-      p.magnetTime = 6.5
+    this.showToast(`${type.label} ACTIVATED`)
+    if (type.seconds) {
+      player.grantBuff(id, type.seconds)
+    }
+    if (type.apply) {
+      type.apply(this, player, type)
     }
   }
 

@@ -5,7 +5,7 @@
 // the Renderer without touching game logic. Entities still paint themselves via
 // their own draw(renderer, game) methods.
 
-import { VIEW_W, VIEW_H, TAU, ARENA, SHOP, SHOP_DESC, POWERUP_COLOUR } from "./config.js"
+import { VIEW_W, VIEW_H, TAU, ARENA, SHOP, SHOP_DESC, POWERUP_TYPES } from "./config.js"
 import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
 
@@ -439,7 +439,11 @@ export class GameView {
       fillW = barW * fraction * (0.85 + 0.15 * Math.sin(game.gameTime * 10))
     }
     const barColour =
-      game.player && game.player.boosterTime > 0 ? "#ffcf5c" : low ? "#ff5b5b" : "#5fd7ff"
+      game.player && game.player.buffTime("booster") > 0
+        ? POWERUP_TYPES.booster.colour
+        : low
+          ? "#ff5b5b"
+          : "#5fd7ff"
     r.rect(barX + 1, barY + 1, Math.max(0, fillW - 2), barH - 2, { fill: barColour, glow: 10 })
     r.text("ENERGY", barX + 2, barY - 4, { size: 9, color: "#7fa0c8" })
 
@@ -471,38 +475,32 @@ export class GameView {
         const sx = startX + i * (size + 4),
           sy = barY - 4 - size,
           item = game.player.items[i]
-        r.rect(sx, sy, size, size, { stroke: item ? POWERUP_COLOUR[item] : "#26436b", width: 1.2 })
+        const spec = item ? POWERUP_TYPES[item] : null
+        r.rect(sx, sy, size, size, { stroke: spec ? spec.colour : "#26436b", width: 1.2 })
         r.text(String(i + 1), sx + 2, sy + 9, { size: 8, color: "#5f79a6" })
-        if (item) {
-          r.text(item[0].toUpperCase(), sx + size / 2, sy + size / 2 + 5, {
+        if (spec) {
+          r.text(spec.icon, sx + size / 2, sy + size / 2 + 5, {
             size: 12,
             bold: true,
-            color: POWERUP_COLOUR[item],
+            color: spec.colour,
             align: "center",
           })
         }
       }
     }
 
-    const buffs = []
     if (game.player) {
-      if (game.player.boosterTime > 0) {
-        buffs.push(["BOOST", game.player.boosterTime, "#ffcf5c"])
-      }
-      if (game.player.multiTime > 0) {
-        buffs.push(["MULTI", game.player.multiTime, "#5fd7ff"])
-      }
-      if (game.player.magnetTime > 0) {
-        buffs.push(["MAGNET", game.player.magnetTime, "#b38bff"])
+      let row = 0
+      for (const [id, remaining] of game.player.buffs) {
+        const spec = POWERUP_TYPES[id]
+        r.text(`${spec.short || spec.label} ${remaining.toFixed(1)}s`, VIEW_W / 2, 26 + row * 15, {
+          size: 11,
+          color: spec.colour,
+          align: "center",
+        })
+        row++
       }
     }
-    buffs.forEach((buff, i) =>
-      r.text(`${buff[0]} ${buff[1].toFixed(1)}s`, VIEW_W / 2, 26 + i * 15, {
-        size: 11,
-        color: buff[2],
-        align: "center",
-      }),
-    )
 
     if (game.toast) {
       r.text(game.toast.text, 18, VIEW_H - 72, {

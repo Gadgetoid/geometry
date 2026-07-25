@@ -35,11 +35,12 @@ import {
   SHIELD_TYPES,
   SHIP_TYPES,
   PLAYER_TYPE,
-  POWERUP_COLOUR,
-  POWERUP_LABEL,
+  POWERUP_TYPES,
   SHIELD_SPARK,
 } from "./config.js"
 import { Sound } from "./audio.js"
+
+const SINGLE_BEAM_OFFSETS = [0] // the player's laser without the multi powerup
 
 // ---------------------------------------------------------------------------
 // Base entity: position, velocity, energy pool, hardpoints, uniform damage.
@@ -601,9 +602,7 @@ export class PlayerShip extends Ship {
     this.thrusting = false
     this.reversing = false
     this.items = []
-    this.boosterTime = 0
-    this.multiTime = 0
-    this.magnetTime = 0
+    this.buffs = new Map() // powerup id -> seconds of effect remaining
     this.turretAim = 0
     this.turretManual = 0 // time left under player (arrow-key) control
     this.turretFiring = false
@@ -616,6 +615,23 @@ export class PlayerShip extends Ship {
   }
   onHull() {
     this.game.playerLoseLife()
+  }
+
+  // Seconds left on a timed powerup, 0 when it is not active.
+  buffTime(id) {
+    return this.buffs.get(id) ?? 0
+  }
+  grantBuff(id, seconds) {
+    this.buffs.set(id, Math.max(this.buffTime(id), seconds))
+  }
+  #tickBuffs(dt) {
+    for (const [id, remaining] of this.buffs) {
+      if (remaining - dt <= 0) {
+        this.buffs.delete(id)
+      } else {
+        this.buffs.set(id, remaining - dt)
+      }
+    }
   }
 
   installDefenseTurret() {
@@ -637,11 +653,12 @@ export class PlayerShip extends Ship {
       return
     }
     const chargeFrac = clamp(w.charge / w.type.chargeMax, 0, 1)
-    const length = w.charge * (this.boosterTime > 0 ? 1.6 : 1) + 40
+    const length = w.charge * this.beamLengthMult() + 40
     const nose = this.mountWorld(this.hardpoints[0].local)
     const dir = { x: Math.cos(this.angle), y: Math.sin(this.angle) },
       nrm = { x: -dir.y, y: dir.x }
-    const offsets = this.multiTime > 0 ? [-28, 0, 28] : [0]
+    const offsets =
+      this.buffTime("multi") > 0 ? POWERUP_TYPES.multi.beamOffsets : SINGLE_BEAM_OFFSETS
     game.stats.shots++
     let hit = false
     for (const o of offsets) {
@@ -671,11 +688,14 @@ export class PlayerShip extends Ship {
     Sound.fire(0.9 + 0.35 * chargeFrac) // pitch rises slightly with charge
   }
 
+  // Charged-beam reach multiplier, extended while the booster is running.
+  beamLengthMult() {
+    return this.buffTime("booster") > 0 ? POWERUP_TYPES.booster.beamLengthMult : 1
+  }
+
   update(dt, game) {
     this.invincible = Math.max(0, this.invincible - dt)
-    this.boosterTime = Math.max(0, this.boosterTime - dt)
-    this.multiTime = Math.max(0, this.multiTime - dt)
-    this.magnetTime = Math.max(0, this.magnetTime - dt)
+    this.#tickBuffs(dt)
     this.impactSfx = Math.max(0, this.impactSfx - dt)
     this.energyMax = game.maxEnergy()
 
@@ -795,7 +815,7 @@ export class PlayerShip extends Ship {
     // ticked by updateWeapons below).
     const w = this.mainWeapon
     const holding = canControl && keys.has("Space")
-    const freeShot = this.boosterTime > 0
+    const freeShot = this.buffTime("booster") > 0
     if (holding) {
       const rate = w.type.chargeRate * CONFIG.LASER_RATE_MULT[game.upgrades.laser]
       const cost = w.type.chargeCost * CONFIG.LASER_COST_MULT[game.upgrades.laser]
@@ -847,8 +867,9 @@ export class PlayerShip extends Ship {
         this.items.push(pickup.type)
         game.powerupPickups.splice(i, 1)
         Sound.power()
-        game.burst(pickup.x, pickup.y, 12, POWERUP_COLOUR[pickup.type], 30, 120, 0.6)
-        game.showToast(`${POWERUP_LABEL[pickup.type]} POWERUP COLLECTED`)
+        const spec = POWERUP_TYPES[pickup.type]
+        game.burst(pickup.x, pickup.y, 12, spec.colour, 30, 120, 0.6)
+        game.showToast(`${spec.label} POWERUP COLLECTED`)
       }
     }
 
@@ -884,7 +905,7 @@ export class PlayerShip extends Ship {
           this.impactSfx = 0.15
         }
       }
-      if (this.invincible <= 0 && this.boosterTime <= 0) {
+      if (this.invincible <= 0 && this.buffTime("booster") <= 0) {
         game.screenShake = Math.max(game.screenShake, 3)
         if (this.fxCooldown <= 0) {
           game.burst(this.x, this.y, 4, "#ff6b6b", 30, 90, 0.35)
@@ -901,9 +922,9 @@ export class PlayerShip extends Ship {
     if (this.invincible > 0 && Math.floor(game.gameTime * 12) % 2 === 0) {
       return
     } // blink while invincible
-    const boosted = this.boosterTime > 0
+    const boosted = this.buffTime("booster") > 0
     const colour = boosted
-      ? "#ffcf5c"
+      ? POWERUP_TYPES.booster.colour
       : this.energy < this.energyMax * 0.22
         ? "#ff6b6b"
         : this.colour
@@ -948,7 +969,7 @@ export class PlayerShip extends Ship {
     const w = this.mainWeapon
     if (w && w.charge > 4) {
       const nose = this.mountWorld(this.hardpoints[0].local)
-      const length = w.charge * (boosted ? 1.6 : 1) + 40
+      const length = w.charge * this.beamLengthMult() + 40
       const frac = clamp(w.charge / w.type.chargeMax, 0.3, 1)
       renderer.line(
         nose.x,
@@ -1476,13 +1497,14 @@ export class Ore extends Entity {
     this.life -= dt
     const player = game.player,
       dist = Math.hypot(this.x - player.x, this.y - player.y)
-    if (
-      game.oreVacuum ||
-      player.magnetTime > 0 ||
-      dist < CONFIG.MAGNET_RANGE[game.upgrades.magnet]
-    ) {
+    const magnet = player.buffTime("magnet") > 0
+    if (game.oreVacuum || magnet || dist < CONFIG.MAGNET_RANGE[game.upgrades.magnet]) {
       const pull = normalize(subtract(player, this))
-      const force = game.oreVacuum ? 560 : player.magnetTime > 0 ? 260 : 120
+      const force = game.oreVacuum
+        ? CONFIG.ORE_VACUUM_PULL
+        : magnet
+          ? POWERUP_TYPES.magnet.pull
+          : CONFIG.ORE_PASSIVE_PULL
       this.vx += pull.x * force * dt
       this.vy += pull.y * force * dt
     }
@@ -1536,14 +1558,15 @@ export class Powerup extends Entity {
   }
 
   draw(renderer) {
-    const colour = POWERUP_COLOUR[this.type],
+    const spec = POWERUP_TYPES[this.type]
+    const colour = spec.colour,
       pts = []
     for (let i = 0; i < 6; i++) {
       const a = this.angle + (i / 6) * TAU
       pts.push({ x: this.x + Math.cos(a) * 12, y: this.y + Math.sin(a) * 12 })
     }
     renderer.strokePoly(pts, { color: colour, width: 1.7, glow: 14 })
-    renderer.text(this.type[0].toUpperCase(), this.x, this.y, {
+    renderer.text(spec.icon, this.x, this.y, {
       size: 12,
       color: colour,
       align: "center",

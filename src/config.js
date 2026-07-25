@@ -6,7 +6,11 @@
 //   * a SHIELD module means "incoming damage drains energy instead of hull
 //     until energy hits zero, then the shield is down"
 //   * a CONTROLLER decides when a mounted weapon fires
-// New weapons/ships/shields are added by editing the registries below.
+// New weapons/ships/shields/powerups are added by editing the registries below.
+// A registry entry may carry an `apply` function; it drives the effect through
+// the public Game API so the whole definition stays in one place.
+
+import { normalize, randRange, subtract } from "./math.js"
 
 export const VIEW_W = 1024
 export const VIEW_H = 640
@@ -41,6 +45,8 @@ export const CONFIG = {
   SPLIT_IMPULSE: 55, // gentle push so cut halves drift apart, not fling
   ORE_ENERGY: 9, // energy refunded per ore collected
   ORE_SCORE: 120,
+  ORE_PASSIVE_PULL: 120, // attraction inside the ship's magnet radius
+  ORE_VACUUM_PULL: 560, // attraction while sweeping up a cleared sector
   SLICE_SCORE: 15,
   BLAST_R: 160,
   BLAST_IMPULSE: 280,
@@ -290,21 +296,79 @@ export const PLAYER_TYPE = {
   ],
 }
 
-export const POWERUP_TYPES = ["repel", "refuel", "booster", "multi", "magnet"]
-export const POWERUP_LABEL = {
-  repel: "REPEL",
-  refuel: "REFUEL",
-  booster: "BOOSTER",
-  multi: "MULTI-LASER",
-  magnet: "ORE MAGNET",
+// ---------------------------------------------------------------------------
+// POWERUP TYPES - one entry per collectable. Fields:
+//   label   name shown in the pickup toast
+//   short   name shown in the active-buff list (omit to reuse `label`)
+//   icon    single character drawn on the pickup and in the inventory slot
+//   colour  pickup outline, inventory slot and buff text
+//   seconds how long the effect lasts; omit for an instant effect
+//   apply   optional immediate effect, run on use
+// A timed powerup records its remaining seconds in player.buffs, which the
+// gameplay code reads through player.buffTime(id).
+// ---------------------------------------------------------------------------
+export const POWERUP_TYPES = {
+  repel: {
+    label: "REPEL",
+    icon: "R",
+    colour: "#ff6bd0",
+    impulse: 300,
+    apply: (game, player, type) => {
+      for (const asteroid of game.asteroids) {
+        const d = normalize(subtract(asteroid.center, player))
+        asteroid.vx += d.x * type.impulse
+        asteroid.vy += d.y * type.impulse
+        asteroid.spin += randRange(-3, 3)
+      }
+      for (const bullet of game.projectiles) {
+        const d = normalize(subtract(bullet, player))
+        const speed = Math.max(CONFIG.BULLET_SPEED, Math.hypot(bullet.vx, bullet.vy))
+        bullet.vx = d.x * speed
+        bullet.vy = d.y * speed
+      }
+      game.ring(player.x, player.y, 40, type.colour, 260, 0.7)
+      game.screenShake = 9
+    },
+  },
+  refuel: {
+    label: "REFUEL",
+    icon: "F",
+    colour: "#57e39a",
+    apply: (game, player, type) => {
+      player.energy = game.maxEnergy()
+      game.ring(player.x, player.y, 24, type.colour, 150, 0.6)
+    },
+  },
+  booster: {
+    label: "BOOSTER",
+    short: "BOOST",
+    icon: "B",
+    colour: "#ffcf5c",
+    seconds: 6.5,
+    beamLengthMult: 1.6, // charged shots reach further and cost nothing
+    apply: (game, player, type) => {
+      game.burst(player.x, player.y, 20, type.colour, 40, 140, 0.6)
+    },
+  },
+  multi: {
+    label: "MULTI-LASER",
+    short: "MULTI",
+    icon: "L",
+    colour: "#5fd7ff",
+    seconds: 9,
+    beamOffsets: [-28, 0, 28], // parallel beams either side of the nose
+  },
+  magnet: {
+    label: "ORE MAGNET",
+    short: "MAGNET",
+    icon: "M",
+    colour: "#b38bff",
+    seconds: 6.5,
+    pull: 260,
+  },
 }
-export const POWERUP_COLOUR = {
-  repel: "#ff6bd0",
-  refuel: "#57e39a",
-  booster: "#ffcf5c",
-  multi: "#5fd7ff",
-  magnet: "#b38bff",
-}
+
+export const POWERUP_IDS = Object.keys(POWERUP_TYPES)
 
 export function freshUpgrades() {
   return { slots: 1, core: 0, shield: 0, laser: 0, magnet: 0, turret: false, reverse: false }
