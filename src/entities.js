@@ -1463,9 +1463,8 @@ export class RivalShip extends Ship {
     this.lifeTimer = randRange(type.lifeTime[0], type.lifeTime[1])
     this.leaving = false
     this.buildHardpoints(type.hardpoints)
-    const activeLoadout = loadout || type.loadout || []
-    this.applyLoadout(activeLoadout)
-    this.hunts = activeLoadout.some((e) => e.controller === "hunter")
+    this.applyLoadout(loadout || type.loadout || [])
+    this.hunts = !!type.hunts
   }
 
   // Hull hits chip the hull down rather than destroying outright, so the laser

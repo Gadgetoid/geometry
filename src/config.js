@@ -376,8 +376,9 @@ export const SHIELD_TYPES = {
 //
 // The rest describes how a type differs in play, so no code tests a ship by
 // name: `hullWidth` is its outline weight, `debris` sizes the explosion, and
-// `debrisMaterial` says what its wreckage is made of. `mass` is in the same units
-// as a rock's (area / AST_MASS_AREA), with the player's hull as 1.
+// `debrisMaterial` says what its wreckage is made of. `hunts` says it steers for
+// the player instead of for ore and rocks. `mass` is in the same units as a
+// rock's (area / AST_MASS_AREA), with the player's hull as 1.
 //
 // A beam cuts any unshielded hull, exactly as it cuts a rock. Nothing marks a
 // type as cuttable: the material's `minArea` decides what the cut leaves, so a
@@ -483,6 +484,7 @@ export const SHIP_TYPES = {
       { hp: 5, shield: "standard" },
     ],
     spawn: { fromSector: 6, chance: 0.3, maxConcurrent: 1 },
+    hunts: true, // steers for the player rather than for ore and rocks
     hullWidth: 2,
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },

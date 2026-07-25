@@ -282,6 +282,15 @@ test("every hull takes the impulse its mass implies when it hits a rock", () => 
   }
 })
 
+test("whether a rival hunts is declared on its type", () => {
+  // It used to be inferred from a loadout entry naming the "hunter" controller,
+  // so a new aggressive controller would silently not chase.
+  assert.equal(new RivalShip(0, 0, "frigate", []).hunts, true, "with no loadout at all")
+  assert.equal(new RivalShip(0, 0, "frigate", SHIP_TYPES.frigate.loadout).hunts, true)
+  assert.equal(new RivalShip(0, 0, "scout", SHIP_TYPES.scout.loadout).hunts, false)
+  assert.equal(!!SHIP_TYPES.frigate.hunts, true, "and it is the type that says so")
+})
+
 test("two rivals cannot occupy the same space", () => {
   const game = liveGame()
   game.player.x = -5000 // keep the player out of it
