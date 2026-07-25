@@ -320,7 +320,16 @@ export const PROGRESSION = {
 // `gun` and `shield` name the modules to mount, so arming a rock differently is
 // an edit here rather than in the Asteroid constructor. `explosive` is a property
 // of the rock itself and mounts nothing.
-const ROCK_TURRETS = { weapon: "blaster", controller: "turret", count: [1, 3] }
+// Guns are dealt an even share of the rock's circumference each. `jitter` is how
+// far a gun may wander off its share, in radians, and `inset` how far out along
+// its bearing it sits as a fraction of the distance to the outline.
+const ROCK_TURRETS = {
+  weapon: "blaster",
+  controller: "turret",
+  count: [1, 3],
+  jitter: 0.3,
+  inset: [0.35, 0.7],
+}
 const ROCK_SHIELD = { shield: "standard" }
 
 export const HAZARD_TRAITS = [

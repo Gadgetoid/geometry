@@ -23,6 +23,7 @@ import {
   polygonArea,
   polygonCentroid,
   boundingRadius,
+  boundaryDistance,
   perpendicular,
   slicePolygon,
   convexContact,
@@ -1970,18 +1971,36 @@ export class Asteroid extends Entity {
     }
 
     if (!opts.vertices) {
-      // Fresh rock: mount modules on hardpoints. Gun rocks get 1-3 turrets; a
-      // shield takes the centre. Turret points are placed by lerping from the
-      // centroid toward a random vertex, so they stay inside the convex hull.
+      // Fresh rock: mount modules on hardpoints. A shield takes the centre; guns
+      // are fanned around it.
+      //
+      // Each gun used to pick its own vertex to sit under, and independent picks
+      // land on the same bearing often enough to read as a cluster: one pair in
+      // ten ended up closer than the nubs the view draws for them. They are now
+      // dealt an even share of the circle each, jittered, and set a fraction of
+      // the way out along that bearing, so they stay inside the outline whatever
+      // its shape and stay apart at any count.
       const traits = opts.traits || {}
       if (traits.gun) {
         const count = randInt(traits.gun.count[0], traits.gun.count[1])
+        const jitter = traits.gun.jitter ?? 0.3
+        const inset = traits.gun.inset ?? [0.35, 0.7]
+        const phase = Math.random() * TAU
         for (let k = 0; k < count; k++) {
-          const v = this.vertices[randInt(0, this.vertices.length - 1)]
-          const t = randRange(0.2, 0.6)
+          const bearing = phase + (k / count) * TAU + randRange(-jitter, jitter)
+          const ux = Math.cos(bearing),
+            uy = Math.sin(bearing)
+          const reach = boundaryDistance(
+            this.vertices,
+            this.center,
+            ux,
+            uy,
+            this.boundRadius * 2 + 1,
+          )
+          const out = reach * randRange(inset[0], inset[1])
           this.hardpoints.push({
-            x: this.center.x + (v.x - this.center.x) * t,
-            y: this.center.y + (v.y - this.center.y) * t,
+            x: this.center.x + ux * out,
+            y: this.center.y + uy * out,
             module: new Weapon(traits.gun.weapon, traits.gun.controller),
           })
         }

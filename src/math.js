@@ -462,6 +462,26 @@ export function segmentCircleEntry(a, b, centre, radius) {
   return Math.max(0, along - half)
 }
 
+// How far the outline lies from an interior point along a direction. Zero when
+// the ray never meets it, which a sane outline cannot do. Used to place
+// something on a body at a bearing rather than at one of its vertices, so
+// several of them can be spread around it whatever shape it is.
+export function boundaryDistance(vertices, from, ux, uy, maxReach) {
+  const to = { x: from.x + ux * maxReach, y: from.y + uy * maxReach }
+  let nearest = 0
+  for (let i = 0; i < vertices.length; i++) {
+    const hit = segmentIntersection(from, to, vertices[i], vertices[(i + 1) % vertices.length])
+    if (!hit) {
+      continue
+    }
+    const along = Math.hypot(hit.x - from.x, hit.y - from.y)
+    if (nearest === 0 || along < nearest) {
+      nearest = along
+    }
+  }
+  return nearest
+}
+
 // How many polygon edges a beam segment crosses.
 export function countBeamCrossings(beam, vertices) {
   let count = 0

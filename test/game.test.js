@@ -2279,6 +2279,50 @@ test("sector plans follow PROGRESSION", () => {
   )
 })
 
+test("a rock's turrets are spread around it, not stacked on one bearing", () => {
+  // Each used to pick its own vertex to sit under, and independent picks put a
+  // pair on the same bearing often enough to read as a cluster.
+  const trait = HAZARD_TRAITS.map((h) => h.traits.gun).find(Boolean)
+  assert.ok(trait, "some hazard should mount guns")
+  const gaps = []
+  const insideEvery = []
+  seeded(4242, () => {
+    for (let i = 0; i < 400; i++) {
+      const rock = new Asteroid({
+        x: 0,
+        y: 0,
+        radius: 40 + (i % 60),
+        traits: { gun: { ...trait, count: [2, 3] } },
+      })
+      const guns = rock.hardpoints.filter((hp) => hp.module && hp.module.kind === "weapon")
+      insideEvery.push(guns.every((hp) => pointInPolygon(hp, rock.vertices)))
+      const bearings = guns.map((hp) => Math.atan2(hp.y - rock.center.y, hp.x - rock.center.x))
+      for (let a = 0; a < bearings.length; a++) {
+        for (let b = a + 1; b < bearings.length; b++) {
+          let d = Math.abs(bearings[a] - bearings[b]) % (Math.PI * 2)
+          if (d > Math.PI) {
+            d = Math.PI * 2 - d
+          }
+          gaps.push(d)
+        }
+      }
+    }
+  })
+  assert.ok(gaps.length > 100, "enough pairs to say anything")
+  // three guns share the circle, so the tightest honest gap is a third of it
+  // less the jitter either side
+  const floor = (Math.PI * 2) / 3 - 2 * trait.jitter
+  const worst = Math.min(...gaps)
+  assert.ok(
+    worst > floor * 0.9,
+    `closest pair sat ${worst.toFixed(2)} rad apart, floor ${floor.toFixed(2)}`,
+  )
+  assert.ok(
+    insideEvery.every(Boolean),
+    "every turret must stay inside the outline, or a cut loses it",
+  )
+})
+
 test("hazard traits are gated by sector", () => {
   const game = new Game()
   for (let trial = 0; trial < 200; trial++) {
