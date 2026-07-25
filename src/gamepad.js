@@ -122,10 +122,13 @@ export class GamepadInput {
   constructor(game) {
     this.game = game
     this.previous = null
+    this.backHeld = 0 // seconds B has been down, for the hold that cancels a rebind
+    this.holdCancelled = false // this B press has already abandoned a wait
+    this.heldWhenWaitOpened = null // buttons already down when a row started waiting
   }
 
   // Once a frame, before the simulation advances.
-  poll() {
+  poll(dt = 0) {
     const pad = firstPad()
     if (!pad) {
       if (this.previous) {
@@ -134,17 +137,23 @@ export class GamepadInput {
       }
       return
     }
-    this.apply(readPad(pad, this.game.bindings.buttons))
+    this.apply(readPad(pad, this.game.bindings.buttons), dt)
   }
 
   // Drive one sample into the game. Separate from polling so a test can feed a
   // sample without a browser.
-  apply(state) {
+  apply(state, dt = 0) {
     const game = this.game
     const before = this.previous
     const pressed = (field) => state[field] && !(before && before[field])
     if (padInUse(state)) {
       game.inputMode = "gamepad"
+    }
+    if (state.back) {
+      this.backHeld += dt
+    } else {
+      this.backHeld = 0
+      this.holdCancelled = false
     }
 
     game.padInput = {
@@ -156,25 +165,49 @@ export class GamepadInput {
       turretFire: state.turretFire,
     }
 
-    // A row waiting for a button takes the next new press, and the menu sees none
-    // of it. B abandons the wait, as ESCAPE does, and BACK does too since it is
-    // reserved and so always free; neither can therefore be captured.
+    // A row waiting for a button takes it when it comes back up, and the menu
+    // sees none of it. Binding on release is what lets B be bound like any other
+    // button: a tap fills the row, and holding B abandons the wait instead. BACK
+    // still abandons it outright, since it opens the menu and is reserved, so it
+    // could never be captured anyway.
     if (game.rebinding) {
-      if (pressed("back") || pressed("pause")) {
+      // Whatever was already down when the row started waiting - the A that chose
+      // it - must not be taken by the release that follows. Pressing it again
+      // afterwards binds it like anything else.
+      // With no previous sample there is no evidence anything was held, so
+      // nothing is excused: the first press to arrive is the binding.
+      if (!this.heldWhenWaitOpened) {
+        this.heldWhenWaitOpened = new Set(before ? before.pressed : [])
+      }
+      if (pressed("pause")) {
         game.cancelRebind()
-      } else {
-        for (const index of state.pressed) {
-          if (
-            !(before && before.pressed.includes(index)) &&
-            game.captureBinding("buttons", index)
-          ) {
-            break
-          }
+        this.previous = state
+        return
+      }
+      if (state.back && this.backHeld >= GAMEPAD.rebindCancelHold && !this.holdCancelled) {
+        this.holdCancelled = true
+        game.cancelRebind()
+        this.previous = state
+        return
+      }
+      for (const index of before ? before.pressed : []) {
+        if (state.pressed.includes(index)) {
+          continue // still held; nothing is taken until it comes up
+        }
+        if (this.heldWhenWaitOpened.delete(index)) {
+          continue // left over from choosing the row
+        }
+        if (index === GAMEPAD.buttons.back && this.holdCancelled) {
+          continue // this is the release that ended a cancelling hold
+        }
+        if (game.captureBinding("buttons", index)) {
+          break
         }
       }
       this.previous = state
       return
     }
+    this.heldWhenWaitOpened = null
 
     // Firing is on release, as it is for the fire key: the trigger is held to
     // charge and the shot goes when it comes back up.

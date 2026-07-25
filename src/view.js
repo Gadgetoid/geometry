@@ -943,7 +943,7 @@ export class GameView {
       }
       r.text(
         game.rebinding
-          ? this.#prompt(game, "ESC cancels", "B cancels")
+          ? this.#prompt(game, "ESC cancels", "HOLD B to cancel")
           : this.#prompt(
               game,
               "UP / DOWN select    LEFT / RIGHT switch column    ENTER rebind    ESC back",

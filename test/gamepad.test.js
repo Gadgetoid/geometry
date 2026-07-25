@@ -412,17 +412,96 @@ test("B backs out of a menu on a pad, as escape does on a keyboard", () => {
   assert.equal(game.paused, false, "a second press closes it")
 })
 
-test("B abandons a rebind rather than being bound to the control", () => {
+// A row waiting for a button on a pad. Returns the input so a test can drive it.
+function waitingForAButton(game) {
+  const input = new GamepadInput(game)
+  game.toggleOptions()
+  game.openPausePage("controls")
+  game.beginRebind("buttons", "thrust")
+  return input
+}
+const HOLD = GAMEPAD.rebindCancelHold
+
+test("a pad binding is taken when the button comes back up", () => {
+  const game = liveGame()
+  const input = waitingForAButton(game)
+  input.apply(readPad(pad({ buttons: { [B.dpadUp]: 1 } })), 1 / 60)
+  assert.ok(game.rebinding, "nothing is taken while the button is still down")
+  input.apply(readPad(pad({})), 1 / 60)
+  assert.equal(game.rebinding, null, "and the release fills the row")
+  assert.equal(game.bindings.buttons.thrust, B.dpadUp)
+})
+
+test("a tap of B binds it, so the one button a pad could not reach now can be", () => {
+  const game = liveGame()
+  const input = waitingForAButton(game)
+  input.apply(readPad(pad({ buttons: { [B.back]: 1 } })), 1 / 60)
+  assert.ok(game.rebinding, "a tap is not a cancel")
+  input.apply(readPad(pad({})), 1 / 60)
+  assert.equal(game.bindings.buttons.thrust, B.back, "B is captured like any other button")
+  assert.equal(game.rebinding, null)
+  assert.equal(game.pausePage, "controls", "without leaving the page")
+})
+
+test("holding B abandons the wait, and the release that ends it is not captured", () => {
+  const game = liveGame()
+  const input = waitingForAButton(game)
+  const before = game.bindings.buttons.thrust
+  // hold it past the threshold
+  for (let held = 0; held <= HOLD + 0.05; held += 1 / 60) {
+    input.apply(readPad(pad({ buttons: { [B.back]: 1 } })), 1 / 60)
+  }
+  assert.equal(game.rebinding, null, "the wait is abandoned")
+  input.apply(readPad(pad({})), 1 / 60)
+  assert.equal(game.bindings.buttons.thrust, before, "and letting go binds nothing")
+  assert.equal(game.pausePage, "controls", "nor does it back out of the page")
+  assert.equal(game.paused, true, "nor close the menu")
+})
+
+test("a hold only cancels once, so the next wait is not cancelled by the same press", () => {
+  const game = liveGame()
+  const input = waitingForAButton(game)
+  for (let held = 0; held <= HOLD + 0.05; held += 1 / 60) {
+    input.apply(readPad(pad({ buttons: { [B.back]: 1 } })), 1 / 60)
+  }
+  assert.equal(game.rebinding, null)
+  // still holding B, ask for another binding
+  game.beginRebind("buttons", "fire")
+  input.apply(readPad(pad({ buttons: { [B.back]: 1 } })), 1 / 60)
+  assert.ok(game.rebinding, "a press already spent cannot cancel again")
+})
+
+test("the A that chooses a row is not captured by its own release", () => {
+  // Taking a binding on release means the press that opened the wait is still
+  // down when it opens; letting go of it must not fill the row with A.
   const game = liveGame()
   const input = new GamepadInput(game)
   game.toggleOptions()
   game.openPausePage("controls")
+  const rows = game.pauseMenu()
+  game.pauseSelection = rows.findIndex((row) => row.section === "GAMEPAD")
   const before = game.bindings.buttons.thrust
-  game.beginRebind("buttons", "thrust")
-  input.apply(readPad(pad({ buttons: { [B.back]: 1 } })))
-  assert.equal(game.rebinding, null, "the wait is abandoned")
-  assert.equal(game.bindings.buttons.thrust, before, "and B was not captured")
-  assert.equal(game.pausePage, "controls", "without leaving the page")
+  input.apply(readPad(pad({})), 1 / 60)
+  input.apply(readPad(pad({ buttons: { [B.confirmAlt]: 1 } })), 1 / 60) // A chooses the row
+  assert.ok(game.rebinding, "the row is waiting")
+  input.apply(readPad(pad({})), 1 / 60) // and A comes back up
+  assert.ok(game.rebinding, "still waiting")
+  assert.equal(game.bindings.buttons.thrust, before, "A was not captured by letting go of it")
+  // pressing A again, deliberately, does bind it
+  input.apply(readPad(pad({ buttons: { [B.confirmAlt]: 1 } })), 1 / 60)
+  input.apply(readPad(pad({})), 1 / 60)
+  assert.equal(game.bindings.buttons.thrust, B.confirmAlt, "a fresh press of A binds it")
+})
+
+test("BACK still abandons a wait outright, being reserved and unbindable", () => {
+  const game = liveGame()
+  const input = waitingForAButton(game)
+  const before = game.bindings.buttons.thrust
+  input.apply(readPad(pad({})), 1 / 60)
+  input.apply(readPad(pad({ buttons: { [B.pause]: 1 } })), 1 / 60)
+  assert.equal(game.rebinding, null, "the wait is abandoned on the press")
+  input.apply(readPad(pad({})), 1 / 60)
+  assert.equal(game.bindings.buttons.thrust, before, "and BACK was not captured")
 })
 
 test("B still works its powerup slot in flight", () => {

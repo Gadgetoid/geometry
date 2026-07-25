@@ -153,7 +153,7 @@ function loop(timestamp) {
     dt = 0.05
   } // clamp so a stalled tab doesn't teleport everything
   // a pad is polled, not evented, so it is sampled before the step it drives
-  gamepad.poll()
+  gamepad.poll(dt)
   syncHelp()
   syncSettings()
   if (game.exitRequested) {

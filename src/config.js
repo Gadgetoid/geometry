@@ -194,6 +194,10 @@ export const GAMEPAD = {
   turretDeadzone: 0.5, // the turret only takes an aim from a deliberate push
   triggerThreshold: 0.35, // how far a trigger travels before it counts as held
   menuStep: 0.6, // stick deflection that counts as one menu move
+  // A pad binding is taken when the button comes back up, so B can be bound to a
+  // control like any other. Holding it this long abandons the wait instead, and
+  // the release that ends the hold is not captured.
+  rebindCancelHold: 0.6,
   // The face buttons, by their index in the standard mapping, so a slot bound to
   // one can be named on the HUD as the pad names it.
   slotLabels: ["A", "B", "X", "Y"],
