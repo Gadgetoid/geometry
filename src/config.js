@@ -142,6 +142,41 @@ export const CONFIG = {
 }
 
 // ---------------------------------------------------------------------------
+// GAMEPAD - indices into the Gamepad API's "standard mapping", plus the
+// thresholds that turn analog travel into intent. Remapping a control is an edit
+// here; src/gamepad.js reads nothing else.
+//
+// Left stick steers and the left trigger drives the engine, so the two hands
+// divide as steer/thrust and aim/fire. `slotLabels` are the face buttons the HUD
+// names in place of the number keys once a pad is in use.
+// ---------------------------------------------------------------------------
+export const GAMEPAD = {
+  buttons: {
+    slots: [0, 1, 2, 3], // A B X Y -> powerup slots 1-4
+    reverse: 4, // left bumper
+    turretFire: 5, // right bumper, alongside right-stick aim
+    thrust: 6, // left trigger
+    fire: 7, // right trigger: hold to charge, release to shoot
+    pause: 8, // back / select
+    confirm: 9, // start
+    // A confirms a menu as well as filling a powerup slot. The two never
+    // collide: a slot can only be used in a flying phase and a menu only exists
+    // outside one, so each press reaches exactly one of them.
+    confirmAlt: 0,
+    dpadUp: 12,
+    dpadDown: 13,
+    dpadLeft: 14,
+    dpadRight: 15,
+  },
+  axes: { turn: 0, menu: 1, turretX: 2, turretY: 3 },
+  deadzone: 0.22, // stick travel ignored, so a resting stick does not drift
+  turretDeadzone: 0.5, // the turret only takes an aim from a deliberate push
+  triggerThreshold: 0.35, // how far a trigger travels before it counts as held
+  menuStep: 0.6, // stick deflection that counts as one menu move
+  slotLabels: ["A", "B", "X", "Y"],
+}
+
+// ---------------------------------------------------------------------------
 // PROGRESSION - how a sector's contents are derived from its number. These
 // drive Game.planLevel, so the whole difficulty curve is tunable here without
 // reading gameplay code.

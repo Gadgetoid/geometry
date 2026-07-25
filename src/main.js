@@ -3,6 +3,7 @@
 import { WebGLRenderer } from "./glrenderer.js"
 import { GameView } from "./view.js"
 import { Game } from "./game.js"
+import { GamepadInput } from "./gamepad.js"
 import { DEV_VISIBLE, POWERUP_TYPES, SHOP } from "./config.js"
 import { Sound } from "./audio.js"
 
@@ -17,10 +18,29 @@ if (!renderer) {
 }
 const view = new GameView(renderer)
 const game = new Game()
+const gamepad = new GamepadInput(game)
 
 // Debug / test handle: lets the browser console and the smoke test inspect and
 // drive live state without reaching into module scope.
-window.__geometry = { game, view, renderer, POWERUP_TYPES, SHOP }
+window.__geometry = { game, view, renderer, gamepad, POWERUP_TYPES, SHOP }
+
+// The help line names whichever device is in use. Both are in the page so the
+// swap costs nothing and neither has to be built in script.
+const helpFor = {
+  keyboard: document.getElementById("helpKeys"),
+  gamepad: document.getElementById("helpPad"),
+}
+let shownHelp = null
+function syncHelp() {
+  if (shownHelp === game.inputMode) {
+    return
+  }
+  shownHelp = game.inputMode
+  for (const [mode, element] of Object.entries(helpFor)) {
+    element.hidden = mode !== shownHelp
+  }
+}
+syncHelp()
 
 addEventListener("keydown", (e) => game.onKeyDown(e))
 addEventListener("keyup", (e) => game.onKeyUp(e))
@@ -87,6 +107,9 @@ function loop(timestamp) {
   if (dt > 0.05) {
     dt = 0.05
   } // clamp so a stalled tab doesn't teleport everything
+  // a pad is polled, not evented, so it is sampled before the step it drives
+  gamepad.poll()
+  syncHelp()
   game.advance(dt)
   // the simulation still runs while a lost GPU context is being restored
   if (renderer.ready) {

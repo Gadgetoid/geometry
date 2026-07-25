@@ -117,6 +117,13 @@ export class Game {
     this.rivalTimer = 0
     this.clearTimer = 0
     this.pressedKeys = new Set()
+    // Which device the player last used, so the HUD can name the right controls.
+    this.inputMode = "keyboard"
+    // Input a gamepad cannot express as a key: analog steering, an absolute
+    // turret bearing, and held controls that must not disturb pressedKeys (a
+    // keyboard player holding the same key would otherwise have it cleared).
+    // The ship takes whichever of the two is asking for more.
+    this.padInput = this.blankPadInput()
     this.viewCenter = { x: ARENA.cx, y: ARENA.cy } // world point the camera follows
 
     this.backdrop = new Backdrop()
@@ -145,6 +152,16 @@ export class Game {
 
   blankStats() {
     return { shots: 0, hits: 0, damage: 0, ore: 0, mined: 0 }
+  }
+  blankPadInput() {
+    return {
+      turn: 0,
+      thrust: false,
+      reverse: false,
+      charging: false,
+      turretAim: null,
+      turretFire: false,
+    }
   }
   maxEnergy() {
     return CONFIG.CORE_MAX[this.upgrades.core]
@@ -1060,60 +1077,109 @@ export class Game {
     return touched
   }
 
-  // ---- input -----------------------------------------------------------
+  // ---- input intents ---------------------------------------------------
+  // What a device asks the game to do, rather than which control was used, so a
+  // keyboard and a gamepad drive exactly the same code. Each is safe to call in
+  // any phase; the guards live here and not at the call site.
+
+  // Move the shop cursor, wrapping around the launch row at the end.
+  menuMove(delta) {
+    if (this.phase !== "shop") {
+      return
+    }
+    const count = SHOP.length + 1
+    this.shopSelection = (this.shopSelection + delta + count) % count
+  }
+
+  // Buy, launch, or start a run.
+  menuConfirm() {
+    if (this.phase === "shop") {
+      this.doShopAction()
+    } else if (this.phase === "title" || this.phase === "over") {
+      this.startNewGame()
+    }
+  }
+
+  // Dev-only sector jump from the shop. Returns whether it handled the input, so
+  // a caller can stop rather than also moving the cursor.
+  devSectorStep(step) {
+    if (this.phase !== "shop" || !this.devMode) {
+      return false
+    }
+    this.shopSector = Math.max(1, this.shopSector + step)
+    return true
+  }
+
+  togglePause() {
+    if (!this.inSector()) {
+      return
+    }
+    this.paused = !this.paused
+    if (this.paused) {
+      Sound.setThruster(false)
+    }
+  }
+
+  // Use a powerup slot, if the ship is in a state to use one.
+  tryUseSlot(index) {
+    if (this.canFly() && !this.paused) {
+      this.usePowerupSlot(index)
+    }
+  }
+
+  // Let a held charge go. Firing is on release, so this is what actually shoots.
+  releaseFire() {
+    if (!this.player) {
+      return
+    }
+    if (this.canFly() && !this.paused) {
+      this.player.fireLaser(this)
+    }
+    this.player.mainWeapon.charge = 0
+  }
+
+  // ---- keyboard --------------------------------------------------------
   onKeyDown(e) {
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
       e.preventDefault()
     }
+    this.inputMode = "keyboard"
 
     const left = e.code === "ArrowLeft" || e.code === "KeyA"
     const right = e.code === "ArrowRight" || e.code === "KeyD"
-    if (this.phase === "shop" && this.devMode && (left || right)) {
+    if (left || right) {
       const step = this.pressedKeys.has("ShiftLeft") || this.pressedKeys.has("ShiftRight") ? 10 : 1
-      this.shopSector = Math.max(1, this.shopSector + (right ? step : -step))
-      this.pressedKeys.add(e.code)
-      return
+      if (this.devSectorStep(right ? step : -step)) {
+        this.pressedKeys.add(e.code)
+        return
+      }
     }
     if (e.repeat) {
       this.pressedKeys.add(e.code)
       return
     }
 
-    if (this.phase === "shop") {
-      const count = SHOP.length + 1
-      if (e.code === "ArrowUp" || e.code === "KeyW") {
-        this.shopSelection = (this.shopSelection - 1 + count) % count
-      } else if (e.code === "ArrowDown" || e.code === "KeyS") {
-        this.shopSelection = (this.shopSelection + 1) % count
-      } else if (e.code === "Enter") {
-        this.doShopAction()
-      }
-    } else if (e.code === "Enter" && (this.phase === "title" || this.phase === "over")) {
-      this.startNewGame()
+    if (e.code === "ArrowUp" || e.code === "KeyW") {
+      this.menuMove(-1)
+    } else if (e.code === "ArrowDown" || e.code === "KeyS") {
+      this.menuMove(1)
+    } else if (e.code === "Enter") {
+      this.menuConfirm()
     }
-
-    if (e.code === "KeyP" && this.inSector()) {
-      this.paused = !this.paused
-      if (this.paused) {
-        Sound.setThruster(false)
-      }
+    if (e.code === "KeyP") {
+      this.togglePause()
     }
-    if (this.canFly() && !this.paused) {
-      const slot = SLOT_KEYS[e.code]
-      if (slot !== undefined) {
-        this.usePowerupSlot(slot)
-      }
+    const slot = SLOT_KEYS[e.code]
+    if (slot !== undefined) {
+      this.tryUseSlot(slot)
     }
     this.pressedKeys.add(e.code)
   }
 
   onKeyUp(e) {
     this.pressedKeys.delete(e.code)
-    if (e.code === "Space" && this.player) {
-      if (this.canFly() && !this.paused) {
-        this.player.fireLaser(this)
-      }
-      this.player.mainWeapon.charge = 0
+    if (e.code === "Space") {
+      this.releaseFire()
     }
   }
 
@@ -1125,6 +1191,7 @@ export class Game {
   // the start of a level so input never carries across a phase transition.
   clearInput() {
     this.pressedKeys.clear()
+    this.padInput = this.blankPadInput()
     Sound.setThruster(false)
     if (this.player) {
       this.player.mainWeapon.charge = 0

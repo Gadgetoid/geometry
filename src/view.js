@@ -5,7 +5,7 @@
 // the Renderer without touching game logic. Entities still paint themselves via
 // their own draw(renderer, game) methods.
 
-import { VIEW_W, VIEW_H, TAU, ARENA, SHOP, POWERUP_TYPES } from "./config.js"
+import { VIEW_W, VIEW_H, TAU, ARENA, GAMEPAD, SHOP, POWERUP_TYPES } from "./config.js"
 import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
 import { PALETTE } from "./palette.js"
@@ -90,6 +90,12 @@ export class GameView {
         this.dpr,
       )
     }
+  }
+
+  // Name a control the way the device in the player's hands names it. Game
+  // tracks which was last used, so a pad player is never told to press ENTER.
+  #prompt(game, keyboard, gamepad) {
+    return game.inputMode === "gamepad" ? gamepad : keyboard
   }
 
   // The world point shown at the centre of the view. Defaults to the middle of
@@ -500,7 +506,9 @@ export class GameView {
           stroke: spec ? spec.colour : PALETTE.ui.slotEmpty,
           width: 1.2,
         })
-        r.text(String(i + 1), sx + 2, sy + 9, { size: 8, color: PALETTE.text.muted })
+        const label =
+          game.inputMode === "gamepad" ? GAMEPAD.slotLabels[i] || String(i + 1) : String(i + 1)
+        r.text(label, sx + 2, sy + 9, { size: 8, color: PALETTE.text.muted })
         if (spec) {
           r.text(spec.icon, sx + size / 2, sy + size / 2 + 5, {
             size: 12,
@@ -602,7 +610,7 @@ export class GameView {
       { size: 12, color: PALETTE.ui.accent, align: "center" },
     )
     if (Math.floor(game.gameTime * 2) % 2 === 0) {
-      r.text("PRESS ENTER", VIEW_W / 2, VIEW_H / 2 + 114, {
+      r.text(this.#prompt(game, "PRESS ENTER", "PRESS A OR START"), VIEW_W / 2, VIEW_H / 2 + 114, {
         size: 18,
         bold: true,
         color: PALETTE.ui.good,
@@ -698,14 +706,23 @@ export class GameView {
         glow: launchSelected ? 16 : 8,
       },
     )
-    r.text("UP / DOWN select      ENTER buy or launch", VIEW_W / 2, launchY + 26, {
-      size: 11,
-      color: PALETTE.text.muted,
-      align: "center",
-    })
+    r.text(
+      this.#prompt(
+        game,
+        "UP / DOWN select      ENTER buy or launch",
+        "DPAD select      A / START buy or launch",
+      ),
+      VIEW_W / 2,
+      launchY + 26,
+      { size: 11, color: PALETTE.text.muted, align: "center" },
+    )
     if (game.devMode) {
       r.text(
-        "DEV   LEFT / RIGHT choose sector (hold SHIFT for x10)   -   purchases are free",
+        this.#prompt(
+          game,
+          "DEV   LEFT / RIGHT choose sector (hold SHIFT for x10)   -   purchases are free",
+          "DEV   DPAD LEFT / RIGHT choose sector   -   purchases are free",
+        ),
         VIEW_W / 2,
         launchY + 44,
         { size: 11, color: PALETTE.ui.accentAlt, align: "center" },
@@ -743,11 +760,16 @@ export class GameView {
       { size: 12, color: newBest ? PALETTE.ui.goodBright : PALETTE.ui.accent, align: "center" },
     )
     if (Math.floor(game.gameTime * 2) % 2 === 0) {
-      r.text("PRESS ENTER TO RETRY", VIEW_W / 2, VIEW_H / 2 + 82, {
-        size: 13,
-        color: PALETTE.text.dim,
-        align: "center",
-      })
+      r.text(
+        this.#prompt(game, "PRESS ENTER TO RETRY", "PRESS A OR START TO RETRY"),
+        VIEW_W / 2,
+        VIEW_H / 2 + 82,
+        {
+          size: 13,
+          color: PALETTE.text.dim,
+          align: "center",
+        },
+      )
     }
   }
 
