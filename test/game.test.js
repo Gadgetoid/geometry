@@ -933,6 +933,50 @@ test("the shop records the run, and the title carries on from it", () => {
   assert.ok(next.player.aux.module, "with the turret it had been given")
 })
 
+// The run is snapshotted at the shop, once its sector is already cleared, so
+// resuming must offer the sector after it. It used to offer the cleared one, so
+// carrying on replayed a sector that had already been finished.
+test("a resumed run carries on into the sector after the one it saved", () => {
+  const game = liveGame()
+  game.level = 6
+  game.enterShop()
+  const cleared = game.savedRun.level
+  assert.equal(cleared, 6)
+  const fresh = game.shopSector
+
+  const next = new Game()
+  next.savedRun = game.savedRun
+  next.resumeRun()
+  assert.equal(next.resumeSector(), cleared + 1, "the run carries on into the next sector")
+  assert.equal(next.shopSector, fresh, "and offers the same launch as the shop that saved it")
+
+  next.shopSelection = SHOP.length // the LAUNCH row
+  next.doShopAction()
+  assert.equal(next.level, cleared + 1, "launching flies the next sector, not the cleared one")
+})
+
+// The shop's summary line formats five stats. A resumed run has no sector behind
+// it in this session and so has none of them, which rendered as "accuracy NaN%"
+// and four "undefined"s until the view read the flag that was already there.
+test("a resumed summary is flagged, and a played one carries every stat the shop shows", () => {
+  const shown = ["accuracy", "mined", "ore", "damage", "totalBonus"]
+
+  const played = liveGame()
+  played.level = 3
+  played.stats = { shots: 10, hits: 7, damage: 40, ore: 12, mined: 5 }
+  played.enterShop()
+  assert.ok(!played.summaryData.resumed, "a sector just played is not a resume")
+  for (const field of shown) {
+    assert.equal(typeof played.summaryData[field], "number", `${field} must be a number`)
+    assert.ok(Number.isFinite(played.summaryData[field]), `${field} must be finite`)
+  }
+
+  const next = new Game()
+  next.savedRun = played.savedRun
+  next.resumeRun()
+  assert.equal(next.summaryData.resumed, true, "so the shop knows not to read stats it lacks")
+})
+
 test("the title starts a fresh run when there is nothing saved", () => {
   const game = new Game()
   game.savedRun = null

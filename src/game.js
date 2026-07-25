@@ -1183,6 +1183,14 @@ export class Game {
     clearRun()
   }
 
+  // The sector a saved run carries on into. A run is snapshotted at the shop,
+  // once its sector is already cleared, so it resumes into the one after that.
+  // Everything that names the saved run to the player goes through this, so the
+  // title, the pause menu and the shop cannot disagree about which sector it is.
+  resumeSector() {
+    return this.savedRun ? this.savedRun.level + 1 : 1
+  }
+
   // Pick up where a previous session left off, at the shop before the sector that
   // was next. Falls back to a fresh run if there is nothing to resume.
   resumeRun() {
@@ -1209,7 +1217,7 @@ export class Game {
     this.laserShots = []
     this.summaryData = { level: run.level, resumed: true }
     this.shopSelection = 0
-    this.shopSector = run.level
+    this.shopSector = this.resumeSector()
     this.phase = "shop"
   }
 

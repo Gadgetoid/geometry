@@ -657,7 +657,7 @@ export const PAUSE_MENU = [
   },
   {
     name: "RESET PROGRESS",
-    value: (g) => (g.savedRun ? `SECTOR ${g.savedRun.level}` : "-"),
+    value: (g) => (g.savedRun ? `SECTOR ${g.resumeSector()}` : "-"),
     confirm: "ERASE YOUR RUN?",
     action: (g) => g.resetProgress(),
   },
