@@ -481,3 +481,151 @@ test("hazard traits are gated by sector", () => {
     assert.equal(early.shield, undefined, "nor do shields")
   }
 })
+
+// ---- pause menu, settings and the saved run --------------------------------
+
+test("pause opens a menu, and the cursor wraps", async () => {
+  const { PAUSE_MENU } = await import("../src/config.js")
+  const game = liveGame()
+  assert.equal(game.menuRows(), 0, "nothing to navigate while flying")
+  game.togglePause()
+  assert.equal(game.menuRows(), PAUSE_MENU.length)
+  assert.equal(game.pauseSelection, 0)
+  game.menuMove(-1)
+  assert.equal(game.pauseSelection, PAUSE_MENU.length - 1, "wraps backwards off the top")
+  game.menuMove(1)
+  assert.equal(game.pauseSelection, 0)
+})
+
+test("the pause menu takes precedence over the shop", async () => {
+  const { PAUSE_MENU } = await import("../src/config.js")
+  const game = liveGame()
+  game.enterShop()
+  game.paused = true
+  assert.equal(game.menuRows(), PAUSE_MENU.length, "paused wins where both could apply")
+})
+
+test("volume is adjusted from the menu and reaches the mixer", async () => {
+  const { PAUSE_MENU } = await import("../src/config.js")
+  const { Sound } = await import("../src/audio.js")
+  const game = liveGame()
+  game.togglePause()
+  game.pauseSelection = PAUSE_MENU.findIndex((row) => row.name === "VOLUME")
+  game.setVolume(0.5)
+  assert.equal(Sound.volume, 0.5, "the mixer follows the setting")
+  game.menuAdjust(1)
+  assert.ok(game.settings.volume > 0.5, "right turns it up")
+  game.menuAdjust(-1)
+  assert.ok(Math.abs(game.settings.volume - 0.5) < 1e-9, "left turns it back down")
+  game.setVolume(5)
+  assert.equal(game.settings.volume, 1, "and it cannot go past full")
+  game.setVolume(-5)
+  assert.equal(game.settings.volume, 0, "or below silence")
+})
+
+test("a row that asks for confirmation needs two presses", async () => {
+  const { PAUSE_MENU } = await import("../src/config.js")
+  const game = liveGame()
+  game.togglePause()
+  const index = PAUSE_MENU.findIndex((row) => row.name === "EXIT GAME")
+  assert.ok(PAUSE_MENU[index].confirm, "this row should want confirming")
+  game.pauseSelection = index
+  game.menuConfirm()
+  assert.equal(game.exitRequested, false, "the first press only asks")
+  assert.equal(game.pauseConfirming, "EXIT GAME")
+  game.menuConfirm()
+  assert.equal(game.exitRequested, true, "the second press does it")
+})
+
+test("moving the cursor abandons a pending confirmation", async () => {
+  const { PAUSE_MENU } = await import("../src/config.js")
+  const game = liveGame()
+  game.togglePause()
+  game.pauseSelection = PAUSE_MENU.findIndex((row) => row.name === "EXIT GAME")
+  game.menuConfirm()
+  assert.ok(game.pauseConfirming)
+  game.menuMove(1)
+  assert.equal(game.pauseConfirming, null)
+  assert.equal(game.exitRequested, false, "and nothing was done")
+})
+
+test("resume closes the menu", async () => {
+  const { PAUSE_MENU } = await import("../src/config.js")
+  const game = liveGame()
+  game.togglePause()
+  game.pauseSelection = PAUSE_MENU.findIndex((row) => row.name === "RESUME")
+  game.menuConfirm()
+  assert.equal(game.paused, false)
+})
+
+test("the shop records the run, and the title carries on from it", () => {
+  const game = liveGame()
+  game.upgrades.core = 2
+  game.upgrades.turret = true
+  game.oreBalance = 137
+  game.score = 9001
+  game.lives = 2
+  game.enterShop()
+  // the shop awards the sector's bonuses before the snapshot, so the recorded score
+  // is the one the player actually has, not the one they arrived with
+  const banked = game.score
+  assert.ok(banked > 9001, "the sector bonus should have been paid")
+  const saved = game.savedRun
+  assert.ok(saved, "entering the shop should record the run")
+  assert.equal(saved.level, game.level)
+  assert.equal(saved.oreBalance, 137)
+  assert.equal(saved.upgrades.core, 2)
+
+  // a fresh session, told what the last one left behind
+  const next = new Game()
+  next.savedRun = saved
+  next.phase = "title"
+  next.menuConfirm()
+  assert.equal(next.phase, "shop", "carries on at the shop before that sector")
+  assert.equal(next.level, saved.level)
+  assert.equal(next.oreBalance, 137)
+  assert.equal(next.score, banked)
+  assert.equal(next.lives, 2)
+  assert.equal(next.upgrades.core, 2)
+  assert.ok(next.player, "and there is a ship to fly")
+  assert.ok(next.player.aux.module, "with the turret it had been given")
+})
+
+test("the title starts a fresh run when there is nothing saved", () => {
+  const game = new Game()
+  game.savedRun = null
+  game.menuConfirm()
+  assert.equal(game.phase, "arriving")
+  assert.equal(game.level, 1)
+})
+
+test("losing the last life throws the saved run away", () => {
+  const game = liveGame()
+  game.enterShop()
+  assert.ok(game.savedRun)
+  game.phase = "play"
+  game.lives = 1
+  game.playerLoseLife()
+  assert.equal(game.phase, "over")
+  assert.equal(game.savedRun, null, "there is nothing to come back to")
+})
+
+test("resetting progress returns to the title with nothing kept", () => {
+  const game = liveGame()
+  game.enterShop()
+  game.togglePause()
+  game.resetProgress()
+  assert.equal(game.savedRun, null)
+  assert.equal(game.phase, "title")
+  assert.equal(game.paused, false)
+  assert.equal(game.player, null)
+})
+
+test("settings survive a reset of progress", () => {
+  const game = liveGame()
+  game.setVolume(0.3)
+  game.setCrt(false)
+  game.resetProgress()
+  assert.equal(game.settings.volume, 0.3, "how loud the game is is not progress")
+  assert.equal(game.settings.crt, false)
+})
