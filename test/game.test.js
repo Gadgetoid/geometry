@@ -612,38 +612,77 @@ test("a beam registers on a shielded rival's bubble, not on the hull inside it",
   }
 })
 
-// Emergent from cutting every hull by the same rule, and worth keeping: a beam
-// that passes through a corner of an unshielded scout crosses its outline twice,
-// so it cuts, and both pieces fall under what plating holds together, so the scout
-// is destroyed. The same graze on a frigate takes a piece off and leaves the rest
-// as wreckage. One rule, two outcomes, decided by size alone.
-test("a graze that passes through an unshielded scout destroys it", () => {
+// Emergent from cutting every hull by the same rule, and worth keeping. A beam
+// through a scout's wing or nose crosses its outline twice, so it cuts. What the
+// cut leaves is decided by two things, and a scout is small enough to show both:
+// no piece of one ever clears the plating minimum on area, so an unarmed scout goes
+// entirely to ore, while a piece holding a module that survives debris is kept
+// however small it is - leaving a burning wing that still shoots back.
+//
+// Cut a scout at a few offsets and drive the beam along +x through it.
+function grazeScout(loadout, offset) {
   const game = liveGame()
   const player = game.player
   player.angle = 0
   player.x = 100
   player.y = 320
-  // A scout nose-on to +x: its wing runs from the tail corner up to the nose, so a
-  // beam offset sideways clips that wing and passes clean out again.
-  const scout = new RivalShip(500, 320, "scout", [])
-  scout.angle = 0
+  const scout = new RivalShip(500, 320, "scout", loadout)
+  scout.angle = 0 // nose along +x, so an offset beam clips a wing and exits again
   game.rivals = [scout]
   game.asteroids = [new Asteroid({ vertices: square(2000, 2000, 40) })]
-
-  const beam = { a: { x: 100, y: 328 }, dir: { x: 1, y: 0 }, b: { x: 1100, y: 328 } }
+  const beam = {
+    a: { x: 100, y: 320 + offset },
+    dir: { x: 1, y: 0 },
+    b: { x: 1100, y: 320 + offset },
+  }
   const crossings = countBeamCrossings(beam, scout.worldOutline())
-  assert.equal(crossings, 2, "the shot must pass through, not stop inside")
-  // it really is a graze: the chord is a small fraction of the hull's length
-  const xs = scout.worldOutline().map((p) => p.x)
-  const hullLength = Math.max(...xs) - Math.min(...xs)
-
+  const scoreBefore = game.score
   game.applyBeam(beam, player, playerWeapon)
-  assert.equal(scout.dead, true, `a ${hullLength.toFixed(1)}-unit scout is destroyed by a graze`)
-  assert.equal(
-    game.asteroids.filter((a) => a.center.x < 1000).length,
-    0,
-    "and leaves no wreckage, because both pieces are under the plating minimum",
-  )
+  return {
+    crossings,
+    scout,
+    pieces: game.asteroids.filter((a) => a.center.x < 1000),
+    ore: game.oreChunks.length,
+    scored: game.score - scoreBefore,
+  }
+}
+
+const SCOUT_BARE = [{ hp: 0, weapon: "minerLaser", controller: "miner" }]
+const SCOUT_ARMED = [
+  { hp: 0, weapon: "minerLaser", controller: "miner" },
+  { hp: 1, weapon: "autocannon", controller: "turret" },
+]
+
+test("a graze through an unarmed scout leaves nothing but ore", () => {
+  for (const offset of [8, -8, 4]) {
+    const r = grazeScout(SCOUT_BARE, offset)
+    assert.equal(r.crossings, 2, `at offset ${offset} the shot must pass through, not stop inside`)
+    assert.equal(r.scout.dead, true, `at offset ${offset}`)
+    assert.equal(r.pieces.length, 0, `at offset ${offset}: no piece clears the plating minimum`)
+    assert.ok(r.ore > 0, `at offset ${offset}: it goes to ore`)
+    assert.equal(r.scored, SHIP_TYPES.scout.killScore, "nothing left behind, so it pays as a kill")
+  }
+})
+
+test("a graze through an armed scout leaves the piece holding the gun, still firing", () => {
+  for (const offset of [8, -8, 4]) {
+    const r = grazeScout(SCOUT_ARMED, offset)
+    assert.equal(r.scout.dead, true, `at offset ${offset}`)
+    assert.equal(r.pieces.length, 1, `at offset ${offset}: the armed piece survives`)
+    const piece = r.pieces[0]
+    assert.equal(piece.hasGun(), true, "and it keeps the gun, so it goes on shooting")
+    assert.ok(
+      piece.area < piece.minArea,
+      `it survived on the module and not on size: area ${piece.area.toFixed(0)}` +
+        ` under a minimum of ${piece.minArea}`,
+    )
+    assert.ok(piece.burn > 0, "and it burns where it was torn")
+    assert.equal(
+      r.scored,
+      SHIP_TYPES.scout.blastScore,
+      "wreckage is left to deal with, so it pays as a blast rather than a kill",
+    )
+  }
 })
 
 test("the same graze on a frigate takes a piece off and leaves the rest", () => {
