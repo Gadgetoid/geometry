@@ -245,7 +245,7 @@ export class Weapon {
 
   update(dt, game, host, world) {
     this.tick(dt)
-    if (!this.ready || game.phase !== "play" || host.leaving) {
+    if (!this.ready || !game.canFly() || host.leaving) {
       return
     }
     const controller = WEAPON_CONTROLLERS[this.controller]
@@ -831,7 +831,7 @@ export class PlayerShip extends Ship {
     this.energyMax = game.maxEnergy()
 
     const keys = game.pressedKeys
-    const canControl = game.phase === "play" && this.solid
+    const canControl = game.canFly() && this.solid
     // WASD flies the ship; the arrow keys aim the defense turret (below)
     if (canControl) {
       if (keys.has("KeyA")) {

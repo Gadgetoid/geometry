@@ -62,6 +62,12 @@ const SLOT_KEYS = {
 // the same code as the start of a sector.
 const SECTOR_PHASES = new Set(["arriving", "play", "clearing", "departing"])
 
+// Phases where the player flies the ship. Weapons key off the same set, so the
+// sector is never one-sided: nothing shoots at a ship that cannot answer.
+// Clearing is included, so the sweep-up lap is still flown; the warp bookends
+// are not, because the ship is not really there.
+const FLYING_PHASES = new Set(["play", "clearing"])
+
 const RIVALS_FROM_SECTOR = Math.min(
   ...Object.values(SHIP_TYPES).map((type) => type.spawn.fromSector),
 )
@@ -111,9 +117,14 @@ export class Game {
     })
   }
 
-  // Is a sector live? Weapons, control and scoring still key off `play` alone.
+  // Is a sector live at all, warp bookends included?
   inSector() {
     return SECTOR_PHASES.has(this.phase)
+  }
+
+  // Is the ship being flown? Movement, firing and item use all follow this.
+  canFly() {
+    return FLYING_PHASES.has(this.phase)
   }
 
   blankStats() {
@@ -950,7 +961,7 @@ export class Game {
         Sound.setThruster(false)
       }
     }
-    if (this.phase === "play" && !this.paused) {
+    if (this.canFly() && !this.paused) {
       const slot = SLOT_KEYS[e.code]
       if (slot !== undefined) {
         this.usePowerupSlot(slot)
@@ -962,7 +973,7 @@ export class Game {
   onKeyUp(e) {
     this.pressedKeys.delete(e.code)
     if (e.code === "Space" && this.player) {
-      if (this.phase === "play" && !this.paused) {
+      if (this.canFly() && !this.paused) {
         this.player.fireLaser(this)
       }
       this.player.mainWeapon.charge = 0
@@ -996,7 +1007,7 @@ export class Game {
   advance(dt) {
     this.gameTime += dt
     // the backdrop only parallaxes against a ship that is actually flying
-    const flying = this.player && this.phase === "play"
+    const flying = this.player && this.canFly()
     this.backdrop.update(dt, flying ? this.player.vx : 0, flying ? this.player.vy : 0)
     if (this.phase === "title") {
       this.backdrop.updateMenu(dt)

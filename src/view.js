@@ -538,7 +538,7 @@ export class GameView {
     }
 
     // the ship sits at screen centre (camera follows), so warn just above it
-    if (game.player && game.player.atBoundary && game.phase === "play") {
+    if (game.player && game.player.atBoundary && game.canFly()) {
       r.text("OUT OF BOUNDS", VIEW_W / 2, VIEW_H / 2 - 42, {
         size: 14,
         bold: true,
