@@ -25,6 +25,7 @@ import {
   perpendicular,
   slicePolygon,
   circlePolygonContact,
+  convexContact,
   supportDistance,
 } from "./math.js"
 import {
@@ -533,7 +534,11 @@ export class Ship extends Entity {
     this.colour = PALETTE.white
   }
 
-  // Set the hull outline and the bounding circle that broadphase tests use.
+  // Set the hull outline, the bounding circle broadphase tests use, and the
+  // convex proxy contacts are solved against. Both hulls are concave (the scout
+  // is a dart, the frigate has a waist) and a separating-axis test needs convex
+  // shapes, so collision uses their convex hull: the frigate keeps its length,
+  // which a single circle could never represent.
   setOutline(outlineLocal, size) {
     this.outlineLocal = outlineLocal
     this.size = size
@@ -542,6 +547,17 @@ export class Ship extends Entity {
       furthest = Math.max(furthest, Math.hypot(p[0], p[1]))
     }
     this.boundRadius = furthest * size
+    this.collisionLocal = convexHull(outlineLocal.map(([x, y]) => ({ x, y })))
+  }
+
+  // The convex collision proxy in world space.
+  collisionOutline() {
+    const c = Math.cos(this.angle),
+      s = Math.sin(this.angle)
+    return this.collisionLocal.map((p) => ({
+      x: this.x + (p.x * c - p.y * s) * this.size,
+      y: this.y + (p.x * s + p.y * c) * this.size,
+    }))
   }
 
   buildHardpoints(list) {
@@ -1329,10 +1345,49 @@ export class RivalShip extends Ship {
       }
     }
 
+    this.#bounceOffRocks(game)
     this.updateWeapons(dt, game) // guns + main laser fire via their controllers
 
     if (this.leaving && Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + 140) {
       this.dead = true
+    }
+  }
+
+  // Rivals are solid: they shoulder rocks aside instead of flying through them.
+  // Contact is against the rock's outline and the ship's convex proxy, so a
+  // frigate's length is respected rather than a circle around it.
+  #bounceOffRocks(game) {
+    let hull = null
+    for (const asteroid of game.asteroids) {
+      const dx = this.x - asteroid.center.x,
+        dy = this.y - asteroid.center.y
+      const reach = asteroid.boundRadius + this.boundRadius
+      if (dx * dx + dy * dy >= reach * reach) {
+        continue
+      }
+      hull = hull || this.collisionOutline()
+      const contact = convexContact(asteroid.vertices, hull, asteroid.center, this)
+      if (!contact) {
+        continue
+      }
+      const ux = contact.nx,
+        uy = contact.ny
+      this.x += ux * contact.depth
+      this.y += uy * contact.depth
+      hull = null // the ship moved, so the cached proxy is stale
+      // approach measured against the rock's surface, spin included, as for the player
+      const surfaceVx = asteroid.vx - asteroid.spin * dy,
+        surfaceVy = asteroid.vy + asteroid.spin * dx
+      const vn = (this.vx - surfaceVx) * ux + (this.vy - surfaceVy) * uy
+      if (vn >= 0) {
+        continue
+      }
+      const rockMass = clamp(asteroid.area / CONFIG.AST_MASS_AREA, 0.4, 4)
+      const j = (-(1 + CONFIG.ROCK_RESTITUTION) * vn) / (1 + 1 / rockMass)
+      this.vx += j * ux
+      this.vy += j * uy
+      asteroid.vx -= (j * ux) / rockMass
+      asteroid.vy -= (j * uy) / rockMass
     }
   }
 

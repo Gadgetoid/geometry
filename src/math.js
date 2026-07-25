@@ -275,6 +275,30 @@ export function supportDistance(vertices, centre, ux, uy) {
   return far
 }
 
+// How far along a->b the segment first enters the polygon, or null if it never
+// does. Zero when `a` is already inside. Used to stop a beam at the near face
+// of a ship rather than at a circle drawn around it.
+export function segmentPolygonEntry(a, b, vertices) {
+  if (vertices.length < 3) {
+    return null
+  }
+  if (pointInPolygon(a, vertices)) {
+    return 0
+  }
+  let nearest = null
+  for (let i = 0; i < vertices.length; i++) {
+    const hit = segmentIntersection(a, b, vertices[i], vertices[(i + 1) % vertices.length])
+    if (!hit) {
+      continue
+    }
+    const along = Math.hypot(hit.x - a.x, hit.y - a.y)
+    if (nearest === null || along < nearest) {
+      nearest = along
+    }
+  }
+  return nearest
+}
+
 // How many polygon edges a beam segment crosses.
 export function countBeamCrossings(beam, vertices) {
   let count = 0

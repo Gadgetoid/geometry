@@ -31,6 +31,7 @@ import {
   pointInPolygon,
   countBeamCrossings,
   convexContact,
+  segmentPolygonEntry,
 } from "./math.js"
 import { Sound } from "./audio.js"
 import { PALETTE } from "./palette.js"
@@ -302,9 +303,30 @@ export class Game {
         blockShip = e
       }
     }
+    // A rival is hit against its actual outline. A circle of `size` left most
+    // of a frigate's length unhittable, and a circle of its full reach would
+    // register on the empty space beside it, so reject on the enclosing circle
+    // and then find the real entry point.
+    const considerHull = (e) => {
+      const reach = width * 0.6 + e.boundRadius
+      const t = (e.x - beam.a.x) * beam.dir.x + (e.y - beam.a.y) * beam.dir.y
+      if (t < 0) {
+        return
+      }
+      const cx = beam.a.x + beam.dir.x * t,
+        cy = beam.a.y + beam.dir.y * t
+      if (Math.hypot(e.x - cx, e.y - cy) >= reach) {
+        return
+      }
+      const entry = segmentPolygonEntry(beam.a, beam.b, e.worldOutline())
+      if (entry !== null && entry < blockDist) {
+        blockDist = entry
+        blockShip = e
+      }
+    }
     for (const rival of this.rivals) {
       if (rival !== attacker && !rival.dead) {
-        considerShip(rival, rival.size)
+        considerHull(rival)
       }
     }
     if (this.player && attacker !== this.player) {
