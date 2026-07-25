@@ -375,10 +375,24 @@ export const SHIELD_TYPES = {
 // marked `fallback` is spawned when nothing else is picked.
 //
 // The rest describes how a type differs in play, so no code tests a ship by
-// name: `hullWidth` is its outline weight, `sliceable` says an unshielded hull
-// is cut in two by a beam rather than blocking it, `debris` sizes the explosion,
-// and `debrisMaterial` says what its wreckage is made of. `mass` is in the same
-// units as a rock's (area / AST_MASS_AREA), with the player's hull as 1.
+// name: `hullWidth` is its outline weight, `debris` sizes the explosion, and
+// `debrisMaterial` says what its wreckage is made of. `mass` is in the same units
+// as a rock's (area / AST_MASS_AREA), with the player's hull as 1.
+//
+// A beam cuts any unshielded hull, exactly as it cuts a rock. Nothing marks a
+// type as cuttable: the material's `minArea` decides what the cut leaves, so a
+// hull with halves above it comes apart into drifting wreckage and one too small
+// for that is simply destroyed. A scout is the second case and a frigate the
+// first, and anything sized between them lands wherever its halves fall.
+// ---------------------------------------------------------------------------
+
+// What a ship hull is made of. Plating holds together in smaller pieces than rock
+// and burns where it is torn. The debris keeps the material, so a piece cut from
+// a burning piece is plating too, and burns as well.
+export const SHIP_PLATING = {
+  minArea: CONFIG.SHIP_DEBRIS_MIN_AREA,
+  burn: { seconds: 4.5, rate: 30 }, // rate is fire particles a second at full heat
+}
 // ---------------------------------------------------------------------------
 export const FRIGATE_SHAPE = [
   [1.7, 0.55],
@@ -432,7 +446,7 @@ export const SHIP_TYPES = {
     },
     spawn: { fromSector: 4, fallback: true },
     hullWidth: 1.8,
-    sliceable: false,
+    debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
     killScore: 400,
     blastScore: 200,
@@ -470,14 +484,7 @@ export const SHIP_TYPES = {
     ],
     spawn: { fromSector: 6, chance: 0.3, maxConcurrent: 1 },
     hullWidth: 2,
-    sliceable: true, // an unshielded hull is cut in two like a rock
-    // What its wreckage is made of. Plating holds together in smaller pieces
-    // than rock and burns where it is torn. The debris keeps the material, so a
-    // piece cut from a burning piece is plating too, and burns as well.
-    debrisMaterial: {
-      minArea: CONFIG.SHIP_DEBRIS_MIN_AREA,
-      burn: { seconds: 4.5, rate: 30 }, // rate is fire particles a second at full heat
-    },
+    debrisMaterial: SHIP_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
     killScore: 900,
     blastScore: 500,

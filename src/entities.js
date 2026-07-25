@@ -737,6 +737,13 @@ export class Ship extends Entity {
     return this.type.mass ?? 1
   }
 
+  // Whether an unshielded hull comes apart when a beam passes through it, as a
+  // rock does. True for anything the sector can throw at you; how big the pieces
+  // are is the material's business, not this flag's.
+  get severable() {
+    return true
+  }
+
   buildHardpoints(list) {
     this.hardpoints = list.map((hp) => ({ local: hp.local, role: hp.role, module: null }))
   }
@@ -874,6 +881,11 @@ export class PlayerShip extends Ship {
 
   damageResist() {
     return CONFIG.SHIELD_EFFICIENCY[this.game.upgrades.shield]
+  }
+  // Losing the hull costs a life and a respawn, so the player's is never cut into
+  // wreckage the way a rival's is.
+  get severable() {
+    return false
   }
   // Mid-warp the ship is not really in the sector, so nothing can reach it:
   // not rocks, and not the bullets and blasts that bypass contact entirely.

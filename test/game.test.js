@@ -19,7 +19,14 @@ import {
   resolveHullRockContact,
   rockMass,
 } from "../src/entities.js"
-import { CONFIG, POWERUP_TYPES, PROGRESSION, WEAPON_TYPES, SHIP_TYPES } from "../src/config.js"
+import {
+  CONFIG,
+  POWERUP_TYPES,
+  PROGRESSION,
+  SHIP_PLATING,
+  WEAPON_TYPES,
+  SHIP_TYPES,
+} from "../src/config.js"
 import { convexContact, convexPartition, countBeamCrossings, polygonArea } from "../src/math.js"
 
 // A live sector with a solid, vulnerable ship and nothing else in it.
@@ -421,6 +428,108 @@ test("a beam hits the player where its hull actually is", () => {
     const r = probe(offset, WEAPON_TYPES.minerLaser)
     assert.equal(r.landed, r.crosses, `minerLaser at offset ${offset}`)
   }
+})
+
+// ---- a beam treats every hull the way it treats a rock --------------------
+
+// Put a rival on the axis with a rock well beyond it, and fire through both.
+function targetWithRockBehind(game, typeName, loadout) {
+  const rival = new RivalShip(520, 320, typeName, loadout)
+  rival.angle = Math.PI
+  game.rivals = [rival]
+  const rock = new Asteroid({ vertices: square(760, 320, 70) })
+  game.asteroids = [rock]
+  const beam = { a: { x: 300, y: 320 }, dir: { x: 1, y: 0 }, b: { x: 1000, y: 320 } }
+  return { rival, beam }
+}
+
+test("an unshielded hull does not stop a beam reaching the rocks behind it", () => {
+  for (const typeName of ["scout", "frigate"]) {
+    const game = liveGame()
+    const { rival, beam } = targetWithRockBehind(game, typeName, [])
+    game.applyBeam(beam, game.player, playerWeapon)
+    assert.equal(rival.dead, true, `${typeName} must be destroyed by a beam driven through it`)
+    assert.ok(
+      game.asteroids.some((a) => a.center.x > 700),
+      `${typeName} must not shield the rock behind it`,
+    )
+  }
+})
+
+test("a raised shield is what stops a beam", () => {
+  const game = liveGame()
+  const { rival, beam } = targetWithRockBehind(game, "scout", [
+    { hp: 0, weapon: "minerLaser", controller: "miner" },
+    { hp: 2, shield: "standard" },
+  ])
+  assert.ok(rival.shieldModule().up, "the shield must be up for this to mean anything")
+  game.applyBeam(beam, game.player, playerWeapon)
+  assert.equal(rival.dead, false, "a shielded hull is not cut")
+  assert.equal(game.asteroids.length, 1, "and it does stop the beam short of the rock")
+  assert.ok(game.asteroids[0].center.x > 700, "the rock behind is untouched")
+})
+
+// A scout's halves fall below what plating holds together, so it is destroyed
+// where it stood, exactly as a rock below AST_MIN_AREA shatters to ore. Nothing
+// tests the ship by name: lower the material's threshold and the same hull comes
+// apart instead, which is what a type sized between scout and frigate does.
+test("what a cut hull leaves is decided by its material, not by its type", () => {
+  const cut = (minArea) => {
+    const game = liveGame()
+    const { rival, beam } = targetWithRockBehind(game, "scout", [])
+    rival.type = Object.create(rival.type)
+    rival.type.debrisMaterial = { ...SHIP_PLATING, minArea }
+    const oreBefore = game.oreChunks.length
+    game.applyBeam(beam, game.player, playerWeapon)
+    return {
+      dead: rival.dead,
+      wreckage: game.asteroids.filter((a) => a.center.x < 700).length,
+      ore: game.oreChunks.length - oreBefore,
+    }
+  }
+  const asPlating = cut(SHIP_PLATING.minArea)
+  assert.equal(asPlating.dead, true)
+  assert.equal(asPlating.wreckage, 0, "a scout's halves are too small to hold together")
+  assert.ok(asPlating.ore > 0, "so it goes to ore")
+
+  const asTougher = cut(20) // a material that survives in far smaller pieces
+  assert.equal(asTougher.dead, true)
+  assert.ok(asTougher.wreckage >= 2, `the same hull must split, got ${asTougher.wreckage} pieces`)
+})
+
+test("a shattered hull pays what shooting it down pays", () => {
+  // Cutting a scout in two destroys it, and must be worth the same as killing it
+  // with shots, since in both cases nothing is left behind to mine.
+  const game = liveGame()
+  const { rival, beam } = targetWithRockBehind(game, "scout", [])
+  const scoreBefore = game.score
+  game.applyBeam(beam, game.player, playerWeapon)
+  assert.equal(rival.dead, true)
+  assert.equal(
+    game.score - scoreBefore,
+    SHIP_TYPES.scout.killScore + CONFIG.SLICE_SCORE,
+    "a shattered hull pays killScore (the rock behind adds SLICE_SCORE)",
+  )
+  assert.equal(game.oreChunks.length, SHIP_TYPES.scout.oreDrop, "and drops its oreDrop")
+})
+
+test("the player's hull is never cut into wreckage", () => {
+  const game = liveGame()
+  const player = game.player
+  player.angle = 0
+  player.x = 400
+  player.y = 320
+  player.energy = 0 // no shield to hide behind
+  player.shieldModule().up = false
+  const shooter = new RivalShip(100, 320, "scout", [])
+  game.rivals = [shooter]
+  const beam = { a: { x: 100, y: 320 }, dir: { x: 1, y: 0 }, b: { x: 900, y: 320 } }
+  assert.ok(countBeamCrossings(beam, player.worldOutline()) >= 2, "the beam must pass through")
+  assert.equal(player.severable, false)
+  const lives = game.lives
+  game.applyBeam(beam, shooter, { type: WEAPON_TYPES.cannonLaser })
+  assert.equal(game.asteroids.length, 0, "the player leaves no hull debris")
+  assert.equal(game.lives, lives - 1, "it costs a life instead")
 })
 
 test("frigate debris is partitioned into convex parts that tile it", () => {

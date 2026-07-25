@@ -386,15 +386,16 @@ export class Game {
     if (this.player && attacker !== this.player) {
       considerHull(this.player)
     }
-    // An unshielded sliceable hull is cut in two like a rock (see below) rather
-    // than blocking the beam, so it is not truncated against. As for a rock, the
-    // beam has to pass through: it must cross the outline at least twice, so
-    // clipping the tip of a hull scorches it instead of severing its whole
-    // length along a line the shot never reached.
+    // An unshielded hull is cut like a rock (see below) rather than blocking the
+    // beam, so it is not truncated against. As for a rock, the beam has to pass
+    // through: it must cross the outline at least twice, so clipping the tip of a
+    // hull scorches it instead of severing its whole length along a line the shot
+    // never reached. A raised shield is what stops a beam; a hull about to come
+    // apart is not.
     const blockShielded = blockShip && blockShip.shieldModule() && blockShip.shieldModule().up
     const cuttable =
       blockShip &&
-      blockShip.type.sliceable &&
+      blockShip.severable &&
       !blockShielded &&
       countBeamCrossings(beam, blockShip.worldOutline()) >= 2
     if (blockShip && !cuttable) {
@@ -503,10 +504,10 @@ export class Game {
       this.screenShake = Math.max(this.screenShake, 4)
     }
 
-    // Slice an unshielded frigate into drifting gun-rocks; otherwise damage the
-    // struck ship on its shooter-facing side.
+    // Cut an unshielded hull apart; otherwise damage the struck ship on its
+    // shooter-facing side.
     if (blockShip) {
-      if (cuttable && this.sliceFrigate(blockShip, beam, attacker === this.player)) {
+      if (cuttable && this.sliceHull(blockShip, beam, attacker === this.player)) {
         didHit = true
       } else {
         if (cuttable) {
@@ -525,11 +526,19 @@ export class Game {
     return didHit
   }
 
-  // Slice an unshielded frigate along the beam into two Asteroid fragments that
-  // carry its surviving turrets, so the pieces drift apart, keep firing, and can
-  // be cut again with normal rock handling. Returns false if the beam only
-  // grazes it (no clean two-way split).
-  sliceFrigate(ship, beam, fromPlayer) {
+  // Cut an unshielded hull along the beam, exactly as a rock is cut. A piece big
+  // enough for the hull's material becomes drifting wreckage carrying whichever
+  // turrets fall inside it, so it keeps firing and can be cut again with ordinary
+  // rock handling; anything smaller goes to ore.
+  //
+  // A hull that leaves no wreckage at all was too small to come apart, and is
+  // simply destroyed where it stood - which is what a scout does, and what a
+  // rock below AST_MIN_AREA does. Nothing here asks which ship it is; the
+  // material's minArea decides, so a type sized between the two splits or
+  // shatters according to how big its halves come out.
+  //
+  // Returns false if the beam only grazes it (no clean split).
+  sliceHull(ship, beam, fromPlayer) {
     const cutNormal = perpendicular(beam.dir)
     // slice the real (concave) hull outline; the slicer handles it directly and
     // may return more than two pieces
@@ -549,43 +558,63 @@ export class Game {
         guns.push({ x: w.x, y: w.y, module: m })
       }
     }
+    // Sort the pieces before anything is spawned, so "did this hull leave any
+    // wreckage?" is answered over the whole cut rather than one piece at a time.
+    const wreckage = []
+    const slivers = []
     for (const partVerts of parts) {
       const centre = polygonCentroid(partVerts)
-      const area = polygonArea(partVerts)
       const side = dot(subtract(centre, beam.a), cutNormal) > 0 ? 1 : -1
-      const ix = cutNormal.x * side * CONFIG.SPLIT_IMPULSE,
-        iy = cutNormal.y * side * CONFIG.SPLIT_IMPULSE
+      const drift = {
+        vx: ship.vx + cutNormal.x * side * CONFIG.SPLIT_IMPULSE,
+        vy: ship.vy + cutNormal.y * side * CONFIG.SPLIT_IMPULSE,
+      }
       // assign turrets to the piece that actually contains them (side-of-line
       // is ambiguous once a concave cut yields more than two pieces)
       const mine = guns.filter((g) => pointInPolygon(g, partVerts))
-      // burning debris at the cut end
-      this.burst(centre.x, centre.y, randInt(10, 16), PALETTE.fx.fire, 40, 190, 0.75)
-      this.burst(centre.x, centre.y, randInt(6, 10), PALETTE.fx.ember, 30, 130, 0.5)
       // a gunless sliver just becomes ore; a piece with turrets survives as a
       // gun-rock so it can keep firing, even if small
-      if (area < debrisMinArea && mine.length === 0) {
-        for (let k = 0; k < 3; k++) {
-          this.spawnOre(
-            centre.x + randRange(-12, 12),
-            centre.y + randRange(-12, 12),
-            ship.vx + ix,
-            ship.vy + iy,
-          )
-        }
-        continue
+      if (polygonArea(partVerts) < debrisMinArea && mine.length === 0) {
+        slivers.push({ centre, drift })
+      } else {
+        wreckage.push({ partVerts, centre, drift, mine })
       }
+    }
+
+    if (!wreckage.length) {
+      // Too small to leave anything: destroyed outright, and worth what shooting
+      // it down was worth.
+      ship.destroy(this, fromPlayer ? ship.type.killScore : 0)
+      return true
+    }
+
+    for (const piece of wreckage) {
+      // burning debris at the cut end
+      this.burst(piece.centre.x, piece.centre.y, randInt(10, 16), PALETTE.fx.fire, 40, 190, 0.75)
+      this.burst(piece.centre.x, piece.centre.y, randInt(6, 10), PALETTE.fx.ember, 30, 130, 0.5)
       this.asteroids.push(
         new Asteroid({
-          vertices: partVerts,
-          vx: ship.vx + ix,
-          vy: ship.vy + iy,
+          vertices: piece.partVerts,
+          vx: piece.drift.vx,
+          vy: piece.drift.vy,
           spin: randRange(-1.2, 1.2),
-          hardpoints: mine,
-          tint: ship.colour, // keep the frigate's colour on the debris
+          hardpoints: piece.mine,
+          tint: ship.colour, // keep the hull's colour on the debris
           material, // plating: survives smaller, and burns where it is torn
           burnFrom: { point: beam.a, normal: cutNormal },
         }),
       )
+    }
+    for (const sliver of slivers) {
+      this.burst(sliver.centre.x, sliver.centre.y, randInt(10, 16), PALETTE.fx.fire, 40, 190, 0.75)
+      for (let k = 0; k < 3; k++) {
+        this.spawnOre(
+          sliver.centre.x + randRange(-12, 12),
+          sliver.centre.y + randRange(-12, 12),
+          sliver.drift.vx,
+          sliver.drift.vy,
+        )
+      }
     }
     this.ring(ship.x, ship.y, 16, PALETTE.fx.flash, 190, 0.6)
     this.screenShake = Math.max(this.screenShake, 9)
