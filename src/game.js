@@ -1043,6 +1043,9 @@ export class Game {
   // One rock pair. `spark` gates the impact effect to the first sweep, so a
   // contact does not emit particles once per iteration.
   #resolveRockPair(a, b, spark) {
+    if (a.dead || b.dead) {
+      return false // a rock already shattered this frame pushes nothing
+    }
     const dx = b.center.x - a.center.x,
       dy = b.center.y - a.center.y
     const reach = a.boundRadius + b.boundRadius

@@ -307,6 +307,47 @@ test("a hull resting on a rock tolerates the same overlap as any other contact",
   )
 })
 
+// A rival killed part-way through a frame stays in game.rivals until the list is
+// filtered after the update loop, so without a guard it took one more turn:
+// it fired a parting shot and hoovered up the ore it had just dropped at its own
+// feet, crediting it to the rival's haul.
+test("a rival killed this frame takes no further turn", () => {
+  const game = liveGame()
+  const player = game.player
+  player.x = 200
+  player.y = 320
+  player.angle = 0
+  // a rock parked far away, so the sector does not count as cleared
+  game.asteroids = [new Asteroid({ vertices: square(900, 900, 40) })]
+  const scout = new RivalShip(500, 320, "scout", [])
+  game.rivals = [scout]
+  const beam = { a: { x: 200, y: 320 }, dir: { x: 1, y: 0 }, b: { x: 1100, y: 320 } }
+  game.applyBeam(beam, player, playerWeapon, 300)
+  assert.equal(scout.dead, true, "the beam must kill it")
+  const dropped = game.oreChunks.length
+  assert.equal(dropped, SHIP_TYPES.scout.oreDrop, "and it must drop its ore")
+
+  const rivalScore = game.rivalScore
+  game.advance(1 / 60)
+  assert.equal(game.oreChunks.length, dropped, "a dead rival must not collect its own drop")
+  assert.equal(game.rivalScore, rivalScore, "and must not be credited for it")
+})
+
+test("a dead rival's turret does not fire a parting shot", () => {
+  const game = liveGame()
+  game.player.x = 560
+  game.player.y = 320
+  game.asteroids = [new Asteroid({ vertices: square(900, 900, 40) })]
+  const gunner = new RivalShip(500, 320, "scout", [
+    { hp: 1, weapon: "autocannon", controller: "turret" },
+  ])
+  gunner.hardpoints[1].module.cooldown = 0
+  gunner.dead = true // as it would be, mid-frame, after being killed elsewhere
+  game.rivals = [gunner]
+  game.advance(1 / 60)
+  assert.equal(game.projectiles.length, 0)
+})
+
 test("a rival with no player to hunt still steers somewhere", () => {
   // Nothing in a sector runs without a player, but the hunter controller guards
   // for one and this did not, so the two disagreed about whether it can happen.

@@ -1517,6 +1517,9 @@ export class RivalShip extends Ship {
   }
 
   update(dt, game) {
+    if (this.dead) {
+      return // killed earlier this frame, and dropped from the list after this loop
+    }
     const player = game.player
     this.regenEnergy(dt)
     this.updateShield(dt)
@@ -1873,6 +1876,9 @@ export class Asteroid extends Entity {
   }
 
   update(dt, game) {
+    if (this.dead) {
+      return // detonated or shattered earlier this frame
+    }
     this.regenEnergy(dt)
     this.updateShield(dt)
     const centre = this.center
