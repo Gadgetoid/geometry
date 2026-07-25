@@ -18,6 +18,7 @@
 
 import { Renderer } from "./renderer.js"
 import { VIEW_W, VIEW_H } from "./config.js"
+import { clamp } from "./math.js"
 
 const SCENE_W = 2048 // fixed internal scene resolution (16:10, matches 1024x640)
 const SCENE_H = 1280
@@ -891,7 +892,9 @@ export class WebGLRenderer extends Renderer {
     }
     if (opts.stroke) {
       const pts = []
-      const seg = 40
+      // roughly one segment per 2.5 world units of circumference: the 3px
+      // weapon nubs cost a handful of quads, big rings still look round
+      const seg = clamp(Math.ceil(r * 2.5), 8, 48)
       for (let i = 0; i < seg; i++) {
         const a = (i / seg) * Math.PI * 2
         pts.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r })

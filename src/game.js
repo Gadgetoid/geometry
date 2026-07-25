@@ -38,6 +38,7 @@ import { loadBest, saveBest } from "./persistence.js"
 import { Asteroid, Ore, Powerup, PlayerShip, RivalShip, makeAsteroidPolygon } from "./entities.js"
 
 const PARTICLE_LIFE = 5 // global lifetime multiplier
+const PARTICLE_DRAG = 0.4 // velocity retained per second
 const MAX_PARTICLES = 1200
 const SLOT_KEYS = {
   Digit1: 0,
@@ -174,12 +175,11 @@ export class Game {
   }
 
   // ---- particles -------------------------------------------------------
+  // Emitters only push; the cap is applied once per frame from update(), so a
+  // burst-heavy frame doesn't shift the whole array on every call.
   emit(x, y, vx, vy, baseLife, color) {
     const life = baseLife * PARTICLE_LIFE
     this.particles.push({ x, y, vx, vy, life, maxLife: life, color })
-    if (this.particles.length > MAX_PARTICLES) {
-      this.particles.splice(0, this.particles.length - MAX_PARTICLES)
-    }
   }
 
   burst(x, y, count, color, minSpeed, maxSpeed, baseLife) {
@@ -197,9 +197,6 @@ export class Game {
         color,
       })
     }
-    if (this.particles.length > MAX_PARTICLES) {
-      this.particles.splice(0, this.particles.length - MAX_PARTICLES)
-    }
   }
 
   ring(x, y, count, color, speed, baseLife) {
@@ -215,9 +212,6 @@ export class Game {
         maxLife: life,
         color,
       })
-    }
-    if (this.particles.length > MAX_PARTICLES) {
-      this.particles.splice(0, this.particles.length - MAX_PARTICLES)
     }
   }
 
@@ -1019,17 +1013,27 @@ export class Game {
     }
   }
 
+  // Age every particle and compact the survivors down in place, then drop the
+  // oldest if the frame's emitters overshot the budget.
   updateParticles(dt) {
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const q = this.particles[i]
+    const list = this.particles
+    const drag = Math.pow(PARTICLE_DRAG, dt)
+    let write = 0
+    for (let read = 0; read < list.length; read++) {
+      const q = list[read]
       q.life -= dt
+      if (q.life <= 0) {
+        continue
+      }
       q.x += q.vx * dt
       q.y += q.vy * dt
-      q.vx *= Math.pow(0.4, dt)
-      q.vy *= Math.pow(0.4, dt)
-      if (q.life <= 0) {
-        this.particles.splice(i, 1)
-      }
+      q.vx *= drag
+      q.vy *= drag
+      list[write++] = q
+    }
+    list.length = write
+    if (list.length > MAX_PARTICLES) {
+      list.splice(0, list.length - MAX_PARTICLES)
     }
   }
 

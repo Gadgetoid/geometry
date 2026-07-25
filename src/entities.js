@@ -443,8 +443,10 @@ export class Projectile extends Entity {
       player.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
       return
     }
+    // A bounding-circle reject first: the exact polygon test is only worth its
+    // cost (and, for ships, building the world outline) on a near miss.
     for (const rival of game.rivals) {
-      if (rival === this.owner) {
+      if (rival === this.owner || !this.#withinRadius(rival.x, rival.y, rival.boundRadius)) {
         continue
       }
       if (pointInPolygon(this, rival.worldOutline())) {
@@ -455,7 +457,10 @@ export class Projectile extends Entity {
       }
     }
     for (const asteroid of game.asteroids) {
-      if (asteroid === this.owner) {
+      if (
+        asteroid === this.owner ||
+        !this.#withinRadius(asteroid.center.x, asteroid.center.y, asteroid.boundRadius)
+      ) {
         continue
       }
       if (pointInPolygon(this, asteroid.vertices)) {
@@ -465,6 +470,12 @@ export class Projectile extends Entity {
         return
       }
     }
+  }
+
+  #withinRadius(cx, cy, radius) {
+    const dx = this.x - cx,
+      dy = this.y - cy
+    return dx * dx + dy * dy <= radius * radius
   }
 
   draw(renderer) {
@@ -485,7 +496,19 @@ export class Ship extends Entity {
     super(x, y)
     this.size = 12
     this.outlineLocal = []
+    this.boundRadius = 0
     this.colour = PALETTE.white
+  }
+
+  // Set the hull outline and the bounding circle that broadphase tests use.
+  setOutline(outlineLocal, size) {
+    this.outlineLocal = outlineLocal
+    this.size = size
+    let furthest = 0
+    for (const p of outlineLocal) {
+      furthest = Math.max(furthest, Math.hypot(p[0], p[1]))
+    }
+    this.boundRadius = furthest * size
   }
 
   buildHardpoints(list) {
@@ -590,8 +613,7 @@ export class PlayerShip extends Ship {
     this.game = game
     this.angle = -Math.PI / 2
     this.radius = PLAYER_TYPE.size
-    this.size = PLAYER_TYPE.size
-    this.outlineLocal = PLAYER_TYPE.outline
+    this.setOutline(PLAYER_TYPE.outline, PLAYER_TYPE.size)
     this.colour = PLAYER_TYPE.colour
     this.buildHardpoints(PLAYER_TYPE.hardpoints)
     this.applyLoadout(PLAYER_TYPE.loadout)
@@ -1002,8 +1024,7 @@ export class RivalShip extends Ship {
     const type = SHIP_TYPES[typeName]
     this.type = type
     this.typeName = typeName
-    this.size = type.size
-    this.outlineLocal = type.outline
+    this.setOutline(type.outline, type.size)
     this.colour = type.colour
     this.accel = type.accel
     this.maxSpeed = type.maxSpeed

@@ -102,9 +102,15 @@ export const Sound = {
   // Continuous thruster: a subtle band-passed white-noise bed whose level eases
   // toward on/off. Started lazily once the context exists.
   thruster: null,
+  thrusterActive: false,
   setThruster(active) {
     // Runs every frame from the game loop, so it must never throw: a stray
-    // exception here would stall the loop.
+    // exception here would stall the loop. Only a change of state schedules a
+    // gain ramp, so the parameter isn't re-automated sixty times a second.
+    if (active === this.thrusterActive && this.thruster) {
+      return
+    }
+    this.thrusterActive = active
     try {
       // Never create the context here (this runs in the game loop, not a user
       // gesture): only use one that a gesture has already unlocked, or Safari
