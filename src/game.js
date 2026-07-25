@@ -229,7 +229,7 @@ export class Game {
   }
 
   shatterToOre(asteroid) {
-    const count = clamp(Math.round(asteroid.area / 900) + 2, 2, 6)
+    const count = clamp(Math.round(asteroid.area / CONFIG.ORE_PER_ROCK_AREA) + 2, 2, 6)
     for (let k = 0; k < count; k++) {
       this.spawnOre(
         asteroid.center.x + randRange(-asteroid.boundRadius * 0.5, asteroid.boundRadius * 0.5),
@@ -452,7 +452,7 @@ export class Game {
       this.burst(centre.x, centre.y, randInt(6, 10), PALETTE.fx.ember, 30, 130, 0.5)
       // a gunless sliver just becomes ore; a piece with turrets survives as a
       // gun-rock so it can keep firing, even if small
-      if (area < CONFIG.AST_MIN_AREA && mine.length === 0) {
+      if (area < CONFIG.SHIP_DEBRIS_MIN_AREA && mine.length === 0) {
         for (let k = 0; k < 3; k++) {
           this.spawnOre(
             centre.x + randRange(-12, 12),

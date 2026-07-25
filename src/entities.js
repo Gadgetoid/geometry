@@ -1415,7 +1415,7 @@ export class Asteroid extends Entity {
       const ix = (impulse.x / mag) * side * CONFIG.SPLIT_IMPULSE,
         iy = (impulse.y / mag) * side * CONFIG.SPLIT_IMPULSE
       if (area < CONFIG.AST_MIN_AREA) {
-        const oreCount = clamp(Math.round(area / 620) + 1, 1, 4)
+        const oreCount = clamp(Math.round(area / CONFIG.ORE_PER_FRAGMENT_AREA) + 1, 1, 4)
         for (let k = 0; k < oreCount; k++) {
           game.spawnOre(
             centre.x + randRange(-10, 10),

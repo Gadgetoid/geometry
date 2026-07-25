@@ -56,12 +56,20 @@ export const CONFIG = {
   ORE_VACUUM_GRAB_RADIUS: 42, // wider grab while sweeping a cleared sector
 
   // asteroids
-  AST_MAX_R: 50,
-  AST_MIN_AREA: 1650, // a cut piece smaller than this shatters straight to ore
+  AST_MAX_R: 100,
+  AST_MIN_AREA: 3300, // a cut piece smaller than this shatters straight to ore
+  // Ship hulls are far smaller than rocks, so their cut halves get their own,
+  // lower threshold; otherwise a sliced frigate would only ever leave ore.
+  SHIP_DEBRIS_MIN_AREA: 1650,
   AST_MAX_SPEED: 340,
   SPLIT_IMPULSE: 55, // gentle push so cut halves drift apart, not fling
   ORE_ENERGY: 9, // energy refunded per ore collected
   ORE_SCORE: 120,
+  // Ore yield: one chunk per this much rock area, for a sub-minimum cut piece
+  // and for a whole rock shattered by a blast. Both scale with AST_MIN_AREA, so
+  // a piece just under the threshold still yields a handful rather than the cap.
+  ORE_PER_FRAGMENT_AREA: 1240,
+  ORE_PER_ROCK_AREA: 3600,
   ORE_PASSIVE_PULL: 120, // attraction inside the ship's magnet radius
   ORE_VACUUM_PULL: 560, // attraction while sweeping up a cleared sector
   SLICE_SCORE: 15,
