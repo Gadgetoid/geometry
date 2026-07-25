@@ -39,6 +39,7 @@ import {
   SHOP,
   WEAPON_TYPES,
   SHIP_TYPES,
+  barrelCount,
   deriveShipStats,
 } from "../src/config.js"
 import {
@@ -2424,6 +2425,83 @@ test("hazard traits are gated by sector", () => {
     assert.equal(early.gun, undefined, "guns do not appear at sector 3")
     assert.equal(early.shield, undefined, "nor do shields")
   }
+})
+
+test("a gun's barrel count follows its rate of fire", () => {
+  const rate = (type) => {
+    const reload = Array.isArray(type.reload) ? (type.reload[0] + type.reload[1]) / 2 : type.reload
+    return 1 / reload
+  }
+  for (const [name, type] of Object.entries(WEAPON_TYPES)) {
+    const barrels = barrelCount(type)
+    assert.ok(Number.isInteger(barrels) && barrels >= 1, `${name} got ${barrels} barrels`)
+    if (type.kind !== "projectile") {
+      assert.equal(barrels, 1, `${name} is a beam, so it has an emitter and not barrels`)
+      continue
+    }
+    // one barrel per BARREL_CYCLE_RATE rounds a second, rounded up
+    assert.equal(
+      barrels,
+      Math.min(4, Math.ceil(rate(type) / CONFIG.BARREL_CYCLE_RATE)),
+      `${name} fires ${rate(type).toFixed(2)}/s`,
+    )
+  }
+  // the fastest gun must actually need more than one, or the rule is decoration
+  const fastest = Object.values(WEAPON_TYPES)
+    .filter((t) => t.kind === "projectile")
+    .sort((a, b) => rate(b) - rate(a))[0]
+  assert.ok(barrelCount(fastest) > 1, "the fastest projectile gun should need more than one barrel")
+  // and a type may say so itself
+  assert.equal(barrelCount({ ...fastest, barrels: 3 }), 3)
+})
+
+test("a weapon carries its barrel count, for the view to draw", () => {
+  const flak = Object.keys(WEAPON_TYPES).find(
+    (name) => barrelCount(WEAPON_TYPES[name]) > 1 && WEAPON_TYPES[name].kind === "projectile",
+  )
+  assert.ok(flak, "some gun should be fast enough to need two barrels")
+  const weapon = new Weapon(flak, "turret")
+  assert.equal(weapon.barrels, barrelCount(WEAPON_TYPES[flak]))
+  assert.equal(new Weapon("blaster", "turret").barrels, 1)
+})
+
+test("a rock can be armed with the fast gun as well as the slow one", () => {
+  const trait = HAZARD_TRAITS.map((h) => h.traits.gun).find(Boolean)
+  const pooled = trait.guns.map((g) => g.weapon)
+  const fast = pooled.filter((name) => barrelCount(WEAPON_TYPES[name]) > 1)
+  assert.ok(fast.length > 0, `the rock pool ${JSON.stringify(pooled)} should include a fast gun`)
+
+  // and one actually turns up, armed and firing, in a real sector
+  let sawFast = false
+  let rounds = 0
+  seeded(9100, () => {
+    const game = new Game()
+    game.startNewGame()
+    game.startLevel(10)
+    game.phase = "play"
+    const player = game.player
+    player.warp = 1
+    player.warpTarget = 1
+    player.warpHold = 0
+    player.invincible = 0 // a turret holds fire while the player is invincible
+    for (const rock of game.asteroids) {
+      for (const hp of rock.hardpoints) {
+        if (hp.module && fast.includes(hp.module.typeName)) {
+          sawFast = true
+        }
+      }
+    }
+    for (let i = 0; i < 600; i++) {
+      player.energy = player.energyMax // kept alive, so the rocks keep firing
+      game.advance(1 / 60)
+      rounds = Math.max(rounds, game.projectiles.length)
+      if (game.phase !== "play") {
+        break
+      }
+    }
+  })
+  assert.ok(sawFast, "a sector should arm some rock with it")
+  assert.ok(rounds > 0, "and it should be firing")
 })
 
 test("a rock rolls each turret from the trait's pool", () => {

@@ -151,6 +151,10 @@ export const CONFIG = {
   DMG_AST_GUN: 120,
   DMG_RIVAL_GUN: 130,
   DMG_FRIGATE_LASER: 420,
+  // Rounds a second one barrel can cycle. A gun that fires faster than this
+  // needs more barrels, and is drawn with them, so a glance at a turret says how
+  // hard it is about to fire.
+  BARREL_CYCLE_RATE: 4,
 
   // upgrade effects, indexed by upgrade level
   SHIELD_EFFICIENCY: [1, 0.72, 0.5, 0.32], // energy drained per point of damage (player shield plating)
@@ -333,12 +337,13 @@ export const PROGRESSION = {
 // own, so a rock can carry a mix; repeat an entry to weight it. Both projectiles
 // and beams work, since the controller fires whichever the entry names.
 //
-// One entry today, which is one kind of turret rock. Adding `autocannon` here
-// would roughly double the rate a turret rock fires at: measured against a
-// parked player, a blaster manages 0.43 rounds a second and an autocannon 0.67,
-// both well within what a rock's cell can sustain.
+// A blaster rock lobs single heavy rounds; a flack rock throws a stream of light
+// ones. Adding `autocannon` alongside them would sit between the two.
 const ROCK_TURRETS = {
-  guns: [{ weapon: "blaster", controller: "turret" }],
+  guns: [
+    { weapon: "blaster", controller: "turret" },
+    { weapon: "flakCannon", controller: "turret" },
+  ],
   count: [1, 3],
   jitter: 0.3,
   inset: [0.35, 0.7],
@@ -426,6 +431,19 @@ export const WEAPON_TYPES = {
     shotLife: 0.55, // the flash lingers longer than an ordinary beam
     colour: PALETTE.rival.cannonBeam,
   },
+  flakCannon: {
+    kind: "projectile",
+    // A wall of little rounds: a tenth of a rival gun's punch each, ten times as
+    // often. It comes out at the same damage a second as an autocannon and is far
+    // harder to weave through, and its energy is scaled down with its damage so a
+    // rock's cell can still feed it.
+    damage: CONFIG.DMG_RIVAL_GUN / 10,
+    energy: 1,
+    reload: [0.11, 0.19],
+    speed: CONFIG.BULLET_SPEED,
+    colour: PALETTE.weapon.gun,
+    survivesDebris: true,
+  },
   seekerLaser: {
     kind: "beam",
     // The cannon's opposite number: light, quick and barely telegraphed, for a
@@ -476,6 +494,21 @@ export const WEAPON_TYPES = {
     chargeCost: 150,
     chargeReach: 40, // beam length is charge * reach multipliers, plus this
   },
+}
+
+// How many barrels a gun needs to keep up with its own rate of fire, and is
+// therefore drawn with. A type may state `barrels` to override it. Only a
+// projectile has barrels to cycle; a beam has an emitter.
+export function barrelCount(type) {
+  if (type.barrels) {
+    return type.barrels
+  }
+  if (type.kind !== "projectile") {
+    return 1
+  }
+  const reload = Array.isArray(type.reload) ? (type.reload[0] + type.reload[1]) / 2 : type.reload
+  const rate = reload > 0 ? 1 / reload : 0
+  return clamp(Math.ceil(rate / CONFIG.BARREL_CYCLE_RATE), 1, 4)
 }
 
 // ---------------------------------------------------------------------------

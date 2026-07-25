@@ -43,6 +43,7 @@ import {
   AST_SHAPE,
   POWERUP_TYPES,
   SHIELD_SPARK,
+  barrelCount,
 } from "./config.js"
 import { Sound } from "./audio.js"
 import { PALETTE } from "./palette.js"
@@ -494,6 +495,27 @@ export class Entity {
   }
 }
 
+// A turret as the view draws it: a mount ring and one barrel per barrel the gun
+// carries, fanned either side of the aim. Every turret in the game goes through
+// here, so a rock's, a rival's and the player's all read the same way and a
+// glance at one says how fast it fires.
+export function drawTurret(renderer, x, y, aim, barrels, colour, length = 10) {
+  renderer.circle(x, y, 3.4, { stroke: colour, width: 1.6, glow: 8 })
+  const across = 2.6 // barrel separation, across the line of fire
+  const px = -Math.sin(aim) * across,
+    py = Math.cos(aim) * across
+  for (let i = 0; i < barrels; i++) {
+    const offset = i - (barrels - 1) / 2
+    const bx = x + px * offset,
+      by = y + py * offset
+    renderer.line(bx, by, bx + Math.cos(aim) * length, by + Math.sin(aim) * length, {
+      color: colour,
+      width: 1.6,
+      glow: 8,
+    })
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Weapon module. `kind` projectile or beam; `controller` decides firing.
 // ---------------------------------------------------------------------------
@@ -503,6 +525,7 @@ export class Weapon {
     this.typeName = typeName
     this.type = WEAPON_TYPES[typeName]
     this.controller = controller
+    this.barrels = barrelCount(this.type)
     this.cooldown = this.rollReload() * randRange(0.15, 1) // random phase so turrets don't fire in unison
     this.charge = 0
     this.charging = 0 // wind-up time left before a charged beam fires
@@ -1050,7 +1073,10 @@ export class Ship extends Entity {
         )
       }
       if (m.type.kind === "projectile") {
-        renderer.circle(w.x, w.y, 3, { stroke: PALETTE.weapon.gun, width: 1.4, glow: 8 })
+        // pointed where the controller points it, so a heavy turret is legible
+        const player = game.player
+        const aim = player ? Math.atan2(player.y - w.y, player.x - w.x) : this.angle
+        drawTurret(renderer, w.x, w.y, aim, m.barrels, PALETTE.weapon.gun, 8)
       } else if (hp.role === "nose") {
         renderer.line(w.x, w.y, w.x + Math.cos(this.angle) * 8, w.y + Math.sin(this.angle) * 8, {
           color: m.type.colour,
@@ -1655,12 +1681,8 @@ export class PlayerShip extends Ship {
     if (game.upgrades.turret && this.aux) {
       const aim = this.turretAim || 0
       const mount = this.mountWorld(this.aux.local)
-      renderer.circle(mount.x, mount.y, 3.4, { stroke: PALETTE.player.turret, width: 1.6, glow: 8 })
-      renderer.line(mount.x, mount.y, mount.x + Math.cos(aim) * 12, mount.y + Math.sin(aim) * 12, {
-        color: PALETTE.player.turret,
-        width: 1.6,
-        glow: 8,
-      })
+      const barrels = this.aux.module ? this.aux.module.barrels : 1
+      drawTurret(renderer, mount.x, mount.y, aim, barrels, PALETTE.player.turret, 12)
     }
 
     const w = this.mainWeapon
@@ -2477,12 +2499,7 @@ export class Asteroid extends Entity {
         continue
       }
       const aim = Math.atan2(game.player.y - hp.y, game.player.x - hp.x)
-      renderer.circle(hp.x, hp.y, 3.4, { stroke: PALETTE.weapon.gun, width: 1.6, glow: 8 })
-      renderer.line(hp.x, hp.y, hp.x + Math.cos(aim) * 10, hp.y + Math.sin(aim) * 10, {
-        color: PALETTE.weapon.gun,
-        width: 1.6,
-        glow: 8,
-      })
+      drawTurret(renderer, hp.x, hp.y, aim, hp.module.barrels, PALETTE.weapon.gun)
     }
   }
 }
