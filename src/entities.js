@@ -234,15 +234,10 @@ export class Weapon {
       color: this.type.colour,
       width: this.type.width,
       glow: this.type.glow,
-      life: this.type.width > 10 ? 0.55 : 0.4,
+      life: this.type.shotLife || 0.4,
     })
     this.cooldown = this.rollReload()
-    // wide beams are the frigate's heavy cannon: a bigger report
-    if (this.type.width > 10) {
-      Sound.bigLaser()
-    } else {
-      Sound.fire()
-    }
+    Sound[this.type.sound || "fire"]()
   }
 
   update(dt, game, host, world) {
@@ -639,6 +634,7 @@ export class PlayerShip extends Ship {
     super(VIEW_W / 2, VIEW_H / 2)
     this.game = game
     this.angle = -Math.PI / 2
+    this.type = PLAYER_TYPE
     this.radius = PLAYER_TYPE.size
     this.setOutline(PLAYER_TYPE.outline, PLAYER_TYPE.size)
     this.colour = PLAYER_TYPE.colour
@@ -1082,10 +1078,10 @@ export class RivalShip extends Ship {
   }
 
   destroy(game, scoreOnKill) {
-    const big = this.typeName === "frigate"
+    const debris = this.type.debris
     this.dead = true
-    game.burst(this.x, this.y, big ? 40 : 26, PALETTE.rival.hull, 60, big ? 300 : 240, 0.9)
-    game.ring(this.x, this.y, big ? 26 : 18, PALETTE.fx.flash, 180, 0.8)
+    game.burst(this.x, this.y, debris.particles, PALETTE.rival.hull, 60, debris.speed, 0.9)
+    game.ring(this.x, this.y, debris.ring, PALETTE.fx.flash, 180, 0.8)
     for (let k = 0; k < this.type.oreDrop; k++) {
       game.spawnOre(
         this.x + randRange(-18, 18),
@@ -1095,7 +1091,7 @@ export class RivalShip extends Ship {
       )
     }
     game.score += scoreOnKill
-    game.screenShake = Math.max(game.screenShake, big ? 14 : 10)
+    game.screenShake = Math.max(game.screenShake, debris.shake)
     Sound.explode()
   }
 
@@ -1181,7 +1177,7 @@ export class RivalShip extends Ship {
   }
 
   draw(renderer, game) {
-    this.drawShip(renderer, game, this.typeName === "frigate" ? 2 : 1.8)
+    this.drawShip(renderer, game, this.type.hullWidth)
     renderer.circle(this.x, this.y, 1.6, { fill: PALETTE.rival.core, glow: 8 })
   }
 }

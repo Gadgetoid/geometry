@@ -62,14 +62,6 @@ export const CONFIG = {
   DMG_RIVAL_GUN: 130,
   DMG_FRIGATE_LASER: 300,
 
-  // rival arming ramp (per sector, for the basic scout)
-  RIVAL_FROM_SECTOR: 4,
-  FRIGATE_FROM_SECTOR: 6,
-  RIVAL_SHIELD_CHANCE: 0.12,
-  RIVAL_SHIELD_CHANCE_CAP: 0.8,
-  RIVAL_GUN_CHANCE: 0.15,
-  RIVAL_GUN_CHANCE_CAP: 0.85,
-
   // upgrade effects, indexed by upgrade level
   SHIELD_EFFICIENCY: [1, 0.72, 0.5, 0.32], // energy drained per point of damage (player shield plating)
   MAGNET_RANGE: [62, 120, 190, 270],
@@ -82,6 +74,7 @@ export const CONFIG = {
 // WEAPON TYPES - guns and lasers, shared by every host. A weapon is either a
 // 'projectile' or a 'beam'. `energy` is spent per shot. Beams may be
 // `chargeable` (the player's main laser); AI beams fire at a fixed length.
+// `sound` names a Sound method and `shotLife` how long the flash lingers.
 // ---------------------------------------------------------------------------
 export const WEAPON_TYPES = {
   blaster: {
@@ -120,6 +113,8 @@ export const WEAPON_TYPES = {
     glow: 30,
     arc: 0.42,
     chargeTime: 0.9, // telegraphs with a growing glow before firing
+    sound: "bigLaser",
+    shotLife: 0.55, // the flash lingers longer than an ordinary beam
     colour: PALETTE.rival.cannonBeam,
   },
   defenseLaser: {
@@ -191,7 +186,17 @@ export const SHIELD_TYPES = {
 // ---------------------------------------------------------------------------
 // SHIP TYPES - outline + a few numbers. `hardpoints` are attachment slots in
 // local space (role is documentation); `loadout` mounts modules onto them by
-// index. A scout leaves its gun/shield slots empty for the spawner to roll.
+// index. `arms` are optional modules the spawner rolls, each with a per-sector
+// chance that ramps from the type's spawn sector up to its cap.
+//
+// The spawner reads `spawn`: a type with a `chance` is rolled once its
+// `fromSector` is reached, up to `maxConcurrent` alive at a time; the type
+// marked `fallback` is spawned when nothing else is picked.
+//
+// The rest describes how a type differs in play, so no code tests a ship by
+// name: `hullWidth` is its outline weight, `sliceable` says an unshielded hull
+// is cut in two by a beam rather than blocking it, and `debris` sizes the
+// explosion.
 // ---------------------------------------------------------------------------
 export const FRIGATE_SHAPE = [
   [1.7, 0.55],
@@ -233,9 +238,19 @@ export const SHIP_TYPES = {
     ],
     loadout: [{ hp: 0, weapon: "minerLaser", controller: "miner" }], // always has a mining laser
     arms: {
-      gun: { hp: 1, weapon: "autocannon", controller: "turret" },
-      shield: { hp: 2, shield: "standard" },
+      gun: {
+        hp: 1,
+        weapon: "autocannon",
+        controller: "turret",
+        chancePerSector: 0.15,
+        chanceCap: 0.85,
+      },
+      shield: { hp: 2, shield: "standard", chancePerSector: 0.12, chanceCap: 0.8 },
     },
+    spawn: { fromSector: 4, fallback: true },
+    hullWidth: 1.8,
+    sliceable: false,
+    debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
     killScore: 400,
     blastScore: 200,
     oreDrop: 5,
@@ -269,6 +284,10 @@ export const SHIP_TYPES = {
       { hp: 4, weapon: "autocannon", controller: "turret" },
       { hp: 5, shield: "standard" },
     ],
+    spawn: { fromSector: 6, chance: 0.3, maxConcurrent: 1 },
+    hullWidth: 2,
+    sliceable: true, // an unshielded hull is cut in two like a rock
+    debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
     killScore: 900,
     blastScore: 500,
     oreDrop: 9,

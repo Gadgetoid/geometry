@@ -51,6 +51,12 @@ const SLOT_KEYS = {
   Numpad4: 3,
 }
 
+// The first sector any rival appears in: the earliest spawn gate across the
+// ship types.
+const RIVALS_FROM_SECTOR = Math.min(
+  ...Object.values(SHIP_TYPES).map((type) => type.spawn.fromSector),
+)
+
 // Planets live in a region larger than the viewport (so they sit well apart and
 // only a couple are on screen at once) and wrap within it as they drift.
 const PLANET_MARGIN_X = 560
@@ -233,36 +239,52 @@ export class Game {
     )
   }
 
+  countRivals(typeName) {
+    let n = 0
+    for (const rival of this.rivals) {
+      if (rival.typeName === typeName) {
+        n++
+      }
+    }
+    return n
+  }
+
+  // Optional modules a ship type can turn up with. Each arm's chance ramps with
+  // how far past the type's spawn sector this one is, up to the arm's cap.
+  rollLoadout(type) {
+    const loadout = (type.loadout || []).slice()
+    const ramp = Math.max(0, this.level - type.spawn.fromSector)
+    for (const arm of Object.values(type.arms || {})) {
+      if (Math.random() < clamp(ramp * arm.chancePerSector, 0, arm.chanceCap)) {
+        loadout.push(arm)
+      }
+    }
+    return loadout
+  }
+
   spawnRival() {
     // enter from the arena boundary at a random bearing
     const edgeAngle = randRange(0, TAU),
       x = ARENA.cx + Math.cos(edgeAngle) * (ARENA.radius - 20),
       y = ARENA.cy + Math.sin(edgeAngle) * (ARENA.radius - 20)
-    const asFrigate =
-      this.level >= CONFIG.FRIGATE_FROM_SECTOR &&
-      Math.random() < 0.3 &&
-      !this.rivals.some((r) => r.typeName === "frigate")
-    if (asFrigate) {
-      this.rivals.push(new RivalShip(x, y, "frigate"))
-      return
+    // roll each gated ship type in turn, then fall back to the basic rival
+    let fallbackName = null
+    for (const [name, type] of Object.entries(SHIP_TYPES)) {
+      if (type.spawn.fallback) {
+        fallbackName = name
+        continue
+      }
+      if (
+        this.level >= type.spawn.fromSector &&
+        this.countRivals(name) < type.spawn.maxConcurrent &&
+        Math.random() < type.spawn.chance
+      ) {
+        this.rivals.push(new RivalShip(x, y, name))
+        return
+      }
     }
-    // A scout always has its mining laser and rolls a gun and/or a shield.
-    const scout = SHIP_TYPES.scout
-    const ramp = Math.max(0, this.level - CONFIG.RIVAL_FROM_SECTOR)
-    const loadout = scout.loadout.slice()
-    if (Math.random() < clamp(ramp * CONFIG.RIVAL_GUN_CHANCE, 0, CONFIG.RIVAL_GUN_CHANCE_CAP)) {
-      loadout.push({
-        hp: scout.arms.gun.hp,
-        weapon: scout.arms.gun.weapon,
-        controller: scout.arms.gun.controller,
-      })
-    }
-    if (
-      Math.random() < clamp(ramp * CONFIG.RIVAL_SHIELD_CHANCE, 0, CONFIG.RIVAL_SHIELD_CHANCE_CAP)
-    ) {
-      loadout.push({ hp: scout.arms.shield.hp, shield: scout.arms.shield.shield })
-    }
-    this.rivals.push(new RivalShip(x, y, "scout", loadout))
+    const fallback = SHIP_TYPES[fallbackName]
+    this.rivals.push(new RivalShip(x, y, fallbackName, this.rollLoadout(fallback)))
   }
 
   shatterToOre(asteroid) {
@@ -325,7 +347,7 @@ export class Game {
     // An unshielded frigate is sliced in two like a rock (see below) rather than
     // blocking the beam, so it is not truncated against.
     const blockShielded = blockShip && blockShip.shieldModule() && blockShip.shieldModule().up
-    const cuttable = blockShip && blockShip.typeName === "frigate" && !blockShielded
+    const cuttable = blockShip && blockShip.type.sliceable && !blockShielded
     if (blockShip && !cuttable) {
       beam.b.x = beam.a.x + beam.dir.x * blockDist
       beam.b.y = beam.a.y + beam.dir.y * blockDist
@@ -563,9 +585,9 @@ export class Game {
       spawns,
       powerups: sector >= 3,
       rivals:
-        sector < CONFIG.RIVAL_FROM_SECTOR
+        sector < RIVALS_FROM_SECTOR
           ? 0
-          : Math.min(1 + Math.floor((sector - CONFIG.RIVAL_FROM_SECTOR) / 3), 3),
+          : Math.min(1 + Math.floor((sector - RIVALS_FROM_SECTOR) / 3), 3),
       rivalInterval: clamp(28 - sector * 1.4, 9, 28),
     }
   }
