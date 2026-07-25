@@ -220,6 +220,12 @@ export const Sound = {
   charge(seconds = 0.85) {
     this.beep(180, seconds, "sawtooth", 0.035, 720)
   },
+  // The seeker's snap shot: short and bright, so a chase reads by ear against
+  // the frigate's boom.
+  snapLaser() {
+    this.beep(900, 0.14, "sawtooth", 0.05, 220)
+    this.noise(0.1, 0.02, 1800, 1.2)
+  },
   // Frigate main gun: a big, low "pew" with a sub layer and a breath of noise.
   bigLaser() {
     this.beep(520, 0.5, "sawtooth", 0.08, 60)

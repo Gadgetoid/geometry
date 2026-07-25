@@ -1065,6 +1065,83 @@ test("a beam cuts every hull it passes through, as it cuts every rock", () => {
   )
 })
 
+// A shield that covers one channel instead of two is meant to be better at it,
+// and to leave its host wide open on the other. Both halves matter, so both are
+// pinned here against whichever shields the registry actually declares.
+test("a single-channel shield outperforms a general one on the channel it covers", () => {
+  const general =
+    SHIELD_TYPES[Object.keys(SHIELD_TYPES).find((k) => SHIELD_TYPES[k].blocks.length > 1)]
+  const specialist =
+    SHIELD_TYPES[Object.keys(SHIELD_TYPES).find((k) => SHIELD_TYPES[k].blocks.length === 1)]
+  assert.ok(specialist, "some shield should cover one channel only")
+  assert.ok(
+    specialist.efficiency < general.efficiency,
+    `it should drain less per point (${specialist.efficiency} vs ${general.efficiency})`,
+  )
+  assert.ok(specialist.dropAt < general.dropAt, "and hold on further down the cell")
+  assert.ok(specialist.recoverAt <= general.recoverAt, "and come back sooner")
+  assert.ok(specialist.recoverDelay <= general.recoverDelay, "after a shorter wait")
+})
+
+test("a deflector-shielded hull rides out a point-blank blast", () => {
+  // Six seconds without a shield is a death sentence for a 29-point hull in a
+  // rock field, so the shield has to take a blast rather than collapse to one.
+  const game = liveGame()
+  game.player.x = -9000
+  game.player.y = -9000
+  const seeker = new RivalShip(500, 320, "seeker", SHIP_TYPES.seeker.loadout)
+  game.rivals = [seeker]
+  assert.equal(seeker.shieldModule().typeName, "deflector")
+  assert.ok(seeker.shieldUp())
+  seeker.takeDamage(CONFIG.BLAST_DAMAGE, game, "projectile")
+  assert.ok(seeker.shieldUp(), "a blast at zero range must not overload it")
+  assert.equal(seeker.hull, SHIP_TYPES.seeker.hull, "and must not reach the hull")
+
+  // but it is still wide open to the one channel it does not cover
+  const bare = liveGame()
+  bare.player.x = -9000
+  bare.player.y = -9000
+  const other = new RivalShip(500, 320, "seeker", SHIP_TYPES.seeker.loadout)
+  other.angle = 0
+  bare.rivals = [other]
+  bare.applyBeam(
+    { a: { x: 200, y: 320 }, b: { x: 900, y: 320 }, dir: { x: 1, y: 0 } },
+    bare.player,
+    playerWeapon,
+    68,
+  )
+  assert.ok(other.dead, "one laser hit must still finish it")
+})
+
+test("the seeker shoots at the player rather than at rocks", () => {
+  // Its nose used to carry a miner, which fires only when a rock is near and
+  // only along the host's facing, so its offence was a side effect of hunting.
+  const nose = SHIP_TYPES.seeker.loadout.find((entry) => entry.hp === 0)
+  const weapon = WEAPON_TYPES[nose.weapon]
+  assert.equal(weapon.kind, "beam")
+  assert.equal(weapon.triggerRange, undefined, "it must not be gated on a rock being close")
+
+  const game = liveGame()
+  game.asteroids = [] // nothing to mine, so anything it fires is aimed at the player
+  const seeker = new RivalShip(700, 320, "seeker", SHIP_TYPES.seeker.loadout)
+  seeker.angle = Math.PI // facing the player
+  game.rivals = [seeker]
+  const player = game.player
+  player.x = 400
+  player.y = 320
+  const before = player.energy
+  for (let i = 0; i < 600 && player.energy >= before; i++) {
+    player.vx = 0
+    player.vy = 0
+    seeker.x = 700
+    seeker.y = 320
+    seeker.angle = Math.PI
+    game.phase = "play" // an empty field would otherwise end the sector
+    game.advance(1 / 60)
+  }
+  assert.ok(player.energy < before, "with no rocks at all, it must still shoot the player")
+})
+
 test("a shield only stops the channels it blocks, whichever body carries it", () => {
   // A deflector stops shots and not lasers. Asked of a rock and of a hull, the
   // answer has to be the same one.

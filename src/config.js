@@ -404,6 +404,21 @@ export const WEAPON_TYPES = {
     shotLife: 0.55, // the flash lingers longer than an ordinary beam
     colour: PALETTE.rival.cannonBeam,
   },
+  seekerLaser: {
+    kind: "beam",
+    // The cannon's opposite number: light, quick and barely telegraphed, for a
+    // host that is already pointed at you because it is chasing you.
+    damage: 45,
+    energy: 24,
+    reload: [0.9, 1.4],
+    length: 420,
+    width: 3,
+    glow: 14,
+    arc: 0.35,
+    chargeTime: 0.22, // a snap rather than the cannon's wind-up
+    sound: "snapLaser",
+    colour: PALETTE.rival.seekerBeam,
+  },
   defenseLaser: {
     kind: "beam",
     damage: 30,
@@ -458,14 +473,20 @@ export const SHIELD_TYPES = {
     recoverAt: 0.6,
     recoverDelay: 3,
   },
+  // Covers one channel instead of two and is better at it, which is the trade:
+  // a hull carrying this is hardened against the sector and naked to a laser.
+  // It has to hold through a chase, so it soaks a point-blank blast without
+  // dropping, endures a long scrape along a rock, and is quick back up when
+  // something does overload it - six seconds without it is a death sentence for
+  // a hull this thin.
   deflector: {
-    efficiency: 1,
+    efficiency: 0.8,
     blocks: ["projectile"],
     sides: 6,
     colour: PALETTE.shield.deflector,
-    dropAt: 0.18,
-    recoverAt: 0.55,
-    recoverDelay: 2,
+    dropAt: 0.12,
+    recoverAt: 0.35,
+    recoverDelay: 1,
   },
   player: {
     efficiency: 1,
@@ -633,45 +654,48 @@ export const FRIGATE_SHAPE = [
 ]
 
 const SHIP_DESIGNS = {
-  // in SHIP_DESIGNS:
-  hunter: {
+  seeker: {
     outline: [
-      [1.6, 0],
-      [-0.4, -0.75],
-      [-1, -0.55],
-      [-1, -0.45],
-      [-0.2, -0.15],
-      [-0.2, 0.15],
-      [-1, 0.45],
-      [-1, 0.55],
-      [-0.4, 0.75],
+      [1.5, 0],
+      [0, -0.4],
+      [-0.05, -0.6],
+      [-0.9, -0.6],
+      [-0.85, -0.4],
+      [-0.65, -0.4],
+      [-0.85, 0],
+      [-0.65, 0.4],
+      [-0.85, 0.4],
+      [-0.9, 0.6],
+      [-0.05, 0.6],
+      [0, 0.4],
     ],
     colour: PALETTE.ore.body,
     size: 12,
     mass: 0.8,
     power: 1.5,
-    armour: 1.1,
+    armour: 1.2,
     exhaust: {
       mounts: [
-        [-1.05, 0.5],
-        [-1.05, -0.5],
+        [-0.9, 0.5],
+        [-0.9, -0.5],
       ],
-      rate: 50,
+      rate: 40,
       speed: 30,
-      life: 0.5,
+      life: 0.48,
       spread: 4,
     },
-    lifeTime: [16, 26],
-    energyMax: 150,
-    regen: 22,
+    lifeTime: [26, 36],
+    energyMax: 300,
+    regen: 34,
     hardpoints: [
-      { local: [1.6, 0], role: "nose" },
-      { local: [0.15, 0], role: "gun" },
-      { local: [0.4, 0], role: "core" },
+      { local: [1.5, 0], role: "nose" },
+      { local: [-0.45, 0], role: "gun" },
+      { local: [-0.05, 0], role: "core" },
     ],
     loadout: [
-      { hp: 0, weapon: "minerLaser", controller: "miner" },
-      { hp: 2, shield: "standard" },
+      // `hunter` is the behaviour, not the ship: line up, wind up briefly, fire.
+      { hp: 0, weapon: "seekerLaser", controller: "hunter" },
+      { hp: 2, shield: "deflector" },
     ],
     arms: {
       gun: {
@@ -682,12 +706,13 @@ const SHIP_DESIGNS = {
         chanceCap: 0.85,
       },
     },
-    spawn: { fromSector: 4, fallback: true },
+    spawn: { fromSector: 4, chance: 0.2, maxConcurrent: 1 },
+    hunts: true,
     debrisMaterial: SHIP_PLATING,
-    debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
-    killScore: 400,
+    debris: { particles: 26, speed: 260, ring: 19, shake: 10 },
+    killScore: 420,
     blastScore: 200,
-    oreDrop: 5,
+    oreDrop: 0,
   },
   scout: {
     outline: [

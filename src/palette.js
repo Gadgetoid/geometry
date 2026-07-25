@@ -65,6 +65,7 @@ export const PALETTE = {
     hullSpark: "#ffcaa0",
     minerBeam: "#ffb060",
     cannonBeam: "#ff4d6d",
+    seekerBeam: "#ff6ad5",
   },
 
   // asteroids. Plain rock is a size ramp between `sizeCool` and `sizeWarm`;
