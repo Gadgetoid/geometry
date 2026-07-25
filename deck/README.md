@@ -35,9 +35,11 @@ and changes nothing. `--remove` takes matching entries and their artwork back ou
 Both keep a `.geometry-backup` and refuse to touch a file they cannot reproduce
 byte for byte. Close Steam first.
 
-`--add-if-missing` writes the shortcut record directly instead of asking Steam. It
-exists, but it is a last resort: on macOS a record Steam had not created itself gave
-a library entry Steam would not treat as a shortcut and would not let go of.
+`--add-if-missing` writes the shortcut record directly instead of asking Steam. On
+SteamOS there is `steamos-add-to-steam` to ask, so it is not used there. On macOS
+there is nothing to ask, so it is how the shortcut gets made, with the bundle as its
+`Exe`. An earlier attempt at this put a bare `.sh` in `Exe` and produced an entry
+Steam would not treat as a shortcut, which is the reason for the bundle.
 
 ## Why these flags
 
@@ -79,6 +81,13 @@ The same scripts work on an ordinary Linux desktop and on a Mac. Only two parts 
 Linux-specific and both are skipped where they mean nothing: the flatpak permission,
 and the desktop entry. Steam keeps its shortcut file in the same format everywhere,
 so the shortcut and its artwork are created the same way.
+
+On macOS the installer also builds a `GEOMETRY II.app` wrapper, because Steam will
+not take a bare script: its Add a Non-Steam Game dialog lists only `.app` bundles,
+with no filter to widen, and a bundle is the shape it expects to find in a shortcut's
+`Exe`. The bundle holds no copy of the game, only a few lines that find it beside
+itself, so the folder can still be moved. It carries the captured icon, so it looks
+right in Finder and in Steam. `make-macos-app.sh` builds it on its own if wanted.
 
 The browser is whatever `browser.sh` finds. It wants a Chromium-based one, because
 the game needs WebGL2 and the launcher passes Chromium's own flags: Chrome,

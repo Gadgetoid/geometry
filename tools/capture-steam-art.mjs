@@ -44,6 +44,9 @@ const ASSETS = [
   { file: "portrait.png", w: 600, h: 900, slot: "<appid>p.png", from: "portrait" },
   { file: "logo.png", w: 1280, h: 720, slot: "<appid>_logo.png", from: "logo" },
   { file: "icon.png", w: 256, h: 256, slot: "<appid>_icon.png", from: "icon" },
+  // a bigger cut of the same frame, for the macOS .app icon, whose .icns wants
+  // sizes up to 512 and would otherwise be upscaled from 256
+  { file: "icon-512.png", w: 512, h: 512, slot: "macOS .app icon source", from: "icon" },
 ]
 
 function findChrome() {

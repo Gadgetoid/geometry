@@ -61,6 +61,18 @@ fi
 
 mkdir -p "$GAME_DIR/.chromium-profile"
 
+# ---- macOS app bundle -----------------------------------------------------
+# Steam on macOS will not take a bare script: its Add a Non-Steam Game dialog lists
+# only .app bundles, with no filter to widen. A bundle is also what Steam expects to
+# find in a shortcut's Exe, so wrapping the launcher is what lets the shortcut be
+# added at all, by hand or otherwise.
+STEAM_EXE="$LAUNCHER"
+if [ "$PLATFORM" = Darwin ]; then
+  MAC_APP="$("$HERE/make-macos-app.sh")"
+  STEAM_EXE="$MAC_APP"
+  say "app bundle: $MAC_APP"
+fi
+
 # ---- desktop entry --------------------------------------------------------
 # Linux only: it is what steamos-add-to-steam consumes, and what gives the game an
 # icon in the applications menu. A Mac has no use for one.
@@ -99,7 +111,8 @@ fi
 # The cost is that Steam keeps shortcuts.vdf in memory and writes it out in its own
 # time, so the artwork step waits for the shortcut to appear rather than assuming it.
 art_step() {
-  python3 "$ART_INSTALLER" --launcher "$LAUNCHER" --art "$HERE/steam-art" "$@"
+  python3 "$ART_INSTALLER" \
+    --launcher "$LAUNCHER" --exe "$STEAM_EXE" --art "$HERE/steam-art" "$@"
 }
 
 have_art_step=false
@@ -110,39 +123,25 @@ fi
 echo
 echo "Steam:"
 if [ "$have_art_step" = false ]; then
-  say "python3 or install-steam-art.py is missing, so artwork cannot be attached"
-fi
-
-if [ "$have_art_step" = true ] && art_step --list 2>/dev/null | grep -q "matches this game"; then
-  # already in the library: just refresh the artwork against Steam's own appid
+  say "python3 or install-steam-art.py is missing, so Steam cannot be set up here"
+elif art_step --list 2>/dev/null | grep -q "matches this game"; then
+  # already in the library: refresh the artwork against Steam's own appid
   art_step
 elif command -v steamos-add-to-steam >/dev/null && [ -f "$DESKTOP_FILE" ]; then
+  # SteamOS can be asked, which is better than writing the record: Steam then owns
+  # what it created. It writes shortcuts.vdf out in its own time, so wait for it.
   say "asking Steam to add the shortcut"
   steamos-add-to-steam "$DESKTOP_FILE" || die "steamos-add-to-steam refused the entry."
-  if [ "$have_art_step" = true ]; then
-    if ! art_step --wait 30; then
-      echo
-      echo "Added. Steam has not written the shortcut out yet, so the artwork is"
-      echo "still to do: close Steam, then run"
-      echo "  $ART_INSTALLER --launcher $LAUNCHER --art $HERE/steam-art"
-    fi
+  if ! art_step --wait 30; then
+    echo
+    echo "Added. Steam has not written the shortcut out yet, so the artwork is still"
+    echo "to do: close Steam, then run"
+    echo "  $ART_INSTALLER --launcher $LAUNCHER --exe $STEAM_EXE --art $HERE/steam-art"
   fi
 else
-  # No helper to ask, which is every platform but SteamOS. Steam's own dialog is
-  # the reliable way in, and the artwork attaches to it afterwards.
-  cat <<MANUAL
-
-Add it to Steam once, then the artwork goes on:
-
-  1. Steam -> Games -> Add a Non-Steam Game... -> Browse
-     pick $LAUNCHER
-  2. quit Steam, so it writes the shortcut to disk
-  3. run this again, or just:
-     $ART_INSTALLER --launcher $LAUNCHER --art $HERE/steam-art
-
-On a Mac, Add a Non-Steam Game only lists .app bundles by default; set the file
-filter to All Files, or drag $LAUNCHER onto the dialog.
-MANUAL
+  # Nothing to ask, so write the record. Its Exe is the .app bundle, which is the
+  # shape Steam stores and understands.
+  art_step --add-if-missing
 fi
 
 if [ "$PLATFORM" = Linux ]; then
@@ -170,6 +169,9 @@ Worth knowing:
   * install-steam-art.py --list shows what Steam has, and --remove takes an entry
     and its artwork back out again. Both keep a backup and refuse to touch a file
     they cannot reproduce exactly.
+  * On macOS the Steam shortcut points at the generated GEOMETRY II.app, not at the
+    launcher script, because Steam will not accept a script. The bundle is a
+    wrapper: it finds the game beside itself, so the folder can still be moved.
   * To run the hosted build instead of these files, set GEOMETRY_URL in the
     Steam shortcut's launch options:
       GEOMETRY_URL=https://gadgetoid.github.io/geometry/ %command%
