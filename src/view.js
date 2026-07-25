@@ -72,6 +72,9 @@ export class GameView {
     this.scale = 1
     this.offsetX = 0
     this.offsetY = 0
+    // Clear this to paint the world without the HUD, radar or overlays, which is
+    // what tools/capture-steam-art.mjs wants from a frame.
+    this.showHud = true
   }
 
   resize(rect) {
@@ -194,7 +197,7 @@ export class GameView {
     r.pushView(cam.hud)
     if (game.phase === "title") {
       this.#title(game)
-    } else {
+    } else if (this.showHud) {
       this.#radar(game)
       this.#hud(game)
     }

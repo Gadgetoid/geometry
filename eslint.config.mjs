@@ -22,7 +22,8 @@ export default [
     },
   },
   {
-    files: ["test/**/*.js"],
+    // the test suite and the art capture tool run under node, not a browser
+    files: ["test/**/*.js", "tools/**/*.mjs"],
     languageOptions: { globals: { ...globals.node } },
   },
 ]
