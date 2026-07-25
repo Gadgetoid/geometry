@@ -287,12 +287,13 @@ export class Game {
   }
 
   // ---- beam resolution -------------------------------------------------
-  // A single beam from `attacker` (via `weapon`). Cuts unshielded rocks,
-  // drains energy from anything with a laser-blocking shield, damages ships
-  // within the beam's width, and never harms the attacker. Returns didHit.
-  applyBeam(beam, attacker, weapon) {
+  // A single beam from `attacker` (via `weapon`), carrying `damage` for this
+  // shot (the player's charged laser scales it, everything else passes its
+  // type's). Cuts unshielded rocks, drains energy from anything with a
+  // laser-blocking shield, damages ships within the beam's width, and never
+  // harms the attacker. Returns didHit.
+  applyBeam(beam, attacker, weapon, damage = weapon.type.damage) {
     let didHit = false
-    const damage = weapon.type.damage
     const width = weapon.type.width || 2.4
 
     // The beam stops at the first ship it strikes: find the nearest ship whose

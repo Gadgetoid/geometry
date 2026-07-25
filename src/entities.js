@@ -363,7 +363,7 @@ export class Weapon {
     }
     const dir = { x: Math.cos(angle), y: Math.sin(angle) }
     const beam = { a: { x: ax, y: ay }, b: { x: ax + dir.x * length, y: ay + dir.y * length }, dir }
-    game.applyBeam(beam, host, this)
+    game.applyBeam(beam, host, this, this.type.damage)
     game.laserShots.push({
       beams: [beam],
       age: 0,
@@ -950,7 +950,8 @@ export class PlayerShip extends Ship {
       return
     }
     const chargeFrac = clamp(w.charge / w.type.chargeMax, 0, 1)
-    const length = w.charge * this.beamLengthMult() + 40
+    const length = w.charge * this.beamLengthMult() + w.type.chargeReach
+    const damage = w.type.damage * this.chargeDamageMult()
     const nose = this.mountWorld(this.nose.local)
     const dir = { x: Math.cos(this.angle), y: Math.sin(this.angle) },
       nrm = { x: -dir.y, y: dir.x }
@@ -972,7 +973,7 @@ export class PlayerShip extends Ship {
         width: w.type.width,
         glow: w.type.glow,
       })
-      if (game.applyBeam(beam, this, w)) {
+      if (game.applyBeam(beam, this, w, damage)) {
         hit = true
       }
     }
@@ -984,9 +985,19 @@ export class PlayerShip extends Ship {
     Sound.fire(0.9 + 0.35 * chargeFrac) // pitch rises slightly with charge
   }
 
-  // Charged-beam reach multiplier, extended while the booster is running.
+  // Charged-beam reach multiplier, extended by a powerup that declares one.
   beamLengthMult() {
-    return this.buffTime("booster") > 0 ? POWERUP_TYPES.booster.beamLengthMult : 1
+    return this.buffField("beamLengthMult", 1)
+  }
+
+  // Damage multiplier for the charge held, running across the usable charge
+  // range so a minimum-charge shot is exactly the weapon's base damage.
+  chargeDamageMult() {
+    const w = this.mainWeapon
+    const [low, high] = w.type.chargeDamageMult
+    const span = w.type.chargeMax - w.type.chargeMin
+    const frac = span > 0 ? clamp((w.charge - w.type.chargeMin) / span, 0, 1) : 0
+    return lerp(low, high, frac)
   }
 
   update(dt, game) {
@@ -1375,7 +1386,7 @@ export class PlayerShip extends Ship {
     const w = this.mainWeapon
     if (w && w.charge > 4) {
       const nose = this.mountWorld(this.nose.local)
-      const length = w.charge * this.beamLengthMult() + 40
+      const length = w.charge * this.beamLengthMult() + w.type.chargeReach
       const frac = clamp(w.charge / w.type.chargeMax, 0.3, 1)
       renderer.line(
         nose.x,
