@@ -20,8 +20,6 @@ export const lerp = (a, b, t) => a + (b - a) * t
 
 // 2D vector helpers operating on {x, y} objects.
 export const subtract = (a, b) => ({ x: a.x - b.x, y: a.y - b.y })
-export const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y })
-export const scale = (v, s) => ({ x: v.x * s, y: v.y * s })
 export const dot = (a, b) => a.x * b.x + a.y * b.y
 export const cross = (a, b) => a.x * b.y - a.y * b.x // 2D scalar cross product
 export const magnitude = (v) => Math.hypot(v.x, v.y)

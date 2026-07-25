@@ -183,12 +183,13 @@ export class Canvas2DRenderer extends Renderer {
     ctx.restore()
   }
 
+  // Centred on (x, y), matching the WebGL backend's sprite.
   point(x, y, size, opts = {}) {
     const { ctx } = this
     ctx.save()
     ctx.globalAlpha = opts.alpha ?? 1
     ctx.fillStyle = opts.color
-    ctx.fillRect(x, y, size, size)
+    ctx.fillRect(x - size / 2, y - size / 2, size, size)
     ctx.restore()
   }
 

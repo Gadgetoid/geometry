@@ -21,8 +21,16 @@ export const TAU = Math.PI * 2
 // ship; outside the circle is an out-of-bounds zone that confines the player
 // and repels asteroids back in.
 export const ARENA = { cx: VIEW_W / 2, cy: VIEW_H / 2, radius: 860 }
-export const MONO_FONT = "ui-monospace,Menlo,monospace"
-export const DEV_VISIBLE = true
+
+// The dev button gives free purchases and lets you jump to any sector, so it is
+// offered while developing locally and on an explicit ?dev, but not on a
+// published build.
+export const DEV_VISIBLE =
+  typeof location === "undefined" ||
+  location.protocol === "file:" ||
+  location.hostname === "localhost" ||
+  location.hostname === "127.0.0.1" ||
+  new URLSearchParams(location.search).has("dev")
 export const SHIELD_SPARK = PALETTE.shield.spark // ring colour when a shield takes a hit
 
 export const CONFIG = {
