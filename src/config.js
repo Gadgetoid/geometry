@@ -325,7 +325,7 @@ export const SHIP_TYPES = {
     killScore: 400,
     blastScore: 200,
     oreDrop: 5,
-    hull: 80, // survives a couple of laser hits once its shield is down
+    hull: 30, // one clean laser hit finishes it once the shield is down
   },
   frigate: {
     outline: FRIGATE_SHAPE,
