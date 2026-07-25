@@ -161,8 +161,10 @@ export const CONFIG = {
 // thresholds that turn analog travel into intent. Remapping a control is an edit
 // here; src/gamepad.js reads nothing else.
 //
-// Left stick steers and the left trigger drives the engine, so the two hands
-// divide as steer/thrust and aim/fire. `slotLabels` are the face buttons the HUD
+// Left stick steers and the right trigger drives the engine; the left trigger
+// fires. Both are held controls - the laser is charged by holding it - so which
+// hand gets which is a matter of taste, and either can be changed from the pause
+// menu's CONTROLS page. `slotLabels` are the face buttons the HUD
 // names in place of the number keys once a pad is in use.
 // ---------------------------------------------------------------------------
 export const GAMEPAD = {
@@ -206,11 +208,11 @@ export const GAMEPAD = {
 // never leave a player unable to reach the menu and put it back.
 // ---------------------------------------------------------------------------
 export const BINDABLE_CONTROLS = [
-  { id: "thrust", name: "THRUST", defaults: { keys: ["KeyW"], buttons: 6 } },
+  { id: "thrust", name: "THRUST", defaults: { keys: ["Space"], buttons: 7 } },
   { id: "turnLeft", name: "TURN LEFT", defaults: { keys: ["KeyA"] } },
   { id: "turnRight", name: "TURN RIGHT", defaults: { keys: ["KeyD"] } },
   { id: "reverse", name: "REVERSE", defaults: { keys: ["KeyS"], buttons: 4 } },
-  { id: "fire", name: "FIRE LASER", defaults: { keys: ["Space"], buttons: 7 } },
+  { id: "fire", name: "FIRE LASER", defaults: { keys: ["KeyW"], buttons: 6 } },
   { id: "turretLeft", name: "TURRET LEFT", defaults: { keys: ["ArrowLeft"] } },
   { id: "turretRight", name: "TURRET RIGHT", defaults: { keys: ["ArrowRight"] } },
   { id: "turretFire", name: "TURRET FIRE", defaults: { keys: ["ArrowUp"], buttons: 5 } },

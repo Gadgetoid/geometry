@@ -1174,10 +1174,10 @@ test("a shielded rock takes a blast on its shield and survives it", () => {
 
 test("the default bindings are the controls the game shipped with", () => {
   const game = new Game()
-  assert.deepEqual(game.bindings.keys.thrust, ["KeyW"])
-  assert.deepEqual(game.bindings.keys.fire, ["Space"])
+  assert.deepEqual(game.bindings.keys.thrust, ["Space"])
+  assert.deepEqual(game.bindings.keys.fire, ["KeyW"])
   assert.deepEqual(game.bindings.keys.slot1, ["Digit1", "Numpad1"])
-  assert.equal(game.bindings.buttons.thrust, 6)
+  assert.equal(game.bindings.buttons.thrust, 7)
   assert.equal(game.bindings.buttons.slot1, 0)
   // turning is a stick on a pad, so there is nothing to bind for it there
   assert.equal(game.bindings.buttons.turnLeft, undefined)
@@ -1186,7 +1186,7 @@ test("the default bindings are the controls the game shipped with", () => {
 test("a rebound key flies the ship and the old one stops", () => {
   const game = liveGame()
   game.bindings.keys.thrust = ["KeyI"]
-  game.pressedKeys.add("KeyW")
+  game.pressedKeys.add("Space")
   game.advance(1 / 60)
   assert.equal(game.player.thrusting, false, "the old key must do nothing")
   game.pressedKeys.clear()
@@ -1229,7 +1229,7 @@ test("a reserved key is refused and the row keeps waiting", () => {
   for (const code of ["KeyP", "Enter"]) {
     game.beginRebind("keys", "thrust")
     assert.equal(game.captureBinding("keys", code), true, `${code} is swallowed`)
-    assert.deepEqual(game.bindings.keys.thrust, ["KeyW"], `${code} must not be bound`)
+    assert.deepEqual(game.bindings.keys.thrust, ["Space"], `${code} must not be bound`)
     assert.ok(game.rebinding, "and the row is still waiting")
   }
 })
@@ -1239,7 +1239,7 @@ test("escape abandons a rebind", () => {
   game.beginRebind("keys", "thrust")
   assert.equal(game.captureBinding("keys", "Escape"), true)
   assert.equal(game.rebinding, null)
-  assert.deepEqual(game.bindings.keys.thrust, ["KeyW"], "unchanged")
+  assert.deepEqual(game.bindings.keys.thrust, ["Space"], "unchanged")
 })
 
 test("a key press is not acted on while a row is waiting for it", () => {
@@ -1256,17 +1256,17 @@ test("resetting bindings puts every control back", () => {
   game.bindings.keys.thrust = ["KeyI"]
   game.bindings.buttons.fire = 11
   game.resetBindings()
-  assert.deepEqual(game.bindings.keys.thrust, ["KeyW"])
-  assert.equal(game.bindings.buttons.fire, 7)
+  assert.deepEqual(game.bindings.keys.thrust, ["Space"])
+  assert.equal(game.bindings.buttons.fire, 6)
 })
 
 test("a binding reads in the menu the way a player would say it", () => {
   const game = new Game()
-  assert.equal(game.bindingLabel("keys", "thrust"), "W")
-  assert.equal(game.bindingLabel("keys", "fire"), "SPACE")
+  assert.equal(game.bindingLabel("keys", "thrust"), "SPACE")
+  assert.equal(game.bindingLabel("keys", "fire"), "W")
   assert.equal(game.bindingLabel("keys", "turretLeft"), "LEFT")
   assert.equal(game.bindingLabel("keys", "slot1"), "1 / NUM 1")
-  assert.equal(game.bindingLabel("buttons", "thrust"), "BUTTON 6")
+  assert.equal(game.bindingLabel("buttons", "thrust"), "BUTTON 7")
   assert.equal(game.bindingLabel("buttons", "turnLeft"), "-", "nothing bound reads as a dash")
 })
 
@@ -1342,7 +1342,7 @@ test("resetting from the menu restores every control and asks first", () => {
   assert.equal(game.pauseConfirming, "RESET TO DEFAULTS", "it asks once")
   assert.deepEqual(game.bindings.keys.thrust, ["KeyI"], "and changes nothing yet")
   game.menuConfirm()
-  assert.deepEqual(game.bindings.keys.thrust, ["KeyW"], "the second press does it")
+  assert.deepEqual(game.bindings.keys.thrust, ["Space"], "the second press does it")
 })
 
 test("closing the pause menu leaves the controls page behind", () => {

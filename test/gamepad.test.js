@@ -313,7 +313,7 @@ test("touching the pad switches the prompts, and a key switches them back", () =
   assert.equal(game.inputMode, "keyboard")
   input.apply(readPad(pad({ buttons: { [D.thrust]: 1 } })))
   assert.equal(game.inputMode, "gamepad")
-  game.onKeyDown({ code: "KeyW", repeat: false, preventDefault() {} })
+  game.onKeyDown({ code: "Space", repeat: false, preventDefault() {} })
   assert.equal(game.inputMode, "keyboard")
 })
 
@@ -329,10 +329,10 @@ test("a resting pad leaves the prompts alone", () => {
 test("the pad does not disturb keys the keyboard is holding", () => {
   const game = liveGame()
   const input = new GamepadInput(game)
-  game.pressedKeys.add("KeyW") // keyboard player holding thrust
+  game.pressedKeys.add("Space") // keyboard player holding thrust
   input.apply(readPad(pad({ buttons: { [D.thrust]: 1 } })))
   input.apply(readPad(pad())) // pad trigger released
-  assert.ok(game.pressedKeys.has("KeyW"), "the held key survived the pad's release")
+  assert.ok(game.pressedKeys.has("Space"), "the held key survived the pad's release")
   game.advance(1 / 60)
   assert.equal(game.player.thrusting, true)
 })
@@ -367,10 +367,11 @@ test("B abandons a rebind rather than being bound to the control", () => {
   const input = new GamepadInput(game)
   game.togglePause()
   game.openPausePage("controls")
+  const before = game.bindings.buttons.thrust
   game.beginRebind("buttons", "thrust")
   input.apply(readPad(pad({ buttons: { [B.back]: 1 } })))
   assert.equal(game.rebinding, null, "the wait is abandoned")
-  assert.equal(game.bindings.buttons.thrust, 6, "and B was not captured")
+  assert.equal(game.bindings.buttons.thrust, before, "and B was not captured")
   assert.equal(game.pausePage, "controls", "without leaving the page")
 })
 
