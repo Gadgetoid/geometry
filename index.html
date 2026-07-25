@@ -60,64 +60,26 @@
         height: 100%;
         background: #02040a;
       }
-      .scan {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        z-index: 3;
-        background: repeating-linear-gradient(
-          to bottom,
-          rgba(0, 0, 0, 0) 0,
-          rgba(0, 0, 0, 0) 2px,
-          rgba(0, 0, 0, 0.17) 2.5px,
-          rgba(0, 0, 0, 0.17) 3px
-        );
-        mix-blend-mode: multiply;
-      }
-      .vig {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        z-index: 4;
-        background:
-          radial-gradient(130% 130% at 50% 50%, rgba(0, 0, 0, 0) 52%, rgba(3, 6, 14, 0.62) 100%),
-          radial-gradient(100% 100% at 50% 50%, rgba(95, 215, 255, 0.03), transparent 60%);
-      }
-      .glare {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        z-index: 5;
-        background: radial-gradient(60% 40% at 50% -8%, rgba(120, 180, 255, 0.1), transparent 70%);
-      }
-      .flick {
-        animation: flick 4.2s steps(40) infinite;
-      }
-      @keyframes flick {
-        0%,
-        100% {
-          opacity: 1;
-        }
-        50% {
-          opacity: 0.94;
-        }
-        73% {
-          opacity: 0.98;
-        }
-      }
-      .crt-off .scan,
-      .crt-off .vig,
-      .crt-off .glare {
-        display: none;
-      }
+      /* Scanlines, vignette, curvature and chromatic aberration are all done in
+         the composite shader; the CRT button toggles them there. */
       .crt-off .screen {
         border-radius: 8px;
       }
-      /* WebGL backend renders scanlines / vignette / curvature in the shader */
-      .gl .scan,
-      .gl .vig,
-      .gl .glare {
-        display: none;
+      .unsupported {
+        display: grid;
+        place-content: center;
+        height: 100%;
+        margin: 0;
+        text-align: center;
+        letter-spacing: 0.1em;
+        color: var(--amber);
+        font-size: 22px;
+        line-height: 2.2;
+      }
+      .unsupported small {
+        color: #8fb2dd;
+        font-size: 12px;
+        letter-spacing: 0.04em;
       }
       .hud-btns {
         position: absolute;
@@ -174,9 +136,6 @@
     <div class="stage">
       <div class="screen" id="screen">
         <canvas id="game"></canvas>
-        <div class="scan flick"></div>
-        <div class="vig"></div>
-        <div class="glare"></div>
       </div>
       <div class="hud-btns">
         <button id="btnCrt" aria-pressed="true" title="CRT filter">CRT</button>

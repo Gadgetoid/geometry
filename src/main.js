@@ -1,6 +1,5 @@
 // Entry point: wire the DOM, create the renderer + game, run the loop.
 
-import { Canvas2DRenderer } from "./renderer.js"
 import { WebGLRenderer } from "./glrenderer.js"
 import { GameView } from "./view.js"
 import { Game } from "./game.js"
@@ -8,33 +7,26 @@ import { DEV_VISIBLE, POWERUP_TYPES, SHOP } from "./config.js"
 import { Sound } from "./audio.js"
 
 const canvas = document.getElementById("game")
-// Prefer the WebGL2 shader backend; fall back to Canvas 2D where unavailable.
-const renderer = WebGLRenderer.create(canvas) || new Canvas2DRenderer(canvas)
-const usingGL = renderer instanceof WebGLRenderer
-if (usingGL) {
-  // The shader does the CRT effect; hide the CSS overlays so they don't stack.
-  document.querySelector(".stage").classList.add("gl")
+const renderer = WebGLRenderer.create(canvas)
+// WebGL2 is the only backend. Say so plainly instead of leaving a black screen.
+if (!renderer) {
+  document.getElementById("screen").innerHTML =
+    '<p class="unsupported">WEBGL2 REQUIRED<br /><small>This browser could not' +
+    " create a WebGL2 context.</small></p>"
+  throw new Error("WebGL2 unavailable")
 }
 const view = new GameView(renderer)
 const game = new Game()
 
 // Debug / test handle: lets the browser console and the smoke test inspect and
 // drive live state without reaching into module scope.
-window.__geometry = {
-  game,
-  view,
-  renderer,
-  backend: usingGL ? "webgl2" : "canvas2d",
-  POWERUP_TYPES,
-  SHOP,
-}
+window.__geometry = { game, view, renderer, POWERUP_TYPES, SHOP }
 
 addEventListener("keydown", (e) => game.onKeyDown(e))
 addEventListener("keyup", (e) => game.onKeyUp(e))
 addEventListener("blur", () => game.onBlur())
 
 document.getElementById("btnCrt").addEventListener("click", (e) => {
-  // Canvas fallback toggles the CSS overlays; WebGL toggles the shader effect.
   const off = document.querySelector(".stage").classList.toggle("crt-off")
   renderer.crtEnabled = !off
   e.currentTarget.setAttribute("aria-pressed", String(!off))

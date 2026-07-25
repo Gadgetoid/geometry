@@ -2,10 +2,10 @@
 //
 // The scene is drawn in 3D: every vertex carries a z (layer depth) and the
 // vertex shader does the perspective divide by hand (no depth buffer, painter
-// order + blending decide compositing). Gameplay sits on the z=0 plane, which
-// is framed to fill the viewport exactly, so gameplay matches the 2D backend;
-// stars and planets sit at z>0 and therefore shift less under camera shake and
-// sway, giving parallax depth.
+// order + blending decide compositing). Gameplay sits on the z=0 plane, which is
+// framed to fill the viewport exactly, so world coordinates map 1:1 to the
+// virtual 1024x640 space; stars and planets sit at z>0 and therefore shift less
+// under camera shake and sway, giving parallax depth.
 //
 // Passes render into an offscreen HDR-ish scene target. A bloom pass extracts
 // and blurs the bright neon, then a final composite adds the bloom and applies
@@ -414,9 +414,9 @@ function buildAtlas() {
 
 // ---------------------------------------------------------------------------
 export class WebGLRenderer extends Renderer {
-  // Returns null when this backend is unavailable, so the caller can fall back
-  // to Canvas 2D. Shader compilation and framebuffer setup are the likely
-  // failure points on unusual drivers, so both are caught here.
+  // Returns null when this backend is unavailable, so the caller can say so
+  // rather than leaving a blank canvas. Shader compilation and framebuffer setup
+  // are the likely failure points on unusual drivers, so both are caught here.
   static create(canvas) {
     const gl = canvas.getContext("webgl2", {
       alpha: false,
@@ -429,7 +429,7 @@ export class WebGLRenderer extends Renderer {
     try {
       return new WebGLRenderer(canvas, gl)
     } catch (error) {
-      console.warn("WebGL backend unavailable, falling back to Canvas 2D:", error)
+      console.warn("WebGL2 backend unavailable:", error)
       return null
     }
   }
@@ -454,7 +454,6 @@ export class WebGLRenderer extends Renderer {
     this.#initBuffers()
     this.#initTargets()
     this.#initAtlas()
-
     gl.disable(gl.DEPTH_TEST)
     gl.enable(gl.BLEND)
   }
@@ -882,14 +881,6 @@ export class WebGLRenderer extends Renderer {
       const a = points[i],
         b = points[(i + 1) % n]
       this.#lineQuad(a.x, a.y, b.x, b.y, this.passZ, core, total, col, 1)
-    }
-  }
-
-  fillPoly(points, opts = {}) {
-    const col = this.#col(opts)
-    this.#use("flat")
-    for (let i = 1; i < points.length - 1; i++) {
-      this.#flatTri([points[0], points[i], points[i + 1]], col)
     }
   }
 
