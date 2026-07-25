@@ -495,11 +495,12 @@ export class Game {
     }
     const material = ship.type.debrisMaterial || null
     const debrisMinArea = (material && material.minArea) || CONFIG.AST_MIN_AREA
-    // the frigate's autocannon turrets, in world space, to hand to the pieces
+    // the modules that keep working as wreckage, in world space, to hand to the
+    // pieces; WEAPON_TYPES decides which those are
     const guns = []
     for (const hp of ship.hardpoints) {
       const m = hp.module
-      if (m && m.kind === "weapon" && m.controller === "turret") {
+      if (m && m.kind === "weapon" && m.type.survivesDebris) {
         const w = ship.mountWorld(hp.local)
         guns.push({ x: w.x, y: w.y, module: m })
       }

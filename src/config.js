@@ -470,8 +470,19 @@ export const PLAYER_TYPE = {
 //   colour  pickup outline, inventory slot and buff text
 //   seconds how long the effect lasts; omit for an instant effect
 //   apply   optional immediate effect, run on use
-// A timed powerup records its remaining seconds in player.buffs, which the
-// gameplay code reads through player.buffTime(id).
+//
+// A timed powerup records its remaining seconds in player.buffs. Its ongoing
+// effect is declared here as a field the gameplay code looks up by name through
+// PlayerShip.buffField, so nothing tests for a powerup by id. The fields the
+// simulation currently reads off an active buff:
+//   beamOffsets     parallel beam positions either side of the nose
+//   beamLengthMult  multiplies the charged beam's reach
+//   freeCharge      charging the laser costs no energy
+//   collisionImmune asteroid contact does no damage
+//   pull            ore attraction strength, at any range
+//   tintsShip       the hull and the energy bar take this entry's `colour`
+// Adding a field means reading it at one gameplay site; adding a powerup that
+// reuses existing fields means editing nothing but this registry.
 // ---------------------------------------------------------------------------
 export const POWERUP_TYPES = {
   repel: {
@@ -511,7 +522,10 @@ export const POWERUP_TYPES = {
     icon: "B",
     colour: PALETTE.powerup.booster,
     seconds: 6.5,
-    beamLengthMult: 1.6, // charged shots reach further and cost nothing
+    beamLengthMult: 1.6, // charged shots reach further...
+    freeCharge: true, // ...and cost nothing to charge
+    collisionImmune: true, // and rocks can be shouldered aside unharmed
+    tintsShip: true,
     apply: (game, player, type) => {
       game.burst(player.x, player.y, 20, type.colour, 40, 140, 0.6)
     },

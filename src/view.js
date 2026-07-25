@@ -461,12 +461,9 @@ export class GameView {
     if (low) {
       fillW = barW * fraction * (0.85 + 0.15 * Math.sin(game.gameTime * 10))
     }
-    const barColour =
-      game.player && game.player.buffTime("booster") > 0
-        ? POWERUP_TYPES.booster.colour
-        : low
-          ? PALETTE.ui.warn
-          : PALETTE.player.hull
+    // a powerup that tints the ship tints its energy bar to match
+    const tint = game.player ? game.player.buffWith("tintsShip") : null
+    const barColour = tint ? tint.colour : low ? PALETTE.ui.warn : PALETTE.player.hull
     r.rect(barX + 1, barY + 1, Math.max(0, fillW - 2), barH - 2, { fill: barColour, glow: 10 })
     r.text("ENERGY", barX + 2, barY - 4, { size: 9, color: PALETTE.text.faint })
 

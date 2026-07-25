@@ -902,6 +902,22 @@ export class PlayerShip extends Ship {
   buffTime(id) {
     return this.buffs.get(id) ?? 0
   }
+
+  // The active powerup type declaring `field`, or null. Effects are named in
+  // POWERUP_TYPES rather than tested for by id, so the gameplay code below asks
+  // "is anything lengthening my beam?" instead of "is BOOSTER running?".
+  buffWith(field) {
+    for (const id of this.buffs.keys()) {
+      if (POWERUP_TYPES[id][field] !== undefined) {
+        return POWERUP_TYPES[id]
+      }
+    }
+    return null
+  }
+  buffField(field, fallback) {
+    const type = this.buffWith(field)
+    return type ? type[field] : fallback
+  }
   grantBuff(id, seconds) {
     this.buffs.set(id, Math.max(this.buffTime(id), seconds))
   }
@@ -938,8 +954,7 @@ export class PlayerShip extends Ship {
     const nose = this.mountWorld(this.nose.local)
     const dir = { x: Math.cos(this.angle), y: Math.sin(this.angle) },
       nrm = { x: -dir.y, y: dir.x }
-    const offsets =
-      this.buffTime("multi") > 0 ? POWERUP_TYPES.multi.beamOffsets : SINGLE_BEAM_OFFSETS
+    const offsets = this.buffField("beamOffsets", SINGLE_BEAM_OFFSETS)
     game.stats.shots++
     let hit = false
     for (const o of offsets) {
@@ -1100,7 +1115,7 @@ export class PlayerShip extends Ship {
     // ticked by updateWeapons below).
     const w = this.mainWeapon
     const holding = canControl && keys.has("Space")
-    const freeShot = this.buffTime("booster") > 0
+    const freeShot = this.buffField("freeCharge", false)
     if (holding) {
       const rate = w.type.chargeRate * CONFIG.LASER_RATE_MULT[game.upgrades.laser]
       const cost = w.type.chargeCost * CONFIG.LASER_COST_MULT[game.upgrades.laser]
@@ -1307,9 +1322,9 @@ export class PlayerShip extends Ship {
     if (this.invincible > 0 && Math.floor(game.gameTime * 12) % 2 === 0) {
       return
     } // blink while invincible
-    const boosted = this.buffTime("booster") > 0
-    const colour = boosted
-      ? POWERUP_TYPES.booster.colour
+    const tint = this.buffWith("tintsShip")
+    const colour = tint
+      ? tint.colour
       : this.energy < this.energyMax * 0.22
         ? PALETTE.player.lowEnergy
         : this.colour
@@ -1329,7 +1344,7 @@ export class PlayerShip extends Ship {
       })
     }
     renderer.strokePoly(this.worldOutline(), { color: colour, width: 1.9, glow: 14 })
-    if (boosted) {
+    if (tint) {
       renderer.circle(this.x, this.y, this.radius * 1.7, { stroke: colour, width: 1.9, alpha: 0.5 })
     }
 
@@ -2093,14 +2108,12 @@ export class Ore extends Entity {
     this.life -= dt
     const player = game.player,
       dist = Math.hypot(this.x - player.x, this.y - player.y)
-    const magnet = player.buffTime("magnet") > 0
-    if (game.oreVacuum || magnet || dist < CONFIG.MAGNET_RANGE[game.upgrades.magnet]) {
+    // A powerup declaring a `pull` reaches the whole sector; the fitted magnet
+    // only works inside its range.
+    const buffPull = player.buffField("pull", 0)
+    if (game.oreVacuum || buffPull || dist < CONFIG.MAGNET_RANGE[game.upgrades.magnet]) {
       const pull = normalize(subtract(player, this))
-      const force = game.oreVacuum
-        ? CONFIG.ORE_VACUUM_PULL
-        : magnet
-          ? POWERUP_TYPES.magnet.pull
-          : CONFIG.ORE_PASSIVE_PULL
+      const force = game.oreVacuum ? CONFIG.ORE_VACUUM_PULL : buffPull || CONFIG.ORE_PASSIVE_PULL
       this.vx += pull.x * force * dt
       this.vy += pull.y * force * dt
     }
