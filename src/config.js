@@ -166,12 +166,10 @@ export const CONFIG = {
 // names in place of the number keys once a pad is in use.
 // ---------------------------------------------------------------------------
 export const GAMEPAD = {
+  // Only the fixed controls live here. What a ship control is bound to is the
+  // player's business and belongs to BINDABLE_CONTROLS, which is the one place its
+  // default is written down.
   buttons: {
-    slots: [0, 1, 2, 3], // A B X Y -> powerup slots 1-4
-    reverse: 4, // left bumper
-    turretFire: 5, // right bumper, alongside right-stick aim
-    thrust: 6, // left trigger
-    fire: 7, // right trigger: hold to charge, release to shoot
     pause: 8, // back / select
     confirm: 9, // start
     // A confirms a menu and B backs out of one, as well as filling powerup slots.
@@ -189,6 +187,8 @@ export const GAMEPAD = {
   turretDeadzone: 0.5, // the turret only takes an aim from a deliberate push
   triggerThreshold: 0.35, // how far a trigger travels before it counts as held
   menuStep: 0.6, // stick deflection that counts as one menu move
+  // The face buttons, by their index in the standard mapping, so a slot bound to
+  // one can be named on the HUD as the pad names it.
   slotLabels: ["A", "B", "X", "Y"],
 }
 

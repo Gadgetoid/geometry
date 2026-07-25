@@ -17,6 +17,7 @@ import {
   POWERUP_TYPES,
   POWERUP_IDS,
   SHIELD_SPARK,
+  GAMEPAD,
   BINDABLE_CONTROLS,
   BINDING_DEVICES,
   RESERVED_KEYS,
@@ -1305,6 +1306,25 @@ export class Game {
       }
     }
     return null
+  }
+
+  // What to press for a powerup slot, as the HUD should name it. It follows the
+  // live binding, so a rebound slot is not still labelled with the button it used
+  // to be on.
+  slotLabel(index) {
+    const control = BINDABLE_CONTROLS.find((entry) => entry.slot === index)
+    if (!control) {
+      return String(index + 1)
+    }
+    if (this.inputMode === "gamepad") {
+      const button = this.bindings.buttons[control.id]
+      if (button === undefined) {
+        return "-"
+      }
+      return GAMEPAD.slotLabels[button] ?? `B${button}`
+    }
+    const codes = this.bindings.keys[control.id]
+    return codes && codes.length ? keyLabel(codes[0]) : "-"
   }
 
   // How a binding reads in the menu.

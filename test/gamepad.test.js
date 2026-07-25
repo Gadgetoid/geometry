@@ -10,7 +10,7 @@ import assert from "node:assert/strict"
 import { Game } from "../src/game.js"
 import { Asteroid } from "../src/entities.js"
 import { GamepadInput, applyDeadzone, padInUse, readPad } from "../src/gamepad.js"
-import { ARENA, CONFIG, GAMEPAD, SHOP } from "../src/config.js"
+import { ARENA, CONFIG, GAMEPAD, SHOP, freshBindings } from "../src/config.js"
 
 // A pad with everything at rest. `set` takes { buttons: {index: value}, axes: {index: value} }.
 function pad({ buttons = {}, axes = {} } = {}) {
@@ -22,7 +22,8 @@ function pad({ buttons = {}, axes = {} } = {}) {
   return { buttons: buttonList, axes: axisList, connected: true }
 }
 
-const B = GAMEPAD.buttons
+const B = GAMEPAD.buttons // the fixed menu buttons
+const D = freshBindings().buttons // and the default binding of each ship control
 const A = GAMEPAD.axes
 
 // A live sector with a solid ship. One rock is left in the field, well clear of
@@ -79,10 +80,10 @@ test("the left stick gives a proportional turn", () => {
 
 test("a trigger has to travel before it counts as held", () => {
   const barely = GAMEPAD.triggerThreshold / 2
-  assert.equal(readPad(pad({ buttons: { [B.fire]: barely } })).fire, false)
-  assert.equal(readPad(pad({ buttons: { [B.fire]: 1 } })).fire, true)
-  assert.equal(readPad(pad({ buttons: { [B.thrust]: 1 } })).thrust, true)
-  assert.equal(readPad(pad({ buttons: { [B.reverse]: 1 } })).reverse, true)
+  assert.equal(readPad(pad({ buttons: { [D.fire]: barely } })).fire, false)
+  assert.equal(readPad(pad({ buttons: { [D.fire]: 1 } })).fire, true)
+  assert.equal(readPad(pad({ buttons: { [D.thrust]: 1 } })).thrust, true)
+  assert.equal(readPad(pad({ buttons: { [D.reverse]: 1 } })).reverse, true)
 })
 
 test("the right stick gives the turret an absolute bearing", () => {
@@ -111,7 +112,7 @@ test("a bare numeric button list is read too", () => {
   const numeric = { buttons: [], axes: [0, 0, 0, 0], connected: true }
   numeric.buttons.length = 17
   numeric.buttons.fill(0)
-  numeric.buttons[B.thrust] = 1
+  numeric.buttons[D.thrust] = 1
   assert.equal(readPad(numeric).thrust, true)
 })
 
@@ -122,7 +123,7 @@ test("the pad flies the ship", () => {
   const input = new GamepadInput(game)
   const player = game.player
   const facing = player.angle
-  input.apply(readPad(pad({ axes: { [A.turn]: 1 }, buttons: { [B.thrust]: 1 } })))
+  input.apply(readPad(pad({ axes: { [A.turn]: 1 }, buttons: { [D.thrust]: 1 } })))
   game.advance(1 / 60)
   assert.ok(player.angle > facing, "the stick turned the ship")
   assert.equal(player.thrusting, true, "the trigger drove the engine")
@@ -156,7 +157,7 @@ test("holding the trigger charges and releasing it fires", () => {
   const game = liveGame()
   const input = new GamepadInput(game)
   const weapon = game.player.mainWeapon
-  const held = readPad(pad({ buttons: { [B.fire]: 1 } }))
+  const held = readPad(pad({ buttons: { [D.fire]: 1 } }))
   for (let i = 0; i < 30; i++) {
     input.apply(held)
     game.advance(1 / 60)
@@ -174,7 +175,7 @@ test("the right stick aims the turret and the bumper fires it", () => {
   game.player.fit("turret")
   const input = new GamepadInput(game)
   input.apply(
-    readPad(pad({ axes: { [A.turretX]: 0, [A.turretY]: -1 }, buttons: { [B.turretFire]: 1 } })),
+    readPad(pad({ axes: { [A.turretX]: 0, [A.turretY]: -1 }, buttons: { [D.turretFire]: 1 } })),
   )
   game.advance(1 / 60)
   assert.ok(
@@ -190,7 +191,7 @@ test("a face button uses its powerup slot once per press", () => {
   player.items = ["refuel"]
   player.energy = 10
   const input = new GamepadInput(game)
-  const held = readPad(pad({ buttons: { [B.slots[0]]: 1 } }))
+  const held = readPad(pad({ buttons: { [D.slot1]: 1 } }))
   input.apply(held)
   assert.equal(player.items.length, 0, "the slot was used")
   assert.ok(player.energy > 10, "and the powerup applied")
@@ -205,7 +206,7 @@ test("each face button maps to its own slot", () => {
   const player = game.player
   player.items = ["refuel", "refuel", "refuel", "refuel"]
   const input = new GamepadInput(game)
-  input.apply(readPad(pad({ buttons: { [B.slots[2]]: 1 } })))
+  input.apply(readPad(pad({ buttons: { [D.slot3]: 1 } })))
   assert.equal(player.items.length, 3, "the third button used a slot")
 })
 
@@ -310,7 +311,7 @@ test("touching the pad switches the prompts, and a key switches them back", () =
   const game = liveGame()
   const input = new GamepadInput(game)
   assert.equal(game.inputMode, "keyboard")
-  input.apply(readPad(pad({ buttons: { [B.thrust]: 1 } })))
+  input.apply(readPad(pad({ buttons: { [D.thrust]: 1 } })))
   assert.equal(game.inputMode, "gamepad")
   game.onKeyDown({ code: "KeyW", repeat: false, preventDefault() {} })
   assert.equal(game.inputMode, "keyboard")
@@ -329,7 +330,7 @@ test("the pad does not disturb keys the keyboard is holding", () => {
   const game = liveGame()
   const input = new GamepadInput(game)
   game.pressedKeys.add("KeyW") // keyboard player holding thrust
-  input.apply(readPad(pad({ buttons: { [B.thrust]: 1 } })))
+  input.apply(readPad(pad({ buttons: { [D.thrust]: 1 } })))
   input.apply(readPad(pad())) // pad trigger released
   assert.ok(game.pressedKeys.has("KeyW"), "the held key survived the pad's release")
   game.advance(1 / 60)
@@ -339,7 +340,7 @@ test("the pad does not disturb keys the keyboard is holding", () => {
 test("clearing input drops pad state too", () => {
   const game = liveGame()
   const input = new GamepadInput(game)
-  input.apply(readPad(pad({ buttons: { [B.thrust]: 1 }, axes: { [A.turn]: 1 } })))
+  input.apply(readPad(pad({ buttons: { [D.thrust]: 1 }, axes: { [A.turn]: 1 } })))
   game.clearInput()
   assert.equal(game.padInput.thrust, false)
   assert.equal(game.padInput.turn, 0)
@@ -383,4 +384,18 @@ test("B still works its powerup slot in flight", () => {
   assert.equal(game.paused, false)
   input.apply(readPad(pad({ buttons: { [B.back]: 1 } })))
   assert.deepEqual(game.player.items, ["refuel"], "the second slot was used")
+})
+
+test("the HUD names a powerup slot by what is actually bound to it", () => {
+  const game = liveGame()
+  game.inputMode = "gamepad"
+  assert.equal(game.slotLabel(0), "A", "the default is the face button it sits on")
+  game.bindings.buttons.slot1 = 3
+  assert.equal(game.slotLabel(0), "Y", "and follows a rebind")
+  game.bindings.buttons.slot1 = 11
+  assert.equal(game.slotLabel(0), "B11", "a button with no face name says which it is")
+  game.inputMode = "keyboard"
+  assert.equal(game.slotLabel(0), "1", "a keyboard player is told the key")
+  game.bindings.keys.slot1 = ["KeyZ"]
+  assert.equal(game.slotLabel(0), "Z")
 })

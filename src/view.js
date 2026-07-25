@@ -5,7 +5,7 @@
 // the Renderer without touching game logic. Entities still paint themselves via
 // their own draw(renderer, game) methods.
 
-import { VIEW_W, VIEW_H, TAU, ARENA, GAMEPAD, SHOP, POWERUP_TYPES } from "./config.js"
+import { VIEW_W, VIEW_H, TAU, ARENA, SHOP, POWERUP_TYPES } from "./config.js"
 import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
 import { PALETTE } from "./palette.js"
@@ -513,8 +513,7 @@ export class GameView {
           stroke: spec ? spec.colour : PALETTE.ui.slotEmpty,
           width: 1.2,
         })
-        const label =
-          game.inputMode === "gamepad" ? GAMEPAD.slotLabels[i] || String(i + 1) : String(i + 1)
+        const label = game.slotLabel(i)
         r.text(label, sx + 2, sy + 9, { size: 8, color: PALETTE.text.muted })
         if (spec) {
           r.text(spec.icon, sx + size / 2, sy + size / 2 + 5, {
