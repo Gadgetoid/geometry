@@ -395,10 +395,6 @@ export class Weapon {
 // and fires through weapon.fireProjectile / weapon.emitBeam. Add a behaviour by
 // adding an entry here and naming it in a loadout.
 // ---------------------------------------------------------------------------
-const MINER_RANGE = 420 // a scout starts mining once a rock is this close
-const DEFENSE_BEAM_OVERSHOOT = 42 // beam reaches past the rock it is aimed at
-const OFFSCREEN_MARGIN = 40
-
 export const WEAPON_CONTROLLERS = {
   // driven directly by player input, see PlayerShip.fireLaser
   manual() {},
@@ -407,7 +403,11 @@ export const WEAPON_CONTROLLERS = {
   turret(weapon, dt, game, host, world) {
     const player = game.player
     // don't snipe the player from off-screen where they can't see the shooter
-    if (!player || player.invincible > 0 || !game.onScreen(host.x, host.y, OFFSCREEN_MARGIN)) {
+    if (
+      !player ||
+      player.invincible > 0 ||
+      !game.onScreen(host.x, host.y, CONFIG.OFFSCREEN_FIRE_MARGIN)
+    ) {
       return
     }
     const aim = Math.atan2(player.y - world.y, player.x - world.x)
@@ -423,7 +423,7 @@ export const WEAPON_CONTROLLERS = {
         Math.hypot(asteroid.center.x - host.x, asteroid.center.y - host.y),
       )
     }
-    if (nearest < MINER_RANGE) {
+    if (nearest < weapon.type.triggerRange) {
       weapon.emitBeam(game, host, world.x, world.y, host.angle, weapon.rollLength())
     }
   },
@@ -449,7 +449,7 @@ export const WEAPON_CONTROLLERS = {
     if (
       Math.abs(arc) < weapon.type.arc &&
       dist < weapon.type.length &&
-      game.onScreen(host.x, host.y, OFFSCREEN_MARGIN)
+      game.onScreen(host.x, host.y, CONFIG.OFFSCREEN_FIRE_MARGIN)
     ) {
       weapon.charging = weapon.type.chargeTime || 0.8
       weapon.chargeDuration = weapon.charging
@@ -478,14 +478,7 @@ export const WEAPON_CONTROLLERS = {
     }
     if (target) {
       host.turretAim = Math.atan2(target.center.y - world.y, target.center.x - world.x)
-      weapon.emitBeam(
-        game,
-        host,
-        world.x,
-        world.y,
-        host.turretAim,
-        nearest + DEFENSE_BEAM_OVERSHOOT,
-      )
+      weapon.emitBeam(game, host, world.x, world.y, host.turretAim, nearest + weapon.type.overshoot)
     }
   },
 }
@@ -586,13 +579,16 @@ export class Projectile extends Entity {
     this.vy = vy
     this.damage = damage
     this.owner = owner
-    this.life = 4
+    this.life = CONFIG.BULLET_LIFE
   }
 
   update(dt, game) {
     this.life -= dt
     this.integrate(dt)
-    if (this.life <= 0 || Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + 30) {
+    if (
+      this.life <= 0 ||
+      Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + CONFIG.BULLET_ESCAPE_MARGIN
+    ) {
       this.dead = true
       return
     }
@@ -1479,7 +1475,7 @@ export class RivalShip extends Ship {
         target = chunk
       }
     }
-    const wantsOre = target && nearest < 340
+    const wantsOre = target && nearest < CONFIG.RIVAL_ORE_INTEREST
     if (!wantsOre) {
       target = null
       nearest = 1e9
@@ -1498,8 +1494,8 @@ export class RivalShip extends Ship {
     const outAngle = Math.atan2(this.y - ARENA.cy, this.x - ARENA.cx)
     const goal = this.leaving
       ? {
-          x: ARENA.cx + Math.cos(outAngle) * (ARENA.radius + 200),
-          y: ARENA.cy + Math.sin(outAngle) * (ARENA.radius + 200),
+          x: ARENA.cx + Math.cos(outAngle) * (ARENA.radius + CONFIG.RIVAL_EXIT_MARGIN),
+          y: ARENA.cy + Math.sin(outAngle) * (ARENA.radius + CONFIG.RIVAL_EXIT_MARGIN),
         }
       : this.hunts
         ? { x: player.x, y: player.y }
@@ -1531,7 +1527,10 @@ export class RivalShip extends Ship {
     }
 
     for (let i = game.oreChunks.length - 1; i >= 0; i--) {
-      if (Math.hypot(game.oreChunks[i].x - this.x, game.oreChunks[i].y - this.y) < 18) {
+      if (
+        Math.hypot(game.oreChunks[i].x - this.x, game.oreChunks[i].y - this.y) <
+        CONFIG.RIVAL_ORE_GRAB
+      ) {
         game.oreChunks.splice(i, 1)
         game.rivalScore += CONFIG.ORE_SCORE
         game.burst(this.x, this.y, 4, PALETTE.rival.hull, 30, 80, 0.3)
@@ -1541,7 +1540,10 @@ export class RivalShip extends Ship {
     this.#bounceOffRocks(game)
     this.updateWeapons(dt, game) // guns + main laser fire via their controllers
 
-    if (this.leaving && Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + 140) {
+    if (
+      this.leaving &&
+      Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + CONFIG.RIVAL_DESPAWN_MARGIN
+    ) {
       this.dead = true
     }
   }
@@ -1997,8 +1999,8 @@ export class Asteroid extends Entity {
     if (playerDist < CONFIG.BLAST_R) {
       const falloff = 1 - playerDist / CONFIG.BLAST_R,
         dir = normalize(subtract(player, this.center))
-      player.vx += dir.x * 300 * falloff
-      player.vy += dir.y * 300 * falloff
+      player.vx += dir.x * CONFIG.BLAST_KNOCK_PLAYER * falloff
+      player.vy += dir.y * CONFIG.BLAST_KNOCK_PLAYER * falloff
       player.takeDamage(CONFIG.BLAST_DAMAGE * falloff, game, "projectile")
     }
     for (let i = game.rivals.length - 1; i >= 0; i--) {
@@ -2009,8 +2011,8 @@ export class Asteroid extends Entity {
       }
       const falloff = 1 - dist / CONFIG.BLAST_R,
         dir = normalize(subtract(rival, this.center))
-      rival.vx += dir.x * 220 * falloff
-      rival.vy += dir.y * 220 * falloff
+      rival.vx += dir.x * CONFIG.BLAST_KNOCK_RIVAL * falloff
+      rival.vy += dir.y * CONFIG.BLAST_KNOCK_RIVAL * falloff
       rival.takeDamage(CONFIG.BLAST_DAMAGE * falloff, game, "projectile", rival.type.blastScore)
     }
     for (const bullet of game.projectiles) {
@@ -2115,7 +2117,7 @@ export class Ore extends Entity {
     this.spin = randRange(-3, 3)
     this.angle = Math.random() * TAU
     this.life = CONFIG.ORE_LIFE
-    this.size = randRange(4, 6.5)
+    this.size = randRange(CONFIG.ORE_SIZE[0], CONFIG.ORE_SIZE[1])
   }
 
   update(dt, game) {
@@ -2131,8 +2133,8 @@ export class Ore extends Entity {
       this.vx += pull.x * force * dt
       this.vy += pull.y * force * dt
     }
-    this.vx *= Math.pow(0.55, dt)
-    this.vy *= Math.pow(0.55, dt)
+    this.vx *= Math.pow(CONFIG.ORE_DRAG, dt)
+    this.vy *= Math.pow(CONFIG.ORE_DRAG, dt)
     this.integrate(dt)
     this.angle += this.spin * dt
     this.confine(0.4, this.size)

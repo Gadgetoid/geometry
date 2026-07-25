@@ -9,6 +9,8 @@ import {
   ARENA,
   TAU,
   CONFIG,
+  PROGRESSION,
+  HAZARD_TRAITS,
   SHIP_TYPES,
   SHOP,
   POWERUP_TYPES,
@@ -264,7 +266,7 @@ export class Game {
         this.countRivals(name) < type.spawn.maxConcurrent &&
         Math.random() < type.spawn.chance
       ) {
-        this.#enterRival(name, bearing)
+        this.#enterRival(name, bearing, this.rollLoadout(type))
         return
       }
     }
@@ -562,50 +564,49 @@ export class Game {
   }
 
   // ---- level / sector flow --------------------------------------------
+  // Pick a hazard from HAZARD_TRAITS: an entry joins the pool once its sector is
+  // reached, and `weightPerSector` gives it extra entries as sectors advance so
+  // it gradually crowds the others out.
   rollHazardTraits(sector) {
-    const pool = ["explosive"]
-    if (sector >= 4) {
-      pool.push("shield")
-    }
-    if (sector >= 5) {
-      const guns = 1 + Math.max(0, sector - 5)
-      for (let i = 0; i < guns; i++) {
-        pool.push("gun")
+    const pool = []
+    for (const hazard of HAZARD_TRAITS) {
+      if (sector < hazard.fromSector) {
+        continue
+      }
+      const weight = 1 + (hazard.weightPerSector || 0) * (sector - hazard.fromSector)
+      for (let i = 0; i < weight; i++) {
+        pool.push(hazard.traits)
       }
     }
-    if (sector >= 6) {
-      pool.push("gunshield")
-    }
-    switch (pick(pool)) {
-      case "shield":
-        return { shield: true }
-      case "gun":
-        return { gun: true }
-      case "gunshield":
-        return { gun: true, shield: true }
-      default:
-        return { explosive: true }
-    }
+    return pool.length ? { ...pick(pool) } : {}
   }
 
   planLevel(sector) {
-    const count = Math.min(1 + Math.ceil(sector * 0.9), 11)
-    const hazardChance = sector < 3 ? 0 : clamp(0.14 + (sector - 3) * 0.07, 0, 0.6)
+    const { rocks, hazards, rivals, spawn, powerups } = PROGRESSION
+    const count = Math.min(rocks.base + Math.ceil(sector * rocks.perSector), rocks.max)
+    const hazardChance =
+      sector < hazards.fromSector
+        ? 0
+        : clamp(hazards.base + (sector - hazards.fromSector) * hazards.perSector, 0, hazards.max)
     const spawns = []
     for (let i = 0; i < count; i++) {
       spawns.push({
-        traits: sector >= 3 && Math.random() < hazardChance ? this.rollHazardTraits(sector) : {},
-        radius: randRange(CONFIG.AST_MAX_R * 0.72, CONFIG.AST_MAX_R),
+        traits: Math.random() < hazardChance ? this.rollHazardTraits(sector) : {},
+        radius: randRange(CONFIG.AST_MAX_R * spawn.radius[0], CONFIG.AST_MAX_R * spawn.radius[1]),
       })
     }
     return {
       spawns,
-      powerups: sector >= 3,
+      powerups: sector >= powerups.fromSector,
       rivals:
         sector < RIVALS_FROM_SECTOR
           ? 0
-          : Math.min(1 + Math.floor((sector - RIVALS_FROM_SECTOR) / 3), 3),
-      rivalInterval: clamp(28 - sector * 1.4, 9, 28),
+          : Math.min(1 + Math.floor((sector - RIVALS_FROM_SECTOR) / rivals.perSectors), rivals.max),
+      rivalInterval: clamp(
+        rivals.intervalBase - sector * rivals.intervalPerSector,
+        rivals.intervalMin,
+        rivals.intervalBase,
+      ),
     }
   }
 
@@ -624,6 +625,7 @@ export class Game {
     this.summaryData = null
     this.oreVacuum = false
 
+    const place = PROGRESSION.spawn
     for (const spawn of this.plan.spawns) {
       // scatter across the arena disc, clear of the ship spawn at the centre
       let x,
@@ -631,13 +633,16 @@ export class Game {
         tries = 0
       do {
         const a = randRange(0, TAU),
-          rr = Math.sqrt(Math.random()) * (ARENA.radius - 120)
+          rr = Math.sqrt(Math.random()) * (ARENA.radius - place.edgeMargin)
         x = ARENA.cx + Math.cos(a) * rr
         y = ARENA.cy + Math.sin(a) * rr
         tries++
-      } while (Math.hypot(x - ARENA.cx, y - ARENA.cy) < 220 && tries < 50)
+      } while (
+        Math.hypot(x - ARENA.cx, y - ARENA.cy) < place.clearRadius &&
+        tries < place.placementTries
+      )
       const angle = randRange(0, TAU),
-        speed = randRange(30, 74)
+        speed = randRange(place.speed[0], place.speed[1])
       this.asteroids.push(
         new Asteroid({
           x,
@@ -646,12 +651,15 @@ export class Game {
           traits: spawn.traits,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed,
-          spin: randRange(-0.6, 0.6),
+          spin: randRange(place.spin[0], place.spin[1]),
         }),
       )
     }
 
-    this.powerupTimer = randRange(6, 10)
+    this.powerupTimer = randRange(
+      PROGRESSION.powerups.firstDelay[0],
+      PROGRESSION.powerups.firstDelay[1],
+    )
     this.rivalTimer = this.plan.rivalInterval * 0.6
     this.clearTimer = 0
     const p = this.player
@@ -810,9 +818,15 @@ export class Game {
     if (this.phase === "play") {
       if (this.plan.powerups) {
         this.powerupTimer -= dt
-        if (this.powerupTimer <= 0 && this.powerupPickups.length < 2) {
+        if (
+          this.powerupTimer <= 0 &&
+          this.powerupPickups.length < PROGRESSION.powerups.maxOnField
+        ) {
           this.spawnPowerup()
-          this.powerupTimer = randRange(12, 20)
+          this.powerupTimer = randRange(
+            PROGRESSION.powerups.interval[0],
+            PROGRESSION.powerups.interval[1],
+          )
         }
       }
       if (this.plan.rivals > 0) {
