@@ -478,40 +478,58 @@ test("a hull and a rock agree on what counts as a cut", () => {
   assert.equal(hullCut, rockCut, "a hull and a rock must treat a grazing beam alike")
 })
 
-// A beam that never crosses the drawn hull must not register on it, and one that
-// does must. The player used to answer this on a circle of `radius` while every
-// rival answered it on its outline, so a wide beam landed on empty space beside
-// the hull and a narrow one missed the nose, which reaches past `radius`.
-test("a beam hits the player where its hull actually is", () => {
-  // Run a beam parallel to the hull, offset sideways, and compare what the beam
-  // resolver decides against what the outline says.
-  const probe = (offset, weaponType) => {
-    const game = liveGame()
-    const player = game.player
-    player.angle = 0
-    player.x = 400
-    player.y = 320
-    player.energy = player.energyMax
-    const shooter = new RivalShip(400 + offset, 320 - 300, "scout", [])
-    game.rivals = [shooter]
-    const beam = {
-      a: { x: 400 + offset, y: 320 - 300 },
-      b: { x: 400 + offset, y: 320 + 300 },
-      dir: { x: 0, y: 1 },
-    }
-    const crosses = countBeamCrossings(beam, player.worldOutline()) >= 1
-    game.applyBeam(beam, shooter, { type: weaponType })
-    return { crosses, landed: game.stats.damage > 0 }
+// A beam registers on the surface the view actually draws: the shield bubble
+// while one is raised, the hull outline when none is. Neither used to be true of
+// the player, which answered on a circle of `radius` sized `width * 0.6 + radius`,
+// so a wide beam landed on empty space beside the hull and a narrow one missed the
+// nose, which reaches past `radius`.
+//
+// Run a beam parallel to the hull, offset sideways, and compare what the beam
+// resolver decides against the surface it should be using.
+function beamPastPlayer(offset, weaponType, { shielded }) {
+  const game = liveGame()
+  const player = game.player
+  player.angle = 0
+  player.x = 400
+  player.y = 320
+  player.energy = player.energyMax
+  if (!shielded) {
+    player.shieldModule().up = false
   }
+  const shooter = new RivalShip(400 + offset, 320 - 300, "scout", [])
+  game.rivals = [shooter]
+  const beam = {
+    a: { x: 400 + offset, y: 320 - 300 },
+    b: { x: 400 + offset, y: 320 + 300 },
+    dir: { x: 0, y: 1 },
+  }
+  const crossesHull = countBeamCrossings(beam, player.worldOutline()) >= 1
+  game.applyBeam(beam, shooter, { type: weaponType })
+  return { crossesHull, landed: game.stats.damage > 0 }
+}
+
+test("a beam hits an unshielded player where its hull actually is", () => {
   // The widest beam in the game: its old hit circle was ~10x the hull's area.
   for (const offset of [-14, -8, 0, 8, 14, 20, 26]) {
-    const r = probe(offset, WEAPON_TYPES.cannonLaser)
-    assert.equal(r.landed, r.crosses, `cannonLaser at offset ${offset}`)
+    const r = beamPastPlayer(offset, WEAPON_TYPES.cannonLaser, { shielded: false })
+    assert.equal(r.landed, r.crossesHull, `cannonLaser at offset ${offset}`)
   }
   // The narrowest: its old circle stopped short of the nose.
   for (const offset of [-12, 0, 12, 16, 18, 20]) {
-    const r = probe(offset, WEAPON_TYPES.minerLaser)
-    assert.equal(r.landed, r.crosses, `minerLaser at offset ${offset}`)
+    const r = beamPastPlayer(offset, WEAPON_TYPES.minerLaser, { shielded: false })
+    assert.equal(r.landed, r.crossesHull, `minerLaser at offset ${offset}`)
+  }
+})
+
+test("a beam hits a shielded player on the bubble the view draws", () => {
+  const bubble = PLAYER_TYPE.size * PLAYER_TYPE.shieldScale
+  for (const offset of [0, 8, 14, 18, 22, 24, 26, 34]) {
+    const r = beamPastPlayer(offset, WEAPON_TYPES.minerLaser, { shielded: true })
+    assert.equal(
+      r.landed,
+      Math.abs(offset) < bubble,
+      `a beam ${offset} from the centre against a bubble of ${bubble}`,
+    )
   }
 })
 
@@ -539,6 +557,118 @@ test("an unshielded hull does not stop a beam reaching the rocks behind it", () 
       `${typeName} must not shield the rock behind it`,
     )
   }
+})
+
+// The reported bug: a shot that visibly grazed a scout's shield did nothing,
+// because the sim tested the hull outline while the view drew a bubble half again
+// as wide around it. A scout's bubble is 22.8 against a hull reaching 16.8, and a
+// frigate's is 92 against 71.5 on a hull that is a thin slab, so most of what
+// looked like the target was not.
+test("a beam registers on a shielded rival's bubble, not on the hull inside it", () => {
+  const probe = (typeName, loadout, offset) => {
+    const game = liveGame()
+    const player = game.player
+    player.angle = 0
+    player.x = 100
+    player.y = 320
+    const rival = new RivalShip(500, 320 + offset, typeName, loadout)
+    rival.angle = Math.PI
+    game.rivals = [rival]
+    const shield = rival.shieldModule()
+    assert.ok(shield && shield.up, `${typeName} must start shielded`)
+    const before = rival.energy
+    const beam = { a: { x: 100, y: 320 }, dir: { x: 1, y: 0 }, b: { x: 1100, y: 320 } }
+    game.applyBeam(beam, player, playerWeapon)
+    return { registered: rival.energy !== before, bubble: rival.shieldRadius() }
+  }
+
+  const cases = [
+    [
+      "scout",
+      [
+        { hp: 0, weapon: "minerLaser", controller: "miner" },
+        { hp: 2, shield: "standard" },
+      ],
+    ],
+    ["frigate", SHIP_TYPES.frigate.loadout],
+  ]
+  for (const [typeName, loadout] of cases) {
+    const bubble = probe(typeName, loadout, 0).bubble
+    // inside the bubble but clear of the hull: this is the band that did nothing
+    for (const frac of [0.5, 0.75, 0.9]) {
+      const offset = bubble * frac
+      assert.equal(
+        probe(typeName, loadout, offset).registered,
+        true,
+        `${typeName}: a beam ${offset.toFixed(1)} out, inside a bubble of ${bubble.toFixed(1)}`,
+      )
+    }
+    // and outside it, nothing should register
+    assert.equal(
+      probe(typeName, loadout, bubble * 1.15).registered,
+      false,
+      `${typeName}: clear of the bubble must still miss`,
+    )
+  }
+})
+
+// Emergent from cutting every hull by the same rule, and worth keeping: a beam
+// that passes through a corner of an unshielded scout crosses its outline twice,
+// so it cuts, and both pieces fall under what plating holds together, so the scout
+// is destroyed. The same graze on a frigate takes a piece off and leaves the rest
+// as wreckage. One rule, two outcomes, decided by size alone.
+test("a graze that passes through an unshielded scout destroys it", () => {
+  const game = liveGame()
+  const player = game.player
+  player.angle = 0
+  player.x = 100
+  player.y = 320
+  // A scout nose-on to +x: its wing runs from the tail corner up to the nose, so a
+  // beam offset sideways clips that wing and passes clean out again.
+  const scout = new RivalShip(500, 320, "scout", [])
+  scout.angle = 0
+  game.rivals = [scout]
+  game.asteroids = [new Asteroid({ vertices: square(2000, 2000, 40) })]
+
+  const beam = { a: { x: 100, y: 328 }, dir: { x: 1, y: 0 }, b: { x: 1100, y: 328 } }
+  const crossings = countBeamCrossings(beam, scout.worldOutline())
+  assert.equal(crossings, 2, "the shot must pass through, not stop inside")
+  // it really is a graze: the chord is a small fraction of the hull's length
+  const xs = scout.worldOutline().map((p) => p.x)
+  const hullLength = Math.max(...xs) - Math.min(...xs)
+
+  game.applyBeam(beam, player, playerWeapon)
+  assert.equal(scout.dead, true, `a ${hullLength.toFixed(1)}-unit scout is destroyed by a graze`)
+  assert.equal(
+    game.asteroids.filter((a) => a.center.x < 1000).length,
+    0,
+    "and leaves no wreckage, because both pieces are under the plating minimum",
+  )
+})
+
+test("the same graze on a frigate takes a piece off and leaves the rest", () => {
+  const game = liveGame()
+  const player = game.player
+  player.angle = 0
+  player.x = 100
+  player.y = 320
+  const frigate = new RivalShip(500, 320, "frigate", [])
+  frigate.angle = 0
+  game.rivals = [frigate]
+  // along the frigate's flank, inside its half-height so it passes through
+  const offset = SHIP_TYPES.frigate.size * 0.4
+  const beam = {
+    a: { x: 100, y: 320 + offset },
+    dir: { x: 1, y: 0 },
+    b: { x: 1100, y: 320 + offset },
+  }
+  assert.ok(countBeamCrossings(beam, frigate.worldOutline()) >= 2, "the shot must pass through")
+  game.applyBeam(beam, player, playerWeapon)
+  assert.equal(frigate.dead, true)
+  assert.ok(
+    game.asteroids.length >= 1,
+    "a frigate is big enough that a graze leaves wreckage behind",
+  )
 })
 
 test("a raised shield is what stops a beam", () => {

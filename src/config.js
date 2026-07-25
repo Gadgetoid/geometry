@@ -390,6 +390,10 @@ export const SHIELD_TYPES = {
 // the player instead of for ore and rocks. `mass` is in the same units as a
 // rock's (area / AST_MASS_AREA), with the player's hull as 1.
 //
+// `shieldScale` sizes the shield bubble, as a multiple of `size`, so it clears the
+// hull without floating far off it. A beam is stopped by that bubble, so this sets
+// how big a shielded ship is to shoot at as well as how big it looks.
+//
 // A beam cuts any unshielded hull, exactly as it cuts a rock. Nothing marks a
 // type as cuttable: the material's `minArea` decides what the cut leaves, so a
 // hull with halves above it comes apart into drifting wreckage and one too small
@@ -457,6 +461,7 @@ export const SHIP_TYPES = {
     },
     spawn: { fromSector: 4, fallback: true },
     hullWidth: 1.8,
+    shieldScale: 1.9,
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
     killScore: 400,
@@ -496,6 +501,7 @@ export const SHIP_TYPES = {
     spawn: { fromSector: 6, chance: 0.3, maxConcurrent: 1 },
     hunts: true, // steers for the player rather than for ore and rocks
     hullWidth: 2,
+    shieldScale: 2.3, // a long hull needs a wider bubble to clear its nose
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
     killScore: 900,
@@ -516,6 +522,7 @@ export const PLAYER_TYPE = {
   colour: PALETTE.player.hull,
   size: 13,
   mass: 1,
+  shieldScale: 1.9,
   hardpoints: [
     { local: [1.4, 0], role: "nose" },
     { local: [0, 0], role: "core" },

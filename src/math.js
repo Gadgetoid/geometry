@@ -383,6 +383,37 @@ export function segmentPolygonEntry(a, b, vertices) {
   return nearest
 }
 
+// How far along a->b the segment first enters the circle, or null if it never
+// does. Zero when `a` is already inside. The circle counterpart of
+// segmentPolygonEntry, for a surface that really is round - a shield bubble is
+// drawn as one, so a circle is the shape and not a proxy for it.
+export function segmentCircleEntry(a, b, centre, radius) {
+  if (radius <= 0) {
+    return null
+  }
+  const dx = b.x - a.x,
+    dy = b.y - a.y
+  const length = Math.hypot(dx, dy)
+  if (length < 1e-9) {
+    return null
+  }
+  const ux = dx / length,
+    uy = dy / length
+  // closest approach of the infinite line, measured along it
+  const along = (centre.x - a.x) * ux + (centre.y - a.y) * uy
+  const px = a.x + ux * along,
+    py = a.y + uy * along
+  const perpendicularDistance = Math.hypot(centre.x - px, centre.y - py)
+  if (perpendicularDistance >= radius) {
+    return null
+  }
+  const half = Math.sqrt(radius * radius - perpendicularDistance * perpendicularDistance)
+  if (along - half > length || along + half < 0) {
+    return null // the circle lies wholly beyond one end of the segment
+  }
+  return Math.max(0, along - half)
+}
+
 // How many polygon edges a beam segment crosses.
 export function countBeamCrossings(beam, vertices) {
   let count = 0

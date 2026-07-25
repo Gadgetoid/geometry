@@ -34,6 +34,7 @@ import {
   pointInPolygon,
   countBeamCrossings,
   segmentPolygonEntry,
+  segmentCircleEntry,
 } from "./math.js"
 import { Sound } from "./audio.js"
 import { PALETTE } from "./palette.js"
@@ -354,6 +355,22 @@ export class Game {
   // type's). Cuts unshielded rocks, drains energy from anything with a
   // laser-blocking shield, damages ships within the beam's width, and never
   // harms the attacker. Returns didHit.
+  // Where a beam first enters a bare hull, or null. The enclosing circle is only a
+  // broadphase reject here; the answer comes from the outline.
+  #hullEntry(beam, ship, width) {
+    const reach = width * 0.6 + ship.boundRadius
+    const along = (ship.x - beam.a.x) * beam.dir.x + (ship.y - beam.a.y) * beam.dir.y
+    if (along < 0) {
+      return null
+    }
+    const cx = beam.a.x + beam.dir.x * along,
+      cy = beam.a.y + beam.dir.y * along
+    if (Math.hypot(ship.x - cx, ship.y - cy) >= reach) {
+      return null
+    }
+    return segmentPolygonEntry(beam.a, beam.b, ship.worldOutline())
+  }
+
   applyBeam(beam, attacker, weapon, damage = weapon.type.damage) {
     let didHit = false
     const width = weapon.type.width || 2.4
@@ -364,22 +381,16 @@ export class Game {
     const fullLen = Math.hypot(beam.b.x - beam.a.x, beam.b.y - beam.a.y)
     let blockDist = fullLen
     let blockShip = null
-    // Every ship, the player included, is hit against its actual outline. A
-    // circle of `size` left most of a frigate's length unhittable, and a circle
-    // of its full reach would register on the empty space beside it, so reject on
-    // the enclosing circle and then find the real entry point.
-    const considerHull = (e) => {
-      const reach = width * 0.6 + e.boundRadius
-      const t = (e.x - beam.a.x) * beam.dir.x + (e.y - beam.a.y) * beam.dir.y
-      if (t < 0) {
-        return
-      }
-      const cx = beam.a.x + beam.dir.x * t,
-        cy = beam.a.y + beam.dir.y * t
-      if (Math.hypot(e.x - cx, e.y - cy) >= reach) {
-        return
-      }
-      const entry = segmentPolygonEntry(beam.a, beam.b, e.worldOutline())
+    // Every ship, the player included, is struck on its outermost real surface:
+    // the shield bubble while one is raised, and the hull outline when none is.
+    // Both are the shape the view draws, so a shot that looks like it connected is
+    // the shot that does. A bubble is round, so a circle is its shape rather than a
+    // proxy for it; a hull is not, and a circle around one registers on the empty
+    // space beside it while leaving the nose unhittable.
+    const considerShip = (e) => {
+      const bubble = e.shieldUp() ? e.shieldRadius() : 0
+      const entry =
+        bubble > 0 ? segmentCircleEntry(beam.a, beam.b, e, bubble) : this.#hullEntry(beam, e, width)
       if (entry !== null && entry < blockDist) {
         blockDist = entry
         blockShip = e
@@ -387,11 +398,11 @@ export class Game {
     }
     for (const rival of this.rivals) {
       if (rival !== attacker && !rival.dead) {
-        considerHull(rival)
+        considerShip(rival)
       }
     }
     if (this.player && attacker !== this.player) {
-      considerHull(this.player)
+      considerShip(this.player)
     }
     // An unshielded hull is cut like a rock (see below) rather than blocking the
     // beam, so it is not truncated against. As for a rock, the beam has to pass
@@ -399,7 +410,7 @@ export class Game {
     // hull scorches it instead of severing its whole length along a line the shot
     // never reached. A raised shield is what stops a beam; a hull about to come
     // apart is not.
-    const blockShielded = blockShip && blockShip.shieldModule() && blockShip.shieldModule().up
+    const blockShielded = blockShip && blockShip.shieldUp()
     const cuttable =
       blockShip &&
       blockShip.severable &&
@@ -416,18 +427,25 @@ export class Game {
         survivors.push(asteroid)
         continue
       }
-      if (countBeamCrossings(beam, asteroid.vertices) < 2) {
+      // A shielded rock is struck on its bubble, as a shielded hull is: what the
+      // view draws around it is what the shot has to reach. An unshielded one has
+      // to be passed through to be cut, which is the crossing rule.
+      const shield = asteroid.shieldModule()
+      const shielded = asteroid.shieldUp() && shield.blocks("laser") && asteroid.energy > 0
+      const reached = shielded
+        ? segmentCircleEntry(beam.a, beam.b, asteroid.center, asteroid.shieldRadius()) !== null
+        : countBeamCrossings(beam, asteroid.vertices) >= 2
+      if (!reached) {
         survivors.push(asteroid)
         continue
       }
-      const shield = asteroid.shieldModule()
-      if (shield && shield.up && shield.blocks("laser") && asteroid.energy > 0) {
+      if (shielded) {
         asteroid.energy = Math.max(0, asteroid.energy - damage)
         // flash the side facing the shooter and spark there
         const toShooter = Math.atan2(beam.a.y - asteroid.center.y, beam.a.x - asteroid.center.x)
         shield.hitAt(toShooter)
-        const ex = asteroid.center.x + Math.cos(toShooter) * asteroid.boundRadius,
-          ey = asteroid.center.y + Math.sin(toShooter) * asteroid.boundRadius
+        const ex = asteroid.center.x + Math.cos(toShooter) * asteroid.shieldRadius(),
+          ey = asteroid.center.y + Math.sin(toShooter) * asteroid.shieldRadius()
         this.ring(ex, ey, 8, SHIELD_SPARK, 120, 0.35)
         this.burst(ex, ey, 4, SHIELD_SPARK, 30, 120, 0.3)
         if (shield.checkOverload(asteroid)) {

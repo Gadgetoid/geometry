@@ -300,6 +300,19 @@ export class Entity {
     return null
   }
 
+  // Is a shield raised over this entity?
+  shieldUp() {
+    const shield = this.shieldModule()
+    return !!(shield && shield.up)
+  }
+
+  // Radius of the shield bubble. The view draws the bubble at exactly this, and
+  // incoming beams are stopped by it, so what looks like the target is the target.
+  // Zero means nothing is raised and the body's own outline is the surface.
+  shieldRadius() {
+    return 0
+  }
+
   // World position of a hardpoint. Ships store a local offset; asteroids store
   // a world point that is rotated with the rock.
   hardpointWorld(hp) {
@@ -750,6 +763,12 @@ export class Ship extends Entity {
     return true
   }
 
+  // The bubble sits clear of the hull by the type's own margin, so a long ship
+  // does not wear a shield that clips through it.
+  shieldRadius() {
+    return this.size * (this.type.shieldScale ?? 1.9)
+  }
+
   buildHardpoints(list) {
     this.hardpoints = list.map((hp) => ({ local: hp.local, role: hp.role, module: null }))
   }
@@ -799,7 +818,7 @@ export class Ship extends Entity {
         renderer,
         this.x,
         this.y,
-        this.size * (this.size > 16 ? 2.3 : 1.9),
+        this.shieldRadius(),
         this.energy / this.energyMax,
         game.gameTime,
       )
@@ -1422,7 +1441,7 @@ export class PlayerShip extends Ship {
         renderer,
         this.x,
         this.y,
-        this.radius * 1.9,
+        this.shieldRadius(),
         this.energy / this.energyMax,
         game.gameTime,
       )
@@ -1782,6 +1801,12 @@ export class Asteroid extends Entity {
     return rockMass(this.area)
   }
 
+  // A rock's bubble clears its outline by a fixed margin, since a rock has no
+  // type to carry one.
+  shieldRadius() {
+    return this.boundRadius + 10
+  }
+
   // The outline as convex parts, for bodyContact. A whole rock is a convex hull
   // by construction and needs no splitting, but a piece cut from a ship carries
   // the hull's concavity, and a separating-axis test on a concave shape reports
@@ -2133,7 +2158,7 @@ export class Asteroid extends Entity {
         renderer,
         this.center.x,
         this.center.y,
-        this.boundRadius + 10,
+        this.shieldRadius(),
         this.energy / this.energyMax,
         game.gameTime,
       )
