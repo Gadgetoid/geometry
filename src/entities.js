@@ -944,7 +944,8 @@ export class PlayerShip extends Ship {
         nose.x + Math.cos(this.angle) * length,
         nose.y + Math.sin(this.angle) * length,
         {
-          color: `rgba(87,227,154,${frac})`,
+          color: "#57e39a",
+          alpha: frac,
           width: 1.5 + 2.5 * (w.charge / w.type.chargeMax),
           glow: 14,
         },

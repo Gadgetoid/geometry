@@ -32,6 +32,10 @@ const FAR_Z = 1500
 const depthToZ = (depth) => FAR_Z + (NEAR_Z - FAR_Z) * depth
 
 // ---- CSS colour parsing (cached via a scratch 2D context) -----------------
+// Each miss costs a getImageData readback, so callers should pass a fixed
+// colour plus an `alpha` option instead of interpolating a value into an
+// rgba() string. The cap bounds the damage if one slips through.
+const COLOUR_CACHE_MAX = 4096
 const colourCache = new Map()
 const colourCtx = document.createElement("canvas").getContext("2d", { willReadFrequently: true })
 function parseColour(str) {
@@ -41,6 +45,9 @@ function parseColour(str) {
   let hit = colourCache.get(str)
   if (hit) {
     return hit
+  }
+  if (colourCache.size >= COLOUR_CACHE_MAX) {
+    colourCache.clear()
   }
   colourCtx.clearRect(0, 0, 1, 1)
   colourCtx.fillStyle = "#000"
