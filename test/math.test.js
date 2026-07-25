@@ -17,10 +17,8 @@ import {
   convexHull,
   pointInPolygon,
   segmentIntersection,
-  distanceToSegment,
   countBeamCrossings,
   slicePolygon,
-  circlePolygonContact,
   convexContact,
   convexPartition,
   supportDistance,
@@ -123,12 +121,6 @@ test("segmentIntersection", () => {
   assert.equal(segmentIntersection(point(0, 0), point(10, 0), point(0, 1), point(10, 1)), null)
   // would cross if extended, but the segments do not reach
   assert.equal(segmentIntersection(point(0, 0), point(1, 0), point(5, -1), point(5, 1)), null)
-})
-
-test("distanceToSegment clamps to the endpoints", () => {
-  closeTo(distanceToSegment(5, 3, 0, 0, 10, 0), 3)
-  closeTo(distanceToSegment(-4, 0, 0, 0, 10, 0), 4) // past the A end
-  closeTo(distanceToSegment(14, 0, 0, 0, 10, 0), 4) // past the B end
 })
 
 test("countBeamCrossings", () => {
@@ -240,37 +232,6 @@ test("supportDistance measures reach in a direction", () => {
   closeTo(supportDistance(SQUARE, centre, 0, 1), 5)
   const diag = Math.SQRT1_2
   closeTo(supportDistance(SQUARE, centre, diag, diag), Math.hypot(5, 5), 1e-9)
-})
-
-test("circlePolygonContact ignores a circle that is clear", () => {
-  assert.equal(circlePolygonContact(20, 5, 3, SQUARE), null)
-  // exactly touching counts as clear
-  assert.equal(circlePolygonContact(13, 5, 3, SQUARE), null)
-})
-
-test("circlePolygonContact pushes an overlapping circle straight out", () => {
-  const hit = circlePolygonContact(12, 5, 3, SQUARE)
-  closeTo(hit.nx, 1)
-  closeTo(hit.ny, 0)
-  closeTo(hit.depth, 1)
-})
-
-test("circlePolygonContact ejects a circle whose centre is inside", () => {
-  const hit = circlePolygonContact(5, 2, 3, SQUARE)
-  // nearest boundary is the bottom edge, two away, so it leaves downward
-  closeTo(hit.nx, 0)
-  closeTo(hit.ny, -1)
-  closeTo(hit.depth, 5)
-})
-
-test("circlePolygonContact reaches a thin sliver a bounding circle would miss", () => {
-  // 60 x 4 sliver: its enclosing circle has radius ~30, so a circle sitting 20
-  // above the centre is well inside that circle but nowhere near the polygon
-  const sliver = [point(-30, -2), point(30, -2), point(30, 2), point(-30, 2)]
-  assert.equal(circlePolygonContact(0, 20, 5, sliver), null)
-  const hit = circlePolygonContact(0, 5, 5, sliver)
-  closeTo(hit.depth, 2)
-  closeTo(hit.ny, 1)
 })
 
 test("convexContact ignores separated polygons", () => {

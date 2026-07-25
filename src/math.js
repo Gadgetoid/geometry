@@ -135,71 +135,17 @@ export function segmentIntersection(a, b, c, d) {
   return { x: a.x + t * r.x, y: a.y + t * r.y }
 }
 
-// Shortest distance from point (px,py) to segment a->b. Used for wide beams.
-export function distanceToSegment(px, py, ax, ay, bx, by) {
-  const dx = bx - ax,
-    dy = by - ay
-  const lenSq = dx * dx + dy * dy || 1
-  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq
-  t = t < 0 ? 0 : t > 1 ? 1 : t
-  const cx = ax + t * dx,
-    cy = ay + t * dy
-  return Math.hypot(px - cx, py - cy)
-}
-
 // ---------------------------------------------------------------------------
 // Contact solving. Collision is broadphase then narrowphase: callers reject
-// cheaply with an enclosing circle, then call one of these for the exact
-// answer. Each returns the push needed to separate the pair - a unit normal
-// and a penetration depth - or null when they are genuinely apart.
+// cheaply with an enclosing circle, then solve the real outlines here. The
+// result is the push needed to separate the pair - a unit normal and a
+// penetration depth - or null when they are genuinely apart.
 //
-// A circle proxy is not good enough on its own here: an asteroid can be long
-// and thin, and a circle around it is mostly empty space, so the ship would
-// stop against nothing and freshly cut halves would shove each other apart.
+// A circle proxy is not good enough for any of it: an asteroid can be long and
+// thin and a ship hull is a sliver, so a circle around either is mostly empty
+// space. Concave outlines are handled by partitioning them (see below) and
+// solving part against part, so nothing is ever approximated.
 // ---------------------------------------------------------------------------
-
-// Nearest point to (px, py) anywhere on the polygon's boundary.
-function closestPointOnBoundary(px, py, vertices) {
-  let bestSq = Infinity,
-    bx = vertices[0].x,
-    by = vertices[0].y
-  for (let i = 0; i < vertices.length; i++) {
-    const a = vertices[i],
-      b = vertices[(i + 1) % vertices.length]
-    const dx = b.x - a.x,
-      dy = b.y - a.y
-    const lenSq = dx * dx + dy * dy || 1
-    let t = ((px - a.x) * dx + (py - a.y) * dy) / lenSq
-    t = t < 0 ? 0 : t > 1 ? 1 : t
-    const cx = a.x + t * dx,
-      cy = a.y + t * dy
-    const distSq = (px - cx) * (px - cx) + (py - cy) * (py - cy)
-    if (distSq < bestSq) {
-      bestSq = distSq
-      bx = cx
-      by = cy
-    }
-  }
-  return { x: bx, y: by, dist: Math.sqrt(bestSq) }
-}
-
-// Circle against a polygon. The normal points the way the circle must move.
-export function circlePolygonContact(cx, cy, radius, vertices) {
-  if (vertices.length < 3) {
-    return null
-  }
-  const near = closestPointOnBoundary(cx, cy, vertices)
-  const inside = pointInPolygon({ x: cx, y: cy }, vertices)
-  if (!inside && near.dist >= radius) {
-    return null
-  }
-  const span = near.dist || 1e-6
-  if (inside) {
-    // centre is within the polygon: leave through the nearest edge
-    return { nx: (near.x - cx) / span, ny: (near.y - cy) / span, depth: radius + near.dist }
-  }
-  return { nx: (cx - near.x) / span, ny: (cy - near.y) / span, depth: radius - near.dist }
-}
 
 // Separating axis test for two convex polygons. The normal points from `a`
 // toward `b`, so `b` moves along it and `a` against it.
