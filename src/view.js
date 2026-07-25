@@ -907,13 +907,20 @@ export class GameView {
     const rows = game.pauseMenu()
     if (onControls) {
       const hintY = this.#controls(game, rows) + 6
+      if (!game.rebinding) {
+        r.text("P, ENTER and ESC cannot be bound", VIEW_W / 2, hintY + 18, {
+          size: 10,
+          color: PALETTE.text.faint,
+          align: "center",
+        })
+      }
       r.text(
         game.rebinding
           ? this.#prompt(game, "ESC cancels", "B cancels")
           : this.#prompt(
               game,
-              "UP / DOWN select    ENTER rebind    ESC back    P, ENTER and ESC cannot be bound",
-              "DPAD select    A rebind    B back    the menu controls cannot be bound",
+              "UP / DOWN select    LEFT / RIGHT switch column    ENTER rebind    ESC back",
+              "DPAD select and switch column    A rebind    B back",
             ),
         VIEW_W / 2,
         hintY,

@@ -1370,6 +1370,89 @@ test("escape backs out of the page, and cancels a wait before it does", () => {
   assert.equal(game.paused, false, "and a third closes the menu")
 })
 
+test("left and right cross between the binding columns", () => {
+  const game = liveGame()
+  game.togglePause()
+  game.openPausePage("controls")
+  const rows = game.pauseMenu()
+  const indexOf = (section, name) =>
+    rows.findIndex((row) => row.section === section && row.name === name)
+
+  // crossing stays on the control, which is not the same as staying on the row
+  // number: the pad column is missing the ones it steers with a stick
+  game.pauseSelection = indexOf("KEYBOARD", "REVERSE")
+  assert.equal(game.menuAdjust(1), true, "the press is handled")
+  assert.equal(rows[game.pauseSelection].section, "GAMEPAD")
+  assert.equal(rows[game.pauseSelection].name, "REVERSE", "the same control, not the same row")
+  // and back again, still on it
+  game.menuAdjust(-1)
+  assert.equal(rows[game.pauseSelection].section, "KEYBOARD")
+  assert.equal(rows[game.pauseSelection].name, "REVERSE", "so a round trip lands where it began")
+
+  for (const name of ["THRUST", "FIRE LASER", "TURRET FIRE", "POWERUP 3"]) {
+    game.pauseSelection = indexOf("KEYBOARD", name)
+    game.menuAdjust(1)
+    assert.equal(rows[game.pauseSelection].name, name, `${name} crosses to itself`)
+    assert.equal(rows[game.pauseSelection].section, "GAMEPAD")
+  }
+})
+
+test("a control the pad has no row for crosses to the nearest one it does", () => {
+  const game = liveGame()
+  game.togglePause()
+  game.openPausePage("controls")
+  const rows = game.pauseMenu()
+  // TURN LEFT is a stick on a pad, so there is no row of its own to land on
+  game.pauseSelection = rows.findIndex(
+    (row) => row.section === "KEYBOARD" && row.name === "TURN LEFT",
+  )
+  assert.equal(game.menuAdjust(1), true)
+  assert.equal(rows[game.pauseSelection].section, "GAMEPAD", "it still crosses")
+  assert.ok(rows[game.pauseSelection].name, "and lands on a real row")
+})
+
+test("there is nothing to the left of the first column or the right of the last", () => {
+  const game = liveGame()
+  game.togglePause()
+  game.openPausePage("controls")
+  const rows = game.pauseMenu()
+  game.pauseSelection = 0
+  assert.equal(game.menuAdjust(-1), false, "left of the first column does nothing")
+  assert.equal(game.pauseSelection, 0)
+  game.pauseSelection = rows.findIndex((row) => row.section === "GAMEPAD")
+  assert.equal(game.menuAdjust(1), false, "and right of the last")
+})
+
+test("the rows below the columns have no column to cross to", () => {
+  const game = liveGame()
+  game.togglePause()
+  game.openPausePage("controls")
+  const rows = game.pauseMenu()
+  game.pauseSelection = rows.findIndex((row) => row.name === "BACK")
+  assert.equal(game.menuAdjust(1), false)
+  assert.equal(rows[game.pauseSelection].name, "BACK", "and the cursor stays put")
+})
+
+test("a waiting row swallows left and right too", () => {
+  const game = liveGame()
+  game.togglePause()
+  game.openPausePage("controls")
+  game.pauseSelection = 2
+  game.beginRebind("keys", "turnRight")
+  assert.equal(game.menuAdjust(1), true, "consumed, so it is not read as a binding")
+  assert.equal(game.pauseSelection, 2, "and the cursor holds still")
+})
+
+test("the volume row still adjusts, on the page that has it", () => {
+  const game = liveGame()
+  game.togglePause()
+  const rows = game.pauseMenu()
+  game.pauseSelection = rows.findIndex((row) => row.name === "VOLUME")
+  const before = game.settings.volume
+  assert.equal(game.menuAdjust(-1), true)
+  assert.ok(game.settings.volume < before, "left turned it down")
+})
+
 test("sector plans follow PROGRESSION", () => {
   const game = new Game()
   const early = game.planLevel(1)

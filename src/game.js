@@ -1413,6 +1413,7 @@ export class Game {
         }
         rows.push({
           section: device.name,
+          control: control.id,
           name: control.name,
           waiting: () =>
             this.rebinding &&
@@ -1491,15 +1492,48 @@ export class Game {
   // shop it steps the sector. Returns whether it did anything, so a caller can stop.
   menuAdjust(step) {
     if (this.paused) {
-      const row = this.pauseMenu()[this.pauseSelection]
+      if (this.rebinding) {
+        return true // a waiting row swallows it, as it does a cursor move
+      }
+      const rows = this.pauseMenu()
+      const row = rows[this.pauseSelection]
       if (row && row.adjust) {
         this.pauseConfirming = null
         row.adjust(this, step)
         return true
       }
+      // A page laid out in columns crosses between them instead, since a binding
+      // row has no scale to work.
+      if (row && row.section) {
+        return this.#stepColumn(rows, step)
+      }
       return false
     }
     return this.devSectorStep(step)
+  }
+
+  // Move to the neighbouring section, staying on the same control where that
+  // control appears there. Not every control does - a pad steers with a stick, so
+  // it has no TURN LEFT row - and those fall back to the same distance down the
+  // column, clamped to its length.
+  #stepColumn(rows, step) {
+    const sections = [...new Set(rows.map((row) => row.section).filter(Boolean))]
+    const from = rows[this.pauseSelection]
+    const target = sections[sections.indexOf(from.section) + (step > 0 ? 1 : -1)]
+    if (target === undefined) {
+      return false
+    }
+    const landing = rows.filter((row) => row.section === target)
+    const sameControl = landing.find((row) => row.control === from.control)
+    let chosen = sameControl
+    if (!chosen) {
+      const column = rows.filter((row) => row.section === from.section)
+      const within = column.indexOf(from)
+      chosen = landing[Math.min(within, landing.length - 1)]
+    }
+    this.pauseSelection = rows.indexOf(chosen)
+    this.pauseConfirming = null
+    return true
   }
 
   // Dev-only sector jump from the shop. Returns whether it handled the input, so
