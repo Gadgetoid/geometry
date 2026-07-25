@@ -987,10 +987,24 @@ export class PlayerShip extends Ship {
     }
   }
 
-  installDefenseTurret() {
-    const hp = this.aux
+  // Mount the module an upgrade pays for, as declared in PLAYER_TYPE.fittings.
+  // Fitting something already fitted is ignored, so buying twice or resuming a
+  // run does not reset a weapon mid-reload.
+  fit(id) {
+    const entry = this.type.fittings && this.type.fittings[id]
+    const hp = entry && this.hardpoints[entry.hp]
     if (hp && !hp.module) {
-      hp.module = new Weapon("defenseLaser", "defense")
+      this.applyLoadout([entry])
+    }
+  }
+
+  // Mount everything the run has already bought. A resumed run rebuilds the ship
+  // from scratch, so without this a fitting bought last session would be lost.
+  fitPurchased(upgrades) {
+    for (const id of Object.keys(this.type.fittings || {})) {
+      if (upgrades[id]) {
+        this.fit(id)
+      }
     }
   }
 
@@ -1704,19 +1718,23 @@ export class Asteroid extends Entity {
       // centroid toward a random vertex, so they stay inside the convex hull.
       const traits = opts.traits || {}
       if (traits.gun) {
-        const count = randInt(1, 3)
+        const count = randInt(traits.gun.count[0], traits.gun.count[1])
         for (let k = 0; k < count; k++) {
           const v = this.vertices[randInt(0, this.vertices.length - 1)]
           const t = randRange(0.2, 0.6)
           this.hardpoints.push({
             x: this.center.x + (v.x - this.center.x) * t,
             y: this.center.y + (v.y - this.center.y) * t,
-            module: new Weapon("blaster", "turret"),
+            module: new Weapon(traits.gun.weapon, traits.gun.controller),
           })
         }
       }
       if (traits.shield) {
-        this.hardpoints.push({ x: this.center.x, y: this.center.y, module: new Shield("standard") })
+        this.hardpoints.push({
+          x: this.center.x,
+          y: this.center.y,
+          module: new Shield(traits.shield.shield),
+        })
       }
     }
     this.refreshEnergy(opts.energy)

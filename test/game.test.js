@@ -21,9 +21,11 @@ import {
 } from "../src/entities.js"
 import {
   CONFIG,
+  PLAYER_TYPE,
   POWERUP_TYPES,
   PROGRESSION,
   SHIP_PLATING,
+  SHOP,
   WEAPON_TYPES,
   SHIP_TYPES,
 } from "../src/config.js"
@@ -596,6 +598,32 @@ test("damage taken is recorded even when the shield absorbs it", () => {
   assert.ok(player.energy < player.energyMax, "the shield drained")
   assert.equal(game.lives, CONFIG.START_LIVES, "no life was lost")
   assert.equal(game.stats.damage, 50, "the hit is still counted")
+})
+
+test("buying a fitting mounts what the registry declares for it", () => {
+  const game = liveGame()
+  const aux = game.player.hardpointByRole("aux")
+  assert.equal(aux.module, null, "the slot starts empty")
+  const turret = SHOP.find((item) => item.id === "turret")
+  turret.apply(game)
+  assert.equal(game.upgrades.turret, true)
+  assert.equal(aux.module.typeName, PLAYER_TYPE.fittings.turret.weapon)
+  // buying it again must not swap in a fresh module mid-reload
+  const mounted = aux.module
+  turret.apply(game)
+  assert.equal(aux.module, mounted)
+})
+
+test("a resumed run re-mounts the fittings it had already bought", () => {
+  const game = liveGame()
+  game.upgrades.turret = true
+  game.level = 5
+  game.enterShop()
+  const resumed = new Game()
+  resumed.savedRun = game.savedRun
+  resumed.resumeRun()
+  assert.equal(resumed.upgrades.turret, true)
+  assert.ok(resumed.player.hardpointByRole("aux").module, "the turret must come back with the run")
 })
 
 test("the accuracy bonus is withheld when nothing was fired", () => {

@@ -196,6 +196,13 @@ export class Game {
   maxEnergy() {
     return CONFIG.CORE_MAX[this.upgrades.core]
   }
+  // Mount the module an upgrade pays for, if the ship exists yet. The shop can be
+  // reached before one does (the dev shop), so this is where the check lives.
+  fitUpgrade(id) {
+    if (this.player) {
+      this.player.fit(id)
+    }
+  }
   showToast(text) {
     this.toast = { text, life: CONFIG.TOAST_TIME }
   }
@@ -1188,9 +1195,7 @@ export class Game {
     this.upgrades = { ...freshUpgrades(), ...run.upgrades }
     this.level = run.level
     this.player = new PlayerShip(this)
-    if (this.upgrades.turret) {
-      this.player.installDefenseTurret()
-    }
+    this.player.fitPurchased(this.upgrades)
     this.stats = this.blankStats()
     this.asteroids = []
     this.oreChunks = []

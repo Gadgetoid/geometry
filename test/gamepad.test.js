@@ -171,7 +171,7 @@ test("holding the trigger charges and releasing it fires", () => {
 test("the right stick aims the turret and the bumper fires it", () => {
   const game = liveGame()
   game.upgrades.turret = true
-  game.player.installDefenseTurret()
+  game.player.fit("turret")
   const input = new GamepadInput(game)
   input.apply(
     readPad(pad({ axes: { [A.turretX]: 0, [A.turretY]: -1 }, buttons: { [B.turretFire]: 1 } })),

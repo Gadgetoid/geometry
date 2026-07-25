@@ -214,13 +214,19 @@ export const PROGRESSION = {
 
 // Hazard traits a rock can spawn with. A trait joins the roll once its
 // `fromSector` is reached, and `weightPerSector` adds an extra entry for each
-// sector past that, so a trait can come to crowd out the others. Adding a
-// hazard means adding an entry here and a branch in the Asteroid constructor.
+// sector past that, so a trait can come to crowd out the others.
+//
+// `gun` and `shield` name the modules to mount, so arming a rock differently is
+// an edit here rather than in the Asteroid constructor. `explosive` is a property
+// of the rock itself and mounts nothing.
+const ROCK_TURRETS = { weapon: "blaster", controller: "turret", count: [1, 3] }
+const ROCK_SHIELD = { shield: "standard" }
+
 export const HAZARD_TRAITS = [
   { traits: { explosive: true }, fromSector: 3 },
-  { traits: { shield: true }, fromSector: 4 },
-  { traits: { gun: true }, fromSector: 5, weightPerSector: 1 },
-  { traits: { gun: true, shield: true }, fromSector: 6 },
+  { traits: { shield: ROCK_SHIELD }, fromSector: 4 },
+  { traits: { gun: ROCK_TURRETS }, fromSector: 5, weightPerSector: 1 },
+  { traits: { gun: ROCK_TURRETS, shield: ROCK_SHIELD }, fromSector: 6 },
 ]
 
 // ---------------------------------------------------------------------------
@@ -509,12 +515,19 @@ export const PLAYER_TYPE = {
   hardpoints: [
     { local: [1.4, 0], role: "nose" },
     { local: [0, 0], role: "core" },
-    { local: [0.2, 0], role: "aux" }, // defense turret slot (added by upgrade)
+    { local: [0.2, 0], role: "aux" }, // filled by a fitting, see below
   ],
   loadout: [
     { hp: 0, weapon: "playerLaser", controller: "manual" },
     { hp: 1, shield: "player" },
   ],
+  // Modules the shop bolts on after the fact, keyed by the upgrade that pays for
+  // them. Each entry is an ordinary loadout entry, mounted the same way a spawn
+  // loadout is, and re-mounted when a saved run is resumed. A one-off fitting in
+  // SHOP needs no `apply` of its own to reach this.
+  fittings: {
+    turret: { hp: 2, weapon: "defenseLaser", controller: "defense" },
+  },
 }
 
 // ---------------------------------------------------------------------------
@@ -684,6 +697,9 @@ const levelled = (id, name, desc, max, cost, apply) => ({
   },
 })
 
+// A one-off fitting. Buying it sets the flag and mounts whatever PLAYER_TYPE
+// declares for that id, so an upgrade that only bolts a module on needs nothing
+// but this entry.
 const fitting = (id, name, desc, price, apply) => ({
   id,
   name,
@@ -693,6 +709,7 @@ const fitting = (id, name, desc, price, apply) => ({
   maxed: (g) => g.upgrades[id],
   apply: (g) => {
     g.upgrades[id] = true
+    g.fitUpgrade(id)
     if (apply) {
       apply(g)
     }
@@ -761,11 +778,6 @@ export const SHOP = [
     "DEFENSE TURRET",
     "A nose turret that auto-fires on rocks that drift close.",
     85,
-    (g) => {
-      if (g.player) {
-        g.player.installDefenseTurret()
-      }
-    },
   ),
   fitting("reverse", "REVERSE THRUST", "Forward thrusters: hold DOWN or S to back away.", 55),
 ]
