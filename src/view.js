@@ -715,36 +715,31 @@ export class GameView {
       })
     }
 
+    // The last line holds both, sharing the column edges the rows above use: OPTIONS
+    // left-aligned under the item names, LAUNCH right-aligned under the costs. Each
+    // keeps the two-space placeholder the rows above use, so the cursor arrow
+    // replaces it instead of shoving the text along.
     const launchY = top + SHOP.length * rowHeight + 42,
       launchSelected = game.shopSelection === SHOP.length,
-      settingsSelected = game.shopSelection === SHOP.length + 1
+      optionsSelected = game.shopSelection === SHOP.length + 1
+    const midX = (leftX + rightX) / 2
+    if (optionsSelected) {
+      r.rect(leftX - 16, launchY - 19, midX - leftX + 8, 28, { fill: "rgba(95,215,255,.12)" })
+    }
     if (launchSelected) {
-      r.rect(VIEW_W / 2 - 190, launchY - 21, 380, 30, { fill: "rgba(87,227,154,.16)" })
+      r.rect(midX + 8, launchY - 19, rightX - midX + 8, 28, { fill: "rgba(87,227,154,.16)" })
     }
-    r.text(
-      `${launchSelected ? "> " : ""}LAUNCH TO SECTOR ${game.shopSector}`,
-      VIEW_W / 2,
-      launchY,
-      {
-        size: 18,
-        bold: true,
-        color: PALETTE.ui.goodBright,
-        align: "center",
-        glow: launchSelected ? 16 : 8,
-      },
-    )
-    // Options sit beside the launch, so they can be reached between sectors and not
-    // only from a live one.
-    const settingsRight = VIEW_W / 2 - 150
-    if (settingsSelected) {
-      r.rect(settingsRight - 128, launchY - 19, 136, 26, { fill: "rgba(95,215,255,.14)" })
-    }
-    r.text(`${settingsSelected ? "> " : ""}OPTIONS`, settingsRight, launchY, {
+    r.text(`${optionsSelected ? "> " : "  "}OPTIONS`, leftX, launchY, {
       size: 15,
-      bold: settingsSelected,
-      color: settingsSelected ? PALETTE.text.bright : PALETTE.text.normal,
+      bold: optionsSelected,
+      color: optionsSelected ? PALETTE.text.bright : PALETTE.text.normal,
+    })
+    r.text(`${launchSelected ? "> " : "  "}LAUNCH TO SECTOR ${game.shopSector}`, rightX, launchY, {
+      size: 18,
+      bold: true,
+      color: PALETTE.ui.goodBright,
       align: "right",
-      glow: settingsSelected ? 10 : 0,
+      glow: launchSelected ? 16 : 8,
     })
     r.text(
       this.#prompt(
