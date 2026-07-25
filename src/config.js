@@ -488,8 +488,15 @@ export const SHIELD_TYPES = {
 // The rest describes how a type differs in play, so no code tests a ship by
 // name: `hullWidth` is its outline weight, `debris` sizes the explosion, and
 // `debrisMaterial` says what its wreckage is made of. `hunts` says it steers for
-// the player instead of for ore and rocks. `mass` is in the same units as a
-// rock's (area / AST_MASS_AREA), with the player's hull as 1.
+// the player instead of for ore and rocks.
+//
+// `mass` is what the contact solver weighs the hull at, on the scale a rock's
+// mass is expressed on, with the player's hull as 1. It is picked for how the
+// ship should feel to shoulder and is not derived from its outline: a rock's
+// mass comes from its area and a ship's does not. So the two are comparable as
+// numbers the solver divides by and in no other sense - a frigate's 6 against a
+// hull area that would imply 1.5. Debris does take its mass from area, being
+// rock from then on, so wreckage weighs less than the ship it was cut from.
 //
 // `shieldScale` sizes the shield bubble, as a multiple of `size`, so it clears the
 // hull without floating far off it. A beam is stopped by that bubble, so this sets

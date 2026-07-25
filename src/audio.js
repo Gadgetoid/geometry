@@ -269,9 +269,6 @@ export const Sound = {
   hit() {
     this.beep(200, 0.25, "sawtooth", 0.07, 60)
   },
-  shield() {
-    this.beep(420, 0.08, "square", 0.04, 300)
-  },
   turret() {
     this.beep(320, 0.09, "square", 0.03, 180)
   },
