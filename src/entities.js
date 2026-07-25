@@ -155,8 +155,14 @@ export function bodyContact(partsA, centreA, partsB, centreB) {
 export function resolveHullRockContact(ship, asteroid, contact) {
   const ux = contact.nx,
     uy = contact.ny
-  ship.x += ux * contact.depth
-  ship.y += uy * contact.depth
+  // The same resting overlap every other contact tolerates, so a hull settled
+  // against a rock is not shoved by a fraction of a unit every frame. Unlike a
+  // rock pair this is not eased out over several frames: one hull against the
+  // world has no chain of contacts to unsettle, and a ship that sinks in and
+  // climbs out reads as mushy.
+  const push = Math.max(0, contact.depth - CONFIG.CONTACT_SLOP)
+  ship.x += ux * push
+  ship.y += uy * push
   // The contact lies on the hull's own surface facing the rock. A circle around
   // the hull puts it somewhere the hull is not, which both misplaces the impact
   // effect and mismeasures the lever arm the rock is shoved on.
@@ -1547,7 +1553,7 @@ export class RivalShip extends Ship {
           x: ARENA.cx + Math.cos(outAngle) * (ARENA.radius + CONFIG.RIVAL_EXIT_MARGIN),
           y: ARENA.cy + Math.sin(outAngle) * (ARENA.radius + CONFIG.RIVAL_EXIT_MARGIN),
         }
-      : this.hunts
+      : this.hunts && player
         ? { x: player.x, y: player.y }
         : target || { x: ARENA.cx, y: ARENA.cy }
     const wantAngle = Math.atan2(goal.y - this.y, goal.x - this.x)

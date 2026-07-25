@@ -284,6 +284,39 @@ test("every hull takes the impulse its mass implies when it hits a rock", () => 
   }
 })
 
+test("a hull resting on a rock tolerates the same overlap as any other contact", () => {
+  const game = liveGame()
+  const player = game.player
+  player.invincible = 1e9 // isolate the geometry from the damage it would cause
+  const rock = new Asteroid({ vertices: square(400, 500, 90) })
+  game.asteroids = [rock]
+  player.x = 400
+  player.y = 500 - 90 - 5
+  for (let i = 0; i < 120; i++) {
+    rock.vx = 0
+    rock.vy = 0
+    rock.spin = 0
+    player.vx = 0
+    player.vy = 60 // lean gently onto it
+    game.advance(1 / 60)
+  }
+  const residual = overlapDepth(rock.convexParts(), player.collisionOutline())
+  assert.ok(
+    residual <= CONFIG.CONTACT_SLOP + 1e-6,
+    `settled overlap ${residual.toFixed(3)} of a tolerated ${CONFIG.CONTACT_SLOP}`,
+  )
+})
+
+test("a rival with no player to hunt still steers somewhere", () => {
+  // Nothing in a sector runs without a player, but the hunter controller guards
+  // for one and this did not, so the two disagreed about whether it can happen.
+  const game = liveGame()
+  const frigate = new RivalShip(400, 320, "frigate", [])
+  game.rivals = [frigate]
+  game.player = null
+  assert.doesNotThrow(() => frigate.update(1 / 60, game))
+})
+
 test("whether a rival hunts is declared on its type", () => {
   // It used to be inferred from a loadout entry naming the "hunter" controller,
   // so a new aggressive controller would silently not chase.
