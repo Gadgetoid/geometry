@@ -9,7 +9,7 @@
 // Nothing here reaches past game's public input methods, and every index and
 // threshold comes from GAMEPAD in config.js.
 
-import { GAMEPAD } from "./config.js"
+import { GAMEPAD, freshBindings } from "./config.js"
 
 // Rescale travel past the deadzone back to a full 0..1, so the control starts
 // moving from nothing rather than jumping to the deadzone's value.
@@ -38,7 +38,12 @@ function buttonTravel(pad, index) {
 
 // Every mapped control, as intent rather than as hardware. Pure, so the mapping
 // is testable without a browser or a device.
-export function readPad(pad) {
+//
+// `bound` is the buttons half of a bindings table, so which physical button works
+// a control is the player's business; the axes and the menu buttons are fixed and
+// come from GAMEPAD. Defaults are used when no table is passed, which is what the
+// mapping tests want.
+export function readPad(pad, bound = freshBindings().buttons) {
   const button = GAMEPAD.buttons
   const axis = (index) => (pad.axes && pad.axes[index]) || 0
   const held = (index) => buttonTravel(pad, index) >= GAMEPAD.triggerThreshold
@@ -47,16 +52,28 @@ export function readPad(pad) {
   const turretX = applyDeadzone(axis(GAMEPAD.axes.turretX), GAMEPAD.turretDeadzone)
   const turretY = applyDeadzone(axis(GAMEPAD.axes.turretY), GAMEPAD.turretDeadzone)
   const menuAxis = axis(GAMEPAD.axes.menu)
+  // A control with nothing bound to it simply reads as not held.
+  const bind = (action) => (bound[action] === undefined ? false : held(bound[action]))
+  // Every button past the threshold, so a rebind can see what was pressed without
+  // the mapping standing in the way.
+  const pressed = []
+  const count = pad.buttons ? pad.buttons.length : 0
+  for (let index = 0; index < count; index++) {
+    if (buttonTravel(pad, index) >= GAMEPAD.triggerThreshold) {
+      pressed.push(index)
+    }
+  }
   return {
     turn: applyDeadzone(axis(GAMEPAD.axes.turn), GAMEPAD.deadzone),
-    thrust: held(button.thrust),
-    reverse: held(button.reverse),
-    fire: held(button.fire),
+    thrust: bind("thrust"),
+    reverse: bind("reverse"),
+    fire: bind("fire"),
     turretAim: turretX || turretY ? Math.atan2(turretY, turretX) : null,
-    turretFire: held(button.turretFire),
+    turretFire: bind("turretFire"),
     confirm: held(button.confirm) || held(button.confirmAlt),
     pause: held(button.pause),
-    slots: button.slots.map(held),
+    slots: [bind("slot1"), bind("slot2"), bind("slot3"), bind("slot4")],
+    pressed,
     menuUp: held(button.dpadUp) || menuAxis <= -GAMEPAD.menuStep,
     menuDown: held(button.dpadDown) || menuAxis >= GAMEPAD.menuStep,
     menuLeft: held(button.dpadLeft),
@@ -113,7 +130,7 @@ export class GamepadInput {
       }
       return
     }
-    this.apply(readPad(pad))
+    this.apply(readPad(pad, this.game.bindings.buttons))
   }
 
   // Drive one sample into the game. Separate from polling so a test can feed a
@@ -135,7 +152,26 @@ export class GamepadInput {
       turretFire: state.turretFire,
     }
 
-    // Firing is on release, as it is for the space bar: the trigger is held to
+    // A row waiting for a button takes the next new press, and the menu sees none
+    // of it. BACK is reserved, so it is always free to abandon the wait.
+    if (game.rebinding) {
+      if (pressed("pause")) {
+        game.cancelRebind()
+      } else {
+        for (const index of state.pressed) {
+          if (
+            !(before && before.pressed.includes(index)) &&
+            game.captureBinding("buttons", index)
+          ) {
+            break
+          }
+        }
+      }
+      this.previous = state
+      return
+    }
+
+    // Firing is on release, as it is for the fire key: the trigger is held to
     // charge and the shot goes when it comes back up.
     if (before && before.fire && !state.fire) {
       game.releaseFire()

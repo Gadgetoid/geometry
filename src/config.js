@@ -192,6 +192,91 @@ export const GAMEPAD = {
 }
 
 // ---------------------------------------------------------------------------
+// CONTROLS - the ship controls a player may rebind, in menu order, with each
+// one's default binding per device. `slot` marks the powerup slots, so the code
+// never has to read a meaning out of an id.
+//
+// An action with no entry for a device does not appear in that device's section:
+// a pad steers and aims with its sticks, so there is nothing to bind for turning.
+//
+// What is NOT here is deliberate. Menu navigation is fixed - the D-pad, the left
+// stick, A and START on a pad; the arrow keys, WASD and ENTER on a keyboard - as
+// is PAUSE itself, since that is how the menu is reached. A rebind can therefore
+// never leave a player unable to reach the menu and put it back.
+// ---------------------------------------------------------------------------
+export const BINDABLE_CONTROLS = [
+  { id: "thrust", name: "THRUST", defaults: { keys: ["KeyW"], buttons: 6 } },
+  { id: "turnLeft", name: "TURN LEFT", defaults: { keys: ["KeyA"] } },
+  { id: "turnRight", name: "TURN RIGHT", defaults: { keys: ["KeyD"] } },
+  { id: "reverse", name: "REVERSE", defaults: { keys: ["KeyS"], buttons: 4 } },
+  { id: "fire", name: "FIRE LASER", defaults: { keys: ["Space"], buttons: 7 } },
+  { id: "turretLeft", name: "TURRET LEFT", defaults: { keys: ["ArrowLeft"] } },
+  { id: "turretRight", name: "TURRET RIGHT", defaults: { keys: ["ArrowRight"] } },
+  { id: "turretFire", name: "TURRET FIRE", defaults: { keys: ["ArrowUp"], buttons: 5 } },
+  {
+    id: "slot1",
+    name: "POWERUP 1",
+    slot: 0,
+    defaults: { keys: ["Digit1", "Numpad1"], buttons: 0 },
+  },
+  {
+    id: "slot2",
+    name: "POWERUP 2",
+    slot: 1,
+    defaults: { keys: ["Digit2", "Numpad2"], buttons: 1 },
+  },
+  {
+    id: "slot3",
+    name: "POWERUP 3",
+    slot: 2,
+    defaults: { keys: ["Digit3", "Numpad3"], buttons: 2 },
+  },
+  {
+    id: "slot4",
+    name: "POWERUP 4",
+    slot: 3,
+    defaults: { keys: ["Digit4", "Numpad4"], buttons: 3 },
+  },
+]
+
+// The devices a control can be bound on. `id` is both the key into a bindings
+// table and the field in an action's `defaults`.
+export const BINDING_DEVICES = [
+  { id: "keys", name: "KEYBOARD", prompt: "PRESS A KEY" },
+  { id: "buttons", name: "GAMEPAD", prompt: "PRESS A BUTTON" },
+]
+
+// Keys that cannot be bound to a ship control. Menu navigation is not in here,
+// because the arrow keys and WASD are already both menu keys and ship controls and
+// never collide: a menu is only open when the ship is not being flown. These three
+// are different. P pauses during flight, so a control bound to it would pause the
+// game every time it was used, and ENTER and ESCAPE are how a rebind is confirmed
+// and abandoned, so they cannot also be the thing being captured.
+export const RESERVED_KEYS = new Set(["KeyP", "Enter", "Escape"])
+
+// And the pad button that opens the menu, for the same reason P is reserved. The
+// D-pad, the stick, A and START are not reserved: they navigate a menu, and a menu
+// is only open when the ship is not being flown, so a control sharing one of them
+// never fires at the same time as the menu uses it. BACK is different, because
+// pausing happens during flight.
+export const RESERVED_BUTTONS = new Set([GAMEPAD.buttons.pause])
+
+// A fresh bindings table, taken from the registry above.
+export function freshBindings() {
+  const bindings = {}
+  for (const device of BINDING_DEVICES) {
+    bindings[device.id] = {}
+    for (const action of BINDABLE_CONTROLS) {
+      const value = action.defaults[device.id]
+      if (value !== undefined) {
+        bindings[device.id][action.id] = Array.isArray(value) ? value.slice() : value
+      }
+    }
+  }
+  return bindings
+}
+
+// ---------------------------------------------------------------------------
 // PROGRESSION - how a sector's contents are derived from its number. These
 // drive Game.planLevel, so the whole difficulty curve is tunable here without
 // reading gameplay code.
@@ -416,7 +501,7 @@ export const SHIELD_TYPES = {
 // a burning piece is plating too, and burns as well.
 export const SHIP_PLATING = {
   minArea: CONFIG.SHIP_DEBRIS_MIN_AREA,
-  burn: { seconds: 4.5, rate: 30 }, // rate is fire particles a second at full heat
+  burn: { seconds: 9.0, rate: 30 }, // rate is fire particles a second at full heat
 }
 // ---------------------------------------------------------------------------
 export const FRIGATE_SHAPE = [

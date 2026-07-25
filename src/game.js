@@ -17,6 +17,11 @@ import {
   POWERUP_TYPES,
   POWERUP_IDS,
   SHIELD_SPARK,
+  BINDABLE_CONTROLS,
+  BINDING_DEVICES,
+  RESERVED_KEYS,
+  RESERVED_BUTTONS,
+  freshBindings,
   freshUpgrades,
 } from "./config.js"
 import {
@@ -47,6 +52,8 @@ import {
   clearRun,
   loadSettings,
   saveSettings,
+  loadBindings,
+  saveBindings,
 } from "./persistence.js"
 import {
   Asteroid,
@@ -61,17 +68,6 @@ import {
 const PARTICLE_LIFE = 5 // global lifetime multiplier
 const PARTICLE_DRAG = 0.4 // velocity retained per second
 const MAX_PARTICLES = 1200
-const SLOT_KEYS = {
-  Digit1: 0,
-  Digit2: 1,
-  Digit3: 2,
-  Digit4: 3,
-  Numpad1: 0,
-  Numpad2: 1,
-  Numpad3: 2,
-  Numpad4: 3,
-}
-
 // The first sector any rival appears in: the earliest spawn gate across the
 // ship types.
 // Phases where a sector is live and the simulation runs. Around them sit
@@ -87,6 +83,23 @@ const SECTOR_PHASES = new Set(["arriving", "play", "clearing", "departing"])
 // Clearing is included, so the sweep-up lap is still flown; the warp bookends
 // are not, because the ship is not really there.
 const FLYING_PHASES = new Set(["play", "clearing"])
+
+// A key code as a player would recognise it on their keyboard.
+function keyLabel(code) {
+  if (code.startsWith("Key")) {
+    return code.slice(3)
+  }
+  if (code.startsWith("Digit")) {
+    return code.slice(5)
+  }
+  if (code.startsWith("Numpad")) {
+    return `NUM ${code.slice(6)}`
+  }
+  if (code.startsWith("Arrow")) {
+    return code.slice(5).toUpperCase()
+  }
+  return code.toUpperCase()
+}
 
 const RIVALS_FROM_SECTOR = Math.min(
   ...Object.values(SHIP_TYPES).map((type) => type.spawn.fromSector),
@@ -122,6 +135,11 @@ export class Game {
     // Settings live here rather than on the things they affect, so one place holds
     // them and main.js applies whatever changes. Loaded below.
     this.settings = { volume: 0.8, sound: true, crt: true }
+    // Control bindings, and the row waiting for a key or button when one is being
+    // rebound. Menu navigation is never in here; see BINDABLE_CONTROLS.
+    this.bindings = freshBindings()
+    this.rebinding = null
+    this.pausePage = "root"
     this.savedRun = null // the run left behind by a previous session, if any
     this.exitRequested = false // main.js closes the window when this is set
     // Whether closing the window is even possible. main.js decides, since only it can
@@ -151,6 +169,15 @@ export class Game {
       if (stored) {
         this.settings = { ...this.settings, ...stored }
         this.applySound()
+      }
+    })
+    loadBindings().then((stored) => {
+      if (stored) {
+        // Merge over the defaults, so a binding added to the registry after this
+        // was saved still has one rather than being absent.
+        for (const device of BINDING_DEVICES) {
+          Object.assign(this.bindings[device.id], stored[device.id] || {})
+        }
       }
     })
     loadRun().then((run) => {
@@ -1250,6 +1277,103 @@ export class Game {
     this.pauseSelection = 0
   }
 
+  // ---- control bindings ------------------------------------------------
+  // Every ship control is read through here rather than by naming a key code or a
+  // button index at the point of use, so rebinding one is a change to this table
+  // and nothing else.
+
+  // Is anything bound to this action currently held on the keyboard?
+  holding(action) {
+    const codes = this.bindings.keys[action]
+    if (codes) {
+      for (const code of codes) {
+        if (this.pressedKeys.has(code)) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  // The control a key code is bound to, or null. Used for the presses that act
+  // once rather than being held.
+  controlForKey(code) {
+    for (const control of BINDABLE_CONTROLS) {
+      const codes = this.bindings.keys[control.id]
+      if (codes && codes.includes(code)) {
+        return control
+      }
+    }
+    return null
+  }
+
+  // How a binding reads in the menu.
+  bindingLabel(device, action) {
+    const bound = this.bindings[device][action]
+    if (bound === undefined) {
+      return "-"
+    }
+    return device === "keys" ? bound.map(keyLabel).join(" / ") : `BUTTON ${bound}`
+  }
+
+  rememberBindings() {
+    saveBindings({ keys: { ...this.bindings.keys }, buttons: { ...this.bindings.buttons } })
+  }
+
+  resetBindings() {
+    this.bindings = freshBindings()
+    this.rebinding = null
+    this.rememberBindings()
+  }
+
+  // Wait for the next key or button and give it to this control.
+  beginRebind(device, action) {
+    this.rebinding = { device, action }
+  }
+  cancelRebind() {
+    this.rebinding = null
+  }
+
+  // Take the key or button a waiting row was after. Returns whether the input was
+  // consumed, so the caller knows not to act on it as a control or a menu press as
+  // well. A row that refuses an input keeps waiting rather than binding nothing.
+  captureBinding(device, input) {
+    const pending = this.rebinding
+    if (!pending || pending.device !== device) {
+      return false
+    }
+    if (device === "keys" && input === "Escape") {
+      this.rebinding = null
+      return true
+    }
+    const reserved = device === "keys" ? RESERVED_KEYS : RESERVED_BUTTONS
+    if (reserved.has(input)) {
+      return true
+    }
+    const table = this.bindings[device]
+    // One key or button drives one control. Binding it here takes it off whatever
+    // held it before, since otherwise a single press would work two controls at
+    // once and the player would have no way to see why.
+    for (const id of Object.keys(table)) {
+      if (id === pending.action) {
+        continue
+      }
+      if (device === "keys") {
+        const kept = table[id].filter((code) => code !== input)
+        if (kept.length !== table[id].length) {
+          table[id] = kept
+        }
+      } else if (table[id] === input) {
+        delete table[id]
+      }
+    }
+    table[pending.action] = device === "keys" ? [input] : input
+    this.rebinding = null
+    this.rememberBindings()
+    Sound.power()
+    return true
+  }
+
   // ---- input intents ---------------------------------------------------
   // What a device asks the game to do, rather than which control was used, so a
   // keyboard and a gamepad drive exactly the same code. Each is safe to call in
@@ -1375,6 +1499,12 @@ export class Game {
     }
     this.inputMode = "keyboard"
 
+    // A row waiting for a key takes the next one and nothing else sees it, or the
+    // key would be bound and act on the menu in the same press.
+    if (this.rebinding && this.captureBinding("keys", e.code)) {
+      return
+    }
+
     const left = e.code === "ArrowLeft" || e.code === "KeyA"
     const right = e.code === "ArrowRight" || e.code === "KeyD"
     if (left || right) {
@@ -1399,16 +1529,19 @@ export class Game {
     if (e.code === "KeyP") {
       this.togglePause()
     }
-    const slot = SLOT_KEYS[e.code]
-    if (slot !== undefined) {
-      this.tryUseSlot(slot)
+    const control = this.controlForKey(e.code)
+    if (control && control.slot !== undefined) {
+      this.tryUseSlot(control.slot)
     }
     this.pressedKeys.add(e.code)
   }
 
   onKeyUp(e) {
     this.pressedKeys.delete(e.code)
-    if (e.code === "Space") {
+    // Firing is on release: the key is held to charge and the shot goes when it
+    // comes back up.
+    const control = this.controlForKey(e.code)
+    if (control && control.id === "fire") {
       this.releaseFire()
     }
   }

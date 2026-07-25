@@ -1168,6 +1168,106 @@ test("a shielded rock takes a blast on its shield and survives it", () => {
   assert.equal(bare.neighbour.dead, true, "with the shield down it goes")
 })
 
+// ---- control bindings -----------------------------------------------------
+
+test("the default bindings are the controls the game shipped with", () => {
+  const game = new Game()
+  assert.deepEqual(game.bindings.keys.thrust, ["KeyW"])
+  assert.deepEqual(game.bindings.keys.fire, ["Space"])
+  assert.deepEqual(game.bindings.keys.slot1, ["Digit1", "Numpad1"])
+  assert.equal(game.bindings.buttons.thrust, 6)
+  assert.equal(game.bindings.buttons.slot1, 0)
+  // turning is a stick on a pad, so there is nothing to bind for it there
+  assert.equal(game.bindings.buttons.turnLeft, undefined)
+})
+
+test("a rebound key flies the ship and the old one stops", () => {
+  const game = liveGame()
+  game.bindings.keys.thrust = ["KeyI"]
+  game.pressedKeys.add("KeyW")
+  game.advance(1 / 60)
+  assert.equal(game.player.thrusting, false, "the old key must do nothing")
+  game.pressedKeys.clear()
+  game.pressedKeys.add("KeyI")
+  game.advance(1 / 60)
+  assert.equal(game.player.thrusting, true, "the new one flies it")
+})
+
+test("a rebound fire key still fires on release", () => {
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ vertices: square(600, 320, 60) })]
+  game.bindings.keys.fire = ["KeyJ"]
+  game.player.mainWeapon.charge = WEAPON_TYPES.playerLaser.chargeMax
+  game.player.mainWeapon.cooldown = 0
+  const shots = game.stats.shots
+  game.onKeyUp({ code: "KeyJ" })
+  assert.equal(game.stats.shots, shots + 1, "release on the bound key shoots")
+})
+
+test("a rebound slot key uses that slot", () => {
+  const game = liveGame()
+  game.upgrades.slots = 2
+  game.player.items = ["refuel", "repel"]
+  game.bindings.keys.slot2 = ["KeyN"]
+  game.onKeyDown({ code: "KeyN", preventDefault() {} })
+  assert.deepEqual(game.player.items, ["refuel"], "the second slot was the one used")
+})
+
+test("capturing a key takes it off whatever else held it", () => {
+  const game = new Game()
+  game.beginRebind("keys", "thrust")
+  assert.equal(game.captureBinding("keys", "KeyS"), true, "the press is consumed")
+  assert.deepEqual(game.bindings.keys.thrust, ["KeyS"])
+  assert.deepEqual(game.bindings.keys.reverse, [], "reverse lost the key it shared")
+  assert.equal(game.rebinding, null, "and the row stops waiting")
+})
+
+test("a reserved key is refused and the row keeps waiting", () => {
+  const game = new Game()
+  for (const code of ["KeyP", "Enter"]) {
+    game.beginRebind("keys", "thrust")
+    assert.equal(game.captureBinding("keys", code), true, `${code} is swallowed`)
+    assert.deepEqual(game.bindings.keys.thrust, ["KeyW"], `${code} must not be bound`)
+    assert.ok(game.rebinding, "and the row is still waiting")
+  }
+})
+
+test("escape abandons a rebind", () => {
+  const game = new Game()
+  game.beginRebind("keys", "thrust")
+  assert.equal(game.captureBinding("keys", "Escape"), true)
+  assert.equal(game.rebinding, null)
+  assert.deepEqual(game.bindings.keys.thrust, ["KeyW"], "unchanged")
+})
+
+test("a key press is not acted on while a row is waiting for it", () => {
+  const game = liveGame()
+  game.paused = true
+  game.beginRebind("keys", "thrust")
+  game.onKeyDown({ code: "KeyI", preventDefault() {} })
+  assert.deepEqual(game.bindings.keys.thrust, ["KeyI"], "bound")
+  assert.equal(game.pressedKeys.has("KeyI"), false, "and not also held as a control")
+})
+
+test("resetting bindings puts every control back", () => {
+  const game = new Game()
+  game.bindings.keys.thrust = ["KeyI"]
+  game.bindings.buttons.fire = 11
+  game.resetBindings()
+  assert.deepEqual(game.bindings.keys.thrust, ["KeyW"])
+  assert.equal(game.bindings.buttons.fire, 7)
+})
+
+test("a binding reads in the menu the way a player would say it", () => {
+  const game = new Game()
+  assert.equal(game.bindingLabel("keys", "thrust"), "W")
+  assert.equal(game.bindingLabel("keys", "fire"), "SPACE")
+  assert.equal(game.bindingLabel("keys", "turretLeft"), "LEFT")
+  assert.equal(game.bindingLabel("keys", "slot1"), "1 / NUM 1")
+  assert.equal(game.bindingLabel("buttons", "thrust"), "BUTTON 6")
+  assert.equal(game.bindingLabel("buttons", "turnLeft"), "-", "nothing bound reads as a dash")
+})
+
 test("sector plans follow PROGRESSION", () => {
   const game = new Game()
   const early = game.planLevel(1)

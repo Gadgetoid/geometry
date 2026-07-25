@@ -58,3 +58,8 @@ export const clearRun = () => remove("run")
 // reset how loud the game is.
 export const loadSettings = () => load("settings")
 export const saveSettings = (settings) => save("settings", settings)
+
+// Control bindings, on their own key so resetting progress or settings does not
+// also throw away a player's remapped controls.
+export const loadBindings = () => load("bindings")
+export const saveBindings = (bindings) => save("bindings", bindings)

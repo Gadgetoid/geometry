@@ -1115,24 +1115,28 @@ export class PlayerShip extends Ship {
     this.slamCooldown = Math.max(0, this.slamCooldown - dt)
     this.energyMax = game.maxEnergy()
 
-    const keys = game.pressedKeys
     const pad = game.padInput
     const canControl = game.canFly() && this.solid
-    // WASD flies the ship; the arrow keys aim the defense turret (below). A
-    // gamepad steers by stick, so the turn is a signed rate rather than a pair of
-    // keys: a key counts as full deflection and a stick gives everything between.
+    // Keys fly the ship and aim the defense turret (below), through whatever they
+    // are bound to. A gamepad steers by stick, so the turn is a signed rate rather
+    // than a pair of keys: a key counts as full deflection and a stick gives
+    // everything between.
     if (canControl) {
-      const turn = clamp(pad.turn + (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0), -1, 1)
+      const turn = clamp(
+        pad.turn + (game.holding("turnRight") ? 1 : 0) - (game.holding("turnLeft") ? 1 : 0),
+        -1,
+        1,
+      )
       this.angle += CONFIG.ROT * turn * dt
-      this.thrusting = keys.has("KeyW") || pad.thrust
+      this.thrusting = game.holding("thrust") || pad.thrust
     } else {
       this.thrusting = false
     }
 
-    // Arrow keys take manual control of the defense turret: LEFT/RIGHT swing the
-    // aim, UP fires. A gamepad's right stick points it instead, which is an
-    // absolute bearing rather than a rate. Any input holds manual mode; after a
-    // short cooldown with no input it reverts to auto-targeting.
+    // The turret controls take it off auto: two of them swing the aim and one
+    // fires. A gamepad's right stick points it instead, which is an absolute
+    // bearing rather than a rate. Any input holds manual mode; after a short
+    // cooldown with no input it reverts to auto-targeting.
     this.turretManual = Math.max(0, this.turretManual - dt)
     this.turretFiring = false
     if (canControl && game.upgrades.turret) {
@@ -1141,15 +1145,15 @@ export class PlayerShip extends Ship {
         this.turretAim = pad.turretAim
         active = true
       }
-      if (keys.has("ArrowLeft")) {
+      if (game.holding("turretLeft")) {
         this.turretAim -= CONFIG.TURRET_AIM_RATE * dt
         active = true
       }
-      if (keys.has("ArrowRight")) {
+      if (game.holding("turretRight")) {
         this.turretAim += CONFIG.TURRET_AIM_RATE * dt
         active = true
       }
-      if (keys.has("ArrowUp") || pad.turretFire) {
+      if (game.holding("turretFire") || pad.turretFire) {
         this.turretFiring = true
         active = true
       }
@@ -1199,7 +1203,10 @@ export class PlayerShip extends Ship {
     }
 
     this.reversing =
-      canControl && game.upgrades.reverse && !this.thrusting && (keys.has("KeyS") || pad.reverse)
+      canControl &&
+      game.upgrades.reverse &&
+      !this.thrusting &&
+      (game.holding("reverse") || pad.reverse)
     if (this.reversing) {
       this.vx -= Math.cos(this.angle) * CONFIG.ACCEL * CONFIG.REVERSE_ACCEL_MULT * dt
       this.vy -= Math.sin(this.angle) * CONFIG.ACCEL * CONFIG.REVERSE_ACCEL_MULT * dt
@@ -1237,7 +1244,7 @@ export class PlayerShip extends Ship {
     // Charge the manual laser off the shared energy cell (its cooldown is
     // ticked by updateWeapons below).
     const w = this.mainWeapon
-    const holding = canControl && (keys.has("Space") || pad.charging)
+    const holding = canControl && (game.holding("fire") || pad.charging)
     const freeShot = this.buffField("freeCharge", false)
     if (holding) {
       const rate = w.type.chargeRate * CONFIG.LASER_RATE_MULT[game.upgrades.laser]
