@@ -22,6 +22,7 @@ import {
 import {
   ARENA,
   CONFIG,
+  HAZARD_TRAITS,
   PLAYER_TYPE,
   POWERUP_TYPES,
   PROGRESSION,
@@ -1086,6 +1087,86 @@ test("a powerup declaring collisionImmune stops rock contact damage", () => {
 })
 
 // ---- progression is data ---------------------------------------------------
+
+// ---- an exploding rock and its neighbours ---------------------------------
+
+// Range used to be measured centre to centre, so a boulder with its face against
+// the blast counted as 150 units away and took nothing but a shove, and no rock
+// took blast damage at all: they were either shattered outright or pushed, while
+// the player and rivals both took BLAST_DAMAGE through takeDamage.
+const EXPLOSIVE = HAZARD_TRAITS.find((h) => h.traits.explosive).traits
+const ROCK_SHIELD = HAZARD_TRAITS.find((h) => h.traits.shield && !h.traits.gun).traits
+
+// A bomb at the arena centre with one neighbour whose surface sits `gap` from it.
+function detonateBeside(radius, gap, traits) {
+  const game = liveGame()
+  const bomb = new Asteroid({ x: ARENA.cx, y: ARENA.cy, radius: 45, traits: EXPLOSIVE })
+  const neighbour = new Asteroid({
+    x: ARENA.cx + bomb.boundRadius + radius + gap,
+    y: ARENA.cy,
+    radius,
+    traits,
+  })
+  game.asteroids = [bomb, neighbour]
+  bomb.detonate(game)
+  return { game, bomb, neighbour }
+}
+
+test("a blast breaks up a neighbour whose surface is against it, however big it is", () => {
+  for (const radius of [30, 60, 100]) {
+    const { neighbour } = detonateBeside(radius, -4, {})
+    assert.equal(
+      neighbour.dead,
+      true,
+      `a radius-${radius} rock touching the blast must be broken up` +
+        ` (its centre is ${Math.round(neighbour.boundRadius + 45)} away, which is what used to be measured)`,
+    )
+  }
+})
+
+test("a blast reaches the same distance whatever size the neighbour is", () => {
+  // The property that measuring to the surface buys: reach no longer depends on
+  // how far off centre the neighbour's middle happens to sit.
+  const reachFor = (radius) => {
+    for (let gap = 0; gap <= 300; gap += 2) {
+      if (!detonateBeside(radius, gap, {}).neighbour.dead) {
+        return gap
+      }
+    }
+    return null
+  }
+  const reaches = [30, 60, 100].map(reachFor)
+  assert.ok(
+    reaches.every((r) => r !== null),
+    "each size must have a reach",
+  )
+  const spread = Math.max(...reaches) - Math.min(...reaches)
+  assert.ok(
+    spread <= 20,
+    `reach varied by ${spread} units across neighbour sizes: ${JSON.stringify(reaches)}`,
+  )
+})
+
+test("a shielded rock takes a blast on its shield and survives it", () => {
+  const { neighbour } = detonateBeside(100, -4, ROCK_SHIELD)
+  assert.ok(neighbour.shieldModule(), "the neighbour must actually be shielded")
+  assert.equal(neighbour.dead, false, "the shield that met the blast earns it this one")
+  assert.equal(neighbour.energy, 0, "but the blast drains it")
+  assert.ok(Math.hypot(neighbour.vx, neighbour.vy) > 0, "and still throws the rock clear")
+
+  // once bare, the next blast does break it up
+  const bare = detonateBeside(100, -4, ROCK_SHIELD)
+  bare.neighbour.shieldModule().up = false
+  const second = new Asteroid({
+    x: bare.neighbour.center.x - bare.neighbour.boundRadius - 40,
+    y: bare.neighbour.center.y,
+    radius: 45,
+    traits: EXPLOSIVE,
+  })
+  bare.game.asteroids.push(second)
+  second.detonate(bare.game)
+  assert.equal(bare.neighbour.dead, true, "with the shield down it goes")
+})
 
 test("sector plans follow PROGRESSION", () => {
   const game = new Game()

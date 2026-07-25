@@ -2090,8 +2090,13 @@ export class Asteroid extends Entity {
       if (other === this || other.dead) {
         continue
       }
-      const offset = subtract(other.center, this.center),
-        dist = magnitude(offset)
+      const offset = subtract(other.center, this.center)
+      // Range is measured to the rock's near surface, not to its middle. A boulder
+      // with its face against the blast is next to it however far off its centre
+      // sits, and measuring to the centre let a big neighbour that was actually
+      // overlapping take nothing but a shove.
+      const dir = normalize(offset)
+      const dist = Math.max(0, magnitude(offset) - other.boundRadius)
       if (dist > CONFIG.BLAST_R) {
         continue
       }
@@ -2101,13 +2106,21 @@ export class Asteroid extends Entity {
         }
         continue
       }
-      if (dist < killRadius) {
+      const falloff = 1 - dist / CONFIG.BLAST_R
+      // Whether a shield was there to meet the blast, asked before the blast drains
+      // it: a shield that soaks this hit has earned the rock this hit, even if the
+      // drain overloads it and leaves it bare for the next one.
+      const wasShielded = other.shieldUp()
+      // A rock takes blast damage as a ship does, so a shield drains and an armed
+      // rock is worn down instead of the blast passing through it. A bare rock has
+      // no hull to lose, which is what the shatter below is for.
+      other.takeDamage(CONFIG.BLAST_DAMAGE * falloff, game, "projectile")
+      // Close in, anything the blast reached unshielded is broken up outright.
+      if (dist < killRadius && !wasShielded) {
         game.shatterToOre(other)
         other.dead = true
         continue
       }
-      const falloff = 1 - dist / CONFIG.BLAST_R,
-        dir = normalize(offset)
       other.vx += dir.x * CONFIG.BLAST_IMPULSE * falloff
       other.vy += dir.y * CONFIG.BLAST_IMPULSE * falloff
       other.spin += randRange(-2, 2) * falloff
