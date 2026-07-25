@@ -390,6 +390,9 @@ function buildAtlas() {
 
 // ---------------------------------------------------------------------------
 export class WebGLRenderer extends Renderer {
+  // Returns null when this backend is unavailable, so the caller can fall back
+  // to Canvas 2D. Shader compilation and framebuffer setup are the likely
+  // failure points on unusual drivers, so both are caught here.
   static create(canvas) {
     const gl = canvas.getContext("webgl2", {
       alpha: false,
@@ -399,7 +402,12 @@ export class WebGLRenderer extends Renderer {
     if (!gl) {
       return null
     }
-    return new WebGLRenderer(canvas, gl)
+    try {
+      return new WebGLRenderer(canvas, gl)
+    } catch (error) {
+      console.warn("WebGL backend unavailable, falling back to Canvas 2D:", error)
+      return null
+    }
   }
 
   constructor(canvas, gl) {
@@ -464,7 +472,11 @@ export class WebGLRenderer extends Renderer {
     const gl = this.gl
     const tex = gl.createTexture()
     gl.bindTexture(gl.TEXTURE_2D, tex)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null)
+    if (this.floatTargets) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null)
+    } else {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+    }
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
@@ -472,14 +484,18 @@ export class WebGLRenderer extends Renderer {
     const fbo = gl.createFramebuffer()
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0)
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      throw new Error(`incomplete framebuffer at ${w}x${h}`)
+    }
     return { tex, fbo, w, h }
   }
 
   #initTargets() {
     const gl = this.gl
     // RGBA16F lets neon glow accumulate past 1.0 for a real bloom threshold.
-    const ext = gl.getExtension("EXT_color_buffer_float")
-    this.floatTargets = !!ext
+    // Without it the targets clamp at 1.0 and bloom picks up only the brightest
+    // cores, which still reads correctly.
+    this.floatTargets = !!gl.getExtension("EXT_color_buffer_float")
     this.scene = this.#makeTarget(SCENE_W, SCENE_H)
     // background renders half-res then upscales, giving a cheap depth-of-field
     this.bg = this.#makeTarget(SCENE_W >> 1, SCENE_H >> 1)
