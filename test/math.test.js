@@ -239,6 +239,22 @@ test("convexContact ignores separated polygons", () => {
   assert.equal(convexContact(SQUARE, shifted(SQUARE, 0, 40), point(5, 5), point(5, 45)), null)
 })
 
+// The centres only orient the normal; they must not decide whether the pair
+// touches. bodyContact compares part against part while passing the whole
+// bodies' centres, so a part pair can easily be handed centres pointing the
+// opposite way to their own arrangement. Testing only `aMax > bMin` read that as
+// an overlap 30 wide, which is what put a spurious push between debris pieces
+// that were a unit apart.
+test("convexContact ignores separated polygons whatever centres it is given", () => {
+  const a = SQUARE // x in [0, 10]
+  const b = shifted(SQUARE, 20, 0) // x in [20, 30], plainly clear of it
+  assert.equal(polygonsOverlap(a, b), false, "the pair must really be apart")
+  // centres the right way round, and deliberately the wrong way round
+  assert.equal(convexContact(a, b, point(5, 5), point(25, 5)), null)
+  assert.equal(convexContact(a, b, point(100, 5), point(0, 5)), null)
+  assert.equal(convexContact(a, b, point(0, 0), point(0, 0)), null)
+})
+
 test("convexContact reports the shallowest separating push", () => {
   const b = shifted(SQUARE, 8, 0)
   const hit = convexContact(SQUARE, b, point(5, 5), point(13, 5))

@@ -157,6 +157,13 @@ export function convexContact(a, b, centreA, centreB) {
   // has one unambiguous meaning: how far b must travel along it to clear a.
   // Choosing the axis first and the direction afterwards can pair a depth with
   // the opposite normal, which pushes the shapes further together.
+  //
+  // Whether the axis separates them, though, is decided from the two projected
+  // intervals and not from that orientation. The centres a caller passes need not
+  // be these two shapes' own: bodyContact compares part against part while
+  // passing the whole bodies' centres, and a part pair whose arrangement
+  // disagrees with the body-to-body direction would otherwise have its
+  // separating axis oriented the wrong way and read as an overlap.
   const toBx = centreB.x - centreA.x,
     toBy = centreB.y - centreA.y
   let bestDepth = Infinity,
@@ -178,10 +185,15 @@ export function convexContact(a, b, centreA, centreB) {
         nx = -nx
         ny = -ny
       }
-      let aMax = -Infinity,
-        bMin = Infinity
+      let aMin = Infinity,
+        aMax = -Infinity,
+        bMin = Infinity,
+        bMax = -Infinity
       for (const v of a) {
         const d = v.x * nx + v.y * ny
+        if (d < aMin) {
+          aMin = d
+        }
         if (d > aMax) {
           aMax = d
         }
@@ -191,11 +203,15 @@ export function convexContact(a, b, centreA, centreB) {
         if (d < bMin) {
           bMin = d
         }
+        if (d > bMax) {
+          bMax = d
+        }
       }
-      const depth = aMax - bMin
-      if (depth <= 0) {
+      if (Math.min(aMax, bMax) <= Math.max(aMin, bMin)) {
         return null // a gap on this axis means they are apart
       }
+      // The intervals overlap, so b's near face is inside a and this is positive.
+      const depth = aMax - bMin
       if (depth < bestDepth) {
         bestDepth = depth
         bestX = nx
