@@ -70,7 +70,8 @@ export function readPad(pad, bound = freshBindings().buttons) {
     fire: bind("fire"),
     turretAim: turretX || turretY ? Math.atan2(turretY, turretX) : null,
     turretFire: bind("turretFire"),
-    confirm: held(button.confirm) || held(button.confirmAlt),
+    confirm: held(button.confirmAlt),
+    start: held(button.confirm),
     back: held(button.back),
     pause: held(button.pause),
     slots: [bind("slot1"), bind("slot2"), bind("slot3"), bind("slot4")],
@@ -93,6 +94,7 @@ export function padInUse(state) {
     state.turretFire ||
     state.turretAim !== null ||
     state.confirm ||
+    state.start ||
     state.back ||
     state.pause ||
     state.slots.some(Boolean) ||
@@ -187,11 +189,16 @@ export class GamepadInput {
     if (pressed("confirm")) {
       game.menuConfirm()
     }
+    // START opens the options menu where there is one, and confirms where there is
+    // not, so it still starts a run from the title screen. BACK opens the same menu.
+    if (pressed("start")) {
+      game.padStart()
+    }
     if (pressed("back")) {
       game.menuBack()
     }
     if (pressed("pause")) {
-      game.togglePause()
+      game.toggleOptions()
     }
     if (pressed("menuUp")) {
       game.menuMove(-1)

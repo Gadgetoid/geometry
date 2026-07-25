@@ -847,6 +847,10 @@ export class Game {
       this.startLevel(this.shopSector)
       return
     }
+    if (this.shopSelection === SHOP.length + 1) {
+      this.toggleOptions()
+      return
+    }
     const item = SHOP[this.shopSelection]
     if (item.maxed(this)) {
       return
@@ -1464,7 +1468,8 @@ export class Game {
     if (this.paused) {
       return this.pauseMenu().length
     }
-    return this.phase === "shop" ? SHOP.length + 1 : 0
+    // the shop's rows, then LAUNCH, then SETTINGS beside it
+    return this.phase === "shop" ? SHOP.length + 2 : 0
   }
 
   // Move the cursor, wrapping at both ends. A row waiting for a key or button holds
@@ -1532,7 +1537,27 @@ export class Game {
       }
       return false
     }
-    return this.devSectorStep(step)
+    if (this.devSectorStep(step)) {
+      return true
+    }
+    return this.#shopSideStep(step)
+  }
+
+  // LAUNCH and SETTINGS share the shop's bottom line, SETTINGS to the left, so left
+  // and right move between them. Up and down reach them too, in index order.
+  #shopSideStep(step) {
+    if (this.phase !== "shop") {
+      return false
+    }
+    if (step < 0 && this.shopSelection === SHOP.length) {
+      this.shopSelection = SHOP.length + 1
+      return true
+    }
+    if (step > 0 && this.shopSelection === SHOP.length + 1) {
+      this.shopSelection = SHOP.length
+      return true
+    }
+    return false
   }
 
   // Move to the neighbouring section, staying on the same control where that
@@ -1569,21 +1594,50 @@ export class Game {
     return true
   }
 
-  // Back out one step: off a sub page of the pause menu, then out of the menu
+  // Where the options menu can be opened: over a live sector, where it also freezes
+  // it, and over the shop, where there is nothing to freeze but the same options
+  // should still be reachable. `settings` on this object is the stored values the
+  // menu edits; OPTIONS is the menu itself.
+  canOpenOptions() {
+    return this.inSector() || this.phase === "shop"
+  }
+
+  // Back out one step: off a sub page of the options menu, then out of the menu
   // itself. ESCAPE on a keyboard and B on a pad, so the two cannot drift apart.
   menuBack() {
     if (!this.paused) {
       return
     }
     if (this.pausePage === "root") {
-      this.togglePause()
+      this.toggleOptions()
     } else {
       this.openPausePage("root")
     }
   }
 
-  togglePause() {
-    if (!this.inSector()) {
+  // ESCAPE, which opens the menu when it is closed and backs out of it when it is
+  // not, so one key does the whole journey in and out.
+  escape() {
+    if (this.paused) {
+      this.menuBack()
+    } else {
+      this.toggleOptions()
+    }
+  }
+
+  // START on a pad. It opens the options menu wherever there is one to open, and
+  // otherwise confirms, so it still starts a run from the title screen where there
+  // is nothing to pause and the prompt says to press it.
+  padStart() {
+    if (this.canOpenOptions()) {
+      this.toggleOptions()
+    } else {
+      this.menuConfirm()
+    }
+  }
+
+  toggleOptions() {
+    if (!this.canOpenOptions()) {
       return
     }
     this.paused = !this.paused
@@ -1648,10 +1702,10 @@ export class Game {
     } else if (e.code === "Enter") {
       this.menuConfirm()
     } else if (e.code === "Escape") {
-      this.menuBack()
+      this.escape()
     }
     if (e.code === "KeyP") {
-      this.togglePause()
+      this.toggleOptions()
     }
     const control = this.controlForKey(e.code)
     if (control && control.slot !== undefined) {

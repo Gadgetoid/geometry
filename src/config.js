@@ -163,8 +163,9 @@ export const CONFIG = {
 //
 // Left stick steers and the right trigger drives the engine; the left trigger
 // fires. Both are held controls - the laser is charged by holding it - so which
-// hand gets which is a matter of taste, and either can be changed from the pause
-// menu's CONTROLS page. `slotLabels` are the face buttons the HUD
+// hand gets which is a matter of taste, and either can be changed from the CONTROLS
+// page. The keyboard keeps W to fly and SPACE to fire, which is the other way round
+// from the triggers on purpose: the two devices are bound separately. `slotLabels` are the face buttons the HUD
 // names in place of the number keys once a pad is in use.
 // ---------------------------------------------------------------------------
 export const GAMEPAD = {
@@ -752,13 +753,20 @@ export function freshUpgrades() {
 //   action  optional (game) => run on ENTER / A
 //   adjust  optional (game, step) => run on LEFT / RIGHT, for anything on a scale
 //   confirm optional prompt; ENTER once asks, ENTER again does it
+//   label   optional (game) => text shown in place of `name`, which stays its identity
 //   available optional (game) => whether the row belongs here at all
 //   section optional heading this row sits under, for a page that groups them
 // Everything goes through a method on Game, so this file stays free of the audio
 // and renderer plumbing and a row cannot reach past the game's own API.
 // ---------------------------------------------------------------------------
 export const PAUSE_MENU = [
-  { name: "RESUME", action: (g) => g.togglePause() },
+  // `label` is what a player reads; `name` stays the row's identity, which is what
+  // a pending confirmation is remembered by.
+  {
+    name: "RESUME",
+    label: (g) => (g.inSector() ? "RESUME" : "BACK"),
+    action: (g) => g.toggleOptions(),
+  },
   {
     name: "VOLUME",
     value: (g) => `${Math.round(g.settings.volume * 100)}%`,

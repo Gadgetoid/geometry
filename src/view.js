@@ -569,7 +569,9 @@ export class GameView {
         glow: 14,
       })
     }
-    if (game.phase === "shop") {
+    // The options overlay covers whatever is behind it, and the cleared screen is
+    // dense enough to read through it. Draw one or the other, never both.
+    if (game.phase === "shop" && !game.paused) {
       this.#shop(game)
     }
     if (game.phase === "over") {
@@ -714,7 +716,8 @@ export class GameView {
     }
 
     const launchY = top + SHOP.length * rowHeight + 42,
-      launchSelected = game.shopSelection === SHOP.length
+      launchSelected = game.shopSelection === SHOP.length,
+      settingsSelected = game.shopSelection === SHOP.length + 1
     if (launchSelected) {
       r.rect(VIEW_W / 2 - 190, launchY - 21, 380, 30, { fill: "rgba(87,227,154,.16)" })
     }
@@ -730,11 +733,24 @@ export class GameView {
         glow: launchSelected ? 16 : 8,
       },
     )
+    // Options sit beside the launch, so they can be reached between sectors and not
+    // only from a live one.
+    const settingsRight = VIEW_W / 2 - 150
+    if (settingsSelected) {
+      r.rect(settingsRight - 128, launchY - 19, 136, 26, { fill: "rgba(95,215,255,.14)" })
+    }
+    r.text(`${settingsSelected ? "> " : ""}OPTIONS`, settingsRight, launchY, {
+      size: 15,
+      bold: settingsSelected,
+      color: settingsSelected ? PALETTE.text.bright : PALETTE.text.normal,
+      align: "right",
+      glow: settingsSelected ? 10 : 0,
+    })
     r.text(
       this.#prompt(
         game,
-        "UP / DOWN select      ENTER buy or launch",
-        "DPAD select      A / START buy or launch",
+        "UP / DOWN select    LEFT / RIGHT launch or options    ENTER choose    ESC options",
+        "DPAD select    A choose    START / BACK options",
       ),
       VIEW_W / 2,
       launchY + 26,
@@ -808,7 +824,7 @@ export class GameView {
         fill: asking || waiting ? "rgba(255,91,91,.16)" : "rgba(95,215,255,.12)",
       })
     }
-    r.text(`${selected ? "> " : "  "}${row.name}`, x0, y, {
+    r.text(`${selected ? "> " : "  "}${row.label ? row.label(game) : row.name}`, x0, y, {
       size,
       bold: selected,
       color: asking ? PALETTE.ui.warn : selected ? PALETTE.text.bright : PALETTE.text.normal,
@@ -895,7 +911,7 @@ export class GameView {
     const r = this.renderer
     r.rect(0, 0, VIEW_W, VIEW_H, { fill: "rgba(2,4,10,.72)" })
     const onControls = game.pausePage === "controls"
-    r.text(onControls ? "CONTROLS" : "PAUSED", VIEW_W / 2, 92, {
+    r.text(onControls ? "CONTROLS" : "OPTIONS", VIEW_W / 2, 92, {
       size: 34,
       bold: true,
       color: PALETTE.text.bright,
@@ -947,8 +963,8 @@ export class GameView {
     r.text(
       this.#prompt(
         game,
-        "UP / DOWN select    LEFT / RIGHT adjust    ENTER choose    P resume",
-        "DPAD select and adjust    A choose    B resume",
+        "UP / DOWN select    LEFT / RIGHT adjust    ENTER choose    ESC / P close",
+        "DPAD select and adjust    A choose    B / START close",
       ),
       VIEW_W / 2,
       hintY,

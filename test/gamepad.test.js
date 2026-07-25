@@ -262,10 +262,16 @@ test("A fills a slot in flight and confirms in a menu, never both", () => {
   assert.equal(inShop.player.items.length, 1, "in a menu A left the slot alone")
 })
 
-test("the dpad walks the shop and start confirms", () => {
+test("the dpad walks the shop and A confirms", () => {
   const game = liveGame()
   game.enterShop()
   const input = new GamepadInput(game)
+  // Release first, so the press that follows is always an edge whatever was held
+  // before it. Releasing afterwards instead leaves the next press with no edge.
+  const press = (fields) => {
+    input.apply(readPad(pad({})))
+    input.apply(readPad(pad(fields)))
+  }
   assert.equal(game.shopSelection, 0)
   input.apply(readPad(pad({ buttons: { [B.dpadDown]: 1 } })))
   assert.equal(game.shopSelection, 1, "one press moves one row")
@@ -274,12 +280,37 @@ test("the dpad walks the shop and start confirms", () => {
   input.apply(readPad(pad()))
   input.apply(readPad(pad({ buttons: { [B.dpadUp]: 1 } })))
   assert.equal(game.shopSelection, 0)
-  // wrap backwards off the top onto the launch row
-  input.apply(readPad(pad()))
-  input.apply(readPad(pad({ buttons: { [B.dpadUp]: 1 } })))
-  assert.equal(game.shopSelection, SHOP.length, "selection wraps to the launch row")
+  // wrap backwards off the top onto the settings cell, which is the last of them
+  press({ buttons: { [B.dpadUp]: 1 } })
+  assert.equal(game.shopSelection, SHOP.length + 1, "wraps onto the options cell")
+  // and left or right moves between it and the launch beside it
+  press({ buttons: { [B.dpadRight]: 1 } })
+  assert.equal(game.shopSelection, SHOP.length, "right moves to the launch")
+  press({ buttons: { [B.confirmAlt]: 1 } })
+  assert.equal(game.phase, "arriving", "A launched from the shop")
+})
+
+test("START and BACK reach the options menu from the shop", () => {
+  for (const button of ["confirm", "pause"]) {
+    const game = liveGame()
+    game.enterShop()
+    const input = new GamepadInput(game)
+    assert.equal(game.paused, false)
+    input.apply(readPad(pad({ buttons: { [B[button]]: 1 } })))
+    assert.equal(game.paused, true, `${button} opened the options menu over the shop`)
+    assert.equal(game.phase, "shop", "and did not leave the shop")
+    // the options rows take over from the shop's while it is open
+    assert.ok(game.pauseMenu().some((row) => row.name === "CONTROLS"))
+  }
+})
+
+test("START still starts a run from the title, where there is nothing to pause", () => {
+  const game = new Game()
+  game.phase = "title"
+  const input = new GamepadInput(game)
   input.apply(readPad(pad({ buttons: { [B.confirm]: 1 } })))
-  assert.equal(game.phase, "arriving", "start launched from the shop")
+  assert.equal(game.phase, "arriving", "it confirmed instead")
+  assert.equal(game.paused, false)
 })
 
 test("the dpad steps the dev sector, and only in the dev shop", () => {
@@ -313,7 +344,7 @@ test("touching the pad switches the prompts, and a key switches them back", () =
   assert.equal(game.inputMode, "keyboard")
   input.apply(readPad(pad({ buttons: { [D.thrust]: 1 } })))
   assert.equal(game.inputMode, "gamepad")
-  game.onKeyDown({ code: "Space", repeat: false, preventDefault() {} })
+  game.onKeyDown({ code: "KeyW", repeat: false, preventDefault() {} })
   assert.equal(game.inputMode, "keyboard")
 })
 
@@ -329,10 +360,10 @@ test("a resting pad leaves the prompts alone", () => {
 test("the pad does not disturb keys the keyboard is holding", () => {
   const game = liveGame()
   const input = new GamepadInput(game)
-  game.pressedKeys.add("Space") // keyboard player holding thrust
+  game.pressedKeys.add("KeyW") // keyboard player holding thrust
   input.apply(readPad(pad({ buttons: { [D.thrust]: 1 } })))
   input.apply(readPad(pad())) // pad trigger released
-  assert.ok(game.pressedKeys.has("Space"), "the held key survived the pad's release")
+  assert.ok(game.pressedKeys.has("KeyW"), "the held key survived the pad's release")
   game.advance(1 / 60)
   assert.equal(game.player.thrusting, true)
 })
@@ -349,11 +380,12 @@ test("clearing input drops pad state too", () => {
 test("B backs out of a menu on a pad, as escape does on a keyboard", () => {
   const game = liveGame()
   const input = new GamepadInput(game)
+  // Release first, so the press that follows is always an edge.
   const press = (fields) => {
+    input.apply(readPad(pad({})))
     input.apply(readPad(pad(fields)))
-    input.apply(readPad(pad({}))) // and release, so the next press is an edge
   }
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   press({ buttons: { [B.back]: 1 } })
   assert.equal(game.pausePage, "root", "off the sub page first")
@@ -365,7 +397,7 @@ test("B backs out of a menu on a pad, as escape does on a keyboard", () => {
 test("B abandons a rebind rather than being bound to the control", () => {
   const game = liveGame()
   const input = new GamepadInput(game)
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   const before = game.bindings.buttons.thrust
   game.beginRebind("buttons", "thrust")

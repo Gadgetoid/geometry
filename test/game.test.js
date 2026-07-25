@@ -33,7 +33,13 @@ import {
   WEAPON_TYPES,
   SHIP_TYPES,
 } from "../src/config.js"
-import { convexContact, convexPartition, countBeamCrossings, polygonArea } from "../src/math.js"
+import {
+  convexContact,
+  convexPartition,
+  countBeamCrossings,
+  mulberry32,
+  polygonArea,
+} from "../src/math.js"
 
 // A live sector with a solid, vulnerable ship and nothing else in it.
 function liveGame() {
@@ -63,6 +69,19 @@ const square = (cx, cy, half) => [
 ]
 
 const playerWeapon = { type: WEAPON_TYPES.playerLaser }
+
+// Run `body` with Math.random replaced by a seeded sequence, for anything whose
+// result depends on a random rock silhouette. Restores the real one afterwards.
+function seeded(seed, body) {
+  const rng = mulberry32(seed)
+  const real = Math.random
+  Math.random = rng
+  try {
+    return body()
+  } finally {
+    Math.random = real
+  }
+}
 
 test("a game runs headless without a browser", () => {
   const game = new Game()
@@ -1129,6 +1148,10 @@ test("a blast breaks up a neighbour whose surface is against it, however big it 
 test("a blast reaches the same distance whatever size the neighbour is", () => {
   // The property that measuring to the surface buys: reach no longer depends on
   // how far off centre the neighbour's middle happens to sit.
+  //
+  // Rock silhouettes are random, so the exact reach wobbles with the shape. Seed
+  // the generator for the measurement, or this passes or fails according to how
+  // much randomness the tests before it happened to consume.
   const reachFor = (radius) => {
     for (let gap = 0; gap <= 300; gap += 2) {
       if (!detonateBeside(radius, gap, {}).neighbour.dead) {
@@ -1137,7 +1160,7 @@ test("a blast reaches the same distance whatever size the neighbour is", () => {
     }
     return null
   }
-  const reaches = [30, 60, 100].map(reachFor)
+  const reaches = seeded(20260725, () => [30, 60, 100].map(reachFor))
   assert.ok(
     reaches.every((r) => r !== null),
     "each size must have a reach",
@@ -1174,8 +1197,8 @@ test("a shielded rock takes a blast on its shield and survives it", () => {
 
 test("the default bindings are the controls the game shipped with", () => {
   const game = new Game()
-  assert.deepEqual(game.bindings.keys.thrust, ["Space"])
-  assert.deepEqual(game.bindings.keys.fire, ["KeyW"])
+  assert.deepEqual(game.bindings.keys.thrust, ["KeyW"])
+  assert.deepEqual(game.bindings.keys.fire, ["Space"])
   assert.deepEqual(game.bindings.keys.slot1, ["Digit1", "Numpad1"])
   assert.equal(game.bindings.buttons.thrust, 7)
   assert.equal(game.bindings.buttons.slot1, 0)
@@ -1186,7 +1209,7 @@ test("the default bindings are the controls the game shipped with", () => {
 test("a rebound key flies the ship and the old one stops", () => {
   const game = liveGame()
   game.bindings.keys.thrust = ["KeyI"]
-  game.pressedKeys.add("Space")
+  game.pressedKeys.add("KeyW")
   game.advance(1 / 60)
   assert.equal(game.player.thrusting, false, "the old key must do nothing")
   game.pressedKeys.clear()
@@ -1229,7 +1252,7 @@ test("a reserved key is refused and the row keeps waiting", () => {
   for (const code of ["KeyP", "Enter"]) {
     game.beginRebind("keys", "thrust")
     assert.equal(game.captureBinding("keys", code), true, `${code} is swallowed`)
-    assert.deepEqual(game.bindings.keys.thrust, ["Space"], `${code} must not be bound`)
+    assert.deepEqual(game.bindings.keys.thrust, ["KeyW"], `${code} must not be bound`)
     assert.ok(game.rebinding, "and the row is still waiting")
   }
 })
@@ -1239,7 +1262,7 @@ test("escape abandons a rebind", () => {
   game.beginRebind("keys", "thrust")
   assert.equal(game.captureBinding("keys", "Escape"), true)
   assert.equal(game.rebinding, null)
-  assert.deepEqual(game.bindings.keys.thrust, ["Space"], "unchanged")
+  assert.deepEqual(game.bindings.keys.thrust, ["KeyW"], "unchanged")
 })
 
 test("a key press is not acted on while a row is waiting for it", () => {
@@ -1256,14 +1279,14 @@ test("resetting bindings puts every control back", () => {
   game.bindings.keys.thrust = ["KeyI"]
   game.bindings.buttons.fire = 11
   game.resetBindings()
-  assert.deepEqual(game.bindings.keys.thrust, ["Space"])
+  assert.deepEqual(game.bindings.keys.thrust, ["KeyW"])
   assert.equal(game.bindings.buttons.fire, 6)
 })
 
 test("a binding reads in the menu the way a player would say it", () => {
   const game = new Game()
-  assert.equal(game.bindingLabel("keys", "thrust"), "SPACE")
-  assert.equal(game.bindingLabel("keys", "fire"), "W")
+  assert.equal(game.bindingLabel("keys", "thrust"), "W")
+  assert.equal(game.bindingLabel("keys", "fire"), "SPACE")
   assert.equal(game.bindingLabel("keys", "turretLeft"), "LEFT")
   assert.equal(game.bindingLabel("keys", "slot1"), "1 / NUM 1")
   assert.equal(game.bindingLabel("buttons", "thrust"), "BUTTON 7")
@@ -1272,7 +1295,7 @@ test("a binding reads in the menu the way a player would say it", () => {
 
 test("the controls page offers every bindable control, in device sections", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   const root = game.pauseMenu()
   const controls = root.find((row) => row.name === "CONTROLS")
   assert.ok(controls, "the pause menu offers a way in")
@@ -1299,7 +1322,7 @@ test("the controls page offers every bindable control, in device sections", () =
 
 test("BACK returns to the root page", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   const back = game.pauseMenu().find((row) => row.name === "BACK")
   back.action(game)
@@ -1309,7 +1332,7 @@ test("BACK returns to the root page", () => {
 
 test("choosing a control row waits for a key, and the row says so", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   const row = game.pauseMenu().find((r) => r.section === "KEYBOARD" && r.name === "THRUST")
   assert.equal(row.waiting(), null, "not waiting until it is chosen")
@@ -1322,7 +1345,7 @@ test("choosing a control row waits for a key, and the row says so", () => {
 
 test("the cursor holds still while a row waits for its key", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   game.pauseSelection = 3
   game.pauseMenu()[3].action(game)
@@ -1333,7 +1356,7 @@ test("the cursor holds still while a row waits for its key", () => {
 test("resetting from the menu restores every control and asks first", () => {
   const game = liveGame()
   game.bindings.keys.thrust = ["KeyI"]
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   const rows = game.pauseMenu()
   const reset = rows.findIndex((row) => row.name === "RESET TO DEFAULTS")
@@ -1342,23 +1365,23 @@ test("resetting from the menu restores every control and asks first", () => {
   assert.equal(game.pauseConfirming, "RESET TO DEFAULTS", "it asks once")
   assert.deepEqual(game.bindings.keys.thrust, ["KeyI"], "and changes nothing yet")
   game.menuConfirm()
-  assert.deepEqual(game.bindings.keys.thrust, ["Space"], "the second press does it")
+  assert.deepEqual(game.bindings.keys.thrust, ["KeyW"], "the second press does it")
 })
 
 test("closing the pause menu leaves the controls page behind", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   game.beginRebind("keys", "thrust")
-  game.togglePause() // close
-  game.togglePause() // and reopen
+  game.toggleOptions() // close
+  game.toggleOptions() // and reopen
   assert.equal(game.pausePage, "root", "reopens at the root")
   assert.equal(game.rebinding, null, "with nothing left waiting")
 })
 
 test("escape backs out of the page, and cancels a wait before it does", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   game.beginRebind("buttons", "thrust")
   game.onKeyDown({ code: "Escape", preventDefault() {} })
@@ -1372,7 +1395,7 @@ test("escape backs out of the page, and cancels a wait before it does", () => {
 
 test("left and right cross between the binding columns", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   const rows = game.pauseMenu()
   const indexOf = (section, name) =>
@@ -1399,7 +1422,7 @@ test("left and right cross between the binding columns", () => {
 
 test("a control the pad has no row for crosses to the nearest one it does", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   const rows = game.pauseMenu()
   // TURN LEFT is a stick on a pad, so there is no row of its own to land on
@@ -1413,7 +1436,7 @@ test("a control the pad has no row for crosses to the nearest one it does", () =
 
 test("there is nothing to the left of the first column or the right of the last", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   const rows = game.pauseMenu()
   game.pauseSelection = 0
@@ -1425,7 +1448,7 @@ test("there is nothing to the left of the first column or the right of the last"
 
 test("the rows below the columns have no column to cross to", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   const rows = game.pauseMenu()
   game.pauseSelection = rows.findIndex((row) => row.name === "BACK")
@@ -1435,7 +1458,7 @@ test("the rows below the columns have no column to cross to", () => {
 
 test("a waiting row swallows left and right too", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   game.openPausePage("controls")
   game.pauseSelection = 2
   game.beginRebind("keys", "turnRight")
@@ -1445,7 +1468,7 @@ test("a waiting row swallows left and right too", () => {
 
 test("the volume row still adjusts, on the page that has it", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   const rows = game.pauseMenu()
   game.pauseSelection = rows.findIndex((row) => row.name === "VOLUME")
   const before = game.settings.volume
@@ -1483,7 +1506,7 @@ test("hazard traits are gated by sector", () => {
 test("pause opens a menu, and the cursor wraps", () => {
   const game = liveGame()
   assert.equal(game.menuRows(), 0, "nothing to navigate while flying")
-  game.togglePause()
+  game.toggleOptions()
   const rows = game.pauseMenu().length
   assert.ok(rows > 1)
   assert.equal(game.menuRows(), rows)
@@ -1515,7 +1538,7 @@ test("exit is only offered where the window can actually be closed", () => {
 test("the cursor cannot land on a row that is not offered", () => {
   const game = liveGame()
   game.canExit = false
-  game.togglePause()
+  game.toggleOptions()
   for (let i = 0; i < game.menuRows() * 2; i++) {
     game.menuMove(1)
     const row = game.pauseMenu()[game.pauseSelection]
@@ -1527,7 +1550,7 @@ test("the cursor cannot land on a row that is not offered", () => {
 test("volume is adjusted from the menu and reaches the mixer", async () => {
   const { Sound } = await import("../src/audio.js")
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   game.pauseSelection = game.pauseMenu().findIndex((row) => row.name === "VOLUME")
   game.setVolume(0.5)
   assert.equal(Sound.volume, 0.5, "the mixer follows the setting")
@@ -1544,7 +1567,7 @@ test("volume is adjusted from the menu and reaches the mixer", async () => {
 test("a row that asks for confirmation needs two presses", () => {
   const game = liveGame()
   game.canExit = true // exit is only offered where the window can be closed
-  game.togglePause()
+  game.toggleOptions()
   const index = game.pauseMenu().findIndex((row) => row.name === "EXIT GAME")
   assert.ok(game.pauseMenu()[index].confirm, "this row should want confirming")
   game.pauseSelection = index
@@ -1558,7 +1581,7 @@ test("a row that asks for confirmation needs two presses", () => {
 test("moving the cursor abandons a pending confirmation", () => {
   const game = liveGame()
   game.canExit = true
-  game.togglePause()
+  game.toggleOptions()
   game.pauseSelection = game.pauseMenu().findIndex((row) => row.name === "EXIT GAME")
   game.menuConfirm()
   assert.ok(game.pauseConfirming)
@@ -1569,7 +1592,7 @@ test("moving the cursor abandons a pending confirmation", () => {
 
 test("resume closes the menu", () => {
   const game = liveGame()
-  game.togglePause()
+  game.toggleOptions()
   game.pauseSelection = game.pauseMenu().findIndex((row) => row.name === "RESUME")
   game.menuConfirm()
   assert.equal(game.paused, false)
@@ -1674,7 +1697,7 @@ test("losing the last life throws the saved run away", () => {
 test("resetting progress returns to the title with nothing kept", () => {
   const game = liveGame()
   game.enterShop()
-  game.togglePause()
+  game.toggleOptions()
   game.resetProgress()
   assert.equal(game.savedRun, null)
   assert.equal(game.phase, "title")
@@ -1700,7 +1723,7 @@ test("adjusting the volume plays a tone at the level just set", async () => {
   const realPower = Sound.power
   Sound.power = () => heard.push(Sound.volume)
   try {
-    game.togglePause()
+    game.toggleOptions()
     game.pauseSelection = game.pauseMenu().findIndex((row) => row.name === "VOLUME")
     game.setVolume(0.5)
     assert.deepEqual(heard, [0.5], "setting it makes one tone, at the new level")
