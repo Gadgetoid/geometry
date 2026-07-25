@@ -28,10 +28,11 @@ if (FULLSCREEN) {
 
 const view = new GameView(renderer)
 const game = new Game()
-// Script can only close a window it owns, which means an app window rather than a tab.
-// display-mode reports which this is, so the pause menu can leave Exit out where it
-// would do nothing. This is the same condition the launcher creates with --app=.
-game.canExit = matchMedia("(display-mode: standalone)").matches
+// Script can only close a window it owns, which means an app window rather than a tab,
+// so the pause menu leaves Exit out where it would do nothing. A tab is the case
+// display-mode names exactly: anything else, standalone or the fullscreen an --app=
+// window is already in by the time this runs, is a window the game may close.
+game.canExit = !matchMedia("(display-mode: browser)").matches
 const gamepad = new GamepadInput(game)
 
 // Debug / test handle: lets the browser console and the smoke test inspect and
