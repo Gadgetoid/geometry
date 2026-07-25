@@ -171,14 +171,14 @@ export class GameView {
       }
       this.#laserShots(game)
       this.#particles(game)
-      if (game.phase === "play" || game.phase === "clearing") {
+      if (game.inSector()) {
         game.player.draw(r, game)
       }
     }
     r.popView()
 
     // foreground stardust (screen-space, in front of gameplay)
-    if (game.phase === "play" || game.phase === "clearing") {
+    if (game.inSector()) {
       r.pushView(cam.bg)
       this.#dust(game)
       r.popView()
@@ -193,7 +193,23 @@ export class GameView {
       this.#hud(game)
     }
     r.popView()
+    this.#warp(game, c)
     r.endFrame()
+  }
+
+  // Point the screen-space ripple at the ship while it warps. The scene target
+  // has its origin at the bottom, so the vertical coordinate is flipped.
+  // Strength peaks when the ship is least present, which includes the pause
+  // before a respawn: the portal shimmers open before anything arrives.
+  #warp(game, centre) {
+    const p = game.player
+    if (!p || !game.inSector() || p.warp >= 1) {
+      this.renderer.setWarp(0, 0, 0)
+      return
+    }
+    const screenX = VIEW_W / 2 + (p.x - centre.x)
+    const screenY = VIEW_H / 2 + (p.y - centre.y)
+    this.renderer.setWarp(screenX / VIEW_W, 1 - screenY / VIEW_H, 1 - p.warp)
   }
 
   #planets(game) {
@@ -327,7 +343,7 @@ export class GameView {
 
   // Off-screen asteroids and rivals as direction arrows around the screen edge.
   #radar(game) {
-    if (game.phase !== "play" && game.phase !== "clearing") {
+    if (!game.inSector()) {
       return
     }
     const r = this.renderer
@@ -533,7 +549,7 @@ export class GameView {
       })
     }
 
-    if (game.phase === "clearing") {
+    if (game.phase === "clearing" || game.phase === "departing") {
       r.text("SECTOR CLEARED", VIEW_W / 2, VIEW_H / 2, {
         size: 26,
         bold: true,

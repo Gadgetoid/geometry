@@ -54,13 +54,21 @@ const SLOT_KEYS = {
 
 // The first sector any rival appears in: the earliest spawn gate across the
 // ship types.
+// Phases where a sector is live and the simulation runs. Around them sit
+// title, shop and over. `arriving` and `departing` are the warp bookends: the
+// world keeps moving but the ship is not under control and not solid.
+//   title -> arriving -> play -> clearing -> departing -> shop -> arriving ...
+// Losing a life drops back to `arriving` in place, so the pause and warp-in are
+// the same code as the start of a sector.
+const SECTOR_PHASES = new Set(["arriving", "play", "clearing", "departing"])
+
 const RIVALS_FROM_SECTOR = Math.min(
   ...Object.values(SHIP_TYPES).map((type) => type.spawn.fromSector),
 )
 
 export class Game {
   constructor() {
-    this.phase = "title" // title | play | clearing | shop | over
+    this.phase = "title" // see SECTOR_PHASES for the in-sector run
     this.asteroids = []
     this.oreChunks = []
     this.projectiles = []
@@ -101,6 +109,11 @@ export class Game {
         this.best = value
       }
     })
+  }
+
+  // Is a sector live? Weapons, control and scoring still key off `play` alone.
+  inSector() {
+    return SECTOR_PHASES.has(this.phase)
   }
 
   blankStats() {
@@ -586,10 +599,12 @@ export class Game {
     p.invincible = CONFIG.INVIN_TIME
     p.energyMax = this.maxEnergy()
     p.energy = p.energyMax
+    // a new sector has nowhere to pan from, so place the camera outright
     this.viewCenter.x = p.x
     this.viewCenter.y = p.y
     this.clearInput() // drop keys held over from the shop so the laser starts uncharged
-    this.phase = "play"
+    p.beginWarpIn(CONFIG.WARP_ARRIVE_PAUSE)
+    this.phase = "arriving"
     Sound.level()
   }
 
@@ -685,6 +700,9 @@ export class Game {
       Sound.setThruster(false)
       return
     }
+    // Move to the spawn point straight away but stay warped out for a beat, so
+    // there is a moment to take stock. The camera is deliberately not moved
+    // with it: it pans across from wherever the wreck was.
     const p = this.player
     p.x = ARENA.cx
     p.y = ARENA.cy
@@ -693,8 +711,9 @@ export class Game {
     p.energy = this.maxEnergy() * 0.6
     p.invincible = CONFIG.INVIN_TIME
     p.mainWeapon.charge = 0
-    this.viewCenter.x = p.x
-    this.viewCenter.y = p.y
+    p.beginWarpIn(CONFIG.RESPAWN_PAUSE)
+    this.phase = "arriving"
+    this.clearInput()
   }
 
   usePowerupSlot(index) {
@@ -747,9 +766,21 @@ export class Game {
     this.player.update(dt, this)
     // camera eases toward the ship, clamped so it never scrolls far past the
     // arena edge (a band of the out-of-bounds zone stays visible, no more)
-    const follow = Math.min(1, dt * CONFIG.CAMERA_FOLLOW)
-    this.viewCenter.x += (this.player.x - this.viewCenter.x) * follow
-    this.viewCenter.y += (this.player.y - this.viewCenter.y) * follow
+    const followRate = this.player.warping ? CONFIG.CAMERA_WARP_FOLLOW : CONFIG.CAMERA_FOLLOW
+    const follow = Math.min(1, dt * followRate)
+    let panX = (this.player.x - this.viewCenter.x) * follow
+    let panY = (this.player.y - this.viewCenter.y) * follow
+    // An exponential ease moves fastest on its first frame, which over the
+    // distance from a wreck to the spawn point lurches before it glides. Cap
+    // the speed so a long pan travels evenly and still settles softly.
+    const panStep = Math.hypot(panX, panY)
+    const panLimit = CONFIG.CAMERA_MAX_PAN * dt
+    if (panStep > panLimit) {
+      panX *= panLimit / panStep
+      panY *= panLimit / panStep
+    }
+    this.viewCenter.x += panX
+    this.viewCenter.y += panY
     const dcx = this.viewCenter.x - ARENA.cx,
       dcy = this.viewCenter.y - ARENA.cy
     const camDist = Math.hypot(dcx, dcy)
@@ -787,15 +818,24 @@ export class Game {
       }
     }
 
-    if (this.phase === "play" && this.asteroids.length === 0) {
+    if (this.phase === "arriving") {
+      if (!this.player.warping) {
+        this.phase = "play"
+      }
+    } else if (this.phase === "play" && this.asteroids.length === 0) {
       this.phase = "clearing"
       this.clearTimer = CONFIG.CLEAR_DELAY
       this.oreVacuum = true
     } else if (this.phase === "clearing") {
+      // hold here until the vacuum has actually swept every chunk in; the timer
+      // is only a failsafe for ore that somehow cannot reach the ship
       this.clearTimer -= dt
       if (this.oreChunks.length === 0 || this.clearTimer <= 0) {
-        this.enterShop()
+        this.phase = "departing"
+        this.player.beginWarpOut()
       }
+    } else if (this.phase === "departing" && !this.player.warping) {
+      this.enterShop()
     }
   }
 
@@ -904,7 +944,7 @@ export class Game {
       this.startNewGame()
     }
 
-    if (e.code === "KeyP" && (this.phase === "play" || this.phase === "clearing")) {
+    if (e.code === "KeyP" && this.inSector()) {
       this.paused = !this.paused
       if (this.paused) {
         Sound.setThruster(false)
@@ -960,7 +1000,7 @@ export class Game {
     this.backdrop.update(dt, flying ? this.player.vx : 0, flying ? this.player.vy : 0)
     if (this.phase === "title") {
       this.backdrop.updateMenu(dt)
-    } else if ((this.phase === "play" || this.phase === "clearing") && !this.paused) {
+    } else if (this.inSector() && !this.paused) {
       this.update(dt)
     }
   }

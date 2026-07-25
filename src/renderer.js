@@ -15,6 +15,10 @@ export class Renderer {
   endFrame() {} // finish a frame (post-processing / present); optional
   nebula(_scrollX, _scrollY) {} // background nebula layer; optional
   compositeBackground() {} // finalise the background layer (e.g. depth of field); optional
+  // Screen-space ripple centred on (uvX, uvY) with 0..1 strength, for the warp.
+  // Optional: a backend without post-processing simply has no distortion, and
+  // the expanding rings the ship draws carry the effect on their own.
+  setWarp(_uvX, _uvY, _strength) {}
   clearFrame(_color) {
     throw new Error("not implemented")
   }

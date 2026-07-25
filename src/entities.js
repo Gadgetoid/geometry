@@ -672,13 +672,78 @@ export class PlayerShip extends Ship {
     this.atBoundary = false
     this.impactSfx = 0 // throttles collision / boundary sounds
     this.slamCooldown = 0 // one impact hit per collision, not one per frame
+    // Warp presence: 1 is solid, 0 is gone. The ship is intangible below 1, and
+    // the view turns this into the ripple and the hull fade.
+    this.warp = 1
+    this.warpTarget = 1
+    this.warpHold = 0 // beat to wait before an arrival starts
   }
 
   damageResist() {
     return CONFIG.SHIELD_EFFICIENCY[this.game.upgrades.shield]
   }
+  // Mid-warp the ship is not really in the sector, so nothing can reach it:
+  // not rocks, and not the bullets and blasts that bypass contact entirely.
+  takeDamage(amount, game, channel, scoreOnKill, impact) {
+    if (!this.solid) {
+      return false
+    }
+    return super.takeDamage(amount, game, channel, scoreOnKill, impact)
+  }
   onHull() {
     this.game.playerLoseLife()
+  }
+
+  // Dissolve out of the sector, or fade back in after `delay` seconds.
+  beginWarpOut() {
+    this.warpTarget = 0
+    this.warpHold = 0
+    Sound.warpOut()
+  }
+  beginWarpIn(delay = 0) {
+    this.warp = 0
+    this.warpTarget = 1
+    this.warpHold = delay
+    if (delay <= 0) {
+      Sound.warpIn()
+    }
+  }
+  // True while the ship is mid-warp or waiting to start one.
+  get warping() {
+    return this.warpHold > 0 || this.warp !== this.warpTarget
+  }
+  // Solid enough to collide, be hit, and be flown.
+  get solid() {
+    return this.warp >= 1
+  }
+
+  #tickWarp(dt, game) {
+    // sparks spiralling in toward the portal, so the arrival point is alive
+    if (this.warping || this.warp < 1) {
+      const angle = Math.random() * TAU
+      const away = this.radius * randRange(3, 7)
+      game.emit(
+        this.x + Math.cos(angle) * away,
+        this.y + Math.sin(angle) * away,
+        -Math.cos(angle) * randRange(90, 190),
+        -Math.sin(angle) * randRange(90, 190),
+        0.28,
+        PALETTE.player.exhaustFlame,
+      )
+    }
+    if (this.warpHold > 0) {
+      this.warpHold = Math.max(0, this.warpHold - dt)
+      if (this.warpHold <= 0) {
+        Sound.warpIn() // the hull starts forming now, not when the pause began
+      }
+      return
+    }
+    const step = dt / CONFIG.WARP_TIME
+    if (this.warp < this.warpTarget) {
+      this.warp = Math.min(this.warpTarget, this.warp + step)
+    } else if (this.warp > this.warpTarget) {
+      this.warp = Math.max(this.warpTarget, this.warp - step)
+    }
   }
 
   // Seconds left on a timed powerup, 0 when it is not active.
@@ -759,13 +824,14 @@ export class PlayerShip extends Ship {
 
   update(dt, game) {
     this.invincible = Math.max(0, this.invincible - dt)
+    this.#tickWarp(dt, game)
     this.#tickBuffs(dt)
     this.impactSfx = Math.max(0, this.impactSfx - dt)
     this.slamCooldown = Math.max(0, this.slamCooldown - dt)
     this.energyMax = game.maxEnergy()
 
     const keys = game.pressedKeys
-    const canControl = game.phase === "play"
+    const canControl = game.phase === "play" && this.solid
     // WASD flies the ship; the arrow keys aim the defense turret (below)
     if (canControl) {
       if (keys.has("KeyA")) {
@@ -947,6 +1013,9 @@ export class PlayerShip extends Ship {
     // and its inward velocity reflected, so it glances off rather than
     // tunnelling through. Momentum transfers to the rock; contact grinds energy.
     for (const asteroid of game.asteroids) {
+      if (!this.solid) {
+        break // mid-warp the ship is not really here yet
+      }
       const dx = this.x - asteroid.center.x,
         dy = this.y - asteroid.center.y
       const reach = asteroid.boundRadius + this.radius
@@ -1012,7 +1081,49 @@ export class PlayerShip extends Ship {
     }
   }
 
+  // Materialising or dissolving: a portal pulses at the arrival point, then the
+  // hull swells out of it and fades in, with rings running outward. The
+  // screen-space ripple is the view's job; deep space has little to distort, so
+  // the portal is what actually reads on screen.
+  #drawWarp(renderer, game) {
+    const t = this.warp
+    const pulse = 0.5 + 0.5 * Math.sin(game.gameTime * 9)
+    renderer.circle(this.x, this.y, this.radius * (1.5 + 0.55 * pulse), {
+      stroke: PALETTE.player.hull,
+      width: 1.5,
+      glow: 18,
+      alpha: (1 - t) * (0.3 + 0.4 * pulse),
+    })
+    if (t <= 0) {
+      return // nothing has formed yet, just the portal
+    }
+    const c = Math.cos(this.angle),
+      s = Math.sin(this.angle)
+    const scale = this.size * (0.3 + 0.7 * t)
+    const hull = this.outlineLocal.map((p) => ({
+      x: this.x + (p[0] * c - p[1] * s) * scale,
+      y: this.y + (p[0] * s + p[1] * c) * scale,
+    }))
+    renderer.strokePoly(hull, { color: this.colour, width: 1.9, glow: 20, alpha: t })
+    for (let i = 0; i < 2; i++) {
+      const ring = clamp(t * 1.5 - i * 0.4, 0, 1)
+      if (ring <= 0 || ring >= 1) {
+        continue
+      }
+      renderer.circle(this.x, this.y, this.radius * (1 + ring * 5), {
+        stroke: PALETTE.player.hull,
+        width: 1.6,
+        glow: 14,
+        alpha: (1 - ring) * 0.8,
+      })
+    }
+  }
+
   draw(renderer, game) {
+    if (this.warping || this.warp < 1) {
+      this.#drawWarp(renderer, game)
+      return
+    }
     if (this.invincible > 0 && Math.floor(game.gameTime * 12) % 2 === 0) {
       return
     } // blink while invincible

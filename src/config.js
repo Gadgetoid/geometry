@@ -99,7 +99,12 @@ export const CONFIG = {
   // camera, pacing and end-of-sector scoring
   CAMERA_FOLLOW: 6, // how quickly the view eases toward the ship
   CAMERA_MARGIN: 140, // how far inside the arena edge the view stops
-  CLEAR_DELAY: 2.4, // seconds of ore sweep-up after the last rock
+  CLEAR_DELAY: 12, // failsafe cap on the ore sweep-up, if a chunk cannot reach the ship
+  WARP_TIME: 0.85, // seconds for the ship to dissolve into or out of a warp
+  WARP_ARRIVE_PAUSE: 0.35, // beat before the ship warps in at the start of a sector
+  RESPAWN_PAUSE: 1.2, // longer beat after losing a life, to get your bearings
+  CAMERA_WARP_FOLLOW: 2.6, // gentler camera while warping, so the pan reads as a pan
+  CAMERA_MAX_PAN: 620, // units/sec ceiling on camera travel, so long pans glide
   TOAST_TIME: 2.6,
   ACCURACY_BONUS: 500, // scaled by hit fraction
   FLAWLESS_BONUS: 800, // for taking no damage

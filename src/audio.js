@@ -189,6 +189,17 @@ export const Sound = {
     const pitch = randRange(1 - COLLECT_DETUNE, 1 + COLLECT_DETUNE)
     this.beep(880 * pitch, 0.09, "sine", 0.05, 1320 * pitch)
   },
+  // Warp in: a swell rising into place. Warp out: the same, falling away.
+  warpIn() {
+    this.beep(90, 0.7, "sine", 0.05, 620)
+    this.beep(140, 0.55, "triangle", 0.035, 900)
+    this.noise(0.5, 0.025, 900, 0.5)
+  },
+  warpOut() {
+    this.beep(620, 0.7, "sine", 0.05, 80)
+    this.beep(900, 0.55, "triangle", 0.035, 120)
+    this.noise(0.5, 0.025, 900, 0.5)
+  },
   power() {
     this.beep(520, 0.1, "square", 0.05, 780)
     this.beep(780, 0.12, "square", 0.05, 1180)

@@ -329,10 +329,25 @@ const COMPOSITE_FS = `#version 300 es
   uniform float uBloom0;      // bloom intensity
   uniform float uCrt;         // 0 = flat, 1 = full CRT
   uniform float uTime;
+  uniform vec3 uWarp;         // xy = ripple centre in uv, z = strength (0 = off)
+  uniform float uAspect;
   vec3 sceneSample(vec2 uv) {
     vec3 s = texture(uScene, uv).rgb;
     vec3 b = texture(uBloom, uv).rgb;
     return s + b * uBloom0;
+  }
+  // Concentric waves running out from the warp point, strongest at its centre
+  // and dying away with distance: the surface of the sector rippling like water.
+  vec2 ripple(vec2 uv) {
+    if (uWarp.z <= 0.001) { return uv; }
+    vec2 d = uv - uWarp.xy;
+    d.x *= uAspect;
+    float dist = length(d);
+    float wave = sin(dist * 52.0 - uTime * 11.0);
+    float falloff = exp(-dist * 5.5);
+    vec2 dir = d / max(dist, 1e-5);
+    dir.x /= uAspect;
+    return uv + dir * wave * falloff * uWarp.z * 0.05;
   }
   void main() {
     vec2 uv = vUV;
@@ -346,6 +361,7 @@ const COMPOSITE_FS = `#version 300 es
         frag = vec4(0.0, 0.0, 0.0, 1.0);
         return;
       }
+      uv = ripple(uv);
       // chromatic aberration grows toward the edges
       float ca = 0.0006 + 0.0020 * r2;
       vec2 off = normalize(c + 1e-5) * ca;
@@ -358,7 +374,7 @@ const COMPOSITE_FS = `#version 300 es
       float vig = mix(1.0, smoothstep(2.7, 0.7, r2), 0.45);
       frag = vec4(col * scan * vig, 1.0);
     } else {
-      frag = vec4(sceneSample(uv), 1.0);
+      frag = vec4(sceneSample(ripple(uv)), 1.0);
     }
   }`
 
@@ -424,6 +440,7 @@ export class WebGLRenderer extends Renderer {
     this.gl = gl
     this.crtEnabled = true
     this.time = 0
+    this.warp = [0, 0, 0] // ripple centre in uv plus strength
     this.eye = [HALF_W, HALF_H]
     this.passZ = 0
 
@@ -1136,6 +1153,8 @@ export class WebGLRenderer extends Renderer {
     gl.uniform1f(this.#uniform(prog, "uBloom0"), 1.25)
     gl.uniform1f(this.#uniform(prog, "uCrt"), this.crtEnabled ? 1 : 0)
     gl.uniform1f(this.#uniform(prog, "uTime"), this.time)
+    gl.uniform3f(this.#uniform(prog, "uWarp"), this.warp[0], this.warp[1], this.warp[2])
+    gl.uniform1f(this.#uniform(prog, "uAspect"), SCENE_W / SCENE_H)
     gl.bindVertexArray(this.emptyVao)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
     gl.enable(gl.BLEND)
@@ -1150,6 +1169,12 @@ export class WebGLRenderer extends Renderer {
 
   // Called by the view on resize with the letterboxed content rectangle in
   // device pixels (origin bottom-left for gl.viewport).
+  setWarp(uvX, uvY, strength) {
+    this.warp[0] = uvX
+    this.warp[1] = uvY
+    this.warp[2] = strength
+  }
+
   setContentRect(xCss, yCss, wCss, hCss, dpr) {
     const w = Math.round(wCss * dpr),
       h = Math.round(hCss * dpr)
