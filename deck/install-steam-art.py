@@ -147,19 +147,20 @@ def shortcut_appid(entry):
     return derive_appid(exe[2], name[2])
 
 
-def matches(entry, launcher, name):
+def matches(entry, needles, name):
     """Is this entry ours?
 
-    Compared loosely on purpose. steamos-add-to-steam and this script do not
-    necessarily store Exe the same way - quoting differs, and it may point at the
-    desktop entry rather than the launcher - so an exact string compare will miss a
+    Compared loosely on purpose. Steam, steamos-add-to-steam and this script do not
+    store Exe the same way - quoting differs, it may point at a desktop entry or a
+    macOS .app rather than the launcher itself - so an exact string compare misses a
     shortcut that is already there and a second one gets created beside it.
     """
     exe = field(entry, "exe")
     appname = field(entry, "AppName")
     if exe:
-        if launcher in exe[2] or os.path.basename(launcher) in exe[2]:
-            return True
+        for needle in needles:
+            if needle and (needle in exe[2] or os.path.basename(needle) in exe[2]):
+                return True
     if name and appname and appname[2].strip().casefold() == name.strip().casefold():
         return True
     return False
@@ -193,7 +194,7 @@ def shortcut_files():
     return sorted(found)
 
 
-def shortcut_exists(launcher, name):
+def shortcut_exists(needles, name):
     """Is the shortcut on disk yet? Used while waiting for Steam to write it out."""
     for path in shortcut_files():
         try:
@@ -201,7 +202,7 @@ def shortcut_exists(launcher, name):
         except (ValueError, IndexError, OSError):
             continue
         shortcuts = field(items, "shortcuts")
-        if shortcuts and any(matches(e, launcher, name) for _, _, e in shortcuts[2]):
+        if shortcuts and any(matches(e, needles, name) for _, _, e in shortcuts[2]):
             return True
     return False
 
@@ -215,7 +216,13 @@ def steam_is_running():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--launcher", required=True, help="path stored in the shortcut's Exe")
+    parser.add_argument("--launcher", required=True, help="the game's launcher script")
+    parser.add_argument(
+        "--exe",
+        default=None,
+        help="what to store as the shortcut's Exe; defaults to the launcher. On macOS "
+        "this is the .app bundle, because Steam will not take a bare script",
+    )
     parser.add_argument("--art", required=True, help="folder holding the captured PNGs")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
@@ -240,18 +247,20 @@ def main():
     args = parser.parse_args()
 
     launcher = os.path.abspath(args.launcher)
+    exe_path = os.path.abspath(args.exe) if args.exe else launcher
+    needles = [launcher, exe_path]
     art_dir = os.path.abspath(args.art)
     icon = os.path.join(art_dir, "icon.png")
 
     # Steam holds shortcuts.vdf in memory and writes it out in its own time, so a
     # shortcut it has just accepted is not on disk immediately. Waiting is what
     # turns "add it, then run this again" into one command.
-    if args.wait and not args.list and not shortcut_exists(launcher, args.name):
+    if args.wait and not args.list and not shortcut_exists(needles, args.name):
         deadline = time.monotonic() + args.wait
         print(f"  waiting up to {args.wait:.0f}s for Steam to write the shortcut out")
         while time.monotonic() < deadline:
             time.sleep(1)
-            if shortcut_exists(launcher, args.name):
+            if shortcut_exists(needles, args.name):
                 break
 
     files = shortcut_files()
@@ -303,7 +312,7 @@ def main():
             if not shortcuts[2]:
                 print("    no shortcuts")
             for _, index, entry in shortcuts[2]:
-                mark = " <- matches this game" if matches(entry, launcher, args.name) else ""
+                mark = " <- matches this game" if matches(entry, needles, args.name) else ""
                 print(f"    [{index}]{mark}")
                 print(describe(entry))
             touched += 1
@@ -312,7 +321,7 @@ def main():
         if args.remove:
             keep, dropped = [], []
             for item in shortcuts[2]:
-                (dropped if matches(item[2], launcher, args.name) else keep).append(item)
+                (dropped if matches(item[2], needles, args.name) else keep).append(item)
             if not dropped:
                 print(f"  nothing matching in {path}")
                 continue
@@ -345,7 +354,7 @@ def main():
         # it to Steam is what lets the artwork be attached in the same pass: Steam
         # keeps shortcuts.vdf in memory and only writes it out when it exits, so a
         # shortcut it has just accepted is not yet anywhere this can find it.
-        present = any(matches(entry, launcher, args.name) for _, _, entry in shortcuts[2])
+        present = any(matches(entry, needles, args.name) for _, _, entry in shortcuts[2])
         if not present and args.add_if_missing:
             if running:
                 print("  Steam is running, so the shortcut cannot be written; close it first")
@@ -353,7 +362,7 @@ def main():
             if not faithful:
                 print(f"  not touching {path}: it did not round-trip cleanly")
                 continue
-            exe = f'"{launcher}"'
+            exe = f'"{exe_path}"'
             appid = derive_appid(exe, args.name)
             entry = new_shortcut(
                 appid - 2**32,
@@ -370,7 +379,7 @@ def main():
                 changed = True
                 print(f'  created shortcut "{args.name}", appid {appid}')
         for _, _, entry in shortcuts[2]:
-            if not matches(entry, launcher, args.name):
+            if not matches(entry, needles, args.name):
                 continue
             appid = shortcut_appid(entry)
             if appid is None:
@@ -393,15 +402,28 @@ def main():
                 print(f"    {source} -> grid/{os.path.basename(dst)}")
             touched += 1
 
-            # The library icon comes from the shortcut record, not from grid/.
+            # The library icon comes from the shortcut record, not from grid/. A
+            # record Steam made for itself can have no icon key at all, so it may
+            # need adding rather than replacing.
             current = field(entry, "icon")
-            if os.path.exists(icon) and current and current[2] != icon:
+            if os.path.exists(icon) and (current is None or current[2] != icon):
                 if not faithful:
                     print("    leaving the icon alone: this file did not round-trip cleanly")
                 elif running:
                     print("    leaving the icon alone: close Steam and run this again")
                 elif args.dry_run:
-                    print("    would set the icon on the shortcut")
+                    verb = "add" if current is None else "set"
+                    print(f"    would {verb} the icon on the shortcut")
+                elif current is None:
+                    # after StartDir if there is one, so the record reads normally
+                    at = len(entry)
+                    for index, (_, key, _) in enumerate(entry):
+                        if key.lower() == "startdir":
+                            at = index + 1
+                            break
+                    entry.insert(at, (STR, "icon", icon))
+                    changed = True
+                    print("    icon added to the shortcut, which had none")
                 else:
                     for index, (kind, key, value) in enumerate(entry):
                         if key.lower() == "icon":
