@@ -11,6 +11,7 @@
 // the public Game API so the whole definition stays in one place.
 
 import { normalize, randRange, subtract } from "./math.js"
+import { PALETTE } from "./palette.js"
 
 export const VIEW_W = 1024
 export const VIEW_H = 640
@@ -22,7 +23,7 @@ export const TAU = Math.PI * 2
 export const ARENA = { cx: VIEW_W / 2, cy: VIEW_H / 2, radius: 860 }
 export const MONO_FONT = "ui-monospace,Menlo,monospace"
 export const DEV_VISIBLE = true
-export const SHIELD_SPARK = "#9fe8ff" // ring colour when a shield takes a hit
+export const SHIELD_SPARK = PALETTE.shield.spark // ring colour when a shield takes a hit
 
 export const CONFIG = {
   // player movement / feel
@@ -89,7 +90,7 @@ export const WEAPON_TYPES = {
     energy: 6,
     reload: 2.4,
     speed: CONFIG.BULLET_SPEED,
-    colour: "#ffb14b",
+    colour: PALETTE.weapon.gun,
   },
   autocannon: {
     kind: "projectile",
@@ -97,7 +98,7 @@ export const WEAPON_TYPES = {
     energy: 8,
     reload: [1.1, 1.9], // range so multiple turrets drift out of sync
     speed: CONFIG.BULLET_SPEED,
-    colour: "#ffb14b",
+    colour: PALETTE.weapon.gun,
   },
   minerLaser: {
     kind: "beam",
@@ -107,7 +108,7 @@ export const WEAPON_TYPES = {
     length: [320, 520],
     width: 2.4,
     glow: 16,
-    colour: "#ffb060",
+    colour: PALETTE.rival.minerBeam,
   },
   cannonLaser: {
     kind: "beam",
@@ -119,7 +120,7 @@ export const WEAPON_TYPES = {
     glow: 30,
     arc: 0.42,
     chargeTime: 0.9, // telegraphs with a growing glow before firing
-    colour: "#ff4d6d",
+    colour: PALETTE.rival.cannonBeam,
   },
   defenseLaser: {
     kind: "beam",
@@ -129,13 +130,13 @@ export const WEAPON_TYPES = {
     range: 230,
     width: 2.4,
     glow: 14,
-    colour: "#9ff5c8",
+    colour: PALETTE.player.turret,
   },
   playerLaser: {
     kind: "beam",
     chargeable: true,
     damage: 38,
-    colour: "#eaf4ff",
+    colour: PALETTE.player.beam,
     width: 2.4,
     glow: 16,
     reload: 0.12,
@@ -160,7 +161,7 @@ export const SHIELD_TYPES = {
     blocksLaser: true,
     blocksProjectile: true,
     sides: 6,
-    colour: "#9fe8ff",
+    colour: PALETTE.shield.standard,
     dropAt: 0.18,
     recoverAt: 0.6,
     recoverDelay: 3,
@@ -170,7 +171,7 @@ export const SHIELD_TYPES = {
     blocksLaser: false,
     blocksProjectile: true,
     sides: 6,
-    colour: "#b8f0ff",
+    colour: PALETTE.shield.deflector,
     dropAt: 0.18,
     recoverAt: 0.55,
     recoverDelay: 2,
@@ -180,7 +181,7 @@ export const SHIELD_TYPES = {
     blocksLaser: true,
     blocksProjectile: true,
     sides: 6,
-    colour: "#9fe8ff",
+    colour: PALETTE.shield.standard,
     dropAt: 0.15,
     recoverAt: 0.35,
     recoverDelay: 1.2,
@@ -215,7 +216,7 @@ export const SHIP_TYPES = {
       [-0.5, 0],
       [-0.9, 1.0],
     ],
-    colour: "#ff9a3c",
+    colour: PALETTE.rival.hull,
     size: 12,
     accel: 140,
     maxSpeed: 190,
@@ -242,7 +243,7 @@ export const SHIP_TYPES = {
   },
   frigate: {
     outline: FRIGATE_SHAPE,
-    colour: "#ff8a3c",
+    colour: PALETTE.rival.frigateHull,
     size: 40,
     accel: 32,
     maxSpeed: 44,
@@ -283,7 +284,7 @@ export const PLAYER_TYPE = {
     [-0.4, 0],
     [-0.8, 0.85],
   ],
-  colour: "#5fd7ff",
+  colour: PALETTE.player.hull,
   size: 13,
   hardpoints: [
     { local: [1.4, 0], role: "nose" },
@@ -311,7 +312,7 @@ export const POWERUP_TYPES = {
   repel: {
     label: "REPEL",
     icon: "R",
-    colour: "#ff6bd0",
+    colour: PALETTE.powerup.repel,
     impulse: 300,
     apply: (game, player, type) => {
       for (const asteroid of game.asteroids) {
@@ -333,7 +334,7 @@ export const POWERUP_TYPES = {
   refuel: {
     label: "REFUEL",
     icon: "F",
-    colour: "#57e39a",
+    colour: PALETTE.powerup.refuel,
     apply: (game, player, type) => {
       player.energy = game.maxEnergy()
       game.ring(player.x, player.y, 24, type.colour, 150, 0.6)
@@ -343,7 +344,7 @@ export const POWERUP_TYPES = {
     label: "BOOSTER",
     short: "BOOST",
     icon: "B",
-    colour: "#ffcf5c",
+    colour: PALETTE.powerup.booster,
     seconds: 6.5,
     beamLengthMult: 1.6, // charged shots reach further and cost nothing
     apply: (game, player, type) => {
@@ -354,7 +355,7 @@ export const POWERUP_TYPES = {
     label: "MULTI-LASER",
     short: "MULTI",
     icon: "L",
-    colour: "#5fd7ff",
+    colour: PALETTE.powerup.multi,
     seconds: 9,
     beamOffsets: [-28, 0, 28], // parallel beams either side of the nose
   },
@@ -362,7 +363,7 @@ export const POWERUP_TYPES = {
     label: "ORE MAGNET",
     short: "MAGNET",
     icon: "M",
-    colour: "#b38bff",
+    colour: PALETTE.powerup.magnet,
     seconds: 6.5,
     pull: 260,
   },

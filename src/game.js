@@ -33,6 +33,7 @@ import {
   mulberry32,
 } from "./math.js"
 import { Sound } from "./audio.js"
+import { PALETTE } from "./palette.js"
 import { loadBest, saveBest } from "./persistence.js"
 import { Asteroid, Ore, Powerup, PlayerShip, RivalShip, makeAsteroidPolygon } from "./entities.js"
 
@@ -280,7 +281,7 @@ export class Game {
         asteroid.vy + randRange(-70, 70),
       )
     }
-    this.burst(asteroid.center.x, asteroid.center.y, randInt(8, 16), "#ff8ae6", 40, 170, 0.7)
+    this.burst(asteroid.center.x, asteroid.center.y, randInt(8, 16), PALETTE.ore.body, 40, 170, 0.7)
     Sound.shatter()
     this.stats.mined++
   }
@@ -391,13 +392,21 @@ export class Game {
             },
           ],
           age: 0,
-          color: "#ff8af0",
+          color: PALETTE.ore.shatterBeam,
           width: 5.5,
           glow: 26,
           life: 0.5,
         })
-        this.burst(asteroid.center.x, asteroid.center.y, randInt(14, 22), "#ff8af0", 60, 240, 0.7)
-        this.ring(asteroid.center.x, asteroid.center.y, 16, "#ffffff", 220, 0.5)
+        this.burst(
+          asteroid.center.x,
+          asteroid.center.y,
+          randInt(14, 22),
+          PALETTE.ore.shatterBeam,
+          60,
+          240,
+          0.7,
+        )
+        this.ring(asteroid.center.x, asteroid.center.y, 16, PALETTE.ore.flash, 220, 0.5)
         Sound.fire()
         continue
       }
@@ -410,7 +419,15 @@ export class Game {
       for (const f of frags) {
         survivors.push(f)
       }
-      this.burst(asteroid.center.x, asteroid.center.y, randInt(16, 26), "#dbeeff", 50, 210, 0.45)
+      this.burst(
+        asteroid.center.x,
+        asteroid.center.y,
+        randInt(16, 26),
+        PALETTE.rock.cut,
+        50,
+        210,
+        0.45,
+      )
       if (attacker === this.player) {
         this.score += CONFIG.SLICE_SCORE
       }
@@ -474,8 +491,8 @@ export class Game {
       // is ambiguous once a concave cut yields more than two pieces)
       const mine = guns.filter((g) => pointInPolygon(g, partVerts))
       // burning debris at the cut end
-      this.burst(centre.x, centre.y, randInt(10, 16), "#ff7a4a", 40, 190, 0.75)
-      this.burst(centre.x, centre.y, randInt(6, 10), "#ffd36a", 30, 130, 0.5)
+      this.burst(centre.x, centre.y, randInt(10, 16), PALETTE.fx.fire, 40, 190, 0.75)
+      this.burst(centre.x, centre.y, randInt(6, 10), PALETTE.fx.ember, 30, 130, 0.5)
       // a gunless sliver just becomes ore; a piece with turrets survives as a
       // gun-rock so it can keep firing, even if small
       if (area < CONFIG.AST_MIN_AREA && mine.length === 0) {
@@ -501,7 +518,7 @@ export class Game {
         }),
       )
     }
-    this.ring(ship.x, ship.y, 16, "#ffcf5c", 190, 0.6)
+    this.ring(ship.x, ship.y, 16, PALETTE.fx.flash, 190, 0.6)
     this.screenShake = Math.max(this.screenShake, 9)
     Sound.explode()
     if (fromPlayer) {
@@ -700,8 +717,8 @@ export class Game {
   playerLoseLife() {
     this.lives--
     Sound.explode()
-    this.burst(this.player.x, this.player.y, 40, "#5fd7ff", 60, 260, 1.0)
-    this.ring(this.player.x, this.player.y, 20, "#eaf4ff", 200, 0.8)
+    this.burst(this.player.x, this.player.y, 40, PALETTE.player.hull, 60, 260, 1.0)
+    this.ring(this.player.x, this.player.y, 20, PALETTE.text.bright, 200, 0.8)
     this.screenShake = 14
     // count this hit as damage for the summary
     this.stats.damage += 1
@@ -1059,7 +1076,7 @@ export class Game {
                 (a.center.x + b.center.x) / 2,
                 (a.center.y + b.center.y) / 2,
                 3,
-                "#9fc0ff",
+                PALETTE.rock.impact,
                 30,
                 90,
                 0.3,

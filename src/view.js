@@ -8,6 +8,7 @@
 import { VIEW_W, VIEW_H, TAU, ARENA, SHOP, SHOP_DESC, POWERUP_TYPES } from "./config.js"
 import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
+import { PALETTE } from "./palette.js"
 
 // Clip the infinite line (px,py)+s*(ux,uy) to the rect; returns the [s0,s1]
 // range inside it, or null. Used to bound the out-of-bounds hatch to the view.
@@ -130,7 +131,7 @@ export class GameView {
       cam = this.#cameras(game)
     const c = this.#center(game)
     r.beginFrame(game.gameTime)
-    r.clearFrame("#02040a")
+    r.clearFrame(PALETTE.space)
 
     // far background: nebula + planets (softened for depth of field)
     const neb = game.nebula
@@ -224,7 +225,7 @@ export class GameView {
     }
     for (const d of game.dust) {
       r.line(d.x, d.y, d.x + pvx * d.z * 0.03, d.y + pvy * d.z * 0.03, {
-        color: "#cfe0ff",
+        color: PALETTE.fx.dust,
         width: 1.1,
         glow: 4,
         alpha: 0.22 * d.z * fade,
@@ -286,7 +287,7 @@ export class GameView {
         dmax = Math.max(dmax, d)
       }
       const emit = (sx, sy, ex, ey) =>
-        r.line(sx, sy, ex, ey, { color: "#ff3b52", width: 1.3, glow: 4, alpha: 0.45 })
+        r.line(sx, sy, ex, ey, { color: PALETTE.arena.boundary, width: 1.3, glow: 4, alpha: 0.45 })
       for (let d = Math.ceil(dmin / spacing) * spacing; d <= dmax; d += spacing) {
         const p0x = nx * d,
           p0y = ny * d
@@ -315,7 +316,13 @@ export class GameView {
       ring.push({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius })
     }
     const pulse = 0.75 + 0.25 * Math.sin(game.gameTime * 3)
-    r.strokePoly(ring, { color: "#ff3b52", width: 2, glow: 16, alpha: 0.85 * pulse, closed: true })
+    r.strokePoly(ring, {
+      color: PALETTE.arena.boundary,
+      width: 2,
+      glow: 16,
+      alpha: 0.85 * pulse,
+      closed: true,
+    })
   }
 
   // Off-screen asteroids and rivals as direction arrows around the screen edge.
@@ -347,14 +354,14 @@ export class GameView {
       r.strokePoly([tip, la, rb], { color, width: 1.6, glow: 8, alpha, closed: true })
     }
     for (const chunk of game.oreChunks) {
-      mark(chunk.x, chunk.y, "#ff8ae6", 6)
+      mark(chunk.x, chunk.y, PALETTE.ore.body, 6)
     }
     for (const a of game.asteroids) {
-      mark(a.center.x, a.center.y, a.explosive ? "#ff6b52" : "#9fd8ff")
+      mark(a.center.x, a.center.y, a.explosive ? PALETTE.rock.explosive : PALETTE.rock.gun)
     }
     for (const rv of game.rivals) {
       if (!rv.dead) {
-        mark(rv.x, rv.y, "#ff9a3c")
+        mark(rv.x, rv.y, PALETTE.rival.hull)
       }
     }
   }
@@ -398,21 +405,21 @@ export class GameView {
     r.text(`SCORE ${String(game.score).padStart(6, "0")}`, 18, 30, {
       size: 18,
       bold: true,
-      color: "#eaf4ff",
+      color: PALETTE.text.bright,
     })
     r.text(`SECTOR ${game.level}   ROCKS ${game.asteroids.length}`, 18, 48, {
       size: 12,
-      color: "#9fc0ff",
+      color: PALETTE.text.dim,
     })
-    r.text(`ORE ${game.oreBalance}`, 18, 64, { size: 12, color: "#ffcf5c" })
+    r.text(`ORE ${game.oreBalance}`, 18, 64, { size: 12, color: PALETTE.fx.flash })
     if (game.plan && game.plan.rivals > 0) {
       r.text(`RIVAL ${String(game.rivalScore).padStart(6, "0")}`, 18, 80, {
         size: 12,
-        color: "#ff9a3c",
+        color: PALETTE.rival.hull,
       })
     }
 
-    r.text("LIVES", VIEW_W - 18, 24, { size: 12, color: "#5fd7ff", align: "right" })
+    r.text("LIVES", VIEW_W - 18, 24, { size: 12, color: PALETTE.player.hull, align: "right" })
     for (let i = 0; i < game.lives; i++) {
       const x = VIEW_W - 24 - i * 22,
         y = 40
@@ -423,7 +430,7 @@ export class GameView {
           { x, y: y + 2 },
           { x: x + 8, y: y + 5 },
         ],
-        { color: "#5fd7ff", width: 1.5, glow: 6 },
+        { color: PALETTE.player.hull, width: 1.5, glow: 6 },
       )
     }
 
@@ -431,7 +438,7 @@ export class GameView {
       barX = 18,
       barY = VIEW_H - 26,
       barH = 12
-    r.rect(barX, barY, barW, barH, { stroke: "#1c3050", width: 1 })
+    r.rect(barX, barY, barW, barH, { stroke: PALETTE.ui.edge, width: 1 })
     const fraction = game.player ? game.player.energy / game.maxEnergy() : 0
     const low = fraction < 0.22
     let fillW = barW * fraction
@@ -442,19 +449,19 @@ export class GameView {
       game.player && game.player.buffTime("booster") > 0
         ? POWERUP_TYPES.booster.colour
         : low
-          ? "#ff5b5b"
-          : "#5fd7ff"
+          ? PALETTE.ui.warn
+          : PALETTE.player.hull
     r.rect(barX + 1, barY + 1, Math.max(0, fillW - 2), barH - 2, { fill: barColour, glow: 10 })
-    r.text("ENERGY", barX + 2, barY - 4, { size: 9, color: "#7fa0c8" })
+    r.text("ENERGY", barX + 2, barY - 4, { size: 9, color: PALETTE.text.faint })
 
     // Shield: mark the offline / recovery energy levels and show online state.
     const shield = game.player ? game.player.shieldModule() : null
     if (shield) {
       const dropX = barX + barW * shield.type.dropAt
       const recoverX = barX + barW * shield.type.recoverAt
-      r.line(dropX, barY - 2, dropX, barY + barH + 2, { color: "#ff5b5b", width: 1 }) // offline level
+      r.line(dropX, barY - 2, dropX, barY + barH + 2, { color: PALETTE.ui.warn, width: 1 }) // offline level
       r.line(recoverX, barY - 2, recoverX, barY + barH + 2, {
-        color: "#9fe8ff",
+        color: PALETTE.shield.spark,
         width: 1,
         alpha: 0.55,
       }) // recovery level
@@ -463,7 +470,7 @@ export class GameView {
       const offline = !shield.up || game.player.energy <= shield.type.dropAt * game.player.energyMax
       r.text(offline ? "SHIELD OFFLINE" : "SHIELD", barX + 46, barY - 4, {
         size: 9,
-        color: offline ? "#ff5b5b" : "#9fe8ff",
+        color: offline ? PALETTE.ui.warn : PALETTE.shield.spark,
       }) // beside ENERGY, clear of the powerup slots at the right edge
     }
 
@@ -476,8 +483,11 @@ export class GameView {
           sy = barY - 4 - size,
           item = game.player.items[i]
         const spec = item ? POWERUP_TYPES[item] : null
-        r.rect(sx, sy, size, size, { stroke: spec ? spec.colour : "#26436b", width: 1.2 })
-        r.text(String(i + 1), sx + 2, sy + 9, { size: 8, color: "#5f79a6" })
+        r.rect(sx, sy, size, size, {
+          stroke: spec ? spec.colour : PALETTE.ui.slotEmpty,
+          width: 1.2,
+        })
+        r.text(String(i + 1), sx + 2, sy + 9, { size: 8, color: PALETTE.text.muted })
         if (spec) {
           r.text(spec.icon, sx + size / 2, sy + size / 2 + 5, {
             size: 12,
@@ -505,7 +515,7 @@ export class GameView {
     if (game.toast) {
       r.text(game.toast.text, 18, VIEW_H - 72, {
         size: 12,
-        color: "#ffbdee",
+        color: PALETTE.ore.spark,
         glow: 8,
         alpha: clamp(game.toast.life / 0.6, 0, 1),
       })
@@ -516,7 +526,7 @@ export class GameView {
       r.text("OUT OF BOUNDS", VIEW_W / 2, VIEW_H / 2 - 42, {
         size: 14,
         bold: true,
-        color: "#ff5b5b",
+        color: PALETTE.ui.warn,
         align: "center",
         glow: 10,
         alpha: 0.55 + 0.45 * Math.sin(game.gameTime * 9),
@@ -527,7 +537,7 @@ export class GameView {
       r.text("SECTOR CLEARED", VIEW_W / 2, VIEW_H / 2, {
         size: 26,
         bold: true,
-        color: "#57e39a",
+        color: PALETTE.ui.good,
         align: "center",
         glow: 14,
       })
@@ -551,38 +561,38 @@ export class GameView {
       VIEW_W / 2,
       VIEW_H / 2 - 92,
       74,
-      (ch, i) => (i >= 9 ? "#ff7fdc" : "#7fe0ff"),
+      (ch, i) => (i >= 9 ? PALETTE.ui.accentAlt : PALETTE.ui.accent),
       18,
     )
     r.text(
       "Galactic Extraction Of Minerals, Europium, Thallium, Rare-earths & Yttrium",
       VIEW_W / 2,
       VIEW_H / 2 - 8,
-      { size: 15, color: "#ffcf5c", align: "center" },
+      { size: 15, color: PALETTE.fx.flash, align: "center" },
     )
     r.text(
       "Slice asteroids, mine ore, balance your thrusters, shields and laser carefully!",
       VIEW_W / 2,
       VIEW_H / 2 + 30,
-      { size: 13, color: "#9fc0ff", align: "center" },
+      { size: 13, color: PALETTE.text.dim, align: "center" },
     )
     r.text(
       "Clear every rock in the sector. Rinse. Repeat. You've got company.",
       VIEW_W / 2,
       VIEW_H / 2 + 52,
-      { size: 13, color: "#9fc0ff", align: "center" },
+      { size: 13, color: PALETTE.text.dim, align: "center" },
     )
     r.text(
       `BEST   SCORE ${game.best.score}    SECTOR ${game.best.sector}`,
       VIEW_W / 2,
       VIEW_H / 2 + 82,
-      { size: 12, color: "#7fe0ff", align: "center" },
+      { size: 12, color: PALETTE.ui.accent, align: "center" },
     )
     if (Math.floor(game.gameTime * 2) % 2 === 0) {
       r.text("PRESS ENTER", VIEW_W / 2, VIEW_H / 2 + 114, {
         size: 18,
         bold: true,
-        color: "#57e39a",
+        color: PALETTE.ui.good,
         align: "center",
         glow: 14,
       })
@@ -599,7 +609,7 @@ export class GameView {
     r.text(`SECTOR ${d.level} CLEARED`, VIEW_W / 2, 58, {
       size: 30,
       bold: true,
-      color: "#7ff0b8",
+      color: PALETTE.ui.goodBright,
       align: "center",
       glow: 16,
     })
@@ -607,12 +617,12 @@ export class GameView {
       `accuracy ${Math.round(d.accuracy * 100)}%    mined ${d.mined}    ore this run ${d.ore}    damage ${d.damage}    bonus +${d.totalBonus}`,
       VIEW_W / 2,
       82,
-      { size: 12, color: "#9fc0ff", align: "center" },
+      { size: 12, color: PALETTE.text.dim, align: "center" },
     )
     r.text(`ORE  ${game.oreBalance}`, VIEW_W / 2, 112, {
       size: 20,
       bold: true,
-      color: "#ffcf5c",
+      color: PALETTE.fx.flash,
       align: "center",
       glow: 12,
     })
@@ -636,12 +646,17 @@ export class GameView {
       r.text(`${selected ? "> " : "  "}${item.name}`, leftX, y, {
         size: 15,
         bold: selected,
-        color: maxed ? "#57e39a" : selected ? "#eaf4ff" : "#bcd0ee",
+        color: maxed ? PALETTE.ui.good : selected ? PALETTE.text.bright : PALETTE.text.normal,
       })
-      r.text(item.info(game), leftX + 206, y, { size: 11, color: "#7fa0c8" })
+      r.text(item.info(game), leftX + 206, y, { size: 11, color: PALETTE.text.faint })
       r.text(maxed ? "MAX" : game.devMode ? "FREE" : `${cost} ore`, rightX, y, {
         size: 14,
-        color: maxed ? "#57e39a" : game.devMode ? "#57e39a" : affordable ? "#ffcf5c" : "#5a6f92",
+        color:
+          maxed || game.devMode
+            ? PALETTE.ui.good
+            : affordable
+              ? PALETTE.fx.flash
+              : PALETTE.text.disabled,
         align: "right",
       })
     }
@@ -650,7 +665,7 @@ export class GameView {
         SHOP_DESC[SHOP[game.shopSelection].id],
         VIEW_W / 2,
         top + SHOP.length * rowHeight + 8,
-        { size: 12, color: "#8fb2dd", align: "center" },
+        { size: 12, color: PALETTE.text.soft, align: "center" },
       )
     }
 
@@ -663,11 +678,17 @@ export class GameView {
       `${launchSelected ? "> " : ""}LAUNCH TO SECTOR ${game.shopSector}`,
       VIEW_W / 2,
       launchY,
-      { size: 18, bold: true, color: "#7ff0b8", align: "center", glow: launchSelected ? 16 : 8 },
+      {
+        size: 18,
+        bold: true,
+        color: PALETTE.ui.goodBright,
+        align: "center",
+        glow: launchSelected ? 16 : 8,
+      },
     )
     r.text("UP / DOWN select      ENTER buy or launch", VIEW_W / 2, launchY + 26, {
       size: 11,
-      color: "#5f79a6",
+      color: PALETTE.text.muted,
       align: "center",
     })
     if (game.devMode) {
@@ -675,7 +696,7 @@ export class GameView {
         "DEV   LEFT / RIGHT choose sector (hold SHIFT for x10)   -   purchases are free",
         VIEW_W / 2,
         launchY + 44,
-        { size: 11, color: "#ff7fdc", align: "center" },
+        { size: 11, color: PALETTE.ui.accentAlt, align: "center" },
       )
     }
   }
@@ -686,19 +707,19 @@ export class GameView {
     r.text("SHIP LOST", VIEW_W / 2, VIEW_H / 2 - 30, {
       size: 56,
       bold: true,
-      color: "#ff8080",
+      color: PALETTE.ui.lost,
       align: "center",
       glow: 20,
     })
     r.text(`REACHED SECTOR ${game.level}   SCORE ${game.score}`, VIEW_W / 2, VIEW_H / 2 + 14, {
       size: 18,
-      color: "#eaf4ff",
+      color: PALETTE.text.bright,
       align: "center",
     })
     if (game.plan && game.plan.rivals > 0) {
       r.text(`RIVAL HAUL  ${game.rivalScore}`, VIEW_W / 2, VIEW_H / 2 + 38, {
         size: 14,
-        color: "#ff9a3c",
+        color: PALETTE.rival.hull,
         align: "center",
       })
     }
@@ -707,12 +728,12 @@ export class GameView {
       `${newBest ? "NEW BEST   " : "BEST   "}SCORE ${game.best.score}    SECTOR ${game.best.sector}`,
       VIEW_W / 2,
       VIEW_H / 2 + 58,
-      { size: 12, color: newBest ? "#7ff0b8" : "#7fe0ff", align: "center" },
+      { size: 12, color: newBest ? PALETTE.ui.goodBright : PALETTE.ui.accent, align: "center" },
     )
     if (Math.floor(game.gameTime * 2) % 2 === 0) {
       r.text("PRESS ENTER TO RETRY", VIEW_W / 2, VIEW_H / 2 + 82, {
         size: 13,
-        color: "#9fc0ff",
+        color: PALETTE.text.dim,
         align: "center",
       })
     }
@@ -724,7 +745,7 @@ export class GameView {
     r.text("PAUSED", VIEW_W / 2, VIEW_H / 2, {
       size: 40,
       bold: true,
-      color: "#eaf4ff",
+      color: PALETTE.text.bright,
       align: "center",
       glow: 16,
     })

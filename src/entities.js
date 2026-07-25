@@ -39,6 +39,7 @@ import {
   SHIELD_SPARK,
 } from "./config.js"
 import { Sound } from "./audio.js"
+import { PALETTE } from "./palette.js"
 
 const SINGLE_BEAM_OFFSETS = [0] // the player's laser without the multi powerup
 
@@ -399,7 +400,7 @@ export class Shield {
         arc.push({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius })
       }
       renderer.strokePoly(arc, {
-        color: "#ffffff",
+        color: PALETTE.shield.flash,
         width: 2 + 1.5 * f,
         glow: 16,
         alpha: clamp(0.9 * f, 0, 1),
@@ -436,7 +437,7 @@ export class Projectile extends Entity {
       Math.hypot(this.x - player.x, this.y - player.y) < player.radius + 3
     ) {
       this.dead = true
-      game.burst(this.x, this.y, 8, "#ff8a5a", 40, 140, 0.4)
+      game.burst(this.x, this.y, 8, PALETTE.weapon.bulletImpact, 40, 140, 0.4)
       game.screenShake = Math.max(game.screenShake, 5)
       Sound.hit()
       player.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
@@ -448,7 +449,7 @@ export class Projectile extends Entity {
       }
       if (pointInPolygon(this, rival.worldOutline())) {
         this.dead = true
-        game.burst(this.x, this.y, 6, "#ff9a3c", 40, 130, 0.4)
+        game.burst(this.x, this.y, 6, PALETTE.rival.hull, 40, 130, 0.4)
         rival.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
         return
       }
@@ -459,7 +460,7 @@ export class Projectile extends Entity {
       }
       if (pointInPolygon(this, asteroid.vertices)) {
         this.dead = true
-        game.burst(this.x, this.y, 5, "#9fc0ff", 30, 110, 0.3)
+        game.burst(this.x, this.y, 5, PALETTE.rock.impact, 30, 110, 0.3)
         asteroid.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
         return
       }
@@ -468,7 +469,7 @@ export class Projectile extends Entity {
 
   draw(renderer) {
     renderer.line(this.x, this.y, this.x - this.vx * 0.02, this.y - this.vy * 0.02, {
-      color: "#ffb14b",
+      color: PALETTE.weapon.gun,
       width: 2,
       glow: 10,
       cap: "round",
@@ -484,7 +485,7 @@ export class Ship extends Entity {
     super(x, y)
     this.size = 12
     this.outlineLocal = []
-    this.colour = "#ffffff"
+    this.colour = PALETTE.white
   }
 
   buildHardpoints(list) {
@@ -566,7 +567,7 @@ export class Ship extends Entity {
         )
       }
       if (m.type.kind === "projectile") {
-        renderer.circle(w.x, w.y, 3, { stroke: "#ffb14b", width: 1.4, glow: 8 })
+        renderer.circle(w.x, w.y, 3, { stroke: PALETTE.weapon.gun, width: 1.4, glow: 8 })
       } else if (hp.role === "nose") {
         renderer.line(w.x, w.y, w.x + Math.cos(this.angle) * 8, w.y + Math.sin(this.angle) * 8, {
           color: m.type.colour,
@@ -751,7 +752,7 @@ export class PlayerShip extends Ship {
         Math.cos(back) * randRange(60, 140) + randRange(-30, 30),
         Math.sin(back) * randRange(60, 140) + randRange(-30, 30),
         0.35,
-        "#7fd8ff",
+        PALETTE.player.exhaust,
       )
       // exhaust wash gently shoves rocks caught behind the thruster away
       const bx = Math.cos(back),
@@ -790,7 +791,7 @@ export class PlayerShip extends Ship {
           Math.cos(this.angle) * randRange(50, 110) + randRange(-25, 25),
           Math.sin(this.angle) * randRange(50, 110) + randRange(-25, 25),
           0.3,
-          "#aee6ff",
+          PALETTE.player.exhaustFlame,
         )
       }
     }
@@ -852,7 +853,7 @@ export class PlayerShip extends Ship {
         game.stats.ore++
         game.oreBalance++
         this.energy = Math.min(this.energyMax, this.energy + CONFIG.ORE_ENERGY)
-        game.burst(chunk.x, chunk.y, 5, "#ffbdee", 20, 70, 0.4)
+        game.burst(chunk.x, chunk.y, 5, PALETTE.ore.spark, 20, 70, 0.4)
         Sound.collect()
       }
     }
@@ -908,7 +909,7 @@ export class PlayerShip extends Ship {
       if (this.invincible <= 0 && this.buffTime("booster") <= 0) {
         game.screenShake = Math.max(game.screenShake, 3)
         if (this.fxCooldown <= 0) {
-          game.burst(this.x, this.y, 4, "#ff6b6b", 30, 90, 0.35)
+          game.burst(this.x, this.y, 4, PALETTE.player.lowEnergy, 30, 90, 0.35)
         }
         // flash the shield on the side facing the rock
         const contact = { x: this.x - ux * this.radius, y: this.y - uy * this.radius }
@@ -926,7 +927,7 @@ export class PlayerShip extends Ship {
     const colour = boosted
       ? POWERUP_TYPES.booster.colour
       : this.energy < this.energyMax * 0.22
-        ? "#ff6b6b"
+        ? PALETTE.player.lowEnergy
         : this.colour
 
     if (this.thrusting) {
@@ -936,7 +937,12 @@ export class PlayerShip extends Ship {
         this.#toWorld(-this.radius * (1.1 + flame), 0),
         this.#toWorld(-this.radius * 0.7, 4),
       ]
-      renderer.strokePoly(pts, { color: "#aee6ff", width: 1.4, glow: 10, closed: false })
+      renderer.strokePoly(pts, {
+        color: PALETTE.player.exhaustFlame,
+        width: 1.4,
+        glow: 10,
+        closed: false,
+      })
     }
     renderer.strokePoly(this.worldOutline(), { color: colour, width: 1.9, glow: 14 })
     if (boosted) {
@@ -958,9 +964,9 @@ export class PlayerShip extends Ship {
 
     if (game.upgrades.turret) {
       const aim = this.turretAim || 0
-      renderer.circle(this.x, this.y, 3.4, { stroke: "#9ff5c8", width: 1.6, glow: 8 })
+      renderer.circle(this.x, this.y, 3.4, { stroke: PALETTE.player.turret, width: 1.6, glow: 8 })
       renderer.line(this.x, this.y, this.x + Math.cos(aim) * 12, this.y + Math.sin(aim) * 12, {
-        color: "#9ff5c8",
+        color: PALETTE.player.turret,
         width: 1.6,
         glow: 8,
       })
@@ -977,7 +983,7 @@ export class PlayerShip extends Ship {
         nose.x + Math.cos(this.angle) * length,
         nose.y + Math.sin(this.angle) * length,
         {
-          color: "#57e39a",
+          color: PALETTE.player.charge,
           alpha: frac,
           width: 1.5 + 2.5 * (w.charge / w.type.chargeMax),
           glow: 14,
@@ -1023,15 +1029,15 @@ export class RivalShip extends Ship {
     if (this.hull <= 0) {
       this.destroy(game, scoreOnKill)
     } else {
-      game.burst(this.x, this.y, 4, "#ffcaa0", 30, 110, 0.35)
+      game.burst(this.x, this.y, 4, PALETTE.rival.hullSpark, 30, 110, 0.35)
     }
   }
 
   destroy(game, scoreOnKill) {
     const big = this.typeName === "frigate"
     this.dead = true
-    game.burst(this.x, this.y, big ? 40 : 26, "#ff9a3c", 60, big ? 300 : 240, 0.9)
-    game.ring(this.x, this.y, big ? 26 : 18, "#ffcf5c", 180, 0.8)
+    game.burst(this.x, this.y, big ? 40 : 26, PALETTE.rival.hull, 60, big ? 300 : 240, 0.9)
+    game.ring(this.x, this.y, big ? 26 : 18, PALETTE.fx.flash, 180, 0.8)
     for (let k = 0; k < this.type.oreDrop; k++) {
       game.spawnOre(
         this.x + randRange(-18, 18),
@@ -1107,7 +1113,7 @@ export class RivalShip extends Ship {
         -Math.cos(this.angle) * 40 + randRange(-20, 20),
         -Math.sin(this.angle) * 40 + randRange(-20, 20),
         0.4,
-        "#ff9a3c",
+        PALETTE.rival.hull,
       )
     }
 
@@ -1115,7 +1121,7 @@ export class RivalShip extends Ship {
       if (Math.hypot(game.oreChunks[i].x - this.x, game.oreChunks[i].y - this.y) < 18) {
         game.oreChunks.splice(i, 1)
         game.rivalScore += CONFIG.ORE_SCORE
-        game.burst(this.x, this.y, 4, "#ff9a3c", 30, 80, 0.3)
+        game.burst(this.x, this.y, 4, PALETTE.rival.hull, 30, 80, 0.3)
       }
     }
 
@@ -1128,7 +1134,7 @@ export class RivalShip extends Ship {
 
   draw(renderer, game) {
     this.drawShip(renderer, game, this.typeName === "frigate" ? 2 : 1.8)
-    renderer.circle(this.x, this.y, 1.6, { fill: "#ffcf5c", glow: 8 })
+    renderer.circle(this.x, this.y, 1.6, { fill: PALETTE.rival.core, glow: 8 })
   }
 }
 
@@ -1310,7 +1316,7 @@ export class Asteroid extends Entity {
             this.vy + iy * 0.4 + randRange(-30, 30),
           )
         }
-        game.burst(centre.x, centre.y, randInt(6, 12), "#ff8ae6", 30, 110, 0.6)
+        game.burst(centre.x, centre.y, randInt(6, 12), PALETTE.ore.body, 30, 110, 0.6)
         Sound.shatter()
         game.stats.mined++
         continue
@@ -1336,9 +1342,9 @@ export class Asteroid extends Entity {
   detonate(game) {
     this.dead = true
     game.stats.mined++
-    game.burst(this.center.x, this.center.y, randInt(48, 68), "#ff7a4a", 60, 360, 0.95)
-    game.burst(this.center.x, this.center.y, randInt(20, 30), "#ffd36a", 40, 190, 0.8)
-    game.ring(this.center.x, this.center.y, 30, "#ffcf5c", 300, 0.85)
+    game.burst(this.center.x, this.center.y, randInt(48, 68), PALETTE.fx.fire, 60, 360, 0.95)
+    game.burst(this.center.x, this.center.y, randInt(20, 30), PALETTE.fx.ember, 40, 190, 0.8)
+    game.ring(this.center.x, this.center.y, 30, PALETTE.fx.flash, 300, 0.85)
     game.screenShake = Math.max(game.screenShake, 12)
     Sound.explode()
     for (let k = 0; k < randInt(2, 4); k++) {
@@ -1420,19 +1426,19 @@ export class Asteroid extends Entity {
       return this.tint
     }
     if (this.explosive) {
-      return "#ff6b52"
+      return PALETTE.rock.explosive
     }
     const sh = this.shieldModule(),
       shielded = sh && sh.up,
       gun = this.hasGun()
     if (gun && shielded) {
-      return "#c9a0ff"
+      return PALETTE.rock.gunShielded
     }
     if (gun) {
-      return "#9fd8ff"
+      return PALETTE.rock.gun
     }
     if (shielded) {
-      return "#ffd36a"
+      return PALETTE.rock.shielded
     }
     const t = clamp(
       (this.area - CONFIG.AST_MIN_AREA) /
@@ -1440,7 +1446,7 @@ export class Asteroid extends Entity {
       0,
       1,
     )
-    return `hsl(${lerp(40, 196, t).toFixed(0)} 92% ${lerp(60, 72, t).toFixed(0)}%)`
+    return `hsl(${lerp(PALETTE.rock.sizeWarm, PALETTE.rock.sizeCool, t).toFixed(0)} 92% ${lerp(60, 72, t).toFixed(0)}%)`
   }
 
   draw(renderer, game) {
@@ -1448,7 +1454,7 @@ export class Asteroid extends Entity {
     if (this.explosive) {
       const pulse = 0.5 + 0.5 * Math.sin(game.gameTime * 6)
       renderer.circle(this.center.x, this.center.y, 4 + 2 * pulse, {
-        fill: "#ff5b3b",
+        fill: PALETTE.rock.explosiveCore,
         glow: 12 + 8 * pulse,
         alpha: 0.35 + 0.4 * pulse,
       })
@@ -1469,9 +1475,9 @@ export class Asteroid extends Entity {
         continue
       }
       const aim = Math.atan2(game.player.y - hp.y, game.player.x - hp.x)
-      renderer.circle(hp.x, hp.y, 3.4, { stroke: "#ffb14b", width: 1.6, glow: 8 })
+      renderer.circle(hp.x, hp.y, 3.4, { stroke: PALETTE.weapon.gun, width: 1.6, glow: 8 })
       renderer.line(hp.x, hp.y, hp.x + Math.cos(aim) * 10, hp.y + Math.sin(aim) * 10, {
-        color: "#ffb14b",
+        color: PALETTE.weapon.gun,
         width: 1.6,
         glow: 8,
       })
@@ -1514,7 +1520,7 @@ export class Ore extends Entity {
     this.angle += this.spin * dt
     this.confine(0.4, this.size)
     if (this.life <= 0) {
-      game.burst(this.x, this.y, randInt(5, 8), "#ff8ae6", 40, 150, 0.4)
+      game.burst(this.x, this.y, randInt(5, 8), PALETTE.ore.body, 40, 150, 0.4)
       this.dead = true
     }
   }
