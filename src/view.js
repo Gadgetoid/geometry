@@ -212,7 +212,11 @@ export class GameView {
   // before a respawn: the portal shimmers open before anything arrives.
   #warp(game, centre) {
     const p = game.player
-    if (!p || !game.inSector() || p.warp >= 1) {
+    // The ripple is a screen-space pass over the finished frame, so it bends the HUD
+    // and the pause menu along with the world. Pausing mid-arrival would otherwise
+    // leave the menu rippling, and gameTime keeps running while paused so it would
+    // not even hold still. The world is frozen anyway, so the distortion goes with it.
+    if (!p || !game.inSector() || p.warp >= 1 || game.paused) {
       this.renderer.setWarp(0, 0, 0)
       return
     }
