@@ -685,7 +685,7 @@ export class Game {
 
     const accuracy = this.stats.shots ? this.stats.hits / this.stats.shots : 1
     const accuracyBonus = Math.round(accuracy * CONFIG.ACCURACY_BONUS)
-    const flawlessBonus = this.stats.damage < 1 ? CONFIG.FLAWLESS_BONUS : 0
+    const flawlessBonus = this.stats.damage <= 0 ? CONFIG.FLAWLESS_BONUS : 0
     const clearBonus = this.level * CONFIG.CLEAR_BONUS_PER_SECTOR
     const totalBonus = accuracyBonus + flawlessBonus + clearBonus
     this.score += totalBonus
@@ -748,8 +748,6 @@ export class Game {
     this.burst(this.player.x, this.player.y, 40, PALETTE.player.hull, 60, 260, 1.0)
     this.ring(this.player.x, this.player.y, 20, PALETTE.text.bright, 200, 0.8)
     this.screenShake = 14
-    // count this hit as damage for the summary
-    this.stats.damage += 1
     if (this.lives <= 0) {
       this.recordBest()
       this.phase = "over"

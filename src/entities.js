@@ -836,10 +836,13 @@ export class PlayerShip extends Ship {
   }
   // Mid-warp the ship is not really in the sector, so nothing can reach it:
   // not rocks, and not the bullets and blasts that bypass contact entirely.
+  // Everything that lands is totalled for the sector summary, whether the
+  // shield soaked it or the hull did, so "flawless" means untouched.
   takeDamage(amount, game, channel, scoreOnKill, impact) {
     if (!this.solid) {
       return false
     }
+    game.stats.damage += amount
     return super.takeDamage(amount, game, channel, scoreOnKill, impact)
   }
   onHull() {
