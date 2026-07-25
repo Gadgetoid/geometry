@@ -321,28 +321,35 @@ export const WEAPON_CONTROLLERS = {
     }
   },
 
-  // the player's nose turret. Arrow keys aim host.turretAim and fire on demand;
-  // with no input it auto-targets the nearest rock in range. The beam leaves
-  // the hull centre, where PlayerShip.draw puts the turret.
-  defense(weapon, dt, game, host) {
+  // the player's nose turret, firing from its hardpoint. Arrow keys aim
+  // host.turretAim and fire on demand; with no input it auto-targets the
+  // nearest rock in range.
+  defense(weapon, dt, game, host, world) {
     if (host.turretManual > 0) {
       if (host.turretFiring) {
-        weapon.emitBeam(game, host, host.x, host.y, host.turretAim, weapon.type.range)
+        weapon.emitBeam(game, host, world.x, world.y, host.turretAim, weapon.type.range)
       }
       return
     }
     let target = null,
       nearest = weapon.type.range
     for (const asteroid of game.asteroids) {
-      const d = Math.hypot(asteroid.center.x - host.x, asteroid.center.y - host.y)
+      const d = Math.hypot(asteroid.center.x - world.x, asteroid.center.y - world.y)
       if (d < nearest) {
         nearest = d
         target = asteroid
       }
     }
     if (target) {
-      host.turretAim = Math.atan2(target.center.y - host.y, target.center.x - host.x)
-      weapon.emitBeam(game, host, host.x, host.y, host.turretAim, nearest + DEFENSE_BEAM_OVERSHOOT)
+      host.turretAim = Math.atan2(target.center.y - world.y, target.center.x - world.x)
+      weapon.emitBeam(
+        game,
+        host,
+        world.x,
+        world.y,
+        host.turretAim,
+        nearest + DEFENSE_BEAM_OVERSHOOT,
+      )
     }
   },
 }
@@ -646,6 +653,7 @@ export class PlayerShip extends Ship {
     this.buildHardpoints(PLAYER_TYPE.hardpoints)
     this.applyLoadout(PLAYER_TYPE.loadout)
     this.nose = this.hardpointByRole("nose")
+    this.aux = this.hardpointByRole("aux") // defense turret slot, filled by an upgrade
     this.mainWeapon = this.nose.module
     this.energyMax = game.maxEnergy()
     this.energy = this.energyMax
@@ -687,7 +695,7 @@ export class PlayerShip extends Ship {
   }
 
   installDefenseTurret() {
-    const hp = this.hardpointByRole("aux")
+    const hp = this.aux
     if (hp && !hp.module) {
       hp.module = new Weapon("defenseLaser", "defense")
     }
@@ -1015,10 +1023,11 @@ export class PlayerShip extends Ship {
       )
     }
 
-    if (game.upgrades.turret) {
+    if (game.upgrades.turret && this.aux) {
       const aim = this.turretAim || 0
-      renderer.circle(this.x, this.y, 3.4, { stroke: PALETTE.player.turret, width: 1.6, glow: 8 })
-      renderer.line(this.x, this.y, this.x + Math.cos(aim) * 12, this.y + Math.sin(aim) * 12, {
+      const mount = this.mountWorld(this.aux.local)
+      renderer.circle(mount.x, mount.y, 3.4, { stroke: PALETTE.player.turret, width: 1.6, glow: 8 })
+      renderer.line(mount.x, mount.y, mount.x + Math.cos(aim) * 12, mount.y + Math.sin(aim) * 12, {
         color: PALETTE.player.turret,
         width: 1.6,
         glow: 8,
