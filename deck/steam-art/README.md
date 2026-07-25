@@ -26,6 +26,12 @@ that on its own after regenerating the art:
 ./deck/install-steam-art.py --launcher ./deck/geometry-ii.sh --art ./deck/steam-art
 ```
 
+Add `--add-if-missing` and it will create the shortcut too, which is what makes a
+first install one pass instead of two. Handing the entry to Steam and then trying to
+attach artwork cannot work in one go: Steam keeps `shortcuts.vdf` in memory and only
+writes it out when it exits, so the shortcut is nowhere on disk for the artwork to
+attach to yet.
+
 It has to go looking, because none of this comes from the desktop entry. Steam
 reads the entry's `Icon=` once, when the shortcut is created, and never again; and
 it does not read the banner, the grid tile or the logo from there at all. Those
@@ -39,8 +45,9 @@ Two consequences worth knowing:
 - **Close Steam first.** It holds `shortcuts.vdf` in memory and rewrites it on
   exit, so edits made while it is running are lost. The script refuses to touch the
   icon while Steam is up, and says so.
-- **A brand new shortcut may not be on disk yet**, for the same reason. If the
-  script says the launcher is not in any shortcut, restart Steam and run it again.
+- **A shortcut Steam has just accepted is not on disk yet**, for the same reason.
+  This is why the script would rather create the shortcut itself than ask Steam to,
+  and why it refuses to write anything while Steam is up.
 
 `shortcuts.vdf` belongs to Steam, so the script will only rewrite one it can parse
 and re-serialise byte for byte first, and it keeps a `.geometry-backup` beside it.

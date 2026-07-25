@@ -10,6 +10,10 @@ So this finds the shortcut by the launcher path, takes its appid, copies the art
 into place under the names Steam looks for, and points the shortcut's icon field at
 icon.png.
 
+With --add-if-missing it will also create the shortcut, which is what makes a
+first-time install work in one pass: handing the entry to Steam instead means Steam
+holds it in memory and the artwork has nowhere to attach until it exits.
+
 shortcuts.vdf is a binary file belonging to another program, so it is only
 rewritten when it can be parsed and re-serialised byte for byte first, a backup is
 kept, and Steam is not running. Run with --dry-run to see what would happen.
@@ -42,6 +46,34 @@ STEAM_ROOTS = [
     "~/.local/share/Steam",
     "~/.var/app/com.valvesoftware.Steam/data/Steam",
 ]
+
+# What Steam writes for a non-Steam shortcut. Absent fields are tolerated, but a
+# full record avoids the client having to invent any of them.
+def new_shortcut(appid_signed, name, exe, start_dir, icon):
+    return [
+        (INT, "appid", appid_signed),
+        (STR, "AppName", name),
+        (STR, "Exe", exe),
+        (STR, "StartDir", start_dir),
+        (STR, "icon", icon),
+        (STR, "ShortcutPath", ""),
+        (STR, "LaunchOptions", ""),
+        (INT, "IsHidden", 0),
+        (INT, "AllowDesktopConfig", 1),
+        (INT, "AllowOverlay", 1),
+        (INT, "OpenVR", 0),
+        (INT, "Devkit", 0),
+        (STR, "DevkitGameID", ""),
+        (INT, "DevkitOverrideAppID", 0),
+        (INT, "LastPlayTime", 0),
+        (STR, "FlatpakAppID", ""),
+        (MAP, "tags", []),
+    ]
+
+
+def derive_appid(exe, name):
+    """The id Steam derives for a shortcut, as an unsigned 32-bit value."""
+    return (zlib.crc32((exe + name).encode("utf-8", "surrogateescape")) | 0x80000000) & 0xFFFFFFFF
 
 
 def read_cstr(data, i):
@@ -106,8 +138,7 @@ def shortcut_appid(entry):
     name = field(entry, "AppName")
     if not exe or not name:
         return None
-    seed = (exe[2] + name[2]).encode("utf-8", "surrogateescape")
-    return (zlib.crc32(seed) | 0x80000000) & 0xFFFFFFFF
+    return derive_appid(exe[2], name[2])
 
 
 def steam_is_running():
@@ -122,6 +153,12 @@ def main():
     parser.add_argument("--launcher", required=True, help="path stored in the shortcut's Exe")
     parser.add_argument("--art", required=True, help="folder holding the captured PNGs")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--add-if-missing",
+        action="store_true",
+        help="create the shortcut when there is none, so a first install needs one pass",
+    )
+    parser.add_argument("--name", default="GEOMETRY II", help="name for a shortcut it creates")
     args = parser.parse_args()
 
     launcher = os.path.abspath(args.launcher)
@@ -131,27 +168,80 @@ def main():
     files = []
     for root in STEAM_ROOTS:
         files += glob.glob(os.path.expanduser(f"{root}/userdata/*/config/shortcuts.vdf"))
-    if not files:
-        print("  no Steam shortcut file found; add the game to Steam first")
-        return 1
 
     running = steam_is_running()
+
+    # A Steam account with no shortcuts at all has no shortcuts.vdf, so fall back
+    # to the config folders themselves to find somewhere to create one.
+    if not files and args.add_if_missing:
+        configs = []
+        for root in STEAM_ROOTS:
+            configs += glob.glob(os.path.expanduser(f"{root}/userdata/*/config"))
+        # most recently touched account, which is the one being used
+        configs = [c for c in configs if os.path.basename(os.path.dirname(c)) != "0"]
+        if configs:
+            newest = max(configs, key=os.path.getmtime)
+            files = [os.path.join(newest, "shortcuts.vdf")]
+            if len(configs) > 1:
+                print(f"  several Steam accounts; using the most recent, {os.path.dirname(newest)}")
+
+    if not files:
+        print("  no Steam user folder found; sign in to Steam once first")
+        return 1
     touched = 0
     for path in sorted(files):
-        try:
-            raw = open(path, "rb").read()
-            root_items, _ = parse_map(raw, 0)
-        except (ValueError, IndexError) as error:
-            print(f"  skipping {path}: could not read it ({error})")
+        if os.path.exists(path):
+            try:
+                raw = open(path, "rb").read()
+                root_items, _ = parse_map(raw, 0)
+            except (ValueError, IndexError) as error:
+                print(f"  skipping {path}: could not read it ({error})")
+                continue
+        elif args.add_if_missing:
+            raw, root_items = b"", [(MAP, "shortcuts", [])]
+        else:
             continue
 
-        # Only rewrite a file this code can reproduce exactly as it found it.
-        faithful = write_map(root_items) == raw
+        # Only rewrite a file this code can reproduce exactly as it found it. A
+        # file being created from nothing has nothing to disagree with.
+        faithful = raw == b"" or write_map(root_items) == raw
 
         shortcuts = field(root_items, "shortcuts")
         if not shortcuts:
             continue
         changed = False
+
+        # Create the shortcut if it is not there. Doing it here rather than handing
+        # it to Steam is what lets the artwork be attached in the same pass: Steam
+        # keeps shortcuts.vdf in memory and only writes it out when it exits, so a
+        # shortcut it has just accepted is not yet anywhere this can find it.
+        present = any(
+            field(entry, "exe") and launcher in field(entry, "exe")[2]
+            for _, _, entry in shortcuts[2]
+        )
+        if not present and args.add_if_missing:
+            if running:
+                print("  Steam is running, so the shortcut cannot be written; close it first")
+                return 1
+            if not faithful:
+                print(f"  not touching {path}: it did not round-trip cleanly")
+                continue
+            exe = f'"{launcher}"'
+            appid = derive_appid(exe, args.name)
+            entry = new_shortcut(
+                appid - 2**32,
+                args.name,
+                exe,
+                f'"{os.path.dirname(os.path.dirname(launcher))}"',
+                icon if os.path.exists(icon) else "",
+            )
+            index = str(len(shortcuts[2]))
+            if args.dry_run:
+                print(f"  would create shortcut \"{args.name}\" (appid {appid}) in {path}")
+            else:
+                shortcuts[2].append((MAP, index, entry))
+                changed = True
+                print(f'  created shortcut "{args.name}", appid {appid}')
         for _, _, entry in shortcuts[2]:
             exe = field(entry, "exe")
             if not exe or launcher not in exe[2]:
@@ -195,9 +285,10 @@ def main():
 
         if changed and not args.dry_run:
             backup = path + ".geometry-backup"
-            if not os.path.exists(backup):
+            if raw and not os.path.exists(backup):
                 shutil.copyfile(path, backup)
                 print(f"    backed up to {os.path.basename(backup)}")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "wb") as handle:
                 handle.write(write_map(root_items))
 

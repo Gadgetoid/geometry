@@ -70,66 +70,54 @@ chmod +x "$DESKTOP_FILE"
 say "desktop entry: $DESKTOP_FILE"
 command -v update-desktop-database >/dev/null && update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 
-# ---- add to Steam ---------------------------------------------------------
+# ---- add to Steam, with its artwork -----------------------------------------
 # Everything above is safe to repeat: the override, the profile and the desktop
-# entry are all written in place. Adding to Steam is not. Steam does not treat a
-# non-Steam shortcut as unique, so asking twice leaves two copies of the game in
-# the library. Look for the launcher in the shortcut files first and leave a
-# library that already has it alone.
+# entry are all written in place.
 #
-# Steam keeps shortcuts.vdf in memory and rewrites it when it exits, so with
-# Steam running this can miss a shortcut, and a shortcut added now can be
-# overwritten. Run this with Steam closed.
-already_in_steam() {
-  local found=1 vdf
-  for vdf in "$HOME"/.steam/steam/userdata/*/config/shortcuts.vdf \
-    "$HOME"/.local/share/Steam/userdata/*/config/shortcuts.vdf \
-    "$HOME"/.var/app/com.valvesoftware.Steam/data/Steam/userdata/*/config/shortcuts.vdf; do
-    [ -f "$vdf" ] || continue
-    # shortcuts.vdf is binary, and the launcher path is stored in it verbatim
-    if grep -qaF "$LAUNCHER" "$vdf"; then
-      found=0
-    fi
-  done
-  return $found
-}
-
-if already_in_steam; then
+# The Steam side is one job, not two, because the artwork can only be attached once
+# the shortcut exists on disk. install-steam-art.py therefore does both: it creates
+# the shortcut if there is not one, reads the appid back out, and copies the art in
+# beside it. Handing the entry to Steam instead means Steam holds it in memory until
+# it exits, and the artwork has nowhere to go until then, which is what made a first
+# install take two passes.
+#
+# It needs Steam closed, since Steam rewrites that file on the way out.
+steam_step_done=false
+if [ -f "$ART_INSTALLER" ] && command -v python3 >/dev/null; then
   echo
-  echo "Already in your Steam library, so it was left alone."
-  say "the desktop entry, the flatpak permission and the icon were refreshed"
-  say "artwork already attached to the shortcut is untouched"
-elif command -v steamos-add-to-steam >/dev/null; then
-  say "adding to Steam"
-  steamos-add-to-steam "$DESKTOP_FILE" || die "steamos-add-to-steam refused the entry."
-  echo
-  echo "Done. GEOMETRY II is in your Steam library."
-else
-  echo
-  echo "Done, except for the Steam entry: steamos-add-to-steam is not on this system."
-  echo "Add it by hand, either way round:"
-  echo "  * in Dolphin, right-click $DESKTOP_FILE and pick \"Add to Steam\""
-  echo "  * or in Steam: Games -> Add a Non-Steam Game -> Browse -> $LAUNCHER"
+  echo "Steam:"
+  if python3 "$ART_INSTALLER" \
+    --launcher "$LAUNCHER" --art "$HERE/steam-art" --add-if-missing; then
+    steam_step_done=true
+  fi
 fi
 
-# ---- library artwork ------------------------------------------------------
-# The desktop entry's icon is only read when the shortcut is created, and the
-# banner, grid tile and logo are not read from it at all: Steam keeps those in
-# userdata/<user>/config/grid/, named after the shortcut's appid. So attaching
-# them means finding the shortcut and copying the art in beside it.
-if [ -f "$ART_INSTALLER" ] && [ -f "$ICON" ]; then
-  if command -v python3 >/dev/null; then
+if [ "$steam_step_done" = true ]; then
+  echo
+  if pgrep -x steam >/dev/null 2>&1; then
+    echo "Done. Restart Steam to see it."
+  else
+    echo "Done. Start Steam and GEOMETRY II will be in your library, artwork and all."
+  fi
+elif pgrep -x steam >/dev/null 2>&1; then
+  # Steam is up, so its files cannot be written underneath it. Adding through Steam
+  # itself still works, and the artwork can be attached once it closes.
+  if command -v steamos-add-to-steam >/dev/null; then
+    say "Steam is running, so adding the shortcut through Steam instead."
+    steamos-add-to-steam "$DESKTOP_FILE" || die "steamos-add-to-steam refused the entry."
     echo
-    echo "Library artwork:"
-    if ! python3 "$ART_INSTALLER" --launcher "$LAUNCHER" --art "$HERE/steam-art"; then
-      say "Steam has not written the shortcut out yet."
-      say "Restart Steam, then run: $ART_INSTALLER --launcher $LAUNCHER --art $HERE/steam-art"
-    fi
+    echo "Added, without artwork. Close Steam and run this again to attach it."
   else
     echo
-    say "python3 is missing, so the artwork was not attached."
-    say "See deck/steam-art/README.md to attach it by hand."
+    echo "Close Steam and run this again; it cannot write Steam's files underneath it."
   fi
+else
+  echo
+  echo "Could not finish the Steam step. Add it by hand, either way round:"
+  echo "  * in Dolphin, right-click $DESKTOP_FILE and pick \"Add to Steam\""
+  echo "  * or in Steam: Games -> Add a Non-Steam Game -> Browse -> $LAUNCHER"
+  [ -f "$ART_INSTALLER" ] || say "install-steam-art.py is missing, so artwork was skipped."
+  command -v python3 >/dev/null || say "python3 is missing, so artwork was skipped."
 fi
 
 cat <<'NOTES'
@@ -145,9 +133,9 @@ Worth knowing:
   * Library artwork comes from deck/steam-art/ and is attached above. Steam reads
     it from its own folder, so it only changes when install-steam-art.py runs;
     re-run that after regenerating the art.
-  * Re-running this is safe. It refreshes the permission, the entry and the icon,
-    and will not add a second copy to your library. Close Steam first, because it
-    rewrites its shortcut file on exit.
+  * Re-running this is safe: it refreshes everything in place and will not add a
+    second copy. Close Steam first, because it rewrites its shortcut file on exit,
+    and because the shortcut and its artwork go in together in one pass.
   * To run the hosted build instead of these files, set GEOMETRY_URL in the
     Steam shortcut's launch options:
       GEOMETRY_URL=https://gadgetoid.github.io/geometry/ %command%

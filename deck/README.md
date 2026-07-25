@@ -11,9 +11,11 @@ desktop entry and hands it to Steam. The game then appears in your library and
 launches into Game Mode like anything else.
 
 `deck/geometry-ii.sh` is what the shortcut runs, and it works on its own too.
-`deck/install-steam-art.py` attaches the library artwork, and the installer calls
-it; run it again by hand after regenerating the art. Close Steam before either,
-because it rewrites its shortcut file on exit.
+`deck/install-steam-art.py` creates the Steam shortcut and attaches the library
+artwork, in one pass; the installer calls it. Run it again by hand after
+regenerating the art. **Close Steam before either**: it rewrites its shortcut file
+on exit, so anything written underneath it is lost, and a shortcut it has only just
+accepted is not on disk yet for artwork to attach to.
 
 ## Why these flags
 
