@@ -263,6 +263,128 @@ export function convexContact(a, b, centreA, centreB) {
   return { nx: bestX, ny: bestY, depth: bestDepth }
 }
 
+// ---------------------------------------------------------------------------
+// Convex partition. `convexContact` is a separating-axis test, so it is only
+// exact for convex shapes; a ship hull and anything cut from one are concave.
+// Partitioning splits such a polygon into convex parts that tile it exactly, so
+// contacts stay exact without approximating the outline.
+//
+// Splits use only diagonals between existing vertices, so a part is a list of
+// indices into the polygon's own vertex array. That means the parts follow the
+// polygon as it rotates and drifts, and need computing only when the outline
+// itself changes.
+// ---------------------------------------------------------------------------
+
+// Twice the signed area of triangle abc: positive when abc turns anticlockwise.
+const turn2 = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+
+// Do segments a-b and c-d cross at an interior point of both? Shared endpoints
+// and collinear touching do not count, which is what a diagonal test needs.
+function properlyCross(a, b, c, d) {
+  const d1 = turn2(a, b, c),
+    d2 = turn2(a, b, d)
+  const d3 = turn2(c, d, a),
+    d4 = turn2(c, d, b)
+  return d1 > 0 !== d2 > 0 && d3 > 0 !== d4 > 0
+}
+
+// Signed area of a ring; the sign is its winding.
+function signedArea(ring) {
+  let sum = 0
+  for (let i = 0; i < ring.length; i++) {
+    const p = ring[i],
+      q = ring[(i + 1) % ring.length]
+    sum += p.x * q.y - q.x * p.y
+  }
+  return sum / 2
+}
+
+// Which vertices turn against the ring's winding. An empty result means convex.
+function reflexVertices(ring) {
+  const winding = signedArea(ring) >= 0 ? 1 : -1
+  const reflex = []
+  for (let i = 0; i < ring.length; i++) {
+    const prev = ring[(i - 1 + ring.length) % ring.length],
+      next = ring[(i + 1) % ring.length]
+    if (winding * turn2(prev, ring[i], next) < 0) {
+      reflex.push(i)
+    }
+  }
+  return reflex
+}
+
+// Is i-j a diagonal: strictly inside the ring and crossing no edge?
+function isDiagonal(ring, i, j) {
+  const n = ring.length
+  if (i === j || (i + 1) % n === j || (j + 1) % n === i) {
+    return false
+  }
+  const a = ring[i],
+    b = ring[j]
+  for (let k = 0; k < n; k++) {
+    const k2 = (k + 1) % n
+    if (k === i || k === j || k2 === i || k2 === j) {
+      continue
+    }
+    if (properlyCross(a, b, ring[k], ring[k2])) {
+      return false
+    }
+  }
+  return pointInPolygon({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, ring)
+}
+
+// The indices from `from` to `to` inclusive, walking the ring forwards.
+function walk(indices, from, to) {
+  const out = []
+  for (let k = from; ; k = (k + 1) % indices.length) {
+    out.push(indices[k])
+    if (k === to) {
+      return out
+    }
+  }
+}
+
+// Partition a simple polygon into convex parts, each a list of indices into
+// `vertices`. A convex polygon yields a single part covering every vertex. A
+// part that cannot be resolved (degenerate or self-touching input) is returned
+// as it is, so callers always get a partition covering the whole outline.
+export function convexPartition(vertices) {
+  const all = vertices.map((_, i) => i)
+  if (vertices.length < 4) {
+    return [all]
+  }
+  const parts = []
+  const pending = [all]
+  // Each split replaces one ring with two strictly smaller ones, so a
+  // triangulation is the worst case and this bound is never reached.
+  let guard = 4 * vertices.length + 16
+  while (pending.length && guard-- > 0) {
+    const indices = pending.pop()
+    const ring = indices.map((i) => vertices[i])
+    const reflex = ring.length > 3 ? reflexVertices(ring) : []
+    if (!reflex.length) {
+      parts.push(indices)
+      continue
+    }
+    const from = reflex[0]
+    // A diagonal joining two reflex vertices resolves both at once, so try
+    // those first; a cut to any other vertex still resolves `from`, just less
+    // efficiently. Fewer parts means fewer contact tests later.
+    const candidates = []
+    for (let step = 2; step < ring.length - 1; step++) {
+      candidates.push((from + step) % ring.length)
+    }
+    candidates.sort((a, b) => reflex.includes(b) - reflex.includes(a))
+    const split = candidates.find((candidate) => isDiagonal(ring, from, candidate))
+    if (split === undefined) {
+      parts.push(indices) // no diagonal resolves it; leave the ring whole
+      continue
+    }
+    pending.push(walk(indices, from, split), walk(indices, split, from))
+  }
+  return parts.concat(pending)
+}
+
 // How far the polygon reaches from `centre` in direction (ux, uy).
 export function supportDistance(vertices, centre, ux, uy) {
   let far = 0

@@ -22,6 +22,7 @@ import {
   slicePolygon,
   circlePolygonContact,
   convexContact,
+  convexPartition,
   supportDistance,
 } from "../src/math.js"
 
@@ -330,4 +331,122 @@ test("convexContact agrees with an independent overlap test on random hulls", ()
     }
   }
   assert.ok(overlapping > 50, `expected a decent number of overlaps, got ${overlapping}`)
+})
+
+// ---- convexPartition ------------------------------------------------------
+// Contacts are solved part against part, so a partition is only correct if the
+// parts are all convex and together they tile the original exactly.
+
+const partsOf = (verts) => convexPartition(verts).map((part) => part.map((i) => verts[i]))
+
+function isConvex(vertices) {
+  let winding = 0
+  for (let i = 0; i < vertices.length; i++) {
+    const a = vertices[i],
+      b = vertices[(i + 1) % vertices.length],
+      c = vertices[(i + 2) % vertices.length]
+    const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
+    if (Math.abs(cross) < 1e-9) {
+      continue
+    }
+    const sign = Math.sign(cross)
+    if (winding === 0) {
+      winding = sign
+    } else if (sign !== winding) {
+      return false
+    }
+  }
+  return true
+}
+
+// An L: one reflex corner, so two parts and no new vertices.
+const L_SHAPE = [
+  { x: 0, y: 0 },
+  { x: 60, y: 0 },
+  { x: 60, y: 20 },
+  { x: 20, y: 20 },
+  { x: 20, y: 60 },
+  { x: 0, y: 60 },
+]
+
+test("convexPartition leaves a convex polygon whole", () => {
+  const square = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 10 },
+    { x: 0, y: 10 },
+  ]
+  assert.deepEqual(convexPartition(square), [[0, 1, 2, 3]])
+})
+
+test("convexPartition splits a concave polygon into convex parts", () => {
+  const parts = partsOf(L_SHAPE)
+  assert.ok(parts.length >= 2)
+  for (const part of parts) {
+    assert.ok(isConvex(part), "every part must be convex")
+  }
+})
+
+test("convexPartition conserves area", () => {
+  const total = partsOf(L_SHAPE).reduce((sum, part) => sum + polygonArea(part), 0)
+  assert.ok(Math.abs(total - polygonArea(L_SHAPE)) < 1e-9)
+})
+
+test("convexPartition indexes the original vertices, so parts follow it", () => {
+  for (const part of convexPartition(L_SHAPE)) {
+    for (const index of part) {
+      assert.ok(Number.isInteger(index) && index >= 0 && index < L_SHAPE.length)
+    }
+  }
+})
+
+test("convexPartition handles random concave polygons", () => {
+  const rng = mulberry32(99)
+  for (let trial = 0; trial < 200; trial++) {
+    const count = 5 + Math.floor(rng() * 8)
+    const poly = []
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2
+      const radius = 20 + rng() * 80 // a wandering radius makes it concave
+      poly.push({ x: Math.cos(angle) * radius, y: Math.sin(angle) * radius })
+    }
+    const parts = partsOf(poly)
+    const total = parts.reduce((sum, part) => sum + polygonArea(part), 0)
+    assert.ok(
+      Math.abs(total - polygonArea(poly)) < 1e-6 * Math.max(1, polygonArea(poly)),
+      "parts must tile the polygon",
+    )
+    for (const part of parts) {
+      assert.ok(isConvex(part), "every part must be convex")
+    }
+  }
+})
+
+test("convexPartition passes through degenerate input", () => {
+  assert.deepEqual(convexPartition([]), [[]])
+  assert.deepEqual(convexPartition([{ x: 0, y: 0 }]), [[0]])
+})
+
+test("a separating-axis test on a concave outline reports a contact across its notch", () => {
+  // Why the partition exists: a square parked in the L's notch touches nothing,
+  // but SAT on the whole concave outline says they overlap. Solved part against
+  // part, the same pair comes out apart.
+  const inNotch = [
+    { x: 30, y: 30 },
+    { x: 55, y: 30 },
+    { x: 55, y: 55 },
+    { x: 30, y: 55 },
+  ]
+  const centreOf = (v) => ({
+    x: v.reduce((s, p) => s + p.x, 0) / v.length,
+    y: v.reduce((s, p) => s + p.y, 0) / v.length,
+  })
+  assert.ok(
+    convexContact(L_SHAPE, inNotch, centreOf(L_SHAPE), centreOf(inNotch)),
+    "whole concave outline: phantom contact",
+  )
+  const apart = partsOf(L_SHAPE).every(
+    (part) => !convexContact(part, inNotch, centreOf(part), centreOf(inNotch)),
+  )
+  assert.ok(apart, "partitioned: correctly apart")
 })
