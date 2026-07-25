@@ -10,7 +10,7 @@ export const Sound = {
     if (!this.ctx) {
       try {
         this.ctx = new (window.AudioContext || window.webkitAudioContext)()
-      } catch (e) {
+      } catch {
         /* audio is best-effort */
       }
     }
@@ -31,7 +31,7 @@ export const Sound = {
         src.connect(this.ctx.destination)
         src.start(0)
         this.unlocked = true
-      } catch (e) {
+      } catch {
         /* ignore */
       }
     }
@@ -59,7 +59,7 @@ export const Sound = {
       osc.connect(gain).connect(this.ctx.destination)
       osc.start(now)
       osc.stop(now + duration)
-    } catch (e) {
+    } catch {
       /* ignore */
     }
   },
@@ -94,7 +94,7 @@ export const Sound = {
       src.connect(filter).connect(gain).connect(this.ctx.destination)
       src.start(now)
       src.stop(now + duration)
-    } catch (e) {
+    } catch {
       /* ignore */
     }
   },
@@ -135,7 +135,7 @@ export const Sound = {
         this.thruster = { gain }
       }
       this.thruster.gain.gain.setTargetAtTime(active ? 0.03 : 0, this.ctx.currentTime, 0.08)
-    } catch (e) {
+    } catch {
       /* audio is best-effort */
     }
   },

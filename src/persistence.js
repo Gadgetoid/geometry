@@ -19,7 +19,7 @@ export async function loadBest() {
       request.onerror = () => resolve(null)
     })
     return value || null
-  } catch (e) {
+  } catch {
     return null
   }
 }
@@ -28,7 +28,7 @@ export async function saveBest(best) {
   try {
     const db = await openDatabase()
     db.transaction("kv", "readwrite").objectStore("kv").put(best, "best")
-  } catch (e) {
+  } catch {
     /* ignore */
   }
 }
