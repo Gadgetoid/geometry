@@ -103,7 +103,11 @@ export const CONFIG = {
   SHIP_RESTITUTION: 0.3, // bounce between two hulls
   RIVAL_ENTRY_MARGIN: 80, // how far past its own hull a rival starts, outside the boundary
   RIVAL_EXIT_MARGIN: 200, // how far outside the boundary a departing rival steers for
-  RIVAL_DESPAWN_MARGIN: 140, // and how far out it is dropped
+  // How far past the view edge a departing rival must be before it is dropped. It
+  // has to be clear of the arena as well, so this only sets the extra slack beyond
+  // the screen; the arena is larger than the view, so either can be the last to
+  // come true depending on where the camera sits.
+  RIVAL_DESPAWN_MARGIN: 140,
   RIVAL_ORE_INTEREST: 340, // a rival diverts for ore within this range
   RIVAL_ORE_GRAB: 18,
   AST_DRAG: 0.985, // velocity retained per second

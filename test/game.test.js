@@ -427,6 +427,46 @@ test("a rival beyond the arena holds its fire", () => {
   assert.ok(game.projectiles.length > 0, "a rival in the field fires as before")
 })
 
+test("a departing rival is not dropped while it can still be seen", () => {
+  const { game, rival } = rivalBeyondTheRing("frigate", 300)
+  rival.leaving = true
+  rival.lifeTimer = -1
+  assert.equal(rival.insideArena(), false, "it must be clear of the ring")
+
+  // the camera is looking straight at it, so it is off the ring but on screen
+  game.viewCenter.x = rival.x
+  game.viewCenter.y = rival.y
+  game.advance(1 / 60)
+  assert.equal(rival.dead, false, "a rival in view must not blink out")
+
+  // look somewhere else entirely and it goes
+  game.viewCenter.x = ARENA.cx
+  game.viewCenter.y = ARENA.cy
+  assert.equal(
+    game.onScreen(rival.x, rival.y, rival.boundRadius + CONFIG.RIVAL_DESPAWN_MARGIN),
+    false,
+    "and for this half it must genuinely be off screen",
+  )
+  game.advance(1 / 60)
+  assert.equal(rival.dead, true, "out of the ring and out of sight, it is dropped")
+})
+
+test("a departing rival still inside the arena is kept, however far off screen", () => {
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ vertices: square(ARENA.cx + 3000, ARENA.cy + 3000, 40) })]
+  // deep in the field but on the far side of the arena from the camera
+  const rival = new RivalShip(ARENA.cx - 700, ARENA.cy, "scout", [])
+  rival.leaving = true
+  rival.lifeTimer = -1
+  game.rivals = [rival]
+  game.viewCenter.x = ARENA.cx + 700
+  game.viewCenter.y = ARENA.cy
+  assert.equal(rival.insideArena(), true)
+  assert.equal(game.onScreen(rival.x, rival.y, rival.boundRadius), false, "and off screen")
+  game.advance(1 / 60)
+  assert.equal(rival.dead, false, "being off screen alone is not enough to drop it")
+})
+
 test("whether a rival hunts is declared on its type", () => {
   // It used to be inferred from a loadout entry naming the "hunter" controller,
   // so a new aggressive controller would silently not chase.

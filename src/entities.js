@@ -1641,9 +1641,13 @@ export class RivalShip extends Ship {
     this.#bounceOffRocks(game)
     this.updateWeapons(dt, game) // guns + main laser fire via their controllers
 
+    // Dropped only once it is wholly outside the ring and wholly out of sight, so
+    // it is never seen to blink out. Its own reach is added to both, so the test is
+    // about the hull and not about its centre.
     if (
       this.leaving &&
-      Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + CONFIG.RIVAL_DESPAWN_MARGIN
+      !this.insideArena() &&
+      !game.onScreen(this.x, this.y, this.boundRadius + CONFIG.RIVAL_DESPAWN_MARGIN)
     ) {
       this.dead = true
     }
