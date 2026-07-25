@@ -57,6 +57,8 @@ export const CONFIG = {
   TURRET_MANUAL_HOLD: 1.5, // seconds of manual control after the last input
   ORE_GRAB_RADIUS: 8, // added to the ship radius when collecting ore
   ORE_VACUUM_GRAB_RADIUS: 42, // wider grab while sweeping a cleared sector
+  OFFSCREEN_FIRE_MARGIN: 40, // enemies hold fire this far beyond the view edge
+  CUT_EDGE_TOLERANCE: 0.5, // world units, for spotting vertices left on a cut line
 
   // asteroids
   AST_MAX_R: 100,
@@ -80,21 +82,36 @@ export const CONFIG = {
   BLAST_R: 160,
   BLAST_IMPULSE: 280,
   BLAST_DAMAGE: 300,
+  BLAST_KNOCK_PLAYER: 300, // speed a blast at zero range adds to the ship
+  BLAST_KNOCK_RIVAL: 220,
   BULLET_SPEED: 250,
+  BULLET_LIFE: 4, // seconds before a shot expires
+  BULLET_ESCAPE_MARGIN: 30, // how far past the boundary a shot survives
   AST_REGEN: 12, // shielded/armed rocks recover energy slowly
   AST_ENERGY_SHIELD: 100,
   AST_ENERGY_GUN: 50,
-  // Contact resolution between rocks: overlap below CONTACT_SLOP is left alone
+  // Contact resolution between bodies: overlap below CONTACT_SLOP is left alone
   // so resting pairs do not jitter, and only CONTACT_BIAS of the rest is undone
-  // each frame so a contact eases apart instead of snapping.
+  // each frame so a contact eases apart instead of snapping. The solver runs
+  // CONTACT_ITERATIONS sweeps per frame, so a body wedged against two others is
+  // separated from both instead of alternating between them.
   CONTACT_SLOP: 0.5,
   CONTACT_BIAS: 0.35,
+  CONTACT_ITERATIONS: 4,
   AST_MASS_AREA: 3200, // rock area per unit of mass, for collision response
+  AST_MASS_RANGE: [0.4, 4], // clamp on the mass a rock's area may imply
+  SHIP_RESTITUTION: 0.3, // bounce between two hulls
   RIVAL_ENTRY_MARGIN: 80, // how far past its own hull a rival starts, outside the boundary
+  RIVAL_EXIT_MARGIN: 200, // how far outside the boundary a departing rival steers for
+  RIVAL_DESPAWN_MARGIN: 140, // and how far out it is dropped
+  RIVAL_ORE_INTEREST: 340, // a rival diverts for ore within this range
+  RIVAL_ORE_GRAB: 18,
   AST_DRAG: 0.985, // velocity retained per second
   AST_SPIN_DRAG: 0.82,
   AST_BOUNDARY_BOUNCE: 1.9, // rocks are repelled hard off the arena wall
   ORE_LIFE: 24, // seconds before an uncollected chunk expires
+  ORE_DRAG: 0.55, // velocity retained per second
+  ORE_SIZE: [4, 6.5],
   POWERUP_LIFE: 26,
 
   // camera, pacing and end-of-sector scoring
@@ -125,6 +142,42 @@ export const CONFIG = {
 }
 
 // ---------------------------------------------------------------------------
+// PROGRESSION - how a sector's contents are derived from its number. These
+// drive Game.planLevel, so the whole difficulty curve is tunable here without
+// reading gameplay code.
+// ---------------------------------------------------------------------------
+export const PROGRESSION = {
+  // rock count: base + perSector * sector, rounded up, capped at max
+  rocks: { base: 1, perSector: 0.9, max: 11 },
+  // chance a rock carries a hazard trait, ramping from `fromSector`
+  hazards: { fromSector: 3, base: 0.14, perSector: 0.07, max: 0.6 },
+  // rivals alive at once: one from RIVALS_FROM_SECTOR, then one more every
+  // `perSectors`. The gap between arrivals shortens as sectors advance.
+  rivals: { perSectors: 3, max: 3, intervalBase: 28, intervalPerSector: 1.4, intervalMin: 9 },
+  // where a sector's rocks start, and how fast
+  spawn: {
+    edgeMargin: 120, // keep a new rock this far inside the boundary
+    clearRadius: 220, // and this far from the ship's arrival point
+    placementTries: 50,
+    radius: [0.72, 1], // fraction of AST_MAX_R
+    speed: [30, 74],
+    spin: [-0.6, 0.6],
+  },
+  powerups: { fromSector: 3, firstDelay: [6, 10], interval: [12, 20], maxOnField: 2 },
+}
+
+// Hazard traits a rock can spawn with. A trait joins the roll once its
+// `fromSector` is reached, and `weightPerSector` adds an extra entry for each
+// sector past that, so a trait can come to crowd out the others. Adding a
+// hazard means adding an entry here and a branch in the Asteroid constructor.
+export const HAZARD_TRAITS = [
+  { traits: { explosive: true }, fromSector: 3 },
+  { traits: { shield: true }, fromSector: 4 },
+  { traits: { gun: true }, fromSector: 5, weightPerSector: 1 },
+  { traits: { gun: true, shield: true }, fromSector: 6 },
+]
+
+// ---------------------------------------------------------------------------
 // ASTEROID SHAPE - how makeAsteroidPolygon builds a silhouette. It hulls a ring
 // of points around each of `lobes` overlapping circles, so one lobe gives a
 // rounded rock and three give something lumpy and elongated. Widen `lobeSpread`
@@ -148,6 +201,8 @@ export const AST_SHAPE = {
 // 'projectile' or a 'beam'. `energy` is spent per shot. Beams may be
 // `chargeable` (the player's main laser); AI beams fire at a fixed length.
 // `sound` names a Sound method and `shotLife` how long the flash lingers.
+// `survivesDebris` says the module keeps working when the hull carrying it is
+// cut apart, so it arms the wreckage instead of being lost with the ship.
 // ---------------------------------------------------------------------------
 export const WEAPON_TYPES = {
   blaster: {
@@ -157,6 +212,7 @@ export const WEAPON_TYPES = {
     reload: 2.4,
     speed: CONFIG.BULLET_SPEED,
     colour: PALETTE.weapon.gun,
+    survivesDebris: true,
   },
   autocannon: {
     kind: "projectile",
@@ -165,6 +221,7 @@ export const WEAPON_TYPES = {
     reload: [1.1, 1.9], // range so multiple turrets drift out of sync
     speed: CONFIG.BULLET_SPEED,
     colour: PALETTE.weapon.gun,
+    survivesDebris: true,
   },
   minerLaser: {
     kind: "beam",
@@ -174,6 +231,7 @@ export const WEAPON_TYPES = {
     length: [320, 520],
     width: 2.4,
     glow: 16,
+    triggerRange: 420, // the host starts mining once a rock is this close
     colour: PALETTE.rival.minerBeam,
   },
   cannonLaser: {
@@ -196,6 +254,7 @@ export const WEAPON_TYPES = {
     energy: 10,
     reload: 4.6,
     range: 230,
+    overshoot: 42, // the beam reaches this far past the rock it is aimed at
     width: 2.4,
     glow: 14,
     colour: PALETTE.player.turret,
@@ -204,6 +263,10 @@ export const WEAPON_TYPES = {
     kind: "beam",
     chargeable: true,
     damage: 38,
+    // Reach is the point of charging, so damage follows it only gently: the
+    // multiplier runs from the first entry at chargeMin to the second at
+    // chargeMax. Set both to 1 to make charge buy reach alone.
+    chargeDamageMult: [1, 2.5],
     colour: PALETTE.player.beam,
     width: 2.4,
     glow: 16,
@@ -212,6 +275,7 @@ export const WEAPON_TYPES = {
     chargeMax: 640,
     chargeMin: 95,
     chargeCost: 150,
+    chargeReach: 40, // beam length is charge * reach multipliers, plus this
   },
 }
 
@@ -267,7 +331,8 @@ export const SHIELD_TYPES = {
 // The rest describes how a type differs in play, so no code tests a ship by
 // name: `hullWidth` is its outline weight, `sliceable` says an unshielded hull
 // is cut in two by a beam rather than blocking it, `debris` sizes the explosion,
-// and `debrisMaterial` says what its wreckage is made of.
+// and `debrisMaterial` says what its wreckage is made of. `mass` is in the same
+// units as a rock's (area / AST_MASS_AREA), with the player's hull as 1.
 // ---------------------------------------------------------------------------
 export const FRIGATE_SHAPE = [
   [1.7, 0.55],
@@ -294,6 +359,7 @@ export const SHIP_TYPES = {
     ],
     colour: PALETTE.rival.hull,
     size: 12,
+    mass: 0.7,
     accel: 140,
     maxSpeed: 190,
     turnRate: 2.6,
@@ -331,6 +397,7 @@ export const SHIP_TYPES = {
     outline: FRIGATE_SHAPE,
     colour: PALETTE.rival.frigateHull,
     size: 40,
+    mass: 6,
     accel: 32,
     maxSpeed: 44,
     turnRate: 0.17,
@@ -383,6 +450,7 @@ export const PLAYER_TYPE = {
   ],
   colour: PALETTE.player.hull,
   size: 13,
+  mass: 1,
   hardpoints: [
     { local: [1.4, 0], role: "nose" },
     { local: [0, 0], role: "core" },
