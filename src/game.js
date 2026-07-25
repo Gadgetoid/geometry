@@ -480,7 +480,12 @@ export class Game {
       // gun-rock so it can keep firing, even if small
       if (area < CONFIG.AST_MIN_AREA && mine.length === 0) {
         for (let k = 0; k < 3; k++) {
-          this.spawnOre(centre.x + randRange(-12, 12), centre.y + randRange(-12, 12), ship.vx + ix, ship.vy + iy)
+          this.spawnOre(
+            centre.x + randRange(-12, 12),
+            centre.y + randRange(-12, 12),
+            ship.vx + ix,
+            ship.vy + iy,
+          )
         }
         continue
       }

@@ -456,13 +456,42 @@ export class WebGLRenderer extends Renderer {
     // than summing into dots. Works for concave outlines (no miter maths).
     this.progs.poly = this.progs.line
     // per-pipeline vertex layout: [location, size] entries, and blend mode.
-    const LINE_ATTRS = [[0, 3], [1, 2], [2, 3], [3, 4]]
+    const LINE_ATTRS = [
+      [0, 3],
+      [1, 2],
+      [2, 3],
+      [3, 4],
+    ]
     this.layouts = {
       line: { stride: 12, attrs: LINE_ATTRS, blend: "add" },
       poly: { stride: 12, attrs: LINE_ATTRS, blend: "max" },
-      sprite: { stride: 10, attrs: [[0, 3], [1, 2], [2, 1], [3, 4]], blend: "add" },
-      flat: { stride: 7, attrs: [[0, 3], [1, 4]], blend: "alpha" },
-      text: { stride: 9, attrs: [[0, 3], [1, 2], [2, 4]], blend: "alpha" },
+      sprite: {
+        stride: 10,
+        attrs: [
+          [0, 3],
+          [1, 2],
+          [2, 1],
+          [3, 4],
+        ],
+        blend: "add",
+      },
+      flat: {
+        stride: 7,
+        attrs: [
+          [0, 3],
+          [1, 4],
+        ],
+        blend: "alpha",
+      },
+      text: {
+        stride: 9,
+        attrs: [
+          [0, 3],
+          [1, 2],
+          [2, 4],
+        ],
+        blend: "alpha",
+      },
     }
   }
 
@@ -788,7 +817,12 @@ export class WebGLRenderer extends Renderer {
         const a = (i / seg) * Math.PI * 2
         pts.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r })
       }
-      this.strokePoly(pts, { color: opts.stroke, width: opts.width, glow: opts.glow, alpha: opts.alpha })
+      this.strokePoly(pts, {
+        color: opts.stroke,
+        width: opts.width,
+        glow: opts.glow,
+        alpha: opts.alpha,
+      })
     }
   }
 
@@ -821,7 +855,13 @@ export class WebGLRenderer extends Renderer {
           { x: x + w, y: y + h },
           { x, y: y + h },
         ],
-        { color: opts.stroke, width: opts.width ?? 1, glow: opts.glow, alpha: opts.alpha, closed: true },
+        {
+          color: opts.stroke,
+          width: opts.width ?? 1,
+          glow: opts.glow,
+          alpha: opts.alpha,
+          closed: true,
+        },
       )
     }
   }
@@ -899,12 +939,36 @@ export class WebGLRenderer extends Renderer {
     gl.uniform1f(gl.getUniformLocation(prog, "uTime"), this.time)
 
     const verts = new Float32Array([
-      x - r, y - r, z, -1, -1,
-      x + r, y - r, z, 1, -1,
-      x + r, y + r, z, 1, 1,
-      x - r, y - r, z, -1, -1,
-      x + r, y + r, z, 1, 1,
-      x - r, y + r, z, -1, 1,
+      x - r,
+      y - r,
+      z,
+      -1,
+      -1,
+      x + r,
+      y - r,
+      z,
+      1,
+      -1,
+      x + r,
+      y + r,
+      z,
+      1,
+      1,
+      x - r,
+      y - r,
+      z,
+      -1,
+      -1,
+      x + r,
+      y + r,
+      z,
+      1,
+      1,
+      x - r,
+      y + r,
+      z,
+      -1,
+      1,
     ])
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
     gl.bindVertexArray(this.quadVao)

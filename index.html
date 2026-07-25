@@ -1,75 +1,198 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GEOMETRY II</title>
-<style>
-  :root{
-    color-scheme:dark;
-    --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
-    --cyan:#5fd7ff; --amber:#ffb14b; --edge:#12203a;
-  }
-  *{box-sizing:border-box}
-  html,body{height:100%}
-  body{
-    margin:0; background:#02040a; color:#cfe0ff; font-family:var(--mono);
-    display:grid; grid-template-rows:1fr auto; place-items:center; overflow:hidden;
-    background-image:radial-gradient(1200px 700px at 50% -10%,rgba(95,215,255,.06),transparent 60%);
-  }
-  .stage{position:relative; width:min(98vw, calc((100vh - 78px) * 1.6)); aspect-ratio:1024/640;
-    margin:12px auto 0; display:grid; place-items:center;}
-  .screen{position:relative; width:100%; height:100%; border-radius:20px; overflow:hidden;
-    background:#02040a;
-    box-shadow: inset 0 0 130px rgba(0,0,0,.92), 0 0 0 2px #0b1526, 0 34px 90px -24px #000;}
-  canvas{display:block; width:100%; height:100%; background:#02040a}
-  .scan{position:absolute; inset:0; pointer-events:none; z-index:3;
-    background:repeating-linear-gradient(to bottom,
-      rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,.17) 2.5px, rgba(0,0,0,.17) 3px);
-    mix-blend-mode:multiply;}
-  .vig{position:absolute; inset:0; pointer-events:none; z-index:4;
-    background:
-      radial-gradient(130% 130% at 50% 50%, rgba(0,0,0,0) 52%, rgba(3,6,14,.62) 100%),
-      radial-gradient(100% 100% at 50% 50%, rgba(95,215,255,.03), transparent 60%);}
-  .glare{position:absolute; inset:0; pointer-events:none; z-index:5;
-    background:radial-gradient(60% 40% at 50% -8%, rgba(120,180,255,.10), transparent 70%);}
-  .flick{animation:flick 4.2s steps(40) infinite}
-  @keyframes flick{ 0%,100%{opacity:1} 50%{opacity:.94} 73%{opacity:.98} }
-  .crt-off .scan,.crt-off .vig,.crt-off .glare{display:none}
-  .crt-off .screen{border-radius:8px}
-  /* WebGL backend renders scanlines / vignette / curvature in the shader */
-  .gl .scan,.gl .vig,.gl .glare{display:none}
-  .hud-btns{position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:6; display:flex; gap:6px}
-  .hud-btns button{font-family:var(--mono); font-size:11px; letter-spacing:.06em; color:#8fb2dd;
-    background:rgba(10,20,38,.6); border:1px solid #1c3050; border-radius:6px; padding:5px 9px; cursor:pointer}
-  .hud-btns button:hover{color:#fff; border-color:var(--cyan)}
-  .hud-btns button[aria-pressed="true"]{color:#02040a; background:var(--cyan); border-color:var(--cyan)}
-  .help{font-size:12px; color:#5f79a6; letter-spacing:.04em; padding:10px 0 14px; text-align:center; line-height:1.7}
-  .help b{color:var(--cyan); font-weight:600}
-  .help .sep{color:#2c4368; margin:0 8px}
-  button:focus-visible{outline:2px solid var(--cyan); outline-offset:2px}
-</style>
-</head>
-<body>
-  <div class="stage">
-    <div class="screen" id="screen">
-      <canvas id="game"></canvas>
-      <div class="scan flick"></div>
-      <div class="vig"></div>
-      <div class="glare"></div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GEOMETRY II</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+        --cyan: #5fd7ff;
+        --amber: #ffb14b;
+        --edge: #12203a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: #02040a;
+        color: #cfe0ff;
+        font-family: var(--mono);
+        display: grid;
+        grid-template-rows: 1fr auto;
+        place-items: center;
+        overflow: hidden;
+        background-image: radial-gradient(
+          1200px 700px at 50% -10%,
+          rgba(95, 215, 255, 0.06),
+          transparent 60%
+        );
+      }
+      .stage {
+        position: relative;
+        width: min(98vw, calc((100vh - 78px) * 1.6));
+        aspect-ratio: 1024/640;
+        margin: 12px auto 0;
+        display: grid;
+        place-items: center;
+      }
+      .screen {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        border-radius: 20px;
+        overflow: hidden;
+        background: #02040a;
+        box-shadow:
+          inset 0 0 130px rgba(0, 0, 0, 0.92),
+          0 0 0 2px #0b1526,
+          0 34px 90px -24px #000;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #02040a;
+      }
+      .scan {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 3;
+        background: repeating-linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0) 0,
+          rgba(0, 0, 0, 0) 2px,
+          rgba(0, 0, 0, 0.17) 2.5px,
+          rgba(0, 0, 0, 0.17) 3px
+        );
+        mix-blend-mode: multiply;
+      }
+      .vig {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 4;
+        background:
+          radial-gradient(130% 130% at 50% 50%, rgba(0, 0, 0, 0) 52%, rgba(3, 6, 14, 0.62) 100%),
+          radial-gradient(100% 100% at 50% 50%, rgba(95, 215, 255, 0.03), transparent 60%);
+      }
+      .glare {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 5;
+        background: radial-gradient(60% 40% at 50% -8%, rgba(120, 180, 255, 0.1), transparent 70%);
+      }
+      .flick {
+        animation: flick 4.2s steps(40) infinite;
+      }
+      @keyframes flick {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.94;
+        }
+        73% {
+          opacity: 0.98;
+        }
+      }
+      .crt-off .scan,
+      .crt-off .vig,
+      .crt-off .glare {
+        display: none;
+      }
+      .crt-off .screen {
+        border-radius: 8px;
+      }
+      /* WebGL backend renders scanlines / vignette / curvature in the shader */
+      .gl .scan,
+      .gl .vig,
+      .gl .glare {
+        display: none;
+      }
+      .hud-btns {
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 6;
+        display: flex;
+        gap: 6px;
+      }
+      .hud-btns button {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        color: #8fb2dd;
+        background: rgba(10, 20, 38, 0.6);
+        border: 1px solid #1c3050;
+        border-radius: 6px;
+        padding: 5px 9px;
+        cursor: pointer;
+      }
+      .hud-btns button:hover {
+        color: #fff;
+        border-color: var(--cyan);
+      }
+      .hud-btns button[aria-pressed="true"] {
+        color: #02040a;
+        background: var(--cyan);
+        border-color: var(--cyan);
+      }
+      .help {
+        font-size: 12px;
+        color: #5f79a6;
+        letter-spacing: 0.04em;
+        padding: 10px 0 14px;
+        text-align: center;
+        line-height: 1.7;
+      }
+      .help b {
+        color: var(--cyan);
+        font-weight: 600;
+      }
+      .help .sep {
+        color: #2c4368;
+        margin: 0 8px;
+      }
+      button:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <div class="screen" id="screen">
+        <canvas id="game"></canvas>
+        <div class="scan flick"></div>
+        <div class="vig"></div>
+        <div class="glare"></div>
+      </div>
+      <div class="hud-btns">
+        <button id="btnCrt" aria-pressed="true" title="CRT filter">CRT</button>
+        <button id="btnSnd" aria-pressed="false" title="Sound">SND</button>
+        <button id="btnDev" aria-pressed="false" title="Dev: jump to shop, free buys, pick sector">
+          DEV
+        </button>
+      </div>
     </div>
-    <div class="hud-btns">
-      <button id="btnCrt" aria-pressed="true" title="CRT filter">CRT</button>
-      <button id="btnSnd" aria-pressed="false" title="Sound">SND</button>
-      <button id="btnDev" aria-pressed="false" title="Dev: jump to shop, free buys, pick sector">DEV</button>
-    </div>
-  </div>
-  <p class="help">
-    <b>WASD</b> fly <span class="sep">/</span> <b>SPACE</b> hold to charge, release to fire
-    <span class="sep">/</span> <b>ARROWS</b> aim turret, <b>UP</b> fire <span class="sep">/</span> <b>1-4</b> use item
-    <span class="sep">/</span> <b>ENTER</b> start <span class="sep">/</span> <b>P</b> pause
-  </p>
+    <p class="help">
+      <b>WASD</b> fly <span class="sep">/</span> <b>SPACE</b> hold to charge, release to fire
+      <span class="sep">/</span> <b>ARROWS</b> aim turret, <b>UP</b> fire <span class="sep">/</span>
+      <b>1-4</b> use item <span class="sep">/</span> <b>ENTER</b> start <span class="sep">/</span>
+      <b>P</b> pause
+    </p>
 
-<script type="module" src="src/main.js"></script>
-</body>
+    <script type="module" src="src/main.js"></script>
+  </body>
 </html>

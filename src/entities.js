@@ -286,7 +286,11 @@ export class Weapon {
       const toPlayer = Math.atan2(player.y - host.y, player.x - host.x)
       const arc = ((toPlayer - host.angle + Math.PI * 3) % TAU) - Math.PI
       const dist = Math.hypot(player.x - host.x, player.y - host.y)
-      if (Math.abs(arc) < this.type.arc && dist < this.type.length && game.onScreen(host.x, host.y, 40)) {
+      if (
+        Math.abs(arc) < this.type.arc &&
+        dist < this.type.length &&
+        game.onScreen(host.x, host.y, 40)
+      ) {
         this.charging = this.type.chargeTime || 0.8
         this.chargeDuration = this.charging
         Sound.charge()
@@ -547,12 +551,18 @@ export class Ship extends Entity {
           alpha: 0.35 + 0.55 * prog,
         })
         const reach = 24 + prog * 40
-        renderer.line(w.x, w.y, w.x + Math.cos(this.angle) * reach, w.y + Math.sin(this.angle) * reach, {
-          color: m.type.colour,
-          width: 1 + prog * 2.5,
-          glow: 12,
-          alpha: 0.3 + 0.5 * prog,
-        })
+        renderer.line(
+          w.x,
+          w.y,
+          w.x + Math.cos(this.angle) * reach,
+          w.y + Math.sin(this.angle) * reach,
+          {
+            color: m.type.colour,
+            width: 1 + prog * 2.5,
+            glow: 12,
+            alpha: 0.3 + 0.5 * prog,
+          },
+        )
       }
       if (m.type.kind === "projectile") {
         renderer.circle(w.x, w.y, 3, { stroke: "#ffb14b", width: 1.4, glow: 8 })
@@ -746,8 +756,7 @@ export class PlayerShip extends Ship {
       }
     }
 
-    this.reversing =
-      canControl && game.upgrades.reverse && !this.thrusting && keys.has("KeyS")
+    this.reversing = canControl && game.upgrades.reverse && !this.thrusting && keys.has("KeyS")
     if (this.reversing) {
       this.vx -= Math.cos(this.angle) * CONFIG.ACCEL * 0.6 * dt
       this.vy -= Math.sin(this.angle) * CONFIG.ACCEL * 0.6 * dt
@@ -801,7 +810,10 @@ export class PlayerShip extends Ship {
         w.charge = 0
       }
       if (!this.thrusting) {
-        this.energy = Math.min(this.energyMax, this.energy + CONFIG.PLAYER_REGEN[game.upgrades.core] * dt)
+        this.energy = Math.min(
+          this.energyMax,
+          this.energy + CONFIG.PLAYER_REGEN[game.upgrades.core] * dt,
+        )
       }
     }
     this.energy = clamp(this.energy, 0, this.energyMax)
