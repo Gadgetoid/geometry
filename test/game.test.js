@@ -638,6 +638,37 @@ test("frigate debris is partitioned into convex parts that tile it", () => {
   }
 })
 
+// The complaint this guards: a full-charge shot stripped a scout's shield in one
+// hit and a frigate's in three, so a frigate died in four shots. A shield should
+// take a few hits. The exact counts are a tuning matter and deliberately not
+// asserted; that one shot is never enough is not.
+test("a full-charge shot does not strip a shielded rival's shield in one hit", () => {
+  for (const [typeName, loadout] of [
+    ["scout", [{ hp: 2, shield: "standard" }]],
+    ["frigate", SHIP_TYPES.frigate.loadout],
+  ]) {
+    const game = liveGame()
+    const player = game.player
+    player.angle = 0
+    player.x = 200
+    player.y = 320
+    const rival = new RivalShip(500, 320, typeName, loadout)
+    rival.angle = Math.PI
+    game.rivals = [rival]
+    const shield = rival.shieldModule()
+    assert.ok(shield && shield.up, `${typeName} must start shielded`)
+
+    player.mainWeapon.charge = WEAPON_TYPES.playerLaser.chargeMax
+    player.mainWeapon.cooldown = 0
+    player.fireLaser(game)
+
+    assert.ok(rival.energy < rival.energyMax, `${typeName} must take the hit on its shield`)
+    assert.equal(shield.up, true, `${typeName}'s shield must survive one full-charge shot`)
+    assert.equal(rival.dead, false, `${typeName} must survive it`)
+    assert.equal(game.asteroids.length, 0, "and must not be cut while shielded")
+  }
+})
+
 test("charge buys reach, and damage follows it more gently", () => {
   const weapon = WEAPON_TYPES.playerLaser
   const damageAt = (charge) => {

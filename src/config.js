@@ -318,7 +318,11 @@ export const WEAPON_TYPES = {
     // Reach is the point of charging, so damage follows it only gently: the
     // multiplier runs from the first entry at chargeMin to the second at
     // chargeMax. Set both to 1 to make charge buy reach alone.
-    chargeDamageMult: [1, 2.5],
+    //
+    // A full-charge shot lands 68, which no shielded rival loses its shield to in
+    // one hit. At the top laser level that is 2 shots to strip a scout and a third
+    // to cut it, and 4 to strip a frigate and a fifth to cut it.
+    chargeDamageMult: [1, 1.8],
     colour: PALETTE.player.beam,
     width: 2.4,
     glow: 16,
