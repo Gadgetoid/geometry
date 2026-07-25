@@ -426,7 +426,11 @@ export class WebGLRenderer extends Renderer {
     this.eye = [HALF_W, HALF_H]
     this.passZ = 0
 
-    this.batch = { prog: null, verts: [], floats: 0 }
+    // vertex scratch: builders write straight in, #flush uploads batch.count
+    // floats and rewinds. Grows on demand and is reused for the session.
+    this.batch = { prog: null, data: new Float32Array(1 << 16), count: 0 }
+    this.vboCapacity = 0
+    this.uniformCache = new Map() // program -> (name -> location)
 
     this.#initPrograms()
     this.#initBuffers()
@@ -601,11 +605,11 @@ export class WebGLRenderer extends Renderer {
       b = parseColour(colorB)
     gl.disable(gl.BLEND)
     gl.useProgram(prog)
-    gl.uniform1f(gl.getUniformLocation(prog, "uTime"), this.time)
-    gl.uniform2f(gl.getUniformLocation(prog, "uScroll"), scrollX, scrollY)
-    gl.uniform3f(gl.getUniformLocation(prog, "uColA"), a[0], a[1], a[2])
-    gl.uniform3f(gl.getUniformLocation(prog, "uColB"), b[0], b[1], b[2])
-    gl.uniform1f(gl.getUniformLocation(prog, "uSeed"), seed)
+    gl.uniform1f(this.#uniform(prog, "uTime"), this.time)
+    gl.uniform2f(this.#uniform(prog, "uScroll"), scrollX, scrollY)
+    gl.uniform3f(this.#uniform(prog, "uColA"), a[0], a[1], a[2])
+    gl.uniform3f(this.#uniform(prog, "uColB"), b[0], b[1], b[2])
+    gl.uniform1f(this.#uniform(prog, "uSeed"), seed)
     gl.bindVertexArray(this.emptyVao)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
     gl.enable(gl.BLEND)
@@ -657,6 +661,22 @@ export class WebGLRenderer extends Renderer {
     this.#composite()
   }
 
+  // Uniform locations never change once a program is linked, and looking them
+  // up by name is a driver-side string lookup, so cache them.
+  #uniform(prog, name) {
+    let byName = this.uniformCache.get(prog)
+    if (!byName) {
+      byName = new Map()
+      this.uniformCache.set(prog, byName)
+    }
+    let location = byName.get(name)
+    if (location === undefined) {
+      location = this.gl.getUniformLocation(prog, name)
+      byName.set(name, location)
+    }
+    return location
+  }
+
   // ---- batching -----------------------------------------------------------
   #use(progName) {
     if (this.batch.prog && this.batch.prog !== progName) {
@@ -664,30 +684,40 @@ export class WebGLRenderer extends Renderer {
     }
     this.batch.prog = progName
   }
-  #push(...values) {
-    const v = this.batch.verts
-    for (let i = 0; i < values.length; i++) {
-      v.push(values[i])
+  // Make room for `floats` more values, doubling the scratch buffer when it
+  // runs out. Builders write straight into batch.data at batch.count.
+  #reserve(floats) {
+    const b = this.batch
+    const need = b.count + floats
+    if (need <= b.data.length) {
+      return
     }
+    let size = b.data.length || 4096
+    while (size < need) {
+      size *= 2
+    }
+    const grown = new Float32Array(size)
+    grown.set(b.data.subarray(0, b.count))
+    b.data = grown
   }
 
   #flush() {
     const b = this.batch
-    if (!b.prog || b.verts.length === 0) {
-      b.verts.length = 0
+    if (!b.prog || b.count === 0) {
+      b.count = 0
       return
     }
     const gl = this.gl
     const layout = this.layouts[b.prog]
     const prog = this.progs[b.prog]
     gl.useProgram(prog)
-    gl.uniform2f(gl.getUniformLocation(prog, "uEye"), this.eye[0], this.eye[1])
-    gl.uniform1f(gl.getUniformLocation(prog, "uD"), CAMERA_D)
-    gl.uniform2f(gl.getUniformLocation(prog, "uHalf"), HALF_W, HALF_H)
+    gl.uniform2f(this.#uniform(prog, "uEye"), this.eye[0], this.eye[1])
+    gl.uniform1f(this.#uniform(prog, "uD"), CAMERA_D)
+    gl.uniform2f(this.#uniform(prog, "uHalf"), HALF_W, HALF_H)
     if (b.prog === "text") {
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, this.atlasTex)
-      gl.uniform1i(gl.getUniformLocation(prog, "uAtlas"), 0)
+      gl.uniform1i(this.#uniform(prog, "uAtlas"), 0)
     }
     if (layout.blend === "max") {
       gl.blendEquation(gl.MAX)
@@ -699,7 +729,12 @@ export class WebGLRenderer extends Renderer {
 
     gl.bindVertexArray(this.vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo)
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(b.verts), gl.STREAM_DRAW)
+    // reallocate GPU storage only when the scratch buffer has grown
+    if (b.data.byteLength > this.vboCapacity) {
+      gl.bufferData(gl.ARRAY_BUFFER, b.data.byteLength, gl.STREAM_DRAW)
+      this.vboCapacity = b.data.byteLength
+    }
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.data, 0, b.count)
     const stride = layout.stride * 4
     let offset = 0
     for (const [loc, size] of layout.attrs) {
@@ -707,11 +742,11 @@ export class WebGLRenderer extends Renderer {
       gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, offset)
       offset += size * 4
     }
-    gl.drawArrays(gl.TRIANGLES, 0, b.verts.length / layout.stride)
+    gl.drawArrays(gl.TRIANGLES, 0, b.count / layout.stride)
     gl.bindVertexArray(null)
     gl.blendEquation(gl.FUNC_ADD) // restore for other passes (MAX is per-batch)
 
-    b.verts.length = 0
+    b.count = 0
     b.prog = null
   }
 
@@ -733,9 +768,26 @@ export class WebGLRenderer extends Renderer {
     const bxe = bx + dx * cap,
       bye = by + dy * cap // extended B end (long = len + cap)
     const [r, g, bl, a] = col
+    this.#reserve(6 * 12)
+    const batch = this.batch
     // vertex: pos, edge (transverse), long (along), halfCore, halfTotal, len, rgba
-    const corner = (x, y, edge, long) =>
-      this.#push(x + px * edge, y + py * edge, z, edge, long, core, total, len, r, g, bl, a)
+    const corner = (x, y, edge, long) => {
+      const d = batch.data
+      let i = batch.count
+      d[i++] = x + px * edge
+      d[i++] = y + py * edge
+      d[i++] = z
+      d[i++] = edge
+      d[i++] = long
+      d[i++] = core
+      d[i++] = total
+      d[i++] = len
+      d[i++] = r
+      d[i++] = g
+      d[i++] = bl
+      d[i++] = a
+      batch.count = i
+    }
     corner(axe, aye, -total, -cap)
     corner(bxe, bye, -total, len + cap)
     corner(bxe, bye, total, len + cap)
@@ -746,7 +798,23 @@ export class WebGLRenderer extends Renderer {
 
   #spriteQuad(x, y, z, radius, exp, col) {
     const [r, g, b, a] = col
-    const v = (dx, dy) => this.#push(x + dx * radius, y + dy * radius, z, dx, dy, exp, r, g, b, a)
+    this.#reserve(6 * 10)
+    const batch = this.batch
+    const v = (dx, dy) => {
+      const d = batch.data
+      let i = batch.count
+      d[i++] = x + dx * radius
+      d[i++] = y + dy * radius
+      d[i++] = z
+      d[i++] = dx
+      d[i++] = dy
+      d[i++] = exp
+      d[i++] = r
+      d[i++] = g
+      d[i++] = b
+      d[i++] = a
+      batch.count = i
+    }
     v(-1, -1)
     v(1, -1)
     v(1, 1)
@@ -757,9 +825,20 @@ export class WebGLRenderer extends Renderer {
 
   #flatTri(pts, col) {
     const [r, g, b, a] = col
+    this.#reserve(pts.length * 7)
+    const batch = this.batch
+    const d = batch.data
+    let i = batch.count
     for (const p of pts) {
-      this.#push(p.x, p.y, this.passZ, r, g, b, a)
+      d[i++] = p.x
+      d[i++] = p.y
+      d[i++] = this.passZ
+      d[i++] = r
+      d[i++] = g
+      d[i++] = b
+      d[i++] = a
     }
+    batch.count = i
   }
 
   // ---- Renderer contract --------------------------------------------------
@@ -904,8 +983,22 @@ export class WebGLRenderer extends Renderer {
         v0 = row0 * dv
       const x0 = penX - adv,
         y0 = top
-      const quad = (dx, dy) =>
-        this.#push(x0 + dx * cw, y0 + dy * ch, this.passZ, u0 + dx * du, v0 + dy * dv, r, g, b, al)
+      this.#reserve(6 * 9)
+      const batch = this.batch
+      const quad = (dx, dy) => {
+        const d = batch.data
+        let k = batch.count
+        d[k++] = x0 + dx * cw
+        d[k++] = y0 + dy * ch
+        d[k++] = this.passZ
+        d[k++] = u0 + dx * du
+        d[k++] = v0 + dy * dv
+        d[k++] = r
+        d[k++] = g
+        d[k++] = b
+        d[k++] = al
+        batch.count = k
+      }
       quad(0, 0)
       quad(1, 0)
       quad(1, 1)
@@ -921,22 +1014,22 @@ export class WebGLRenderer extends Renderer {
     const prog = this.progs.planet
     const z = opts.depth != null ? depthToZ(opts.depth) : this.passZ
     gl.useProgram(prog)
-    gl.uniform2f(gl.getUniformLocation(prog, "uEye"), this.eye[0], this.eye[1])
-    gl.uniform1f(gl.getUniformLocation(prog, "uD"), CAMERA_D)
-    gl.uniform2f(gl.getUniformLocation(prog, "uHalf"), HALF_W, HALF_H)
+    gl.uniform2f(this.#uniform(prog, "uEye"), this.eye[0], this.eye[1])
+    gl.uniform1f(this.#uniform(prog, "uD"), CAMERA_D)
+    gl.uniform2f(this.#uniform(prog, "uHalf"), HALF_W, HALF_H)
     const base = parseColour(opts.base || "#3a4a63")
     const hi = parseColour(opts.hi || "#7f93a8")
     const atmo = parseColour(opts.atmo || "#8fb7d6")
     const emit = parseColour(opts.emit || "#000000")
-    gl.uniform3f(gl.getUniformLocation(prog, "uBase"), base[0], base[1], base[2])
-    gl.uniform3f(gl.getUniformLocation(prog, "uHi"), hi[0], hi[1], hi[2])
-    gl.uniform3f(gl.getUniformLocation(prog, "uAtmo"), atmo[0], atmo[1], atmo[2])
-    gl.uniform3f(gl.getUniformLocation(prog, "uEmit"), emit[0], emit[1], emit[2])
-    gl.uniform1i(gl.getUniformLocation(prog, "uType"), opts.type || 0)
+    gl.uniform3f(this.#uniform(prog, "uBase"), base[0], base[1], base[2])
+    gl.uniform3f(this.#uniform(prog, "uHi"), hi[0], hi[1], hi[2])
+    gl.uniform3f(this.#uniform(prog, "uAtmo"), atmo[0], atmo[1], atmo[2])
+    gl.uniform3f(this.#uniform(prog, "uEmit"), emit[0], emit[1], emit[2])
+    gl.uniform1i(this.#uniform(prog, "uType"), opts.type || 0)
     const la = opts.light != null ? opts.light : -0.7
-    gl.uniform2f(gl.getUniformLocation(prog, "uLight"), Math.cos(la), Math.sin(la))
-    gl.uniform1f(gl.getUniformLocation(prog, "uSeed"), opts.seed || 1.0)
-    gl.uniform1f(gl.getUniformLocation(prog, "uTime"), this.time)
+    gl.uniform2f(this.#uniform(prog, "uLight"), Math.cos(la), Math.sin(la))
+    gl.uniform1f(this.#uniform(prog, "uSeed"), opts.seed || 1.0)
+    gl.uniform1f(this.#uniform(prog, "uTime"), this.time)
 
     const verts = new Float32Array([
       x - r,
@@ -1002,7 +1095,7 @@ export class WebGLRenderer extends Renderer {
     gl.viewport(0, 0, bw, bh)
     gl.useProgram(this.progs.bright)
     this.#bindTex(this.progs.bright, "uTex", this.scene.tex, 0)
-    gl.uniform1f(gl.getUniformLocation(this.progs.bright, "uThreshold"), 0.55)
+    gl.uniform1f(this.#uniform(this.progs.bright, "uThreshold"), 0.55)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
 
     // separable blur, two iterations for a wide, soft glow
@@ -1019,7 +1112,7 @@ export class WebGLRenderer extends Renderer {
     gl.viewport(0, 0, dst.w, dst.h)
     gl.useProgram(this.progs.blur)
     this.#bindTex(this.progs.blur, "uTex", src.tex, 0)
-    gl.uniform2f(gl.getUniformLocation(this.progs.blur, "uDir"), dir[0], dir[1])
+    gl.uniform2f(this.#uniform(this.progs.blur, "uDir"), dir[0], dir[1])
     gl.drawArrays(gl.TRIANGLES, 0, 3)
   }
 
@@ -1037,9 +1130,9 @@ export class WebGLRenderer extends Renderer {
     gl.useProgram(prog)
     this.#bindTex(prog, "uScene", this.scene.tex, 0)
     this.#bindTex(prog, "uBloom", this.bloomA.tex, 1)
-    gl.uniform1f(gl.getUniformLocation(prog, "uBloom0"), 1.25)
-    gl.uniform1f(gl.getUniformLocation(prog, "uCrt"), this.crtEnabled ? 1 : 0)
-    gl.uniform1f(gl.getUniformLocation(prog, "uTime"), this.time)
+    gl.uniform1f(this.#uniform(prog, "uBloom0"), 1.25)
+    gl.uniform1f(this.#uniform(prog, "uCrt"), this.crtEnabled ? 1 : 0)
+    gl.uniform1f(this.#uniform(prog, "uTime"), this.time)
     gl.bindVertexArray(this.emptyVao)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
     gl.enable(gl.BLEND)
@@ -1049,7 +1142,7 @@ export class WebGLRenderer extends Renderer {
     const gl = this.gl
     gl.activeTexture(gl.TEXTURE0 + unit)
     gl.bindTexture(gl.TEXTURE_2D, tex)
-    gl.uniform1i(gl.getUniformLocation(prog, name), unit)
+    gl.uniform1i(this.#uniform(prog, name), unit)
   }
 
   // Called by the view on resize with the letterboxed content rectangle in
