@@ -60,15 +60,22 @@ export function oreFromFragment(area) {
   return clamp(Math.round(area / CONFIG.ORE_PER_FRAGMENT_AREA) + 1, 1, 4)
 }
 
-// Contact between two bodies, each given as a list of convex parts that tile its
-// real outline. Callers reject on the enclosing circles first. Returns the push
-// `b` must take (and `a` resist), or null when they are apart.
+// Contact between two bodies. A body presents one of two surfaces: a disc, when
+// a shield is raised over it, or its real outline as a list of convex parts that
+// tile it. Callers reject on the enclosing circles first. Returns the push `b`
+// must take (and `a` resist), or null when they are apart.
+//
+// A raised shield is a physical barrier, not only something shots stop against,
+// so a hull cannot be flown inside a bubble it can see. A bubble is round, so a
+// disc is its shape rather than a proxy for it, which is the same answer beams
+// and shots already give.
 //
 // The two halves of the answer are measured differently, and both matter:
 //
-// Whether they touch at all is decided part against part, which is exact for any
-// outline. A separating-axis test on a concave outline reports a contact across
-// its notch, which is what a plain SAT call on a cut hull would do.
+// Whether they touch at all is decided surface against surface, part by part,
+// which is exact for any outline. A separating-axis test on a concave outline
+// reports a contact across its notch, which is what a plain SAT call on a cut
+// hull would do.
 //
 // How far to push is then measured over each body as a whole: for a candidate
 // axis, how far must b travel along it before it clears every part of a. The
@@ -77,77 +84,146 @@ export function oreFromFragment(area) {
 // instead is wrong either way round - the shallowest pair stops as soon as it
 // alone is clear and leaves the others interpenetrating, while the deepest pair
 // names the one axis that is worst to push along.
-export function bodyContact(partsA, centreA, partsB, centreB) {
-  let touching = false
-  for (const a of partsA) {
-    for (const b of partsB) {
-      if (convexContact(a, b, centreA, centreB)) {
-        touching = true
-        break
-      }
-    }
-    if (touching) {
-      break
-    }
-  }
-  if (!touching) {
+export function shapeContact(a, b) {
+  if (!shapesTouch(a, b)) {
     return null
   }
-  // Axes are oriented from a toward b up front, so an overlap has one meaning:
-  // how far b must travel along it to clear a.
-  const toBx = centreB.x - centreA.x,
-    toBy = centreB.y - centreA.y
   let bestDepth = Infinity,
     bestX = 0,
     bestY = 0
-  for (const parts of [partsA, partsB]) {
-    for (const poly of parts) {
-      for (let i = 0; i < poly.length; i++) {
-        const p = poly[i],
-          q = poly[(i + 1) % poly.length]
-        let nx = -(q.y - p.y),
-          ny = q.x - p.x
-        const len = Math.hypot(nx, ny)
-        if (len < 1e-9) {
-          continue
-        }
-        nx /= len
-        ny /= len
-        if (toBx * nx + toBy * ny < 0) {
-          nx = -nx
-          ny = -ny
-        }
-        let aMax = -Infinity,
-          bMin = Infinity
-        for (const part of partsA) {
-          for (const v of part) {
-            const d = v.x * nx + v.y * ny
-            if (d > aMax) {
-              aMax = d
-            }
-          }
-        }
-        for (const part of partsB) {
-          for (const v of part) {
-            const d = v.x * nx + v.y * ny
-            if (d < bMin) {
-              bMin = d
-            }
-          }
-        }
-        const depth = aMax - bMin
-        if (depth > 0 && depth < bestDepth) {
-          bestDepth = depth
-          bestX = nx
-          bestY = ny
-        }
-      }
+  for (const [nx, ny] of contactAxes(a, b)) {
+    const depth = shapeExtent(a, nx, ny).max - shapeExtent(b, nx, ny).min
+    if (depth > 0 && depth < bestDepth) {
+      bestDepth = depth
+      bestX = nx
+      bestY = ny
     }
   }
   if (bestDepth === Infinity) {
     return null
   }
   return { nx: bestX, ny: bestY, depth: bestDepth }
+}
+
+// Two outlines, with no shield over either. Kept as its own name because most
+// callers know they are solving hull against hull.
+export function bodyContact(partsA, centreA, partsB, centreB) {
+  return shapeContact({ centre: centreA, parts: partsA }, { centre: centreB, parts: partsB })
+}
+
+// How far a surface reaches along an axis.
+function shapeExtent(shape, nx, ny) {
+  if (shape.radius) {
+    const centre = shape.centre.x * nx + shape.centre.y * ny
+    return { min: centre - shape.radius, max: centre + shape.radius }
+  }
+  let min = Infinity,
+    max = -Infinity
+  for (const part of shape.parts) {
+    for (const v of part) {
+      const d = v.x * nx + v.y * ny
+      if (d < min) {
+        min = d
+      }
+      if (d > max) {
+        max = d
+      }
+    }
+  }
+  return { min, max }
+}
+
+// Nearest point of a convex part to `p`, and whether `p` is inside it.
+function nearestOnPart(part, p) {
+  let distance = Infinity,
+    point = part[0]
+  for (let i = 0; i < part.length; i++) {
+    const a = part[i],
+      b = part[(i + 1) % part.length]
+    const dx = b.x - a.x,
+      dy = b.y - a.y
+    const len2 = dx * dx + dy * dy || 1
+    const t = clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / len2, 0, 1)
+    const qx = a.x + dx * t,
+      qy = a.y + dy * t
+    const d = Math.hypot(p.x - qx, p.y - qy)
+    if (d < distance) {
+      distance = d
+      point = { x: qx, y: qy }
+    }
+  }
+  return { point, distance, inside: pointInPolygon(p, part) }
+}
+
+function shapesTouch(a, b) {
+  if (a.radius && b.radius) {
+    return Math.hypot(b.centre.x - a.centre.x, b.centre.y - a.centre.y) < a.radius + b.radius
+  }
+  if (a.radius || b.radius) {
+    const disc = a.radius ? a : b,
+      outline = a.radius ? b : a
+    for (const part of outline.parts) {
+      const near = nearestOnPart(part, disc.centre)
+      if (near.inside || near.distance < disc.radius) {
+        return true
+      }
+    }
+    return false
+  }
+  for (const pa of a.parts) {
+    for (const pb of b.parts) {
+      if (convexContact(pa, pb, a.centre, b.centre)) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+// Every axis worth testing, each oriented from a toward b up front so an overlap
+// has one meaning: how far b must travel along it to clear a. Face normals cover
+// the outlines; a disc has no faces, so it contributes the direction to whatever
+// of the other surface is nearest, which is where a curve is closest to touching.
+function contactAxes(a, b) {
+  const axes = []
+  const toBx = b.centre.x - a.centre.x,
+    toBy = b.centre.y - a.centre.y
+  const add = (x, y) => {
+    const len = Math.hypot(x, y)
+    if (len < 1e-9) {
+      return
+    }
+    const nx = x / len,
+      ny = y / len
+    const flip = toBx * nx + toBy * ny < 0
+    axes.push(flip ? [-nx, -ny] : [nx, ny])
+  }
+  for (const shape of [a, b]) {
+    for (const part of shape.parts || []) {
+      for (let i = 0; i < part.length; i++) {
+        const p = part[i],
+          q = part[(i + 1) % part.length]
+        add(-(q.y - p.y), q.x - p.x)
+      }
+    }
+  }
+  for (const [disc, other] of [
+    [a, b],
+    [b, a],
+  ]) {
+    if (!disc.radius) {
+      continue
+    }
+    if (other.radius) {
+      add(other.centre.x - disc.centre.x, other.centre.y - disc.centre.y)
+    } else {
+      for (const part of other.parts) {
+        const near = nearestOnPart(part, disc.centre)
+        add(disc.centre.x - near.point.x, disc.centre.y - near.point.y)
+      }
+    }
+  }
+  return axes
 }
 
 // One hull-against-rock contact, shared by every ship so the player and a rival
@@ -171,10 +247,11 @@ export function resolveHullRockContact(ship, asteroid, contact) {
   const push = Math.max(0, contact.depth - CONFIG.CONTACT_SLOP)
   ship.x += ux * push
   ship.y += uy * push
-  // The contact lies on the hull's own surface facing the rock. A circle around
-  // the hull puts it somewhere the hull is not, which both misplaces the impact
-  // effect and mismeasures the lever arm the rock is shoved on.
-  const reach = supportDistance(ship.worldOutline(), ship, -ux, -uy)
+  // The contact lies on the ship's own surface facing the rock, which is its
+  // shield bubble while one is raised and its outline when none is. A circle
+  // around the hull puts it somewhere the ship is not, which both misplaces the
+  // impact effect and mismeasures the lever arm the rock is shoved on.
+  const reach = ship.contactSupport(-ux, -uy)
   const impact = { x: ship.x - ux * reach, y: ship.y - uy * reach }
   const leverX = impact.x - asteroid.center.x,
     leverY = impact.y - asteroid.center.y
@@ -210,11 +287,11 @@ export function resolveHullRockContact(ship, asteroid, contact) {
 export function resolveShipPair(a, b) {
   const dx = b.x - a.x,
     dy = b.y - a.y
-  const reach = a.boundRadius + b.boundRadius
+  const reach = a.contactReach() + b.contactReach()
   if (dx * dx + dy * dy >= reach * reach) {
     return 0
   }
-  const contact = bodyContact(a.collisionOutline(), a, b.collisionOutline(), b)
+  const contact = shapeContact(a.contactShape(), b.contactShape())
   if (!contact) {
     return 0
   }
@@ -336,6 +413,13 @@ export class Entity {
   // Zero means nothing is raised and the body's own outline is the surface.
   shieldRadius() {
     return 0
+  }
+
+  // How far this body's contact surface reaches from its centre, for the
+  // broadphase reject every contact site does first. A raised shield stands
+  // further out than the hull inside it, so it sets the reach while it is up.
+  contactReach() {
+    return Math.max(this.boundRadius, this.shieldUp() ? this.shieldRadius() : 0)
   }
 
   // The surface an incoming hit of this channel has to reach: the shield bubble
@@ -817,6 +901,22 @@ export class Ship extends Entity {
   collisionOutline() {
     const world = this.worldOutline()
     return this.collisionParts.map((part) => part.map((i) => world[i]))
+  }
+
+  // What other bodies touch: the bubble while a shield is raised, the outline
+  // when none is. The outline is not built while it is not the surface.
+  contactShape() {
+    const bubble = this.shieldUp() ? this.shieldRadius() : 0
+    return bubble > 0
+      ? { centre: this, radius: bubble }
+      : { centre: this, parts: this.collisionOutline() }
+  }
+
+  // How far that surface reaches from the centre in a direction, for placing an
+  // impact on it.
+  contactSupport(ux, uy) {
+    const bubble = this.shieldUp() ? this.shieldRadius() : 0
+    return bubble > 0 ? bubble : supportDistance(this.worldOutline(), this, ux, uy)
   }
 
   // Mass for collision response, in the same units as a rock's.
@@ -1391,16 +1491,11 @@ export class PlayerShip extends Ship {
       for (const asteroid of game.asteroids) {
         const dx = this.x - asteroid.center.x,
           dy = this.y - asteroid.center.y
-        const reach = asteroid.boundRadius + this.boundRadius
+        const reach = asteroid.contactReach() + this.contactReach()
         if (dx * dx + dy * dy >= reach * reach) {
           continue
         }
-        const contact = bodyContact(
-          asteroid.convexParts(),
-          asteroid.center,
-          this.collisionOutline(),
-          this,
-        )
+        const contact = shapeContact(asteroid.contactShape(), this.contactShape())
         if (!contact) {
           continue
         }
@@ -1762,16 +1857,11 @@ export class RivalShip extends Ship {
     for (const asteroid of game.asteroids) {
       const dx = this.x - asteroid.center.x,
         dy = this.y - asteroid.center.y
-      const reach = asteroid.boundRadius + this.boundRadius
+      const reach = asteroid.contactReach() + this.contactReach()
       if (dx * dx + dy * dy >= reach * reach) {
         continue
       }
-      const contact = bodyContact(
-        asteroid.convexParts(),
-        asteroid.center,
-        this.collisionOutline(),
-        this,
-      )
+      const contact = shapeContact(asteroid.contactShape(), this.contactShape())
       if (!contact) {
         continue
       }
@@ -1948,6 +2038,13 @@ export class Asteroid extends Entity {
 
   hitOutline() {
     return this.vertices
+  }
+
+  contactShape() {
+    const bubble = this.shieldUp() ? this.shieldRadius() : 0
+    return bubble > 0
+      ? { centre: this.center, radius: bubble }
+      : { centre: this.center, parts: this.convexParts() }
   }
 
   // The outline as convex parts, for bodyContact. A whole rock is a convex hull

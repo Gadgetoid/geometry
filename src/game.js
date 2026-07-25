@@ -62,9 +62,9 @@ import {
   Powerup,
   PlayerShip,
   RivalShip,
-  bodyContact,
   oreFromFragment,
   resolveShipPair,
+  shapeContact,
 } from "./entities.js"
 
 const PARTICLE_LIFE = 5 // global lifetime multiplier
@@ -1149,11 +1149,11 @@ export class Game {
     }
     const dx = b.center.x - a.center.x,
       dy = b.center.y - a.center.y
-    const reach = a.boundRadius + b.boundRadius
+    const reach = a.contactReach() + b.contactReach()
     if (dx * dx + dy * dy >= reach * reach) {
       return false
     }
-    const contact = bodyContact(a.convexParts(), a.center, b.convexParts(), b.center)
+    const contact = shapeContact(a.contactShape(), b.contactShape())
     if (!contact) {
       return false
     }

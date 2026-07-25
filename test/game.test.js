@@ -19,6 +19,7 @@ import {
   RivalShip,
   Shield,
   oreFromFragment,
+  shapeContact,
   resolveHullRockContact,
   rockMass,
 } from "../src/entities.js"
@@ -883,6 +884,160 @@ test("a sliver cut off a hull is worth what a rock fragment its size is worth", 
   assert.ok(thick >= thin, `a bigger sliver pays at least as much (${thin} vs ${thick})`)
   assert.equal(oreFromFragment(CONFIG.SHIP_DEBRIS_MIN_AREA - 1), 2)
   assert.equal(oreFromFragment(10), 1, "a splinter is worth one chunk, not three")
+})
+
+// ---- a raised shield is solid ---------------------------------------------
+
+// Drive the player flat out at a target and report how close the two contact
+// surfaces came. A rock is left parked far away, or the empty sector counts as
+// cleared and warps the ship out part-way through the run.
+function ramTarget(game, centreOf, surfaceOf, pin) {
+  const player = game.player
+  player.invincible = 1e9 // this is about geometry, not damage
+  player.x = 420
+  player.y = 320
+  player.angle = 0
+  let closest = Infinity
+  for (let i = 0; i < 240; i++) {
+    pin()
+    player.vx = 300
+    player.vy = 0
+    game.advance(1 / 60)
+    assert.ok(player.solid, `the ship must stay in the sector (phase ${game.phase})`)
+    const c = centreOf()
+    closest = Math.min(closest, Math.hypot(player.x - c.x, player.y - c.y))
+  }
+  const mine = player.shieldUp() ? player.shieldRadius() : player.boundRadius
+  return { closest, surfaces: surfaceOf() + mine }
+}
+
+// A live sector with one rock, parked out of the way.
+function sectorWithARock() {
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ vertices: square(ARENA.cx, ARENA.cy - 700, 60) })]
+  return game
+}
+
+test("a hull cannot be flown inside a shield bubble it can see", () => {
+  const game = sectorWithARock()
+  const frigate = new RivalShip(600, 320, "frigate", SHIP_TYPES.frigate.loadout)
+  frigate.angle = 0
+  game.rivals = [frigate]
+  assert.ok(frigate.shieldUp(), "the frigate must actually have its shield up")
+  assert.ok(
+    frigate.shieldRadius() > frigate.boundRadius,
+    "and the bubble must stand clear of the hull, or there is nothing to test",
+  )
+  const { closest, surfaces } = ramTarget(
+    game,
+    () => frigate,
+    () => frigate.shieldRadius(),
+    () => {
+      frigate.x = 600
+      frigate.y = 320
+      frigate.vx = 0
+      frigate.vy = 0
+      frigate.angle = 0
+    },
+  )
+  // it rests on the bubble, within the overlap the solver deliberately leaves
+  assert.ok(
+    surfaces - closest <= CONFIG.CONTACT_SLOP + 0.001,
+    `stopped ${(surfaces - closest).toFixed(2)} inside the bubble`,
+  )
+})
+
+test("an unshielded hull is still touched on its outline", () => {
+  const game = sectorWithARock()
+  const bare = SHIP_TYPES.frigate.loadout.filter((entry) => !entry.shield)
+  const frigate = new RivalShip(600, 320, "frigate", bare)
+  frigate.angle = 0
+  game.rivals = [frigate]
+  assert.equal(frigate.shieldUp(), false)
+  const { closest } = ramTarget(
+    game,
+    () => frigate,
+    () => 0,
+    () => {
+      frigate.x = 600
+      frigate.y = 320
+      frigate.vx = 0
+      frigate.vy = 0
+      frigate.angle = 0
+    },
+  )
+  // the hull reaches far further along its own axis than the bubble did
+  const nearFace = 600 - Math.min(...frigate.worldOutline().map((v) => v.x))
+  assert.ok(
+    closest < frigate.shieldRadius(),
+    "without a shield the player gets inside where the bubble would have been",
+  )
+  assert.ok(closest > nearFace - 1, "but no further in than the hull")
+})
+
+test("a shielded rock is solid on its bubble too", () => {
+  const game = sectorWithARock()
+  const rock = new Asteroid({ vertices: square(640, 320, 70) })
+  rock.hardpoints.push({ x: rock.center.x, y: rock.center.y, module: new Shield("standard") })
+  rock.refreshEnergy()
+  game.asteroids.push(rock)
+  assert.ok(rock.shieldUp())
+  const { closest, surfaces } = ramTarget(
+    game,
+    () => rock.center,
+    () => rock.shieldRadius(),
+    () => {
+      rock.vx = 0
+      rock.vy = 0
+      rock.spin = 0
+    },
+  )
+  assert.ok(
+    surfaces - closest <= CONFIG.CONTACT_SLOP + 0.001,
+    `stopped ${(surfaces - closest).toFixed(2)} inside the bubble`,
+  )
+})
+
+test("shapeContact solves a disc against an outline as exactly as two outlines", () => {
+  // A disc overlapping a square by a known amount, from every direction.
+  const half = 40
+  const parts = [square(0, 0, half)]
+  const radius = 25
+  for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) {
+    const overlap = 6
+    // place the disc centre so it overlaps the square's face by `overlap`
+    const along = Math.abs(Math.cos(a)) > Math.abs(Math.sin(a)) ? "x" : "y"
+    const centre =
+      along === "x"
+        ? { x: Math.sign(Math.cos(a)) * (half + radius - overlap), y: 0 }
+        : { x: 0, y: Math.sign(Math.sin(a)) * (half + radius - overlap) }
+    const contact = shapeContact({ centre: { x: 0, y: 0 }, parts }, { centre, radius })
+    assert.ok(contact, `a disc ${overlap} into the square must register`)
+    assert.ok(
+      Math.abs(contact.depth - overlap) < 1e-6,
+      `depth ${contact.depth.toFixed(3)} for an overlap of ${overlap}`,
+    )
+    // and the push must actually separate them
+    const moved = {
+      x: centre.x + contact.nx * contact.depth,
+      y: centre.y + contact.ny * contact.depth,
+    }
+    assert.equal(
+      shapeContact({ centre: { x: 0, y: 0 }, parts }, { centre: moved, radius }),
+      null,
+      "one application must clear it",
+    )
+  }
+})
+
+test("two bubbles meet where they are drawn", () => {
+  const a = { centre: { x: 0, y: 0 }, radius: 30 }
+  const b = { centre: { x: 45, y: 0 }, radius: 25 }
+  const contact = shapeContact(a, b)
+  assert.ok(contact)
+  assert.ok(Math.abs(contact.depth - 10) < 1e-9, `depth ${contact.depth}`)
+  assert.ok(Math.abs(contact.nx - 1) < 1e-9 && Math.abs(contact.ny) < 1e-9)
+  assert.equal(shapeContact(a, { centre: { x: 56, y: 0 }, radius: 25 }), null, "and apart is apart")
 })
 
 test("a beam cuts every hull it passes through, as it cuts every rock", () => {

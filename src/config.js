@@ -633,6 +633,62 @@ export const FRIGATE_SHAPE = [
 ]
 
 const SHIP_DESIGNS = {
+  // in SHIP_DESIGNS:
+  hunter: {
+    outline: [
+      [1.6, 0],
+      [-0.4, -0.75],
+      [-1, -0.55],
+      [-1, -0.45],
+      [-0.2, -0.15],
+      [-0.2, 0.15],
+      [-1, 0.45],
+      [-1, 0.55],
+      [-0.4, 0.75],
+    ],
+    colour: PALETTE.ore.body,
+    size: 12,
+    mass: 0.8,
+    power: 1.5,
+    armour: 1.1,
+    exhaust: {
+      mounts: [
+        [-1.05, 0.5],
+        [-1.05, -0.5],
+      ],
+      rate: 50,
+      speed: 30,
+      life: 0.5,
+      spread: 4,
+    },
+    lifeTime: [16, 26],
+    energyMax: 150,
+    regen: 22,
+    hardpoints: [
+      { local: [1.6, 0], role: "nose" },
+      { local: [0.15, 0], role: "gun" },
+      { local: [0.4, 0], role: "core" },
+    ],
+    loadout: [
+      { hp: 0, weapon: "minerLaser", controller: "miner" },
+      { hp: 2, shield: "standard" },
+    ],
+    arms: {
+      gun: {
+        hp: 1,
+        weapon: "autocannon",
+        controller: "turret",
+        chancePerSector: 0.15,
+        chanceCap: 0.85,
+      },
+    },
+    spawn: { fromSector: 4, fallback: true },
+    debrisMaterial: SHIP_PLATING,
+    debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
+    killScore: 400,
+    blastScore: 200,
+    oreDrop: 5,
+  },
   scout: {
     outline: [
       [1.4, 0],

@@ -39,6 +39,31 @@ along one axis; fixing the second means confining after the solver instead of
 before, or iterating the two together. Left because the visible error is a couple
 of units on a 90-unit rock.
 
+## A shield bubble is round to the simulation and hexagonal on screen
+
+Everything that meets a raised shield meets a circle of `shieldRadius`: beams,
+shots, and now hulls. `Shield.draw` paints a regular polygon of the type's
+`sides` at that radius, and every shield in the game has `sides: 6`, so the flats
+of the drawn hexagon sit at 86.6% of the radius being collided against. Parked
+against a flat rather than a vertex, a hull stops with clear space in front of
+it:
+
+| bubble | radius | worst gap |
+| --- | --- | --- |
+| player | 24.2 | 3.2 |
+| scout | 22.3 | 3.0 |
+| frigate | 95.1 | **12.7** |
+
+The hexagon also turns, at `time * 0.3`, so the gap breathes rather than sitting
+still. That rotation is why the circle is the honest steady-state shape and why
+colliding against the drawn hexagon would be worse: a spinning contact surface
+would drag resting bodies around it.
+
+Closing it means drawing the bubble as a circle, which is an art decision (the
+faceted shield is of a piece with the rest of the vector look), so it is left
+alone. `sides` in `SHIELD_TYPES` is the setting: raising it toward 20 makes the
+drawn shape converge on the one the simulation already uses.
+
 ## A beam's halo is wider than the beam
 
 A beam collides as a capsule as wide as the bright core the view draws
