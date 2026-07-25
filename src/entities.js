@@ -671,6 +671,7 @@ export class PlayerShip extends Ship {
     this.turretFiring = false
     this.atBoundary = false
     this.impactSfx = 0 // throttles collision / boundary sounds
+    this.slamCooldown = 0 // one impact hit per collision, not one per frame
   }
 
   damageResist() {
@@ -760,6 +761,7 @@ export class PlayerShip extends Ship {
     this.invincible = Math.max(0, this.invincible - dt)
     this.#tickBuffs(dt)
     this.impactSfx = Math.max(0, this.impactSfx - dt)
+    this.slamCooldown = Math.max(0, this.slamCooldown - dt)
     this.energyMax = game.maxEnergy()
 
     const keys = game.pressedKeys
@@ -834,7 +836,8 @@ export class PlayerShip extends Ship {
           continue
         }
         const push =
-          (CONFIG.EXHAUST_WASH_FORCE * (1 - dist / range) * align) / clamp(a.area / 3200, 0.5, 4)
+          (CONFIG.EXHAUST_WASH_FORCE * (1 - dist / range) * align) /
+          clamp(a.area / CONFIG.AST_MASS_AREA, 0.5, 4)
         a.vx += ux * push * dt
         a.vy += uy * push * dt
       }
@@ -958,16 +961,30 @@ export class PlayerShip extends Ship {
         uy = contact.ny
       this.x += ux * contact.depth
       this.y += uy * contact.depth
-      // reflect the inward component of velocity (a glancing bounce)
-      const vn = this.vx * ux + this.vy * uy
+
+      // The bounce is against the rock's surface as it is actually moving, not
+      // against a stationary obstacle: a rock that drifts or spins into a still
+      // ship must carry it away. Judging the approach by the ship's own
+      // velocity alone left it embedded, grinding its energy away every frame.
+      const impact = { x: this.x - ux * this.radius, y: this.y - uy * this.radius }
+      const leverX = impact.x - asteroid.center.x,
+        leverY = impact.y - asteroid.center.y
+      const surfaceVx = asteroid.vx - asteroid.spin * leverY,
+        surfaceVy = asteroid.vy + asteroid.spin * leverX
+      const vn = (this.vx - surfaceVx) * ux + (this.vy - surfaceVy) * uy
+      const closingSpeed = Math.max(0, -vn)
       if (vn < 0) {
-        const restitution = CONFIG.ROCK_RESTITUTION
-        this.vx -= (1 + restitution) * vn * ux
-        this.vy -= (1 + restitution) * vn * uy
-        const massFactor = clamp(asteroid.area / 3200, 0.4, 4)
-        asteroid.vx += (vn * ux * 0.5) / massFactor
-        asteroid.vy += (vn * uy * 0.5) / massFactor
-        asteroid.spin += randRange(-1.5, 1.5)
+        const rockMass = clamp(asteroid.area / CONFIG.AST_MASS_AREA, 0.4, 4)
+        // a rock resists a shove off its centre less the further out it lands
+        const inertia = 0.5 * rockMass * Math.max(asteroid.boundRadius, 1) ** 2
+        const lever = leverX * uy - leverY * ux
+        const share = 1 + 1 / rockMass + (lever * lever) / inertia
+        const j = (-(1 + CONFIG.ROCK_RESTITUTION) * vn) / share
+        this.vx += j * ux
+        this.vy += j * uy
+        asteroid.vx -= (j * ux) / rockMass
+        asteroid.vy -= (j * uy) / rockMass
+        asteroid.spin -= (leverX * j * uy - leverY * j * ux) / inertia
         if (-vn > 45 && this.impactSfx <= 0) {
           Sound.bump() // knock on contact with a rock
           this.impactSfx = 0.15
@@ -978,9 +995,18 @@ export class PlayerShip extends Ship {
         if (this.fxCooldown <= 0) {
           game.burst(this.x, this.y, 4, PALETTE.player.lowEnergy, 30, 90, 0.35)
         }
+        // A steady grind for as long as contact lasts, plus a knock scaled to
+        // how hard it landed. Contact is a frame or two now that the bounce
+        // works, so without the second term a full-speed ram would cost the
+        // same as brushing past.
+        const grind = CONFIG.DMG_AST_GUN * dt * CONFIG.ROCK_GRIND_DAMAGE
+        let slam = 0
+        if (closingSpeed > 0 && this.slamCooldown <= 0) {
+          slam = closingSpeed * CONFIG.ROCK_IMPACT_DAMAGE
+          this.slamCooldown = CONFIG.ROCK_IMPACT_COOLDOWN
+        }
         // flash the shield on the side facing the rock
-        const contact = { x: this.x - ux * this.radius, y: this.y - uy * this.radius }
-        this.takeDamage(CONFIG.DMG_AST_GUN * dt * 3.6, game, "projectile", 0, contact)
+        this.takeDamage(grind + slam, game, "projectile", 0, impact)
       }
       break
     }
@@ -1366,6 +1392,11 @@ export class Asteroid extends Entity {
       this.vx *= CONFIG.AST_MAX_SPEED / speed
       this.vy *= CONFIG.AST_MAX_SPEED / speed
     }
+    // Cap the rim speed, not the rate: a big rock spinning at the rate that
+    // suits a small chunk would sweep its edge faster than anything can fly,
+    // and would fling the ship away harder than it can ever travel.
+    const maxSpin = CONFIG.AST_MAX_RIM_SPEED / Math.max(this.boundRadius, 1)
+    this.spin = clamp(this.spin, -maxSpin, maxSpin)
     this.recompute()
 
     // Arena confinement: when the rock's body crosses the boundary circle, push

@@ -48,6 +48,9 @@ export const CONFIG = {
   REVERSE_ACCEL_MULT: 0.6, // reverse thrust is weaker than forward
   BOUNDARY_RESTITUTION: 0.35, // bounce off the arena wall
   ROCK_RESTITUTION: 0.5, // bounce off an asteroid
+  ROCK_GRIND_DAMAGE: 3.6, // multiplies DMG_AST_GUN per second of contact
+  ROCK_IMPACT_DAMAGE: 0.55, // damage per unit of closing speed on the bounce
+  ROCK_IMPACT_COOLDOWN: 0.25, // seconds before another bounce can land its knock
   EXHAUST_WASH_RANGE: 150, // thruster wash shoves rocks caught behind the ship
   EXHAUST_WASH_FORCE: 160,
   TURRET_AIM_RATE: 3.0, // radians/sec while swinging the turret by hand
@@ -62,6 +65,7 @@ export const CONFIG = {
   // lower threshold; otherwise a sliced frigate would only ever leave ore.
   SHIP_DEBRIS_MIN_AREA: 1650,
   AST_MAX_SPEED: 340,
+  AST_MAX_RIM_SPEED: 340, // how fast a rock's edge may sweep, spin cap = this / boundRadius
   SPLIT_IMPULSE: 55, // gentle push so cut halves drift apart, not fling
   ORE_ENERGY: 9, // energy refunded per ore collected
   ORE_SCORE: 120,
@@ -85,6 +89,7 @@ export const CONFIG = {
   // each frame so a contact eases apart instead of snapping.
   CONTACT_SLOP: 0.5,
   CONTACT_BIAS: 0.35,
+  AST_MASS_AREA: 3200, // rock area per unit of mass, for collision response
   AST_DRAG: 0.985, // velocity retained per second
   AST_SPIN_DRAG: 0.82,
   AST_BOUNDARY_BOUNCE: 1.9, // rocks are repelled hard off the arena wall
