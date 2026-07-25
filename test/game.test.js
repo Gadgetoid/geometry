@@ -12,7 +12,13 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import { Game } from "../src/game.js"
-import { Asteroid, Projectile, RivalShip } from "../src/entities.js"
+import {
+  Asteroid,
+  Projectile,
+  RivalShip,
+  resolveHullRockContact,
+  rockMass,
+} from "../src/entities.js"
 import { CONFIG, POWERUP_TYPES, PROGRESSION, WEAPON_TYPES, SHIP_TYPES } from "../src/config.js"
 import { convexContact, convexPartition, countBeamCrossings, polygonArea } from "../src/math.js"
 
@@ -228,6 +234,46 @@ const centroidOf = (vertices) => ({
 })
 
 // ---- ships are solid to each other ----------------------------------------
+
+// A hull bouncing off a rock must take the impulse its mass implies, whichever
+// hull it is. The site used to divide by the hull's mass where its inverse
+// belongs, which is invisible for the player (mass exactly 1) and wrong for
+// everything else: a frigate got 7% of its due and a scout 177% of it.
+//
+// Momentum is conserved either way, because the impulse is applied symmetrically,
+// so conservation cannot detect this. The magnitude is what has to be checked.
+test("every hull takes the impulse its mass implies when it hits a rock", () => {
+  for (const typeName of ["player", "scout", "frigate"]) {
+    const game = liveGame()
+    const ship = typeName === "player" ? game.player : new RivalShip(0, 0, typeName, [])
+    ship.x = 400
+    ship.y = 320
+    ship.angle = 0
+    ship.vx = 100
+    ship.vy = 0
+    // A rock squarely to the +x of the hull, at the same y: the contact normal is
+    // -x and the lever arm through the rock's centre is zero, so the impulse is
+    // the textbook one and can be checked without reproducing the solver. Depth 0
+    // keeps the hull where it was put.
+    const rock = new Asteroid({ vertices: square(400 + ship.boundRadius + 60, 320, 60) })
+    const { closing } = resolveHullRockContact(ship, rock, { nx: -1, ny: 0, depth: 0 })
+
+    assert.equal(closing, 100, `${typeName}: the rock is still, so closing is the hull's own speed`)
+    const share = 1 / ship.mass + 1 / rockMass(rock.area)
+    const j = ((1 + CONFIG.ROCK_RESTITUTION) * closing) / share
+    const near = (got, want, what) =>
+      assert.ok(
+        Math.abs(got - want) < 1e-9 * Math.max(1, Math.abs(want)),
+        `${typeName} ${what}: ${got.toFixed(4)}, expected ${want.toFixed(4)}`,
+      )
+    near(ship.vx - 100, -j / ship.mass, "hull velocity change")
+    near(rock.vx, j / rockMass(rock.area), "rock velocity change")
+    assert.ok(
+      Math.abs(rock.spin) < 1e-12,
+      `${typeName}: a contact through the centre must not spin the rock, got ${rock.spin}`,
+    )
+  }
+})
 
 test("two rivals cannot occupy the same space", () => {
   const game = liveGame()

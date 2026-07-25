@@ -142,6 +142,51 @@ export function bodyContact(partsA, centreA, partsB, centreB) {
   return { nx: bestX, ny: bestY, depth: bestDepth }
 }
 
+// One hull-against-rock contact, shared by every ship so the player and a rival
+// answer it the same way. The hull is pushed clear along the contact normal, and
+// the closing speed is measured against the rock's surface as it is actually
+// moving, spin included: a rock that drifts or spins into a stationary hull must
+// carry it away, and judging the approach by the hull's own velocity alone leaves
+// it embedded, grinding its energy away every frame. The rock takes the opposite
+// impulse about its own centre, so a shove off-centre spins it.
+//
+// Returns the impact point and the closing speed; the speed is 0 when the pair
+// was already separating, which still pushes them apart but lands no knock.
+export function resolveHullRockContact(ship, asteroid, contact) {
+  const ux = contact.nx,
+    uy = contact.ny
+  ship.x += ux * contact.depth
+  ship.y += uy * contact.depth
+  // The contact lies on the hull's own surface facing the rock. A circle around
+  // the hull puts it somewhere the hull is not, which both misplaces the impact
+  // effect and mismeasures the lever arm the rock is shoved on.
+  const reach = supportDistance(ship.worldOutline(), ship, -ux, -uy)
+  const impact = { x: ship.x - ux * reach, y: ship.y - uy * reach }
+  const leverX = impact.x - asteroid.center.x,
+    leverY = impact.y - asteroid.center.y
+  const surfaceVx = asteroid.vx - asteroid.spin * leverY,
+    surfaceVy = asteroid.vy + asteroid.spin * leverX
+  const vn = (ship.vx - surfaceVx) * ux + (ship.vy - surfaceVy) * uy
+  if (vn >= 0) {
+    return { impact, closing: 0 }
+  }
+  const mass = rockMass(asteroid.area)
+  // a rock resists a shove off its centre less the further out it lands
+  const inertia = 0.5 * mass * Math.max(asteroid.boundRadius, 1) ** 2
+  const lever = leverX * uy - leverY * ux
+  // Inverse masses, as everywhere else a contact is solved. Writing the hull's
+  // mass instead of its inverse is invisible for the player, whose mass is
+  // exactly 1, and wrong for everything else.
+  const share = 1 / ship.mass + 1 / mass + (lever * lever) / inertia
+  const j = (-(1 + CONFIG.ROCK_RESTITUTION) * vn) / share
+  ship.vx += (j * ux) / ship.mass
+  ship.vy += (j * uy) / ship.mass
+  asteroid.vx -= (j * ux) / mass
+  asteroid.vy -= (j * uy) / mass
+  asteroid.spin -= (leverX * j * uy - leverY * j * ux) / inertia
+  return { impact, closing: -vn }
+}
+
 // Hull against hull. Ships are solid to each other as well as to rocks, so a
 // frigate cannot be flown through and two rivals cannot occupy the same space.
 // Each is pushed apart in inverse proportion to its mass and the closing speed
@@ -1229,36 +1274,11 @@ export class PlayerShip extends Ship {
         }
         touching = true
         moved = true
-        const ux = contact.nx,
-          uy = contact.ny
-        this.x += ux * contact.depth
-        this.y += uy * contact.depth
-
-        // The bounce is against the rock's surface as it is actually moving, not
-        // against a stationary obstacle: a rock that drifts or spins into a still
-        // ship must carry it away. Judging the approach by the ship's own
-        // velocity alone left it embedded, grinding its energy away every frame.
-        const impact = { x: this.x - ux * this.radius, y: this.y - uy * this.radius }
-        const leverX = impact.x - asteroid.center.x,
-          leverY = impact.y - asteroid.center.y
-        const surfaceVx = asteroid.vx - asteroid.spin * leverY,
-          surfaceVy = asteroid.vy + asteroid.spin * leverX
-        const vn = (this.vx - surfaceVx) * ux + (this.vy - surfaceVy) * uy
-        if (vn < 0) {
-          closingSpeed = Math.max(closingSpeed, -vn)
+        const { impact, closing } = resolveHullRockContact(this, asteroid, contact)
+        if (closing > 0) {
+          closingSpeed = Math.max(closingSpeed, closing)
           worstImpact = impact
-          const mass = rockMass(asteroid.area)
-          // a rock resists a shove off its centre less the further out it lands
-          const inertia = 0.5 * mass * Math.max(asteroid.boundRadius, 1) ** 2
-          const lever = leverX * uy - leverY * ux
-          const share = this.mass + 1 / mass + (lever * lever) / inertia
-          const j = (-(1 + CONFIG.ROCK_RESTITUTION) * vn) / share
-          this.vx += (j * ux) / this.mass
-          this.vy += (j * uy) / this.mass
-          asteroid.vx -= (j * ux) / mass
-          asteroid.vy -= (j * uy) / mass
-          asteroid.spin -= (leverX * j * uy - leverY * j * ux) / inertia
-          if (-vn > 45 && this.impactSfx <= 0) {
+          if (closing > 45 && this.impactSfx <= 0) {
             Sound.bump() // knock on contact with a rock
             this.impactSfx = 0.15
           }
@@ -1573,26 +1593,7 @@ export class RivalShip extends Ship {
       if (!contact) {
         continue
       }
-      const ux = contact.nx,
-        uy = contact.ny
-      this.x += ux * contact.depth
-      this.y += uy * contact.depth
-      // approach measured at the contact against the rock's moving surface,
-      // spin included, as for the player
-      const impactX = this.x - ux * this.boundRadius - asteroid.center.x,
-        impactY = this.y - uy * this.boundRadius - asteroid.center.y
-      const surfaceVx = asteroid.vx - asteroid.spin * impactY,
-        surfaceVy = asteroid.vy + asteroid.spin * impactX
-      const vn = (this.vx - surfaceVx) * ux + (this.vy - surfaceVy) * uy
-      if (vn >= 0) {
-        continue
-      }
-      const mass = rockMass(asteroid.area)
-      const j = (-(1 + CONFIG.ROCK_RESTITUTION) * vn) / (this.mass + 1 / mass)
-      this.vx += (j * ux) / this.mass
-      this.vy += (j * uy) / this.mass
-      asteroid.vx -= (j * ux) / mass
-      asteroid.vy -= (j * uy) / mass
+      resolveHullRockContact(this, asteroid, contact)
     }
   }
 
