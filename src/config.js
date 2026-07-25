@@ -487,6 +487,14 @@ export const SHIELD_TYPES = {
 // hull without floating far off it. A beam is stopped by that bubble, so this sets
 // how big a shielded ship is to shoot at as well as how big it looks.
 //
+// `rockContact` scales what a frame of rock contact costs this hull, against the
+// player's 1. Rivals steer for ore and rocks and shoulder them aside constantly,
+// so charging them the player's rate kills them faster than they can do anything
+// interesting: at 1 a scout does not survive a single full-speed ram and a
+// rival's median life falls from 24s to 5s. These are set so a rock is a real
+// hazard to them without ending the run of shoving rocks around that makes them
+// worth watching.
+//
 // `exhaust` is the thruster: `mounts` are nozzle positions in local space, as
 // hardpoints are, and every one of them emits, so two mounts read as two streams.
 // `rate` is plumes a second per stream, `speed` how hard they are thrown back
@@ -561,6 +569,7 @@ export const SHIP_TYPES = {
     spawn: { fromSector: 4, fallback: true },
     hullWidth: 1.8,
     shieldScale: 1.9,
+    rockContact: 0.2, // a light dart: one full-speed ram leaves it on a third of its hull
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
     killScore: 400,
@@ -612,6 +621,7 @@ export const SHIP_TYPES = {
     hunts: true, // steers for the player rather than for ore and rocks
     hullWidth: 2,
     shieldScale: 2.3, // a long hull needs a wider bubble to clear its nose
+    rockContact: 0.5, // heavy and slow: it shoulders rocks aside and barely notices
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
     killScore: 900,

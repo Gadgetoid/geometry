@@ -1305,6 +1305,57 @@ test("a powerup declaring collisionImmune stops rock contact damage", () => {
   assert.equal(ram(true), 0, "unless a powerup says otherwise")
 })
 
+// Drive a rival into a stationary boulder and report what first contact cost it.
+// The ship starts a fixed gap from the rock's face rather than at a fixed x, so
+// a frigate at 44 u/s reaches it in the same run as a scout at 190. It stops on
+// the first damage: left running it grinds itself to death at any scale, which
+// would read the same for all of them.
+function ramARock(typeName) {
+  const game = liveGame()
+  game.player.x = -9000 // keep the player out of it
+  game.player.y = -9000
+  const rockFace = 440
+  const full = SHIP_TYPES[typeName].hull
+  const ship = new RivalShip(rockFace - SHIP_TYPES[typeName].size * 2 - 40, 320, typeName, [])
+  ship.angle = 0
+  game.rivals = [ship]
+  game.asteroids = [new Asteroid({ vertices: square(rockFace + 80, 320, 80), vx: 0, vy: 0 })]
+  for (let i = 0; i < 240; i++) {
+    ship.vx = SHIP_TYPES[typeName].maxSpeed
+    ship.vy = 0
+    game.advance(1 / 60)
+    if (ship.dead) {
+      return full
+    }
+    if (ship.hull < full) {
+      return full - ship.hull
+    }
+  }
+  return 0
+}
+
+test("a rock costs a rival hull, as it costs the player energy", () => {
+  for (const typeName of Object.keys(SHIP_TYPES)) {
+    assert.ok(ramARock(typeName) > 0, `a ${typeName} driving into a rock must be worn down by it`)
+  }
+})
+
+test("what rock contact costs a hull is the type's business, not the code's", () => {
+  // Same contact, same code path: only the registry entry differs.
+  const cost = (scale) => {
+    const original = SHIP_TYPES.scout.rockContact
+    SHIP_TYPES.scout.rockContact = scale
+    try {
+      return ramARock("scout")
+    } finally {
+      SHIP_TYPES.scout.rockContact = original
+    }
+  }
+  assert.equal(cost(0), 0, "a type that declares no susceptibility takes nothing")
+  assert.ok(cost(0.2) > 0, "and one that does is worn down")
+  assert.ok(cost(0.1) < cost(0.2), "proportionally to what it declares")
+})
+
 // ---- progression is data ---------------------------------------------------
 
 // ---- an exploding rock and its neighbours ---------------------------------

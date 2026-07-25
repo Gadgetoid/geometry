@@ -764,6 +764,29 @@ export class Ship extends Entity {
     this.outlineLocal = []
     this.boundRadius = 0
     this.colour = PALETTE.white
+    this.slamCooldown = 0 // one impact charged per collision, not one per frame
+  }
+
+  // What a frame of rock contact costs a hull: a steady grind for as long as the
+  // contact lasts, plus a knock scaled to how hard it landed. Contact is a frame
+  // or two now that the bounce works, so without the second term a full-speed ram
+  // would cost the same as brushing past.
+  //
+  // Shared, so every hull is charged the same way for the same contact.
+  // `rockContact` on the type scales it: a hull that shoulders rocks aside for a
+  // living is not in the same weight class as one that should be avoiding them.
+  chargeRockContact(dt, game, closingSpeed, impact) {
+    const scale = this.type.rockContact ?? 1
+    if (scale <= 0) {
+      return
+    }
+    const grind = CONFIG.DMG_AST_GUN * dt * CONFIG.ROCK_GRIND_DAMAGE
+    let slam = 0
+    if (closingSpeed > 0 && this.slamCooldown <= 0) {
+      slam = closingSpeed * CONFIG.ROCK_IMPACT_DAMAGE
+      this.slamCooldown = CONFIG.ROCK_IMPACT_COOLDOWN
+    }
+    this.takeDamage((grind + slam) * scale, game, "projectile", 0, impact)
   }
 
   // Set the hull outline, the bounding circle broadphase tests use, and the
@@ -937,7 +960,6 @@ export class PlayerShip extends Ship {
     this.turretFiring = false
     this.atBoundary = false
     this.impactSfx = 0 // throttles collision / boundary sounds
-    this.slamCooldown = 0 // one impact hit per collision, not one per frame
     // Warp presence: 1 is solid, 0 is gone. The ship is intangible below 1, and
     // the view turns this into the ripple and the hull fade.
     this.warp = 1
@@ -1399,18 +1421,8 @@ export class PlayerShip extends Ship {
     if (this.fxCooldown <= 0) {
       game.burst(this.x, this.y, 4, PALETTE.player.lowEnergy, 30, 90, 0.35)
     }
-    // A steady grind for as long as contact lasts, plus a knock scaled to how
-    // hard it landed. Contact is a frame or two now that the bounce works, so
-    // without the second term a full-speed ram would cost the same as brushing
-    // past.
-    const grind = CONFIG.DMG_AST_GUN * dt * CONFIG.ROCK_GRIND_DAMAGE
-    let slam = 0
-    if (closingSpeed > 0 && this.slamCooldown <= 0) {
-      slam = closingSpeed * CONFIG.ROCK_IMPACT_DAMAGE
-      this.slamCooldown = CONFIG.ROCK_IMPACT_COOLDOWN
-    }
     // flash the shield on the side facing the rock
-    this.takeDamage(grind + slam, game, "projectile", 0, worstImpact)
+    this.chargeRockContact(dt, game, closingSpeed, worstImpact)
   }
 
   // Materialising or dissolving: a portal pulses at the arrival point, then the
@@ -1607,6 +1619,7 @@ export class RivalShip extends Ship {
     const player = game.player
     this.regenEnergy(dt)
     this.updateShield(dt)
+    this.slamCooldown = Math.max(0, this.slamCooldown - dt)
     this.lifeTimer -= dt
 
     let target = null,
@@ -1670,7 +1683,7 @@ export class RivalShip extends Ship {
       }
     }
 
-    this.#bounceOffRocks(game)
+    this.#bounceOffRocks(dt, game)
     this.updateWeapons(dt, game) // guns + main laser fire via their controllers
 
     // Dropped only once it is wholly outside the ring and wholly out of sight, so
@@ -1717,8 +1730,14 @@ export class RivalShip extends Ship {
 
   // Rivals are solid: they shoulder rocks aside instead of flying through them.
   // Contact is the rock's outline against the ship's, both as convex parts, so
-  // a frigate's length and waist are respected.
-  #bounceOffRocks(game) {
+  // a frigate's length and waist are respected. It costs them, as it costs the
+  // player, so a rival that ploughs through a field wears itself down; how much
+  // is the type's `rockContact`. Damage is charged once however many rocks are
+  // touching, so a corner is not doubly punishing.
+  #bounceOffRocks(dt, game) {
+    let worstImpact = null
+    let closingSpeed = 0
+    let touching = false
     for (const asteroid of game.asteroids) {
       const dx = this.x - asteroid.center.x,
         dy = this.y - asteroid.center.y
@@ -1735,7 +1754,17 @@ export class RivalShip extends Ship {
       if (!contact) {
         continue
       }
-      resolveHullRockContact(this, asteroid, contact)
+      touching = true
+      const { impact, closing } = resolveHullRockContact(this, asteroid, contact)
+      if (closing > closingSpeed) {
+        closingSpeed = closing
+        worstImpact = impact
+      } else if (!worstImpact) {
+        worstImpact = impact
+      }
+    }
+    if (touching) {
+      this.chargeRockContact(dt, game, closingSpeed, worstImpact)
     }
   }
 
