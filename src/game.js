@@ -541,10 +541,7 @@ export class Game {
         survivors.push(asteroid)
         continue
       }
-      if (
-        attacker === this.player &&
-        Math.random() < CONFIG.LASER_INSTA_CHANCE[this.upgrades.laser]
-      ) {
+      if (attacker === this.player && attacker.overdriven) {
         this.shatterToOre(asteroid)
         didHit = true
         this.score += CONFIG.SLICE_SCORE

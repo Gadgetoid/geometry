@@ -46,6 +46,7 @@ export const PALETTE = {
     exhaustFlame: "#aee6ff",
     beam: "#eaf4ff",
     charge: "#57e39a",
+    overdrive: "#ff3b52", // beam and charge glow once the shot is guaranteed
     turret: "#9ff5c8",
   },
 

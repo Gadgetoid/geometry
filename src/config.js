@@ -40,8 +40,8 @@ export const CONFIG = {
   MAX_SPEED: 340,
   SPEED_DRAG: 0.85,
   THRUST_COST: 21, // energy/sec while thrusting
-  CORE_MAX: [320, 520, 760, 1000], // player energy capacity by power-core level
-  PLAYER_REGEN: [32, 53, 74, 95], // energy regen/sec by power-core level (raises back to full)
+  CORE_MAX: [320, 520, 760, 1000, 1260], // player energy capacity by power-core level
+  PLAYER_REGEN: [32, 53, 74, 95, 116], // energy regen/sec by power-core level (raises back to full)
   INVIN_TIME: 2.0,
   START_LIVES: 3,
   MAX_LIVES: 6,
@@ -158,10 +158,14 @@ export const CONFIG = {
 
   // upgrade effects, indexed by upgrade level
   SHIELD_EFFICIENCY: [1, 0.72, 0.5, 0.32], // energy drained per point of damage (player shield plating)
-  MAGNET_RANGE: [62, 120, 190, 270],
-  LASER_RATE_MULT: [1, 1.45, 1.45, 1.45],
-  LASER_COST_MULT: [1, 1, 0.55, 0.55],
-  LASER_INSTA_CHANCE: [0, 0, 0, 0.5],
+  MAGNET_RANGE: [62, 120, 190, 270, 350],
+  LASER_RATE_MULT: [1, 1.45, 1.45, 1.45, 1.45],
+  LASER_COST_MULT: [1, 1, 0.55, 0.55, 0.55],
+  LASER_DAMAGE_MULT: [1, 1, 1, 1.5, 1.5],
+  // Overdrive: at a level that has it, a beam held to full charge shatters
+  // whatever rock it touches. The beam turns red as soon as the charge is there,
+  // so the guarantee is visible before the shot goes.
+  LASER_OVERDRIVE: [false, false, false, false, true],
 }
 
 // ---------------------------------------------------------------------------
@@ -492,8 +496,9 @@ export const WEAPON_TYPES = {
     // chargeMax. Set both to 1 to make charge buy reach alone.
     //
     // A full-charge shot lands 68, which no shielded rival loses its shield to in
-    // one hit. At the top laser level that is 2 shots to strip a scout and a third
-    // to cut it, and 4 to strip a frigate and a fifth to cut it.
+    // one hit: 2 shots to strip a scout and a third to cut it, 4 to strip a frigate
+    // and a fifth to cut it. LASER_DAMAGE_MULT takes one shot off each of those at
+    // the levels that pay for it.
     chargeDamageMult: [1, 1.8],
     colour: PALETTE.player.beam,
     width: 2.4,
@@ -1165,7 +1170,7 @@ export const SHOP = [
   levelled(
     "laser",
     "LASER SYSTEM",
-    "Lv1 charges faster, Lv2 costs less energy, Lv3 may shatter a rock straight to ore.",
+    "Lv1 charges faster, Lv2 costs less energy, Lv3 hits harder, Lv4 overdrive.",
     CONFIG.LASER_RATE_MULT.length - 1,
     (level) => 45 + level * 45,
   ),

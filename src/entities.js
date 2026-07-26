@@ -1272,7 +1272,9 @@ export class PlayerShip extends Ship {
     }
     const chargeFrac = clamp(w.charge / w.type.chargeMax, 0, 1)
     const length = w.charge * this.beamLengthMult() + w.type.chargeReach
-    const damage = w.type.damage * this.chargeDamageMult()
+    const damage =
+      w.type.damage * this.chargeDamageMult() * CONFIG.LASER_DAMAGE_MULT[game.upgrades.laser]
+    const colour = this.overdriven ? PALETTE.player.overdrive : w.type.colour
     const nose = this.mountWorld(this.nose.local)
     const dir = { x: Math.cos(this.angle), y: Math.sin(this.angle) },
       nrm = { x: -dir.y, y: dir.x }
@@ -1290,7 +1292,7 @@ export class PlayerShip extends Ship {
       game.laserShots.push({
         beams: [beam],
         age: 0,
-        color: w.type.colour,
+        color: colour,
         width: w.type.width,
         glow: w.type.glow,
       })
@@ -1309,6 +1311,14 @@ export class PlayerShip extends Ship {
   // Charged-beam reach multiplier, extended by a powerup that declares one.
   beamLengthMult() {
     return this.buffField("beamLengthMult", 1)
+  }
+
+  // A laser held to full charge, at a level that has overdrive. The shot shatters
+  // any rock it reaches, and the beam and the charge glow turn red while it is
+  // held there, so the guarantee is visible before it is fired.
+  get overdriven() {
+    const w = this.mainWeapon
+    return !!(CONFIG.LASER_OVERDRIVE[this.game.upgrades.laser] && w && w.charge >= w.type.chargeMax)
   }
 
   // Damage multiplier for the charge held, running across the usable charge
@@ -1696,10 +1706,10 @@ export class PlayerShip extends Ship {
         nose.x + Math.cos(this.angle) * length,
         nose.y + Math.sin(this.angle) * length,
         {
-          color: PALETTE.player.charge,
+          color: this.overdriven ? PALETTE.player.overdrive : PALETTE.player.charge,
           alpha: frac,
           width: 1.5 + 2.5 * (w.charge / w.type.chargeMax),
-          glow: 14,
+          glow: this.overdriven ? 22 : 14,
         },
       )
     }

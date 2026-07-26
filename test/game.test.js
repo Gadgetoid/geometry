@@ -62,6 +62,19 @@ function liveGame() {
   return game
 }
 
+// Fire the player's laser at a charge held for it. The reload rolls on, so the
+// cooldown is cleared and the cell refilled: a probe that skips either measures
+// a shot that never went.
+function fullChargeShot(game, chargeFraction = 1) {
+  const player = game.player,
+    weapon = player.mainWeapon
+  weapon.cooldown = 0
+  weapon.charge = weapon.type.chargeMax * chargeFraction
+  player.energy = player.energyMax
+  game.laserShots = []
+  player.fireLaser(game)
+}
+
 // The ship arrives by warping in, and is intangible until it lands.
 function beSolid(player) {
   player.warp = 1
@@ -1757,6 +1770,66 @@ test("what rock contact costs a hull is the type's business, not the code's", ()
   assert.equal(cost(0), 0, "a type that declares no susceptibility takes nothing")
   assert.ok(cost(0.2) > 0, "and one that does is worn down")
   assert.ok(cost(0.1) < cost(0.2), "proportionally to what it declares")
+})
+
+// ---- what a laser level buys -----------------------------------------------
+
+test("a laser level that pays for damage lands more of it", () => {
+  // Measured on a raised shield, which drains by the damage landed. An unshielded
+  // hull is cut through at either level, so it reports the same either way.
+  const damageAt = (level) => {
+    const game = liveGame()
+    game.upgrades.laser = level
+    const player = game.player
+    player.x = 100
+    player.y = 320
+    player.angle = 0
+    const frigate = new RivalShip(500, 320, "frigate", [{ hp: 1, shield: "standard" }])
+    game.rivals = [frigate]
+    const before = frigate.energy
+    fullChargeShot(game)
+    return before - frigate.energy
+  }
+  const table = CONFIG.LASER_DAMAGE_MULT
+  const first = table.findIndex((mult) => mult > table[0])
+  assert.ok(first > 0, "some level should pay for damage")
+  assert.ok(damageAt(first) > damageAt(first - 1), "and land more than the level below it")
+})
+
+test("overdrive shatters a rock, but only at full charge and only where it is sold", () => {
+  const fire = (level, chargeFraction) => {
+    const game = liveGame()
+    game.upgrades.laser = level
+    const player = game.player
+    player.x = 300
+    player.y = 320
+    player.angle = 0
+    const rock = new Asteroid({ vertices: square(600, 320, 80) })
+    game.asteroids = [rock]
+    fullChargeShot(game, chargeFraction)
+    return {
+      shattered: !game.asteroids.includes(rock) && game.oreChunks.length > 0,
+      colour: game.laserShots[0].color,
+    }
+  }
+  const top = CONFIG.LASER_OVERDRIVE.length - 1
+  assert.equal(CONFIG.LASER_OVERDRIVE[top], true, "the top level should be the one that has it")
+  assert.equal(fire(top, 1).shattered, true, "a full charge at the top level shatters")
+  assert.equal(fire(top, 0.9).shattered, false, "short of full it does not")
+  assert.equal(fire(top - 1, 1).shattered, false, "and neither does the level below")
+  // and the guarantee is visible: the beam is drawn in its own colour
+  assert.equal(fire(top, 1).colour, PALETTE.player.overdrive)
+  assert.equal(fire(top, 0.9).colour, WEAPON_TYPES.playerLaser.colour)
+})
+
+test("the charge glow turns over at exactly the charge the shot does", () => {
+  const game = liveGame()
+  game.upgrades.laser = CONFIG.LASER_OVERDRIVE.length - 1
+  const weapon = game.player.mainWeapon
+  weapon.charge = weapon.type.chargeMax - 1
+  assert.equal(game.player.overdriven, false)
+  weapon.charge = weapon.type.chargeMax
+  assert.equal(game.player.overdriven, true)
 })
 
 // ---- progression is data ---------------------------------------------------
