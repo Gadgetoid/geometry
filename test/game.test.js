@@ -16,6 +16,7 @@ import { GameView } from "../src/view.js"
 import { PALETTE } from "../src/palette.js"
 import {
   Asteroid,
+  Ore,
   Powerup,
   Projectile,
   RivalShip,
@@ -2901,6 +2902,57 @@ test("the exhaust wash shoves a boulder behind the ship, not only a pebble", () 
     const beyond = pushed(radius, CONFIG.EXHAUST_WASH_RANGE * 1.2).pushed
     assert.ok(Math.abs(beyond) < 1e-9, `and not past it, but it moved ${beyond}`)
   }
+})
+
+// ---- one answer to "what is nearest" ---------------------------------------
+
+// Four inlined loops used to spell this four ways, with three different sentinel
+// seeds and three different sets of filters. These pin the shared rule.
+test("a nearest scan takes the closest of what can be shot at", () => {
+  const game = liveGame()
+  const from = { x: ARENA.cx, y: ARENA.cy }
+  const near = new RivalShip(ARENA.cx + 120, ARENA.cy, "scout", [])
+  const far = new RivalShip(ARENA.cx + 300, ARENA.cy, "scout", [])
+  game.rivals = [far, near] // out of order, so the scan is doing the choosing
+
+  const found = game.nearestRival(from)
+  assert.equal(found.target, near)
+  assert.ok(Math.abs(found.distance - 120) < 1e-9, `measured ${found.distance}`)
+
+  // a body killed earlier in the frame is still in the list, and must not be taken
+  near.dead = true
+  assert.equal(game.nearestRival(from).target, far, "a dead rival is passed over")
+
+  // nor one that is not in play: a rival outside the ring cannot be harmed
+  near.dead = false
+  const { game: outside, rival } = rivalBeyondTheRing("scout", 200)
+  assert.equal(rival.inPlay(), false, "the pose must actually be out of play")
+  outside.rivals = [rival]
+  assert.equal(outside.nearestRival({ x: rival.x, y: rival.y }), null)
+
+  // and `within` bounds the search rather than being measured afterwards
+  assert.equal(game.nearestRival(from, 100), null, "nothing inside 100")
+  assert.equal(game.nearestRival(from, 121).target, near)
+})
+
+test("a nearest scan answers for every collection it is asked about", () => {
+  const game = liveGame()
+  const from = { x: ARENA.cx, y: ARENA.cy }
+  assert.equal(game.nearestRival(from), null, "an empty sector has no answer")
+  assert.equal(game.nearestAsteroid(from), null)
+  assert.equal(game.nearestOre(from), null)
+
+  const rock = new Asteroid({ vertices: square(ARENA.cx + 200, ARENA.cy, 40), vx: 0, vy: 0 })
+  game.asteroids = [rock]
+  const found = game.nearestAsteroid(from)
+  assert.equal(found.target, rock, "the rock itself, not its centre")
+  // a rock's x/y is its own centroid, so measuring to the body measures to the
+  // middle of it, which is what the steering code wants
+  assert.equal(rock.x, rock.center.x)
+  assert.equal(rock.y, rock.center.y)
+
+  game.oreChunks = [new Ore(ARENA.cx + 50, ARENA.cy, 0, 0)]
+  assert.ok(Math.abs(game.nearestOre(from).distance - 50) < 1e-9)
 })
 
 // ---- progression is data ---------------------------------------------------

@@ -46,6 +46,7 @@ import {
   segmentPolygonEntry,
   segmentCircleEntry,
   rayExitDistance,
+  distanceTo,
 } from "./math.js"
 import { Sound } from "./audio.js"
 import { PALETTE } from "./palette.js"
@@ -1277,6 +1278,40 @@ export class Game {
   visiblePlayer() {
     const player = this.player
     return player && !player.buffField("invisible", false) ? player : null
+  }
+
+  // The nearest body of `bodies` to a point, as { target, distance }, or null when
+  // nothing qualifies. Only what can actually be shot at counts: `inPlay` is the
+  // question every weapon already asks before it can hit anything, and a body
+  // killed earlier in the frame stays in its list until the frame ends. `within`
+  // bounds the search, so a caller wanting only targets in range says so instead
+  // of measuring afterwards.
+  #nearest(bodies, from, within = Infinity) {
+    let found = null,
+      closest = within
+    for (const body of bodies) {
+      if (body.dead || !body.inPlay()) {
+        continue
+      }
+      const away = distanceTo(from, body)
+      if (away < closest) {
+        closest = away
+        found = body
+      }
+    }
+    return found ? { target: found, distance: closest } : null
+  }
+
+  // The nearest of each kind. The collections live here, so the question is
+  // answered here, the way visiblePlayer() answers for the player.
+  nearestRival(from, within) {
+    return this.#nearest(this.rivals, from, within)
+  }
+  nearestAsteroid(from, within) {
+    return this.#nearest(this.asteroids, from, within)
+  }
+  nearestOre(from, within) {
+    return this.#nearest(this.oreChunks, from, within)
   }
 
   // Powerups the run has met. A kind has to be found in a sector before the shop
