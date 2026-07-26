@@ -135,6 +135,17 @@ export const CONFIG = {
   ACCURACY_BONUS: 500, // scaled by hit fraction
   FLAWLESS_BONUS: 800, // for taking no damage
   CLEAR_BONUS_PER_SECTOR: 150,
+  // What a powerup fetches when traded in, as a fraction of what it costs. One
+  // number so no entry can be worth more sold than bought.
+  POWERUP_SELL_FRACTION: 0.35,
+  // How long a slot button must be held before the powerup in it is thrown
+  // overboard instead of used.
+  POWERUP_JETTISON_HOLD: 0.55,
+  // Ore for the next powerup slot, multiplied by how many the ship already has.
+  SLOT_COST: 30,
+  POWERUP_JETTISON_SPEED: [110, 160], // how hard a jettisoned one is flung clear
+  POWERUP_JETTISON_DRAG: 0.25, // and how quickly it slows, so it lands within reach
+  POWERUP_ARM_TIME: 1.4, // how long before it can be picked up again
 
   // audio. Every effect is mixed through MASTER_VOLUME, so its own level only sets
   // where it sits against the others and this one number sets how loud the game is.
@@ -925,53 +936,90 @@ export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
 //   label   name shown in the pickup toast
 //   short   name shown in the active-buff list (omit to reuse `label`)
 //   icon    single character drawn on the pickup and in the inventory slot
-//   colour  pickup outline, inventory slot and buff text
-//   sell    ore paid for one traded in from a shop slot
-//   seconds how long the effect lasts; omit for an instant effect
-//   apply   optional immediate effect, run on use
+//   colour   pickup outline, inventory slot and buff text
+//   cost     ore price in the shop, once the run has found one
+//   mode     how using it works, one of:
+//              pulse  one-off effect, then the cooldown
+//              single one-off effect that is used up, emptying the slot
+//              timed  runs for `seconds`, then the cooldown
+//              toggle switches on and off, drawing `drain` a second while on
+//   energy   taken at the moment of use, as a fraction of the energy cell
+//   drain    drawn per second while switched on, as a fraction of the cell
 //
-// A timed powerup records its remaining seconds in player.buffs. Its ongoing
-// effect is declared here as a field the gameplay code looks up by name through
-// PlayerShip.buffField, so nothing tests for a powerup by id. The fields the
-// simulation currently reads off an active buff:
+// Both are fractions rather than amounts because the cell quadruples across the
+// power core's levels: a flat cost that bites at level 0 is loose change at level
+// 4, and a fully upgraded ship would run stealth on regen alone.
+//   cooldown seconds before the slot can be used again, counted from the moment
+//            the effect ends
+//   seconds  how long a timed effect lasts
+//   apply    optional immediate effect, run on use
+//
+// A powerup is equipment, not ammunition: using one leaves it in its slot and
+// starts its cooldown. Its ongoing effect is declared here as a field the
+// gameplay code looks up by name through PlayerShip.buffField, so nothing tests
+// for a powerup by id. The fields the simulation currently reads off an active
+// effect:
 //   beamOffsets     parallel beam positions either side of the nose
 //   beamLengthMult  multiplies the charged beam's reach
 //   freeCharge      charging the laser costs no energy
 //   collisionImmune asteroid contact does no damage
 //   pull            ore attraction strength, at any range
 //   tintsShip       the hull and the energy bar take this entry's `colour`
+//   invisible       nothing hunting the player can see it, see Game.visiblePlayer
+//   hullAlpha       the hull is drawn this solid
+//   endsOnFire      firing the main laser switches the effect off
 // Adding a field means reading it at one gameplay site; adding a powerup that
 // reuses existing fields means editing nothing but this registry.
 // ---------------------------------------------------------------------------
 export const POWERUP_TYPES = {
+  // Shoves what is around the ship clear. `range` keeps it to the immediate
+  // neighbourhood, so it is a way out of a squeeze and not a way to sweep the
+  // sector; a rock counts as in range when its surface is.
   repel: {
     label: "REPEL",
     icon: "R",
     colour: PALETTE.powerup.repel,
-    sell: 20,
+    cost: 90,
+    mode: "pulse",
+    energy: 0.22,
+    cooldown: 4,
+    range: 240,
     impulse: 300,
     apply: (game, player, type) => {
       for (const asteroid of game.asteroids) {
+        if (
+          Math.hypot(asteroid.center.x - player.x, asteroid.center.y - player.y) >
+          type.range + asteroid.boundRadius
+        ) {
+          continue
+        }
         const d = normalize(subtract(asteroid.center, player))
         asteroid.vx += d.x * type.impulse
         asteroid.vy += d.y * type.impulse
         asteroid.spin += randRange(-3, 3)
       }
       for (const bullet of game.projectiles) {
+        if (Math.hypot(bullet.x - player.x, bullet.y - player.y) > type.range) {
+          continue
+        }
         const d = normalize(subtract(bullet, player))
         const speed = Math.max(CONFIG.BULLET_SPEED, Math.hypot(bullet.vx, bullet.vy))
         bullet.vx = d.x * speed
         bullet.vy = d.y * speed
       }
-      game.ring(player.x, player.y, 40, type.colour, 260, 0.7)
+      game.ring(player.x, player.y, 40, type.colour, type.range, 0.7)
       game.screenShake = 9
     },
   },
+  // The one powerup that cannot be paid for in energy, being made of it, so it is
+  // spent instead: a full cell once, and the slot is empty again.
   refuel: {
     label: "REFUEL",
     icon: "F",
     colour: PALETTE.powerup.refuel,
-    sell: 12,
+    cost: 70,
+    mode: "single",
+    energy: 0,
     apply: (game, player, type) => {
       player.energy = game.maxEnergy()
       game.ring(player.x, player.y, 24, type.colour, 150, 0.6)
@@ -982,7 +1030,10 @@ export const POWERUP_TYPES = {
     short: "BOOST",
     icon: "B",
     colour: PALETTE.powerup.booster,
-    sell: 30,
+    cost: 140,
+    mode: "timed",
+    energy: 0.38,
+    cooldown: 60,
     seconds: 6.5,
     beamLengthMult: 1.6, // charged shots reach further...
     freeCharge: true, // ...and cost nothing to charge
@@ -997,7 +1048,10 @@ export const POWERUP_TYPES = {
     short: "MULTI",
     icon: "L",
     colour: PALETTE.powerup.multi,
-    sell: 26,
+    cost: 130,
+    mode: "timed",
+    energy: 0.44,
+    cooldown: 75,
     seconds: 9,
     beamOffsets: [-28, 0, 28], // parallel beams either side of the nose
   },
@@ -1006,9 +1060,26 @@ export const POWERUP_TYPES = {
     short: "MAGNET",
     icon: "M",
     colour: PALETTE.powerup.magnet,
-    sell: 18,
+    cost: 100,
+    mode: "timed",
+    energy: 0.19,
+    cooldown: 45,
     seconds: 6.5,
     pull: 260,
+  },
+  // Held on rather than triggered: it costs energy for as long as it runs, and
+  // firing the main laser gives the position away and drops it.
+  stealth: {
+    label: "STEALTH",
+    icon: "S",
+    colour: PALETTE.powerup.stealth,
+    cost: 160,
+    mode: "toggle",
+    drain: 0.2,
+    cooldown: 2,
+    invisible: true,
+    hullAlpha: 0.35,
+    endsOnFire: true,
   },
 }
 
@@ -1157,17 +1228,6 @@ export const SHOP = [
       }
     },
   ),
-  {
-    id: "slot",
-    name: "POWERUP SLOT",
-    desc: "Carry another powerup at once (keys 1-4).",
-    info: (g) => `${g.upgrades.slots} / ${MAX_SLOTS}`,
-    cost: (g) => 30 * g.upgrades.slots,
-    maxed: (g) => g.upgrades.slots >= MAX_SLOTS,
-    apply: (g) => {
-      g.upgrades.slots++
-    },
-  },
   levelled(
     "shield",
     "SHIELD PLATING",
@@ -1210,14 +1270,37 @@ export const SHOP_LAYOUT = { slotsRow: 1, groupGap: 14 }
 //   value     optional (game, slot) => text shown on the right
 //   available optional (game, slot) => whether the row belongs on this slot
 //   action    (game, slot) => run on ENTER / A
-// A slot whose rows are all unavailable does not open, so an empty one is inert
-// until there is something to offer for it.
+//   rows      optional (game, slot) => rows of the same shape, for a list that is
+//             not known until the run is under way
+// A slot whose rows all come to nothing does not open, so a slot with nothing to
+// offer stays inert.
 // ---------------------------------------------------------------------------
 export const SLOT_MENU = [
+  // A slot the ship has not been fitted with yet. Only the next one along can be
+  // opened, so this appears on exactly one slot and the rest stay inert.
+  {
+    name: "UNLOCK SLOT",
+    value: (g) => (g.devMode ? "FREE" : `${g.slotUnlockCost()} ore`),
+    available: (g, slot) => slot === g.upgrades.slots && slot < MAX_SLOTS,
+    action: (g, slot) => g.unlockSlot(slot),
+  },
   {
     name: "SELL",
     value: (g, slot) => `+${g.slotSellValue(slot)} ore`,
-    available: (g, slot) => g.slotItem(slot) !== undefined,
+    available: (g, slot) => g.slotItem(slot) !== null,
     action: (g, slot) => g.sellSlot(slot),
+  },
+  // One row per powerup an empty slot could be filled with: everything the run
+  // has found, and everything at all in dev mode. A slot the ship has not been
+  // fitted with yet has to be unlocked before it can hold anything.
+  {
+    rows: (game, slot) =>
+      game.slotItem(slot) || slot >= game.upgrades.slots
+        ? []
+        : game.buyablePowerups().map((id) => ({
+            name: POWERUP_TYPES[id].label,
+            value: (g) => (g.devMode ? "FREE" : `${POWERUP_TYPES[id].cost} ore`),
+            action: (g, at) => g.buyPowerup(at, id),
+          })),
   },
 ]

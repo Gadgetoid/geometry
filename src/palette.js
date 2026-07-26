@@ -118,6 +118,7 @@ export const PALETTE = {
     booster: "#ffcf5c",
     multi: "#5fd7ff",
     magnet: "#b38bff",
+    stealth: "#dfe9f5",
   },
 
   // the arena boundary and its out-of-bounds hatching

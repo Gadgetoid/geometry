@@ -47,6 +47,35 @@ function clipLineToRect(px, py, ux, uy, x0, y0, x1, y1) {
   return s1 > s0 ? { s0, s1 } : null
 }
 
+// The first `fraction` of a box's outline, as a polyline starting at the top left
+// and running clockwise. Used to walk a countdown round a HUD box.
+function boxPerimeter(x, y, w, h, fraction) {
+  const corners = [
+    { x, y },
+    { x: x + w, y },
+    { x: x + w, y: y + h },
+    { x, y: y + h },
+    { x, y },
+  ]
+  const total = 2 * (w + h)
+  let want = total * fraction
+  const points = [corners[0]]
+  for (let i = 1; i < corners.length; i++) {
+    const from = corners[i - 1],
+      to = corners[i]
+    const side = Math.hypot(to.x - from.x, to.y - from.y)
+    if (want >= side) {
+      points.push(to)
+      want -= side
+      continue
+    }
+    const t = side > 0 ? want / side : 0
+    points.push({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t })
+    break
+  }
+  return points
+}
+
 // Emit the parts of segment A->B that lie outside the circle.
 function segmentOutsideCircle(ax, ay, bx, by, cx, cy, radius, emit) {
   const dx = bx - ax,
@@ -517,11 +546,41 @@ export class GameView {
         const sx = startX + i * (size + 4),
           sy = barY - 4 - size,
           item = game.player.items[i]
-        const spec = item ? POWERUP_TYPES[item] : null
+        const spec = item ? POWERUP_TYPES[item.id] : null
         r.rect(sx, sy, size, size, {
           stroke: spec ? spec.colour : PALETTE.ui.slotEmpty,
           width: 1.2,
+          alpha: spec && item.cooldown > 0 ? 0.35 : 1,
         })
+        // A slot recovering, or running a timed effect, walks a bar back round its
+        // own outline, so how long is left is read off the box it belongs to.
+        if (spec) {
+          const running = game.player.buffTime(item.id)
+          const left =
+            running > 0 ? running / spec.seconds : spec.cooldown ? item.cooldown / spec.cooldown : 0
+          if (left > 0) {
+            r.strokePoly(boxPerimeter(sx, sy, size, size, clamp(left, 0, 1)), {
+              color: running > 0 ? spec.colour : PALETTE.ui.accent,
+              width: 2,
+              glow: 8,
+              closed: false,
+            })
+          }
+          // Switched on and drawing on the cell, which has no end until it is
+          // switched off again, so it pulses instead of counting anything down.
+          if (item.active) {
+            const pulse = 0.5 + 0.5 * Math.sin(game.gameTime * 6)
+            r.rect(sx + 1, sy + 1, size - 2, size - 2, {
+              fill: spec.colour,
+              alpha: 0.22 + 0.2 * pulse,
+            })
+            r.rect(sx, sy, size, size, {
+              stroke: spec.colour,
+              width: 2,
+              glow: 6 + 8 * pulse,
+            })
+          }
+        }
         const label = game.slotLabel(i)
         r.text(label, sx + 2, sy + 9, { size: 8, color: PALETTE.text.muted })
         if (spec) {
@@ -530,6 +589,7 @@ export class GameView {
             bold: true,
             color: spec.colour,
             align: "center",
+            alpha: item.cooldown > 0 ? 0.45 : 1,
           })
         }
       }
@@ -734,7 +794,7 @@ export class GameView {
     const hint = selectedItem
       ? selectedItem.desc
       : game.shopSelection === game.slotsRow
-        ? "What you are carrying into the next sector. Sell what you will not use."
+        ? "What you carry into the next sector. Fit a slot, or buy and sell what is in one."
         : null
     if (hint) {
       r.text(hint, VIEW_W / 2, y + 8, { size: 12, color: PALETTE.text.soft, align: "center" })
@@ -804,8 +864,8 @@ export class GameView {
   }
 
   // The powerups row: the heading under the item names, the slots under the costs.
-  // Slots beyond the ones bought are drawn faint, so what another POWERUP SLOT buys
-  // is visible before it is paid for.
+  // A slot the ship has not been fitted with is drawn faint but is still reachable,
+  // since selecting it is how the next one is bought.
   #shopSlots(game, leftX, rightX, y, selected) {
     const r = this.renderer
     r.text(`${selected ? "> " : "  "}POWERUPS`, leftX, y, {
@@ -817,7 +877,7 @@ export class GameView {
       const { x, size } = this.#slotBox(rightX, index),
         boxY = y - size + 7
       const owned = index < game.upgrades.slots,
-        spec = POWERUP_TYPES[game.slotItem(index)],
+        spec = game.slotType(index),
         onCursor = selected && game.shopSlot === index
       if (onCursor) {
         r.rect(x - 3, boxY - 3, size + 6, size + 6, { fill: "rgba(95,215,255,.28)" })
@@ -847,9 +907,9 @@ export class GameView {
       { slot, selection } = game.slotMenu,
       rows = game.slotMenuRows(slot)
     const { x } = this.#slotBox(rightX, slot)
-    const spec = POWERUP_TYPES[game.slotItem(slot)]
+    const spec = game.slotType(slot)
     const titleHeight = 20
-    const width = 156,
+    const width = 200, // wide enough for the longest powerup name beside its price
       rowHeight = 20,
       // the title, the rows, and the line saying how to work them
       height = titleHeight + rows.length * rowHeight + 28
@@ -857,7 +917,8 @@ export class GameView {
       panelY = slotsY + 15
     r.rect(panelX, panelY, width, height, { fill: "rgba(4,8,16,.95)" })
     r.rect(panelX, panelY, width, height, { stroke: PALETTE.ui.accent, width: 1.2, glow: 8 })
-    r.text(spec ? spec.label : "EMPTY", panelX + width / 2, panelY + 15, {
+    const title = spec ? spec.label : slot < game.upgrades.slots ? "EMPTY" : "LOCKED"
+    r.text(title, panelX + width / 2, panelY + 15, {
       size: 12,
       bold: true,
       color: spec ? spec.colour : PALETTE.text.faint,

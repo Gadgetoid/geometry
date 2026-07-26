@@ -185,29 +185,44 @@ test("the right stick aims the turret and the bumper fires it", () => {
   assert.ok(game.player.turretManual > 0, "aiming takes manual control")
 })
 
-test("a face button uses its powerup slot once per press", () => {
+test("a face button uses its powerup slot on release, once per press", () => {
   const game = liveGame()
   const player = game.player
-  player.items = ["refuel"]
-  player.energy = 10
+  const item = player.equip(0, "repel")
+  player.energy = player.energyMax
   const input = new GamepadInput(game)
-  const held = readPad(pad({ buttons: { [D.slot1]: 1 } }))
+  const held = readPad(pad({ buttons: { [D.slot1]: 1 } })),
+    released = readPad(pad({}))
   input.apply(held)
-  assert.equal(player.items.length, 0, "the slot was used")
-  assert.ok(player.energy > 10, "and the powerup applied")
-  player.items = ["refuel"]
-  input.apply(held) // still held: must not fire again
-  assert.equal(player.items.length, 1, "a held button must not repeat")
+  assert.equal(player.energy, player.energyMax, "holding it does nothing yet")
+  input.apply(held) // still held: must not repeat either
+  assert.equal(player.energy, player.energyMax)
+  input.apply(released)
+  assert.ok(player.energy < player.energyMax, "letting go used it")
+  assert.equal(player.items[0], item, "and the powerup stays in its slot")
+  const after = player.energy
+  input.apply(held)
+  input.apply(released)
+  assert.equal(player.energy, after, "a slot on cooldown does nothing")
 })
 
 test("each face button maps to its own slot", () => {
   const game = liveGame()
   game.upgrades.slots = 4
   const player = game.player
-  player.items = ["refuel", "refuel", "refuel", "refuel"]
+  player.energy = player.energyMax
+  for (let slot = 0; slot < 4; slot++) {
+    player.equip(slot, "repel")
+  }
   const input = new GamepadInput(game)
   input.apply(readPad(pad({ buttons: { [D.slot3]: 1 } })))
-  assert.equal(player.items.length, 3, "the third button used a slot")
+  input.apply(readPad(pad({})))
+  assert.ok(player.items[2].cooldown > 0, "the third button used the third slot")
+  assert.deepEqual(
+    [0, 1, 3].map((slot) => player.items[slot].cooldown),
+    [0, 0, 0],
+    "and no other",
+  )
 })
 
 // ---- menus ----------------------------------------------------------------
@@ -250,17 +265,22 @@ test("A fills a slot in flight and confirms in a menu, never both", () => {
   // A is also powerup slot 1, which is only reachable in a flying phase, so the
   // two uses cannot collide.
   const inFlight = liveGame()
-  inFlight.player.items = ["refuel"]
+  inFlight.player.equip(0, "refuel")
   inFlight.player.energy = 10
-  new GamepadInput(inFlight).apply(readPad(pad({ buttons: { [B.confirmAlt]: 1 } })))
-  assert.equal(inFlight.player.items.length, 0, "in flight A used the slot")
+  const flying = new GamepadInput(inFlight)
+  flying.apply(readPad(pad({ buttons: { [B.confirmAlt]: 1 } })))
+  flying.apply(readPad(pad({})))
+  assert.ok(inFlight.player.energy > 10, "in flight A used the slot")
   assert.equal(inFlight.phase, "play", "and did not confirm anything")
 
   const inShop = liveGame()
-  inShop.player.items = ["refuel"]
+  inShop.player.equip(0, "refuel")
+  inShop.player.energy = 10
   inShop.enterShop()
-  new GamepadInput(inShop).apply(readPad(pad({ buttons: { [B.confirmAlt]: 1 } })))
-  assert.equal(inShop.player.items.length, 1, "in a menu A left the slot alone")
+  const shopping = new GamepadInput(inShop)
+  shopping.apply(readPad(pad({ buttons: { [B.confirmAlt]: 1 } })))
+  shopping.apply(readPad(pad({})))
+  assert.equal(inShop.player.energy, 10, "in a menu A left the slot alone")
 })
 
 test("the dpad walks the shop and A confirms", () => {
@@ -511,10 +531,13 @@ test("B still works its powerup slot in flight", () => {
   const game = liveGame()
   const input = new GamepadInput(game)
   game.upgrades.slots = 2
-  game.player.items = ["refuel", "repel"]
+  game.player.equip(0, "refuel")
+  game.player.equip(1, "repel")
   assert.equal(game.paused, false)
   input.apply(readPad(pad({ buttons: { [B.back]: 1 } })))
-  assert.deepEqual(game.player.items, ["refuel"], "the second slot was used")
+  input.apply(readPad(pad({})))
+  assert.ok(game.player.items[1].cooldown > 0, "the second slot was used")
+  assert.equal(game.player.items[0].cooldown, 0, "and only that one")
 })
 
 test("the HUD names a powerup slot by what is actually bound to it", () => {

@@ -18,6 +18,7 @@ import {
   SLOT_MENU,
   POWERUP_TYPES,
   POWERUP_IDS,
+  MAX_SLOTS,
   SHIELD_SPARK,
   GAMEPAD,
   BINDABLE_CONTROLS,
@@ -142,6 +143,13 @@ export class Game {
     this.shopSector = 1
     this.shopSlot = 0 // which powerup slot the cursor is on, along the slots row
     this.slotMenu = null // the open pop-over: { slot, selection }
+    this.seenPowerups = new Set() // kinds the run has found, which the shop then sells
+    // How long each slot button has been held, and whether that hold has already
+    // thrown the powerup overboard. A tap uses the slot on release; a hold
+    // jettisons as it passes the threshold, and the release then does nothing.
+    this.slotHeld = new Array(MAX_SLOTS).fill(0)
+    this.slotDown = new Array(MAX_SLOTS).fill(false)
+    this.slotSpent = new Array(MAX_SLOTS).fill(false)
     this.pauseSelection = 0
     this.pauseConfirming = null // a row waiting to be confirmed a second time
     // Settings live here rather than on the things they affect, so one place holds
@@ -875,6 +883,7 @@ export class Game {
     this.lives = CONFIG.START_LIVES
     this.oreBalance = 0
     this.upgrades = freshUpgrades()
+    this.seenPowerups = new Set()
     this.player = new PlayerShip(this)
     this.startLevel(1)
   }
@@ -957,32 +966,104 @@ export class Game {
     return SHOP[row < this.slotsRow ? row : row - 1]
   }
 
-  // What is held in a powerup slot, or undefined for an empty one.
+  // What is held in a powerup slot, or null for an empty one.
   slotItem(slot) {
-    return this.player ? this.player.items[slot] : undefined
+    return (this.player && this.player.items[slot]) || null
   }
 
+  // The registry entry for what is in a slot, or null.
+  slotType(slot) {
+    const item = this.slotItem(slot)
+    return item ? POWERUP_TYPES[item.id] : null
+  }
+
+  // A powerup fetches a fixed fraction of what it costs, so none is worth more
+  // sold than bought.
+  powerupSellValue(id) {
+    return Math.round(POWERUP_TYPES[id].cost * CONFIG.POWERUP_SELL_FRACTION)
+  }
   slotSellValue(slot) {
-    const id = this.slotItem(slot)
-    return id === undefined ? 0 : POWERUP_TYPES[id].sell
+    const item = this.slotItem(slot)
+    return item ? this.powerupSellValue(item.id) : 0
   }
 
-  // Trade a carried powerup back in for ore.
+  // Trade a carried powerup back in for ore. The slot is emptied where it stands:
+  // a slot's index is its identity, so the ones beside it do not shuffle along.
   sellSlot(slot) {
-    const id = this.slotItem(slot)
-    if (id === undefined) {
+    const item = this.slotItem(slot)
+    if (!item) {
       return
     }
-    this.oreBalance += POWERUP_TYPES[id].sell
-    this.player.items.splice(slot, 1)
+    this.oreBalance += this.powerupSellValue(item.id)
+    this.player.items[slot] = null
     this.closeSlotMenu()
     this.rememberRun()
     Sound.collect()
   }
 
-  // The pop-over's rows for one slot, dropping those that have nothing to act on.
+  // What the next powerup slot costs. Each one is dearer than the last.
+  slotUnlockCost() {
+    return CONFIG.SLOT_COST * this.upgrades.slots
+  }
+
+  // Fit the ship with the next slot along. Only that one can be bought, so the
+  // slots fill left to right and none is skipped.
+  unlockSlot(slot) {
+    if (slot !== this.upgrades.slots || slot >= MAX_SLOTS) {
+      return
+    }
+    const cost = this.slotUnlockCost()
+    if (!this.devMode) {
+      if (this.oreBalance < cost) {
+        Sound.hit()
+        return
+      }
+      this.oreBalance -= cost
+    }
+    this.upgrades.slots++
+    this.rememberRun()
+    Sound.power()
+    // What the slot can be filled with takes the row's place, so unlocking and
+    // stocking it is one visit to the pop-over.
+    if (this.slotMenu && this.slotMenuRows(slot).length) {
+      this.slotMenu.selection = 0
+    } else {
+      this.closeSlotMenu()
+    }
+  }
+
+  // Fit a bought powerup into an empty slot.
+  buyPowerup(slot, id) {
+    if (this.slotItem(slot) || slot >= this.upgrades.slots) {
+      return
+    }
+    const cost = POWERUP_TYPES[id].cost
+    if (!this.devMode) {
+      if (this.oreBalance < cost) {
+        Sound.hit()
+        return
+      }
+      this.oreBalance -= cost
+    }
+    this.player.equip(slot, id)
+    this.closeSlotMenu()
+    this.rememberRun()
+    Sound.power()
+  }
+
+  // The pop-over's rows for one slot: what can be done with what is in it, then
+  // what could be put in it. An entry that declares `rows` stands in for a list
+  // that is not known until the run has found something.
   slotMenuRows(slot) {
-    return SLOT_MENU.filter((row) => !row.available || row.available(this, slot))
+    const rows = []
+    for (const entry of SLOT_MENU) {
+      if (entry.rows) {
+        rows.push(...entry.rows(this, slot))
+      } else if (!entry.available || entry.available(this, slot)) {
+        rows.push(entry)
+      }
+    }
+    return rows
   }
 
   openSlotMenu(slot) {
@@ -1082,26 +1163,102 @@ export class Game {
     this.clearInput()
   }
 
+  // Use what is in a slot. A powerup is equipment: it stays in its slot and the
+  // slot goes on cooldown, so what limits its use is the cell and the wait.
+  // A toggle switches off again from here, which is the same press.
   usePowerupSlot(index) {
     const player = this.player,
-      id = player.items[index]
-    if (id === undefined) {
+      item = player.items[index]
+    if (!item) {
       return
     }
-    const type = POWERUP_TYPES[id]
-    player.items.splice(index, 1)
+    const type = POWERUP_TYPES[item.id]
+    if (item.active) {
+      player.stopSlot(index)
+      this.showToast(`${type.label} OFF`)
+      return
+    }
+    if (item.cooldown > 0) {
+      Sound.hit()
+      return
+    }
+    const cost = (type.energy ?? 0) * player.energyMax
+    if (player.energy < cost) {
+      Sound.hit()
+      this.showToast(`${type.label} NEEDS ${Math.ceil(cost)} ENERGY`)
+      return
+    }
+    player.energy -= cost
     Sound.power()
     this.showToast(`${type.label} ACTIVATED`)
-    if (type.seconds) {
-      player.grantBuff(id, type.seconds)
+    if (type.mode === "toggle") {
+      item.active = true
+    } else if (type.seconds) {
+      player.grantBuff(item.id, type.seconds) // its cooldown starts when it runs out
+    } else {
+      item.cooldown = type.cooldown ?? 0 // a pulse is over as it happens
     }
     if (type.apply) {
       type.apply(this, player, type)
     }
+    if (type.mode === "single") {
+      player.items[index] = null // spent, not recharging
+    }
+  }
+
+  // Throw the powerup in a slot overboard. It is flung clear of the nose and
+  // arms before it can be picked up, so letting go of the button does not
+  // immediately take it back.
+  jettisonSlot(index) {
+    const player = this.player,
+      item = player && player.items[index]
+    if (!item || !this.canFly()) {
+      return
+    }
+    const type = POWERUP_TYPES[item.id]
+    player.stopSlot(index) // whatever it was doing stops with it
+    player.items[index] = null
+    // Out of the tail, at its own speed and not the ship's, so flying on leaves it
+    // behind instead of dragging it along or overtaking it.
+    const bearing = player.angle + Math.PI + randRange(-0.5, 0.5)
+    const speed = randRange(CONFIG.POWERUP_JETTISON_SPEED[0], CONFIG.POWERUP_JETTISON_SPEED[1])
+    const pickup = new Powerup(
+      player.x + Math.cos(bearing) * (player.boundRadius + 10),
+      player.y + Math.sin(bearing) * (player.boundRadius + 10),
+      Math.cos(bearing) * speed,
+      Math.sin(bearing) * speed,
+      item.id,
+    )
+    pickup.arming = CONFIG.POWERUP_ARM_TIME
+    pickup.drag = CONFIG.POWERUP_JETTISON_DRAG
+    this.powerupPickups.push(pickup)
+    this.showToast(`${type.label} JETTISONED`)
+    Sound.bump()
+  }
+
+  // The player as anything hunting it can see it, or null while a powerup is
+  // hiding the ship. Every site that steers toward, aims at or shoots at the
+  // player asks through this, so one effect hides it from all of them.
+  visiblePlayer() {
+    const player = this.player
+    return player && !player.buffField("invisible", false) ? player : null
+  }
+
+  // Powerups the run has met. A kind has to be found in a sector before the shop
+  // will sell it, so the shop's stock is a record of what the run has seen.
+  findPowerup(id) {
+    this.seenPowerups.add(id)
+  }
+
+  // What the shop can put in an empty slot. Dev mode stocks the lot, so a new
+  // powerup can be tried without hunting for one first.
+  buyablePowerups() {
+    return POWERUP_IDS.filter((id) => this.devMode || this.seenPowerups.has(id))
   }
 
   // ---- per-frame update ------------------------------------------------
   update(dt) {
+    this.#tickSlotHolds(dt)
     if (this.screenShake > 0) {
       this.screenShake = Math.max(0, this.screenShake - dt * 22)
     }
@@ -1412,8 +1569,10 @@ export class Game {
       rivalScore: this.rivalScore,
       upgrades: { ...this.upgrades },
       // Carried powerups are part of the loadout the shop sends you out with, so
-      // they survive a session the way the upgrades do.
-      items: this.player ? [...this.player.items] : [],
+      // they survive a session the way the upgrades do. So does the record of
+      // what the run has found, which is what the shop will sell.
+      items: this.player ? this.player.items.map((item) => (item ? item.id : null)) : [],
+      seen: [...this.seenPowerups],
     }
     saveRun(this.savedRun)
   }
@@ -1452,9 +1611,14 @@ export class Game {
     this.level = run.level
     this.player = new PlayerShip(this)
     this.player.fitPurchased(this.upgrades)
-    // Drop anything the registry no longer knows, so an old save cannot put a
-    // powerup that has since been removed into a slot.
-    this.player.items = (run.items || []).filter((id) => POWERUP_TYPES[id])
+    // Anything the registry no longer knows is dropped, so an old save cannot put
+    // a powerup that has since been removed into a slot or onto the shop's shelf.
+    ;(run.items || []).forEach((id, slot) => {
+      if (POWERUP_TYPES[id] && slot < MAX_SLOTS) {
+        this.player.equip(slot, id)
+      }
+    })
+    this.seenPowerups = new Set((run.seen || []).filter((id) => POWERUP_TYPES[id]))
     this.stats = this.blankStats()
     this.asteroids = []
     this.oreChunks = []
@@ -1764,7 +1928,9 @@ export class Game {
     if (this.phase !== "shop" || this.shopSelection !== this.slotsRow) {
       return false
     }
-    this.shopSlot = clamp(this.shopSlot + Math.sign(step), 0, this.upgrades.slots - 1)
+    // Every box is reachable, fitted or not: an empty one is where the next slot
+    // is bought, so the cursor has to be able to land on it.
+    this.shopSlot = clamp(this.shopSlot + Math.sign(step), 0, MAX_SLOTS - 1)
     return true
   }
 
@@ -1892,10 +2058,41 @@ export class Game {
     }
   }
 
-  // Use a powerup slot, if the ship is in a state to use one.
-  tryUseSlot(index) {
-    if (this.canFly() && !this.paused) {
+  // A slot button going down. Nothing happens yet: a tap uses the slot when it
+  // comes back up, and a hold throws the powerup overboard before then.
+  slotDownAt(index) {
+    if (index < 0 || index >= MAX_SLOTS) {
+      return
+    }
+    this.slotDown[index] = true
+    this.slotHeld[index] = 0
+    this.slotSpent[index] = false
+  }
+
+  // ...and coming back up, which uses the slot unless the hold already spent it.
+  slotUpAt(index) {
+    if (index < 0 || index >= MAX_SLOTS) {
+      return
+    }
+    this.slotDown[index] = false
+    const spent = this.slotSpent[index]
+    this.slotHeld[index] = 0
+    this.slotSpent[index] = false
+    if (!spent && this.canFly() && !this.paused) {
       this.usePowerupSlot(index)
+    }
+  }
+
+  #tickSlotHolds(dt) {
+    for (let index = 0; index < MAX_SLOTS; index++) {
+      if (!this.slotDown[index] || this.slotSpent[index]) {
+        continue
+      }
+      this.slotHeld[index] += dt
+      if (this.slotHeld[index] >= CONFIG.POWERUP_JETTISON_HOLD) {
+        this.slotSpent[index] = true
+        this.jettisonSlot(index)
+      }
     }
   }
 
@@ -1951,7 +2148,7 @@ export class Game {
     }
     const control = this.controlForKey(e.code)
     if (control && control.slot !== undefined) {
-      this.tryUseSlot(control.slot)
+      this.slotDownAt(control.slot)
     }
     this.pressedKeys.add(e.code)
   }
@@ -1964,6 +2161,9 @@ export class Game {
     if (control && control.id === "fire") {
       this.releaseFire()
     }
+    if (control && control.slot !== undefined) {
+      this.slotUpAt(control.slot)
+    }
   }
 
   onBlur() {
@@ -1974,6 +2174,9 @@ export class Game {
   // the start of a level so input never carries across a phase transition.
   clearInput() {
     this.pressedKeys.clear()
+    this.slotDown.fill(false)
+    this.slotHeld.fill(0)
+    this.slotSpent.fill(false)
     this.padInput = this.blankPadInput()
     Sound.setThruster(false)
     if (this.player) {

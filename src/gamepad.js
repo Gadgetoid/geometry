@@ -214,9 +214,14 @@ export class GamepadInput {
     if (before && before.fire && !state.fire) {
       game.releaseFire()
     }
+    // Slot buttons are held as well as tapped: a tap uses the slot on release, a
+    // hold throws the powerup overboard, so both edges go through.
     state.slots.forEach((down, index) => {
-      if (down && !(before && before.slots[index])) {
-        game.tryUseSlot(index)
+      const was = !!(before && before.slots[index])
+      if (down && !was) {
+        game.slotDownAt(index)
+      } else if (!down && was) {
+        game.slotUpAt(index)
       }
     })
     if (pressed("confirm")) {

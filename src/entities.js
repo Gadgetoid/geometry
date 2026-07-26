@@ -42,6 +42,7 @@ import {
   PLAYER_TYPE,
   AST_SHAPE,
   POWERUP_TYPES,
+  MAX_SLOTS,
   SHIELD_SPARK,
   barrelCount,
 } from "./config.js"
@@ -499,8 +500,8 @@ export class Entity {
 // carries, fanned either side of the aim. Every turret in the game goes through
 // here, so a rock's, a rival's and the player's all read the same way and a
 // glance at one says how fast it fires.
-export function drawTurret(renderer, x, y, aim, barrels, colour, length = 10) {
-  renderer.circle(x, y, 3.4, { stroke: colour, width: 1.6, glow: 8 })
+export function drawTurret(renderer, x, y, aim, barrels, colour, length = 10, alpha = 1) {
+  renderer.circle(x, y, 3.4, { stroke: colour, width: 1.6, glow: 8, alpha })
   const across = 2.6 // barrel separation, across the line of fire
   const px = -Math.sin(aim) * across,
     py = Math.cos(aim) * across
@@ -512,6 +513,7 @@ export function drawTurret(renderer, x, y, aim, barrels, colour, length = 10) {
       color: colour,
       width: 1.6,
       glow: 8,
+      alpha,
     })
   }
 }
@@ -636,7 +638,7 @@ export const WEAPON_CONTROLLERS = {
 
   // leads nothing: fires straight at the player whenever they are visible
   turret(weapon, dt, game, host, world) {
-    const player = game.player
+    const player = game.visiblePlayer()
     // don't snipe the player from off-screen where they can't see the shooter
     if (
       !player ||
@@ -669,7 +671,7 @@ export const WEAPON_CONTROLLERS = {
   // heavy cannon: winds up with a growing glow (drawn by drawShip) and, once
   // committed, fires even if the player slips away, so the shot is telegraphed
   hunter(weapon, dt, game, host, world) {
-    const player = game.player
+    const player = game.visiblePlayer()
     if (!player) {
       return
     }
@@ -705,6 +707,11 @@ export const WEAPON_CONTROLLERS = {
       if (host.turretFiring) {
         weapon.fire(game, host, world.x, world.y, host.turretAim, weapon.type.range)
       }
+      return
+    }
+    // Auto-targeting shoots at things that cannot see the ship, which would give
+    // it away. Under the player's own hand it still fires, since that is a choice.
+    if (host.buffField("invisible", false)) {
       return
     }
     let target = null,
@@ -785,10 +792,11 @@ export class Shield {
     }
   }
 
-  draw(renderer, cx, cy, radius, fraction, time) {
+  // `fade` dims the whole bubble, for a host that is drawing itself faint.
+  draw(renderer, cx, cy, radius, fraction, time, fade = 1) {
     // gentle pulse that never fades to invisible; brightness tracks energy
     const pulse = 0.88 + 0.12 * Math.sin(time * 1.8)
-    const alpha = clamp((0.24 + 0.4 * fraction) * pulse, 0.2, 0.75)
+    const alpha = clamp((0.24 + 0.4 * fraction) * pulse, 0.2, 0.75) * fade
     const rotation = time * 0.3,
       sides = this.type.sides,
       points = []
@@ -809,7 +817,7 @@ export class Shield {
         color: PALETTE.shield.flash,
         width: 2 + 1.5 * f,
         glow: 16,
-        alpha: clamp(0.9 * f, 0, 1),
+        alpha: clamp(0.9 * f, 0, 1) * fade,
         closed: false,
       })
     }
@@ -1120,7 +1128,9 @@ export class PlayerShip extends Ship {
     this.invincible = CONFIG.INVIN_TIME
     this.thrusting = false
     this.reversing = false
-    this.items = []
+    // One entry per slot, null where the slot is empty, so a slot's index is its
+    // identity: buying into the third slot puts it in the third box.
+    this.items = new Array(MAX_SLOTS).fill(null)
     this.buffs = new Map() // powerup id -> seconds of effect remaining
     this.turretAim = 0
     this.turretManual = 0 // time left under player (arrow-key) control
@@ -1212,18 +1222,48 @@ export class PlayerShip extends Ship {
     }
   }
 
-  // Seconds left on a timed powerup, 0 when it is not active.
+  // Put a powerup in a slot. The slot holds its own state, so a level or any
+  // other per-copy property has somewhere to live beside the cooldown.
+  equip(slot, id) {
+    this.items[slot] = { id, cooldown: 0, active: false }
+    return this.items[slot]
+  }
+
+  // The first empty slot the ship has been fitted with, or -1 when it is full.
+  freeSlot(slots) {
+    for (let slot = 0; slot < slots; slot++) {
+      if (!this.items[slot]) {
+        return slot
+      }
+    }
+    return -1
+  }
+
+  // Seconds left on a timed powerup, 0 when it is not running.
   buffTime(id) {
     return this.buffs.get(id) ?? 0
   }
 
-  // The active powerup type declaring `field`, or null. Effects are named in
+  // Every powerup effect currently running: the timed ones, and any toggle that
+  // is switched on.
+  *activeEffects() {
+    for (const id of this.buffs.keys()) {
+      yield POWERUP_TYPES[id]
+    }
+    for (const item of this.items) {
+      if (item && item.active) {
+        yield POWERUP_TYPES[item.id]
+      }
+    }
+  }
+
+  // The running powerup type declaring `field`, or null. Effects are named in
   // POWERUP_TYPES rather than tested for by id, so the gameplay code below asks
   // "is anything lengthening my beam?" instead of "is BOOSTER running?".
   buffWith(field) {
-    for (const id of this.buffs.keys()) {
-      if (POWERUP_TYPES[id][field] !== undefined) {
-        return POWERUP_TYPES[id]
+    for (const type of this.activeEffects()) {
+      if (type[field] !== undefined) {
+        return type
       }
     }
     return null
@@ -1235,12 +1275,74 @@ export class PlayerShip extends Ship {
   grantBuff(id, seconds) {
     this.buffs.set(id, Math.max(this.buffTime(id), seconds))
   }
+
+  // Stop what one slot is doing, wherever the effect is held, and start its
+  // cooldown. A timed effect lives in `buffs` and a toggle on the item itself.
+  stopSlot(slot) {
+    const item = this.items[slot]
+    if (!item) {
+      return
+    }
+    item.active = false
+    this.buffs.delete(item.id)
+    item.cooldown = POWERUP_TYPES[item.id].cooldown
+  }
+
+  // Stop whatever is running that declares `field`, wherever it is held: a timed
+  // effect is dropped and a toggle is switched off, both onto their cooldowns.
+  endEffectsWith(field) {
+    for (const [id, remaining] of this.buffs) {
+      if (POWERUP_TYPES[id][field] !== undefined && remaining > 0) {
+        this.buffs.delete(id)
+        this.#beginCooldown(id)
+      }
+    }
+    for (const item of this.items) {
+      if (item && item.active && POWERUP_TYPES[item.id][field] !== undefined) {
+        item.active = false
+        item.cooldown = POWERUP_TYPES[item.id].cooldown
+      }
+    }
+  }
+
+  // A timed effect is held in `buffs` by id, so its cooldown has to be found in
+  // whichever slots carry that powerup.
+  #beginCooldown(id) {
+    for (const item of this.items) {
+      if (item && item.id === id) {
+        item.cooldown = POWERUP_TYPES[id].cooldown
+      }
+    }
+  }
+
   #tickBuffs(dt) {
     for (const [id, remaining] of this.buffs) {
       if (remaining - dt <= 0) {
         this.buffs.delete(id)
+        this.#beginCooldown(id) // the cooldown runs from the end of the effect
       } else {
         this.buffs.set(id, remaining - dt)
+      }
+    }
+  }
+
+  // Slots recover, and anything switched on keeps drawing on the cell. A toggle
+  // that runs the cell dry switches itself off rather than stranding the ship.
+  #tickSlots(dt, game) {
+    for (const item of this.items) {
+      if (!item) {
+        continue
+      }
+      const type = POWERUP_TYPES[item.id]
+      if (item.active) {
+        this.energy = Math.max(0, this.energy - type.drain * this.energyMax * dt)
+        if (this.energy <= 0) {
+          item.active = false
+          item.cooldown = type.cooldown
+          game.showToast(`${type.label} OFFLINE`)
+        }
+      } else if (item.cooldown > 0) {
+        item.cooldown = Math.max(0, item.cooldown - dt)
       }
     }
   }
@@ -1312,6 +1414,7 @@ export class PlayerShip extends Ship {
     }
     w.cooldown = w.type.reload
     w.release()
+    this.endEffectsWith("endsOnFire") // the shot gives the ship's position away
     Sound.fire(0.9 + 0.35 * chargeFrac) // pitch rises slightly with charge
   }
 
@@ -1347,6 +1450,7 @@ export class PlayerShip extends Ship {
     this.invincible = Math.max(0, this.invincible - dt)
     this.#tickWarp(dt, game)
     this.#tickBuffs(dt)
+    this.#tickSlots(dt, game)
     this.impactSfx = Math.max(0, this.impactSfx - dt)
     this.slamCooldown = Math.max(0, this.slamCooldown - dt)
     this.energyMax = game.maxEnergy()
@@ -1531,15 +1635,19 @@ export class PlayerShip extends Ship {
       }
     }
 
-    // Pick up powerups into a free inventory slot.
+    // Pick up powerups into a free inventory slot. One just thrown overboard is
+    // still arming, and is passed over until it settles.
     for (let i = game.powerupPickups.length - 1; i >= 0; i--) {
       const pickup = game.powerupPickups[i]
+      const slot = this.freeSlot(game.upgrades.slots)
       if (
-        Math.hypot(pickup.x - this.x, pickup.y - this.y) < this.radius + 14 &&
-        this.items.length < game.upgrades.slots
+        pickup.arming <= 0 &&
+        slot >= 0 &&
+        Math.hypot(pickup.x - this.x, pickup.y - this.y) < this.radius + 14
       ) {
-        this.items.push(pickup.type)
+        this.equip(slot, pickup.type)
         game.powerupPickups.splice(i, 1)
+        game.findPowerup(pickup.type)
         Sound.power()
         const spec = POWERUP_TYPES[pickup.type]
         game.burst(pickup.x, pickup.y, 12, spec.colour, 30, 120, 0.6)
@@ -1666,6 +1774,9 @@ export class PlayerShip extends Ship {
       : this.energy < this.energyMax * 0.22
         ? PALETTE.player.lowEnergy
         : this.colour
+    // A powerup that hides the ship draws it faint, so the player can still fly
+    // it while nothing else can see it.
+    const fade = this.buffField("hullAlpha", 1)
 
     if (this.thrusting) {
       const flame = randRange(0.7, 1.3)
@@ -1679,18 +1790,20 @@ export class PlayerShip extends Ship {
         width: 1.4,
         glow: 10,
         closed: false,
+        alpha: fade,
       })
     }
     renderer.strokePoly(this.worldOutline(), {
       color: colour,
       width: this.type.hullWidth,
       glow: 14,
+      alpha: fade,
     })
     if (tint) {
       renderer.circle(this.x, this.y, this.radius * 1.7, {
         stroke: colour,
         width: this.type.hullWidth,
-        alpha: 0.5,
+        alpha: 0.5 * fade,
       })
     }
 
@@ -1704,6 +1817,7 @@ export class PlayerShip extends Ship {
         this.shieldRadius(),
         this.energy / this.energyMax,
         game.gameTime,
+        fade,
       )
     }
 
@@ -1711,7 +1825,7 @@ export class PlayerShip extends Ship {
       const aim = this.turretAim || 0
       const mount = this.mountWorld(this.aux.local)
       const barrels = this.aux.module ? this.aux.module.barrels : 1
-      drawTurret(renderer, mount.x, mount.y, aim, barrels, PALETTE.player.turret, 12)
+      drawTurret(renderer, mount.x, mount.y, aim, barrels, PALETTE.player.turret, 12, fade)
     }
 
     const w = this.mainWeapon
@@ -1730,7 +1844,7 @@ export class PlayerShip extends Ship {
         nose.y + Math.sin(this.angle) * length,
         {
           color: mixColour(PALETTE.player.charge, PALETTE.player.overdrive, wind),
-          alpha: frac * pulse,
+          alpha: frac * pulse * fade,
           width: 1.5 + 2.5 * (w.charge / w.type.chargeMax) + 2 * wind,
           glow: 14 + 10 * wind,
         },
@@ -1817,7 +1931,7 @@ export class RivalShip extends Ship {
     if (this.dead) {
       return // killed earlier this frame, and dropped from the list after this loop
     }
-    const player = game.player
+    const player = game.visiblePlayer()
     this.regenEnergy(dt)
     this.updateShield(dt)
     this.slamCooldown = Math.max(0, this.slamCooldown - dt)
@@ -2527,12 +2641,17 @@ export class Asteroid extends Entity {
         game.gameTime,
       )
     }
+    // A turret holds its last bearing while the player is hidden, so a swing
+    // toward an invisible ship does not give it away.
+    const seen = game.visiblePlayer()
     for (const hp of this.hardpoints) {
-      if (!hp.module || hp.module.kind !== "weapon" || !game.player) {
+      if (!hp.module || hp.module.kind !== "weapon") {
         continue
       }
-      const aim = Math.atan2(game.player.y - hp.y, game.player.x - hp.x)
-      drawTurret(renderer, hp.x, hp.y, aim, hp.module.barrels, PALETTE.weapon.gun)
+      if (seen) {
+        hp.aim = Math.atan2(seen.y - hp.y, seen.x - hp.x)
+      }
+      drawTurret(renderer, hp.x, hp.y, hp.aim ?? 0, hp.module.barrels, PALETTE.weapon.gun)
     }
   }
 }
@@ -2602,18 +2721,30 @@ export class Powerup extends Entity {
     this.type = type
     this.angle = 0
     this.life = CONFIG.POWERUP_LIFE
+    // Seconds before it can be picked up. One that spawned in the sector is live
+    // at once; one just thrown overboard has to clear the ship first.
+    this.arming = 0
+    // Velocity retained per second. One drifting in from off-screen keeps coming;
+    // one thrown overboard slows, so it lands within reach of where it was let go.
+    this.drag = 1
   }
 
   update(dt) {
     this.life -= dt
+    this.arming = Math.max(0, this.arming - dt)
     this.angle += dt * 1.4
+    this.vx *= Math.pow(this.drag, dt)
+    this.vy *= Math.pow(this.drag, dt)
     this.integrate(dt)
-    if (Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + 60 || this.life <= 0) {
+    // A powerup is something to come back for, so it bounces off the arena wall
+    // instead of leaving the sector.
+    this.confine(0.5, 24)
+    if (this.life <= 0) {
       this.dead = true
     }
   }
 
-  draw(renderer) {
+  draw(renderer, game) {
     const spec = POWERUP_TYPES[this.type]
     const colour = spec.colour,
       pts = []
@@ -2621,7 +2752,10 @@ export class Powerup extends Entity {
       const a = this.angle + (i / 6) * TAU
       pts.push({ x: this.x + Math.cos(a) * 12, y: this.y + Math.sin(a) * 12 })
     }
-    renderer.strokePoly(pts, { color: colour, width: 1.7, glow: 14 })
+    // One still arming flashes, so a ship flying over it can see it is not there
+    // to be taken yet.
+    const alpha = this.arming > 0 ? 0.35 + 0.4 * (Math.sin(game.gameTime * 22) + 1) * 0.5 : 1
+    renderer.strokePoly(pts, { color: colour, width: 1.7, glow: 14, alpha })
     renderer.text(spec.icon, this.x, this.y, {
       size: 12,
       color: colour,
@@ -2629,6 +2763,7 @@ export class Powerup extends Entity {
       baseline: "middle",
       bold: true,
       glow: 14,
+      alpha,
     })
   }
 }
