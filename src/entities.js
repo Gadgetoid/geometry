@@ -31,6 +31,7 @@ import {
   supportDistance,
   distanceTo,
   bearingTo,
+  shortestTurn,
 } from "./math.js"
 import {
   TAU,
@@ -700,7 +701,7 @@ export const WEAPON_CONTROLLERS = {
       }
       return
     }
-    const arc = ((bearingTo(host, player) - host.angle + Math.PI * 3) % TAU) - Math.PI
+    const arc = shortestTurn(host.angle, bearingTo(host, player))
     if (
       Math.abs(arc) < weapon.type.arc &&
       distanceTo(host, player) < weapon.type.length &&
@@ -1972,9 +1973,8 @@ export class RivalShip extends Ship {
       : this.hunts && player
         ? { x: player.x, y: player.y }
         : target || { x: ARENA.cx, y: ARENA.cy }
-    const wantAngle = bearingTo(this, goal)
-    const angleDelta = ((wantAngle - this.angle + Math.PI * 3) % TAU) - Math.PI
-    this.angle += clamp(angleDelta, -this.turnRate * dt, this.turnRate * dt)
+    const turn = shortestTurn(this.angle, bearingTo(this, goal))
+    this.angle += clamp(turn, -this.turnRate * dt, this.turnRate * dt)
     this.vx += Math.cos(this.angle) * this.accel * dt
     this.vy += Math.sin(this.angle) * this.accel * dt
     const speed = Math.hypot(this.vx, this.vy)

@@ -3034,6 +3034,35 @@ test("a turret does not track a ship nothing can see", () => {
   }
 })
 
+// A ship's heading accumulates and is never normalised, so a rival that has been
+// turning one way for a while sits past a full turn. The wrap this replaces was
+// only correct while (goal - heading) stayed above -3 PI, and past that it turned
+// the long way round. At a heading of 8 rad with a goal bearing of -2 it gave
+// -3.72 where the short way is +2.57: the opposite direction.
+test("a rival past a full turn still turns the short way", () => {
+  const game = liveGame()
+  const player = game.player
+  const hunter = Object.keys(SHIP_TYPES).find((name) => SHIP_TYPES[name].hunts)
+  assert.ok(hunter, "some ship should hunt the player")
+
+  const goal = -2 // where the player sits, as a bearing from the rival
+  player.x = ARENA.cx + Math.cos(goal) * 300
+  player.y = ARENA.cy + Math.sin(goal) * 300
+
+  const rival = new RivalShip(ARENA.cx, ARENA.cy, hunter, [])
+  rival.angle = 8 // past one full turn, which real play reaches
+  rival.lifeTimer = 99 // so it is hunting rather than leaving
+  game.rivals = [rival]
+  assert.ok(rival.angle > Math.PI * 2, "the pose must actually be past a full turn")
+
+  const before = rival.angle
+  rival.update(1 / 60, game)
+  assert.ok(
+    rival.angle > before,
+    `it turned ${(rival.angle - before).toFixed(3)}, which is away from the player`,
+  )
+})
+
 // ---- progression is data ---------------------------------------------------
 
 // ---- an exploding rock and its neighbours ---------------------------------
