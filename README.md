@@ -6,6 +6,17 @@ The original idea was based around blasting rocks apart in 3D, but to teach myse
 
 A rewrite against 32blit's less optimistic C++ SDK later brought it to the handheld and you can still [play the original Geometry in your browser](https://32blit.github.io/32blit-sdk/examples/) (hint: click "geometry" in the palette of examples at the top. WASD + U to fire.)
 
+## Screenshots
+
+![A rock cut clean in half, early on](screenshots/sector.png)
+
+|                                                                                  |                                                                                   |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| ![An armed rock, a shielded one and a scout closing in](screenshots/hazards.png) | ![A frigate closing in while an armed rock opens up](screenshots/frigate.png)     |
+| ![A sector a long way out](screenshots/late-sector.png)                          | ![The shop between sectors, and what a cleared sector paid](screenshots/shop.png) |
+
+A rock cut in half, rocks that shoot back, a frigate bearing down, a sector a long way out, and the shop between them.
+
 ## Backstory
 
 In the not so distant future the ceaseless persuit of machine intelligence has strip-mined the earth of all usable resources.
