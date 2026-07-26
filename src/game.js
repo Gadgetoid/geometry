@@ -869,7 +869,6 @@ export class Game {
     p.invincible = CONFIG.INVIN_TIME
     p.energyMax = this.maxEnergy()
     p.energy = p.energyMax
-    this.clearSpawnArea(p.x, p.y)
     // a new sector has nowhere to pan from, so place the camera outright
     this.viewCenter.x = p.x
     this.viewCenter.y = p.y
@@ -1136,13 +1135,14 @@ export class Game {
     }
   }
 
-  // Shove anything sitting where the ship is about to appear. A ship warps in
-  // solid, and a rock that has drifted over the spawn point since the sector began
-  // would otherwise be inside it. The push tracks the warp-in: the ring goes out
-  // as the ship comes back.
-  clearSpawnArea(x, y) {
+  // Ease anything sitting where the ship is about to appear out of the way while
+  // it arrives. A ship warps in solid, and a rock that has drifted over the spawn
+  // point would otherwise be inside it. The whole warp is spent clearing the space,
+  // so a rock drifts aside as though the arrival's ripples were moving it, rather
+  // than jumping. Returns whether anything was in the way.
+  clearSpawnArea(dt, x, y) {
     const radius = CONFIG.SPAWN_CLEAR_RADIUS
-    let shoved = false
+    let clearing = false
     for (const asteroid of this.asteroids) {
       const dx = asteroid.center.x - x,
         dy = asteroid.center.y - y
@@ -1156,15 +1156,17 @@ export class Game {
       const bearing = distance > 1e-6 ? Math.atan2(dy, dx) : randRange(0, TAU)
       const ux = Math.cos(bearing),
         uy = Math.sin(bearing)
-      asteroid.translate(ux * overlap, uy * overlap)
-      asteroid.vx += ux * CONFIG.SPAWN_CLEAR_IMPULSE
-      asteroid.vy += uy * CONFIG.SPAWN_CLEAR_IMPULSE
-      shoved = true
+      // Undo a share of what is left each frame, so it eases out and slows as it
+      // goes, and give it enough of a push to keep drifting once it is clear. An
+      // exponential ease moves fastest on its first frame, which over a deep
+      // overlap is a lurch, so the speed is capped as the camera's pan is.
+      const step = Math.min(overlap * CONFIG.SPAWN_CLEAR_RATE, CONFIG.SPAWN_CLEAR_SPEED) * dt
+      asteroid.translate(ux * step, uy * step)
+      asteroid.vx += ux * CONFIG.SPAWN_CLEAR_PUSH * dt
+      asteroid.vy += uy * CONFIG.SPAWN_CLEAR_PUSH * dt
+      clearing = true
     }
-    if (shoved) {
-      this.ring(x, y, radius * 0.4, PALETTE.player.hull, radius, 0.5)
-    }
-    return shoved
+    return clearing
   }
 
   playerLoseLife() {
@@ -1191,7 +1193,6 @@ export class Game {
     p.energy = this.maxEnergy() * 0.6
     p.invincible = CONFIG.INVIN_TIME
     p.mainWeapon.release()
-    this.clearSpawnArea(p.x, p.y)
     p.beginWarpIn(CONFIG.RESPAWN_PAUSE)
     this.phase = "arriving"
     this.clearInput()
@@ -1327,6 +1328,12 @@ export class Game {
           this.rivalTimer = this.plan.rivalInterval
         }
       }
+    }
+
+    // Arriving is when the space is made: the ship is not solid yet, so a rock can
+    // be moved out from under it without a collision.
+    if (this.player.warpTarget === 1 && this.player.warp < 1) {
+      this.clearSpawnArea(dt, this.player.x, this.player.y)
     }
 
     this.player.update(dt, this)

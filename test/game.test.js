@@ -2767,23 +2767,41 @@ test("the spawn point is cleared before the ship warps back into it", () => {
   game.asteroids = [rock]
   game.lives = 3
   game.playerLoseLife()
-
   assert.equal(player.x, ARENA.cx)
   assert.equal(player.y, ARENA.cy)
+
+  // it eases out over the arrival rather than jumping: a single frame moves it a
+  // little, and it is clear by the time the ship is solid
+  const before = rock.center.x
+  game.advance(1 / 60)
+  const firstFrame = rock.center.x - before
+  // the capped ease, plus the drift the same frame's push has just given it
+  const perFrame = (CONFIG.SPAWN_CLEAR_SPEED + CONFIG.SPAWN_CLEAR_PUSH / 60) / 60
+  assert.ok(
+    firstFrame > 0 && firstFrame <= perFrame,
+    `one frame moved it ${firstFrame.toFixed(2)}, over the ${perFrame.toFixed(2)} it may`,
+  )
+
+  for (let frame = 0; frame < 60 * 8 && !player.solid; frame++) {
+    game.advance(1 / 60)
+  }
+  assert.ok(player.solid, "the ship arrived")
   assert.ok(
     !pointInPolygon({ x: player.x, y: player.y }, rock.vertices),
-    "the ship must not come back inside a rock",
+    "and must not come back inside a rock",
   )
   const gap = Math.hypot(rock.center.x - player.x, rock.center.y - player.y) - rock.boundRadius
-  assert.ok(gap >= CONFIG.SPAWN_CLEAR_RADIUS - 0.5, `it was shoved clear, ${gap.toFixed(1)} away`)
-  assert.ok(rock.vx > 0, "and sent on its way, so it does not drift straight back")
+  assert.ok(gap > 0, `the hull has clear space around it, ${gap.toFixed(1)} units`)
+  assert.ok(rock.vx > 0, "and the rock was sent on its way, so it does not drift straight back")
 })
 
 test("a rock centred exactly on the spawn point still gets a direction to go", () => {
   const game = liveGame()
   const rock = new Asteroid({ vertices: square(ARENA.cx, ARENA.cy, 60), vx: 0, vy: 0 })
   game.asteroids = [rock]
-  game.clearSpawnArea(ARENA.cx, ARENA.cy)
+  for (let frame = 0; frame < 120; frame++) {
+    game.clearSpawnArea(1 / 60, ARENA.cx, ARENA.cy)
+  }
   const moved = Math.hypot(rock.center.x - ARENA.cx, rock.center.y - ARENA.cy)
   assert.ok(Number.isFinite(moved) && moved > 0, `it went somewhere, ${moved.toFixed(1)} away`)
   assert.ok(Number.isFinite(rock.vx) && Number.isFinite(rock.vy))
@@ -2793,10 +2811,33 @@ test("a spawn point that is already clear is left alone", () => {
   const game = liveGame()
   const far = new Asteroid({ vertices: square(ARENA.cx + 500, ARENA.cy, 60), vx: 0, vy: 0 })
   game.asteroids = [far]
-  assert.equal(game.clearSpawnArea(ARENA.cx, ARENA.cy), false)
+  assert.equal(game.clearSpawnArea(1 / 60, ARENA.cx, ARENA.cy), false)
   assert.equal(far.vx, 0, "nothing was shoved")
 })
 
+test("the grace period after arriving is time the ship can actually be flown", () => {
+  const game = liveGame()
+  const player = game.player
+  game.lives = 3
+  game.playerLoseLife()
+  assert.equal(player.invincible, CONFIG.INVIN_TIME)
+
+  let warping = 0
+  for (let frame = 0; frame < 60 * 8 && !player.solid; frame++) {
+    game.advance(1 / 60)
+    warping += 1 / 60
+  }
+  assert.ok(warping > 0.5, `the arrival takes a while, ${warping.toFixed(2)}s`)
+  assert.ok(
+    Math.abs(player.invincible - CONFIG.INVIN_TIME) < 0.05,
+    "none of it is spent while the ship cannot be flown",
+  )
+
+  for (let frame = 0; frame < Math.ceil(CONFIG.INVIN_TIME * 60) - 6; frame++) {
+    game.advance(1 / 60)
+  }
+  assert.ok(player.invincible > 0, "and it lasts the whole of what it says")
+})
 // Range used to be measured to the rock's middle, so a boulder with its face in
 // the exhaust counted as most of a range away and was barely moved, which is
 // exactly the rock the wash is wanted for.

@@ -42,7 +42,7 @@ export const CONFIG = {
   THRUST_COST: 21, // energy/sec while thrusting
   CORE_MAX: [320, 520, 760, 1000, 1260], // player energy capacity by power-core level
   PLAYER_REGEN: [32, 53, 74, 95, 116], // energy regen/sec by power-core level (raises back to full)
-  INVIN_TIME: 2.0,
+  INVIN_TIME: 2.5, // grace after arriving, counted from when the ship can be flown
   START_LIVES: 3,
   MAX_LIVES: 6,
   REVERSE_ACCEL_MULT: 0.6, // reverse thrust is weaker than forward
@@ -135,10 +135,13 @@ export const CONFIG = {
   WARP_TIME: 0.85, // seconds for the ship to dissolve into or out of a warp
   WARP_ARRIVE_PAUSE: 0.35, // beat before the ship warps in at the start of a sector
   RESPAWN_PAUSE: 1.2, // longer beat after losing a life, to get your bearings
-  // A ship warps in solid, so anything sitting on the spawn point is shoved out of
-  // this radius first, and pushed away at this speed so it keeps going.
+  // A ship warps in solid, so anything sitting on the spawn point is eased out of
+  // this radius while it arrives. `RATE` is how much of what is left is undone per
+  // second, and `PUSH` the acceleration that sends a rock on its way afterwards.
   SPAWN_CLEAR_RADIUS: 110,
-  SPAWN_CLEAR_IMPULSE: 90,
+  SPAWN_CLEAR_RATE: 3.5,
+  SPAWN_CLEAR_SPEED: 130, // ceiling on that ease, so a deep overlap does not lurch
+  SPAWN_CLEAR_PUSH: 45,
   CAMERA_WARP_FOLLOW: 2.6, // gentler camera while warping, so the pan reads as a pan
   CAMERA_MAX_PAN: 620, // units/sec ceiling on camera travel, so long pans glide
   TOAST_TIME: 2.6,
