@@ -869,6 +869,7 @@ export class Game {
     p.invincible = CONFIG.INVIN_TIME
     p.energyMax = this.maxEnergy()
     p.energy = p.energyMax
+    this.clearSpawnArea(p.x, p.y)
     // a new sector has nowhere to pan from, so place the camera outright
     this.viewCenter.x = p.x
     this.viewCenter.y = p.y
@@ -1135,6 +1136,37 @@ export class Game {
     }
   }
 
+  // Shove anything sitting where the ship is about to appear. A ship warps in
+  // solid, and a rock that has drifted over the spawn point since the sector began
+  // would otherwise be inside it. The push tracks the warp-in: the ring goes out
+  // as the ship comes back.
+  clearSpawnArea(x, y) {
+    const radius = CONFIG.SPAWN_CLEAR_RADIUS
+    let shoved = false
+    for (const asteroid of this.asteroids) {
+      const dx = asteroid.center.x - x,
+        dy = asteroid.center.y - y
+      const distance = Math.hypot(dx, dy)
+      const overlap = radius + asteroid.boundRadius - distance
+      if (overlap <= 0) {
+        continue
+      }
+      // A rock centred exactly on the spawn point has no direction to be pushed
+      // in, so pick one.
+      const bearing = distance > 1e-6 ? Math.atan2(dy, dx) : randRange(0, TAU)
+      const ux = Math.cos(bearing),
+        uy = Math.sin(bearing)
+      asteroid.translate(ux * overlap, uy * overlap)
+      asteroid.vx += ux * CONFIG.SPAWN_CLEAR_IMPULSE
+      asteroid.vy += uy * CONFIG.SPAWN_CLEAR_IMPULSE
+      shoved = true
+    }
+    if (shoved) {
+      this.ring(x, y, radius * 0.4, PALETTE.player.hull, radius, 0.5)
+    }
+    return shoved
+  }
+
   playerLoseLife() {
     this.lives--
     Sound.explode()
@@ -1159,6 +1191,7 @@ export class Game {
     p.energy = this.maxEnergy() * 0.6
     p.invincible = CONFIG.INVIN_TIME
     p.mainWeapon.release()
+    this.clearSpawnArea(p.x, p.y)
     p.beginWarpIn(CONFIG.RESPAWN_PAUSE)
     this.phase = "arriving"
     this.clearInput()

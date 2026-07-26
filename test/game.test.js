@@ -2620,6 +2620,8 @@ test("the shop stocks only what the registry says is for sale", () => {
   }
 })
 
+// ---- the HUD is drawn at the size the player asked for ----------------------
+
 test("help text and HUD size are settings that survive a session", () => {
   const game = new Game()
   assert.equal(game.settings.help, true, "help text starts on")
@@ -2755,6 +2757,44 @@ test("the shield's markers hold their place along the bar at any HUD size", () =
     labels.some((str) => str.startsWith("SHIELD")),
     "and the bar is still labelled",
   )
+})
+
+test("the spawn point is cleared before the ship warps back into it", () => {
+  const game = liveGame()
+  const player = game.player
+  // a boulder sitting right where the ship will reappear
+  const rock = new Asteroid({ vertices: square(ARENA.cx + 10, ARENA.cy, 70), vx: 0, vy: 0 })
+  game.asteroids = [rock]
+  game.lives = 3
+  game.playerLoseLife()
+
+  assert.equal(player.x, ARENA.cx)
+  assert.equal(player.y, ARENA.cy)
+  assert.ok(
+    !pointInPolygon({ x: player.x, y: player.y }, rock.vertices),
+    "the ship must not come back inside a rock",
+  )
+  const gap = Math.hypot(rock.center.x - player.x, rock.center.y - player.y) - rock.boundRadius
+  assert.ok(gap >= CONFIG.SPAWN_CLEAR_RADIUS - 0.5, `it was shoved clear, ${gap.toFixed(1)} away`)
+  assert.ok(rock.vx > 0, "and sent on its way, so it does not drift straight back")
+})
+
+test("a rock centred exactly on the spawn point still gets a direction to go", () => {
+  const game = liveGame()
+  const rock = new Asteroid({ vertices: square(ARENA.cx, ARENA.cy, 60), vx: 0, vy: 0 })
+  game.asteroids = [rock]
+  game.clearSpawnArea(ARENA.cx, ARENA.cy)
+  const moved = Math.hypot(rock.center.x - ARENA.cx, rock.center.y - ARENA.cy)
+  assert.ok(Number.isFinite(moved) && moved > 0, `it went somewhere, ${moved.toFixed(1)} away`)
+  assert.ok(Number.isFinite(rock.vx) && Number.isFinite(rock.vy))
+})
+
+test("a spawn point that is already clear is left alone", () => {
+  const game = liveGame()
+  const far = new Asteroid({ vertices: square(ARENA.cx + 500, ARENA.cy, 60), vx: 0, vy: 0 })
+  game.asteroids = [far]
+  assert.equal(game.clearSpawnArea(ARENA.cx, ARENA.cy), false)
+  assert.equal(far.vx, 0, "nothing was shoved")
 })
 
 // ---- progression is data ---------------------------------------------------

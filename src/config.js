@@ -135,6 +135,10 @@ export const CONFIG = {
   WARP_TIME: 0.85, // seconds for the ship to dissolve into or out of a warp
   WARP_ARRIVE_PAUSE: 0.35, // beat before the ship warps in at the start of a sector
   RESPAWN_PAUSE: 1.2, // longer beat after losing a life, to get your bearings
+  // A ship warps in solid, so anything sitting on the spawn point is shoved out of
+  // this radius first, and pushed away at this speed so it keeps going.
+  SPAWN_CLEAR_RADIUS: 110,
+  SPAWN_CLEAR_IMPULSE: 90,
   CAMERA_WARP_FOLLOW: 2.6, // gentler camera while warping, so the pan reads as a pan
   CAMERA_MAX_PAN: 620, // units/sec ceiling on camera travel, so long pans glide
   TOAST_TIME: 2.6,
