@@ -1,0 +1,1516 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GEOMETRY II - STATS</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+        --cyan: #5fd7ff;
+        --amber: #ffb14b;
+        --green: #57e39a;
+        --red: #ff5b5b;
+        --edge: #1c3050;
+        --panel: #070c16;
+        --text: #bcd0ee;
+        --dim: #7fa0c8;
+        --muted: #5f79a6;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 96px;
+      }
+      body {
+        margin: 0;
+        background: #02040a;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.55;
+        background-image: radial-gradient(
+          1200px 700px at 50% -10%,
+          rgba(95, 215, 255, 0.05),
+          transparent 60%
+        );
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: rgba(2, 4, 10, 0.94);
+        border-bottom: 1px solid var(--edge);
+        padding: 10px 20px;
+        backdrop-filter: blur(6px);
+      }
+      .bar {
+        display: flex;
+        align-items: baseline;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+      h1 {
+        font-size: 13px;
+        letter-spacing: 0.2em;
+        color: var(--cyan);
+        margin: 0;
+      }
+      h1 span {
+        color: var(--muted);
+        letter-spacing: 0.06em;
+      }
+      nav {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+      nav a {
+        color: var(--dim);
+        text-decoration: none;
+        border: 1px solid var(--edge);
+        border-radius: 5px;
+        padding: 3px 8px;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+      }
+      nav a:hover {
+        color: #fff;
+        border-color: var(--cyan);
+      }
+      input[type="search"] {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text);
+        background: rgba(10, 20, 38, 0.75);
+        border: 1px solid var(--edge);
+        border-radius: 5px;
+        padding: 5px 9px;
+        min-width: 220px;
+      }
+      input[type="search"]:focus-visible {
+        outline: 1px solid var(--cyan);
+      }
+      main {
+        max-width: 1500px;
+        margin: 0 auto;
+        padding: 18px 20px 120px;
+      }
+      section {
+        margin: 28px 0;
+      }
+      h2 {
+        font-size: 11px;
+        letter-spacing: 0.22em;
+        color: var(--cyan);
+        border-bottom: 1px solid var(--edge);
+        padding-bottom: 6px;
+        margin: 0 0 4px;
+      }
+      h3 {
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        color: var(--amber);
+        margin: 18px 0 6px;
+      }
+      /* A card's own title heads it, so it keeps the top of the card. */
+      .card > header h3 {
+        margin: 0;
+      }
+      .note {
+        color: var(--muted);
+        margin: 6px 0 12px;
+        max-width: 105ch;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
+        align-items: start;
+        gap: 12px;
+      }
+      .card {
+        border: 1px solid var(--edge);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 12px 14px;
+      }
+      .card header {
+        position: static;
+        background: none;
+        border: 0;
+        padding: 0;
+        backdrop-filter: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .pairs {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 1px 14px;
+      }
+      .pairs > b {
+        color: var(--muted);
+        font-weight: 400;
+        letter-spacing: 0.06em;
+        white-space: nowrap;
+      }
+      .pairs > span {
+        color: var(--text);
+        overflow-wrap: anywhere;
+      }
+      .sub {
+        color: var(--dim);
+        border-left: 1px solid var(--edge);
+        padding-left: 10px;
+        margin: 6px 0 6px 2px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 4px 0 2px;
+      }
+      th,
+      td {
+        text-align: right;
+        padding: 3px 9px 3px 0;
+        border-bottom: 1px solid #0e1a2c;
+        white-space: nowrap;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 400;
+        letter-spacing: 0.1em;
+        font-size: 10px;
+        text-align: right;
+      }
+      th:first-child,
+      td:first-child {
+        text-align: left;
+      }
+      td.wide {
+        white-space: normal;
+        text-align: left;
+      }
+      .swatch {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+        margin-right: 5px;
+        vertical-align: -1px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+      }
+      .tag {
+        display: inline-block;
+        border: 1px solid var(--edge);
+        border-radius: 4px;
+        padding: 0 5px;
+        margin: 0 3px 3px 0;
+        color: var(--dim);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+      }
+      .yes {
+        color: var(--green);
+      }
+      .no {
+        color: var(--muted);
+      }
+      details {
+        margin: 4px 0;
+      }
+      summary {
+        cursor: pointer;
+        color: var(--muted);
+        letter-spacing: 0.08em;
+        font-size: 10px;
+      }
+      summary:hover {
+        color: var(--cyan);
+      }
+      pre {
+        margin: 6px 0 0;
+        padding: 8px 10px;
+        background: #040810;
+        border: 1px solid var(--edge);
+        border-radius: 6px;
+        overflow-x: auto;
+        color: var(--dim);
+        font-size: 10.5px;
+        line-height: 1.5;
+      }
+      svg {
+        display: block;
+      }
+      .banner {
+        border: 1px solid var(--red);
+        border-radius: 6px;
+        padding: 9px 11px;
+        margin: 12px 0;
+        color: var(--red);
+      }
+      .banner code {
+        color: #fff;
+      }
+      .hidden {
+        display: none !important;
+      }
+      /* A table with a wide column scrolls inside its card rather than spilling
+         out of it. */
+      .scroll {
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="bar">
+        <h1>GEOMETRY II <span id="source">reading src/</span></h1>
+        <input type="search" id="filter" placeholder="filter rows..." spellcheck="false" />
+        <span class="note" style="margin: 0" id="counts"></span>
+      </div>
+      <nav id="nav"></nav>
+    </header>
+    <main id="page"></main>
+
+    <script type="module">
+      // A reference sheet for the game's numbers, built by asking the game's own
+      // modules rather than by restating them: every registry is walked for
+      // whatever keys it happens to have, and anything the game works out at
+      // runtime is worked out here by calling the same code. Adding a weapon, a
+      // powerup, a ship or a tuning value shows up here without this file
+      // changing.
+      //
+      // Nothing in src/ is imported by this page in reverse: it reads, and writes
+      // nothing. A throwaway Game is built to answer questions (costs per level,
+      // a sector's plan, ore from a shattered rock); it is never stepped, drawn,
+      // or saved.
+
+      const page = document.getElementById("page")
+
+      let config, entities, mathlib, palette, Game
+      try {
+        ;[config, entities, mathlib, palette, { Game }] = await Promise.all([
+          import("./src/config.js"),
+          import("./src/entities.js"),
+          import("./src/math.js"),
+          import("./src/palette.js"),
+          import("./src/game.js"),
+        ])
+      } catch (err) {
+        document.getElementById("source").textContent = "could not read src/"
+        page.innerHTML =
+          `<div class="banner">The game's modules could not be imported, and this page is ` +
+          `nothing without them. Serve the folder (<code>python3 -m http.server</code>) and open ` +
+          `it over http, or launch with <code>--allow-file-access-from-files</code>.<br />` +
+          `${String(err)}</div>`
+        throw err
+      }
+
+      const CONFIG = config.CONFIG
+      const PALETTE = palette.PALETTE
+      document.getElementById("source").textContent = "src/config.js, entities.js, game.js"
+
+      // A Game to interrogate. Its constructor only fills fields and builds a
+      // backdrop; the stored settings it asks for arrive later and are ignored.
+      let probe = null
+      try {
+        probe = new Game()
+      } catch (err) {
+        page.append(
+          el("div", {
+            className: "banner",
+            textContent: `A Game could not be built, so the measured tables are missing: ${err}`,
+          }),
+        )
+      }
+
+      // ---- rendering ---------------------------------------------------------
+
+      function el(tag, props = {}, ...children) {
+        const node = Object.assign(document.createElement(tag), props)
+        for (const child of children.flat()) {
+          if (child != null && child !== false) {
+            node.append(child)
+          }
+        }
+        return node
+      }
+
+      const isColour = (v) => typeof v === "string" && /^#[0-9a-f]{3,8}$/i.test(v)
+      const num = (v) => (Number.isInteger(v) ? String(v) : String(Number(v.toFixed(4))))
+
+      // A value as text, whatever shape it is. A pair of numbers is a range, since
+      // that is what the registries use one for.
+      function show(value, depth = 0) {
+        if (value === null || value === undefined) {
+          return el("span", { className: "no", textContent: "-" })
+        }
+        if (typeof value === "boolean") {
+          return el("span", {
+            className: value ? "yes" : "no",
+            textContent: value ? "YES" : "no",
+          })
+        }
+        if (typeof value === "number") {
+          return document.createTextNode(num(value))
+        }
+        if (isColour(value)) {
+          return el(
+            "span",
+            {},
+            el("span", { className: "swatch", style: `background:${value}` }),
+            document.createTextNode(value),
+          )
+        }
+        if (typeof value === "string") {
+          return document.createTextNode(value)
+        }
+        if (typeof value === "function") {
+          return el(
+            "details",
+            {},
+            el("summary", { textContent: "CODE" }),
+            el("pre", { textContent: source(value) }),
+          )
+        }
+        if (value instanceof Set) {
+          return show([...value], depth)
+        }
+        if (Array.isArray(value)) {
+          if (value.every((v) => typeof v === "number")) {
+            return document.createTextNode(
+              value.length === 2
+                ? `${num(value[0])} to ${num(value[1])}`
+                : value.map(num).join(", "),
+            )
+          }
+          if (depth > 1) {
+            return document.createTextNode(`${value.length} entries`)
+          }
+          return el(
+            "span",
+            {},
+            value.map((v, i) =>
+              el("span", {}, i ? document.createTextNode(" / ") : null, show(v, depth + 1)),
+            ),
+          )
+        }
+        // a plain object: its own pairs, indented once
+        const entries = Object.entries(value)
+        if (!entries.length) {
+          return el("span", { className: "no", textContent: "{}" })
+        }
+        if (depth > 1) {
+          return document.createTextNode(entries.map(([k, v]) => `${k}: ${v}`).join(", "))
+        }
+        return el(
+          "div",
+          { className: depth ? "sub" : "pairs" },
+          depth
+            ? entries.map(([k, v]) =>
+                el("div", {}, el("b", { textContent: `${k} ` }), show(v, depth + 1)),
+              )
+            : entries.flatMap(([k, v]) => [
+                el("b", { textContent: k }),
+                el("span", {}, show(v, depth + 1)),
+              ]),
+        )
+      }
+
+      // Source of a registry's function, with the indentation of its file taken off
+      // so it reads at the width it is shown in.
+      function source(fn) {
+        const text = String(fn)
+        const lines = text.split("\n")
+        const indents = lines
+          .slice(1)
+          .filter((line) => line.trim())
+          .map((line) => line.match(/^ */)[0].length)
+        const strip = indents.length ? Math.min(...indents) : 0
+        return lines.map((line, i) => (i ? line.slice(strip) : line)).join("\n")
+      }
+
+      // Key/value rows, from whatever keys an object has. `skip` leaves out the
+      // ones a caller has already shown its own way.
+      function pairs(object, skip = []) {
+        const rows = []
+        for (const [key, value] of Object.entries(object)) {
+          if (skip.includes(key)) {
+            continue
+          }
+          rows.push(el("b", { textContent: key }), el("span", {}, show(value)))
+        }
+        return el("div", { className: "pairs" }, rows)
+      }
+
+      function dataTable(headers, rows) {
+        const body = rows.map((row) =>
+          el(
+            "tr",
+            {},
+            row.map((cell) =>
+              cell && cell.nodeType
+                ? el("td", {}, cell)
+                : el("td", {
+                    textContent: cell === undefined || cell === null ? "-" : String(cell),
+                  }),
+            ),
+          ),
+        )
+        return el(
+          "div",
+          { className: "scroll" },
+          el(
+            "table",
+            {},
+            el(
+              "thead",
+              {},
+              el(
+                "tr",
+                {},
+                headers.map((h) => el("th", { textContent: h })),
+              ),
+            ),
+            el("tbody", {}, body),
+          ),
+        )
+      }
+
+      const SECTIONS = []
+      function section(id, title, note, ...content) {
+        SECTIONS.push({ id, title })
+        page.append(
+          el(
+            "section",
+            { id },
+            el("h2", { textContent: title }),
+            note ? el("p", { className: "note", textContent: note }) : null,
+            ...content,
+          ),
+        )
+      }
+
+      function card(title, colour, ...content) {
+        return el(
+          "div",
+          { className: "card" },
+          el(
+            "header",
+            {},
+            colour ? el("span", { className: "swatch", style: `background:${colour}` }) : null,
+            el("h3", { textContent: title }),
+          ),
+          ...content,
+        )
+      }
+
+      // ---- shapes -----------------------------------------------------------
+
+      // An outline drawn to fit its box, with hardpoints and exhaust mounts on it.
+      // Local units throughout, which is how the config states them.
+      function hullSvg(type, width = 250, height = 130) {
+        const points = type.outline
+        const reach = Math.max(...points.map(([x, y]) => Math.max(Math.abs(x), Math.abs(y))), 0.1)
+        const scale = (Math.min(width, height) / (reach * 2)) * 0.86
+        const at = ([x, y]) => [width / 2 + x * scale, height / 2 + y * scale]
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+        svg.setAttribute("viewBox", `0 0 ${width} ${height}`)
+        svg.setAttribute("width", width)
+        svg.setAttribute("height", height)
+        const add = (name, attrs) => {
+          const node = document.createElementNS("http://www.w3.org/2000/svg", name)
+          for (const [key, value] of Object.entries(attrs)) {
+            node.setAttribute(key, value)
+          }
+          svg.append(node)
+          return node
+        }
+        const bubble = (type.shieldScale || 0) * scale
+        if (bubble) {
+          add("circle", {
+            cx: width / 2,
+            cy: height / 2,
+            r: bubble,
+            fill: "none",
+            stroke: PALETTE.shield.standard,
+            "stroke-opacity": 0.25,
+            "stroke-dasharray": "5 4",
+          })
+        }
+        add("polygon", {
+          points: points.map((p) => at(p).join(",")).join(" "),
+          fill: `${type.colour}14`,
+          stroke: type.colour,
+          "stroke-width": 1.6,
+        })
+        for (const mount of (type.exhaust && type.exhaust.mounts) || []) {
+          const [x, y] = at(mount)
+          add("path", {
+            d: `M${x + 4} ${y - 4} L${x - 5} ${y} L${x + 4} ${y + 4}`,
+            fill: "none",
+            stroke: PALETTE.rival.hull,
+            "stroke-opacity": 0.8,
+          })
+        }
+        for (const hp of type.hardpoints || []) {
+          const [x, y] = at(hp.local)
+          add("circle", { cx: x, cy: y, r: 3.4, fill: "none", stroke: PALETTE.player.turret })
+        }
+        return svg
+      }
+
+      // Every hull at true relative scale, so the sizes can be compared by eye.
+      // One scale for every hull, so the sizes can be compared by eye. Each is
+      // given a column wide enough for whichever is wider, its silhouette or its
+      // label, and the drawing is as wide as that comes to; the SVG then scales the
+      // lot to the space it has, which keeps the labels clear of each other however
+      // many hulls there are.
+      function scaleSvg(hulls, scale = 1.4) {
+        const FONT = 11
+        const CHAR = FONT * 0.62 // monospace advance, near enough to reserve room
+        // How far a hull reaches along each axis, rather than its bound radius: a
+        // frigate's corner is three times as far as its flank, and reserving that
+        // much height would leave the row mostly empty.
+        const spanX = (type) => Math.max(...type.outline.map(([x]) => Math.abs(x))) * type.size
+        const spanY = (type) => Math.max(...type.outline.map(([, y]) => Math.abs(y))) * type.size
+        const labelOf = ([name, type]) => `${name} - size ${type.size}`
+        const columns = hulls.map((entry) => ({
+          entry,
+          width: Math.max(spanX(entry[1]) * scale * 2 + 30, labelOf(entry).length * CHAR + 18),
+        }))
+        const tallest = Math.max(...hulls.map(([, type]) => spanY(type))) * scale
+        const width = Math.round(columns.reduce((sum, column) => sum + column.width, 0))
+        const baseline = tallest * 2 + 24 // every label on the same line, under the tallest
+        const height = Math.round(baseline + 6)
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+        svg.setAttribute("viewBox", `0 0 ${width} ${height}`)
+        svg.setAttribute("width", "100%")
+        const add = (tag, attrs, text) => {
+          const node = document.createElementNS("http://www.w3.org/2000/svg", tag)
+          for (const [key, value] of Object.entries(attrs)) {
+            node.setAttribute(key, value)
+          }
+          if (text !== undefined) {
+            node.textContent = text
+          }
+          svg.append(node)
+        }
+        let x = 0
+        for (const { entry, width: columnWidth } of columns) {
+          const [name, type] = entry
+          const centre = x + columnWidth / 2
+          add("polygon", {
+            points: type.outline
+              .map(
+                ([px, py]) =>
+                  `${centre + px * type.size * scale},${tallest + py * type.size * scale}`,
+              )
+              .join(" "),
+            fill: `${type.colour}18`,
+            stroke: type.colour,
+            "stroke-width": 1.6,
+          })
+          add(
+            "text",
+            {
+              x: centre,
+              y: baseline,
+              "text-anchor": "middle",
+              fill: PALETTE.text.muted,
+              "font-size": FONT,
+              "font-family": "monospace",
+            },
+            labelOf(entry),
+          )
+          x += columnWidth
+        }
+        return svg
+      }
+
+      // ---- what mounts what -------------------------------------------------
+
+      // Every place a module name is named, found by walking the registries, so a
+      // weapon's card can say who carries it without a list to maintain.
+      function mountedBy(kind, name) {
+        const found = []
+        const check = (entry, where) => {
+          if (entry && entry[kind] === name) {
+            found.push(where)
+          }
+        }
+        const walkShip = (label, type) => {
+          for (const entry of type.loadout || []) {
+            check(entry, label)
+          }
+          for (const [armName, entry] of Object.entries(type.arms || type.fittings || {})) {
+            check(entry, `${label} (${armName})`)
+          }
+        }
+        walkShip("player", config.PLAYER_TYPE)
+        for (const [shipName, type] of Object.entries(config.SHIP_TYPES)) {
+          walkShip(shipName, type)
+        }
+        for (const hazard of config.HAZARD_TRAITS) {
+          const traits = hazard.traits
+          if (kind === "shield" && traits.shield && traits.shield.shield === name) {
+            found.push(`rock hazard (from sector ${hazard.fromSector})`)
+          }
+          for (const gun of (traits.gun && traits.gun.guns) || []) {
+            if (gun[kind] === name) {
+              found.push(
+                `rock turret (from sector ${Math.max(hazard.fromSector, gun.fromSector ?? 0)})`,
+              )
+            }
+          }
+        }
+        return [...new Set(found)]
+      }
+
+      function tags(list) {
+        return el(
+          "div",
+          {},
+          list.length
+            ? list.map((text) => el("span", { className: "tag", textContent: text }))
+            : el("span", { className: "no", textContent: "nothing mounts it" }),
+        )
+      }
+
+      // ---- hulls ------------------------------------------------------------
+
+      // Which of a type's settings deriveShipStats worked out, and which the design
+      // stated for itself: recompute from the shape and the three numbers, and
+      // anything that differs was stated.
+      const DERIVED_FIELDS = [
+        "accel",
+        "maxSpeed",
+        "turnRate",
+        "drag",
+        "hull",
+        "rockContact",
+        "shieldScale",
+        "hullWidth",
+      ]
+
+      function derivedFor(type) {
+        if (type.power === undefined || type.armour === undefined) {
+          return null
+        }
+        return config.deriveShipStats({
+          outline: type.outline,
+          size: type.size,
+          mass: type.mass,
+          power: type.power,
+          armour: type.armour,
+        })
+      }
+
+      function hullCard(name, type) {
+        const base = derivedFor(type)
+        const derivedRows = DERIVED_FIELDS.filter((field) => type[field] !== undefined).map(
+          (field) => {
+            const stated = base && Math.abs(base[field] - type[field]) > 1e-9
+            return [
+              field,
+              num(type[field]),
+              base ? (stated ? "stated by the design" : "derived") : "from the shape",
+            ]
+          },
+        )
+        const mounts = new Map()
+        for (const entry of type.loadout || []) {
+          mounts.set(entry.hp, entry)
+        }
+        const rolled = new Map()
+        for (const [armName, entry] of Object.entries(type.arms || type.fittings || {})) {
+          rolled.set(entry.hp, { armName, entry })
+        }
+        const hardpointRows = (type.hardpoints || []).map((hp, i) => {
+          const mount = mounts.get(i)
+          const roll = rolled.get(i)
+          const module = mount || (roll && roll.entry)
+          const what = !module
+            ? "-"
+            : module.weapon
+              ? `${module.weapon} / ${module.controller || "no controller"}`
+              : `shield: ${module.shield}`
+          const how = mount
+            ? "always"
+            : roll
+              ? roll.entry.chancePerSector !== undefined
+                ? `rolled as "${roll.armName}", ${roll.entry.chancePerSector}/sector up to ${roll.entry.chanceCap}`
+                : `fitting "${roll.armName}"`
+              : "empty"
+          return [i, hp.role || "-", `${num(hp.local[0])}, ${num(hp.local[1])}`, what, how]
+        })
+        const shown = [
+          "outline",
+          "hardpoints",
+          "loadout",
+          "arms",
+          "fittings",
+          "colour",
+          "exhaust",
+          ...DERIVED_FIELDS,
+        ]
+        return card(
+          name,
+          type.colour,
+          hullSvg(type),
+          el("div", { className: "note", style: "margin:6px 0 8px" }, [
+            document.createTextNode(
+              `bound radius ${num(Math.max(...type.outline.map(([x, y]) => Math.hypot(x, y))) * type.size)} world units, ` +
+                `hull area ${Math.round(mathlib.polygonArea(type.outline.map(([x, y]) => ({ x, y }))) * type.size * type.size)}, ` +
+                `shield radius ${num(type.size * (type.shieldScale || 0))}`,
+            ),
+          ]),
+          pairs(type, shown),
+          derivedRows.length
+            ? el(
+                "div",
+                {},
+                el("h3", { textContent: "SETTINGS" }),
+                dataTable(["field", "value", "where from"], derivedRows),
+              )
+            : null,
+          el("h3", { textContent: "HARDPOINTS" }),
+          dataTable(["#", "role", "local", "module", "when"], hardpointRows),
+          type.exhaust
+            ? el("div", {}, el("h3", { textContent: "EXHAUST" }), pairs(type.exhaust))
+            : null,
+        )
+      }
+
+      const hulls = [["player", config.PLAYER_TYPE], ...Object.entries(config.SHIP_TYPES)]
+
+      section(
+        "hulls",
+        "HULLS",
+        "One card per ship the game knows about: the player's, and every entry in SHIP_TYPES. " +
+          "A ship states a shape and three numbers (mass, power, armour) and deriveShipStats works " +
+          "the rest out; the SETTINGS table says which of them came out of that and which the " +
+          "design stated for itself. Outlines are drawn from the real ones, with hardpoints as " +
+          "rings and exhaust mounts as arrows.",
+        el(
+          "div",
+          { className: "cards" },
+          hulls.map(([name, type]) => hullCard(name, type)),
+        ),
+        el("h3", { textContent: "TRUE RELATIVE SCALE" }),
+        scaleSvg(hulls),
+      )
+
+      // ---- weapons ----------------------------------------------------------
+
+      const rateOf = (reload) =>
+        Array.isArray(reload) ? [1 / reload[1], 1 / reload[0]] : [1 / reload, 1 / reload]
+
+      section(
+        "weapons",
+        "WEAPONS",
+        "Every entry in WEAPON_TYPES, whatever fields it carries. Rate, damage and energy per " +
+          "second are worked out from `reload` here; barrels come from barrelCount(), the same " +
+          "call the view makes when it draws a turret.",
+        el(
+          "div",
+          { className: "cards" },
+          Object.entries(config.WEAPON_TYPES).map(([name, type]) => {
+            const [slow, fast] = rateOf(type.reload)
+            const perSecond = (value) =>
+              slow === fast ? num(value * slow) : `${num(value * slow)} to ${num(value * fast)}`
+            return card(
+              name,
+              type.colour,
+              pairs(type),
+              el("h3", { textContent: "WORKED OUT" }),
+              el("div", { className: "pairs" }, [
+                el("b", { textContent: "barrels" }),
+                el("span", {}, show(config.barrelCount(type))),
+                el("b", { textContent: "shots/sec" }),
+                el("span", {}, document.createTextNode(perSecond(1))),
+                el("b", { textContent: "damage/sec" }),
+                el("span", {}, document.createTextNode(perSecond(type.damage || 0))),
+                el("b", { textContent: "energy/sec" }),
+                el("span", {}, document.createTextNode(perSecond(type.energy || 0))),
+              ]),
+              el("h3", { textContent: "MOUNTED BY" }),
+              tags(mountedBy("weapon", name)),
+            )
+          }),
+        ),
+      )
+
+      section(
+        "shields",
+        "SHIELDS",
+        "A shield turns damage of the channels it blocks into energy drain, at `efficiency` " +
+          "energy per point. It drops when energy falls to `dropAt` of capacity and returns once " +
+          "`recoverDelay` has passed and energy is back to `recoverAt`.",
+        el(
+          "div",
+          { className: "cards" },
+          Object.entries(config.SHIELD_TYPES).map(([name, type]) =>
+            card(
+              name,
+              type.colour,
+              pairs(type),
+              el("h3", { textContent: "WORN BY" }),
+              tags(mountedBy("shield", name)),
+            ),
+          ),
+        ),
+      )
+
+      // ---- powerups ---------------------------------------------------------
+
+      const POWERUP_META = ["label", "short", "icon", "colour", "apply"]
+
+      section(
+        "powerups",
+        "POWERUPS",
+        "Every entry in POWERUP_TYPES. `mode` says how it is used: a pulse fires once per press, " +
+          "a toggle runs while it is on and drains, a timed one lasts `seconds`, a single is spent. " +
+          "The fields below the divider are what the simulation reads off an active one, so a new " +
+          "field appears here as soon as a powerup carries it. What a sell fetches comes from " +
+          "Game.powerupSellValue.",
+        el(
+          "div",
+          { className: "cards" },
+          Object.entries(config.POWERUP_TYPES).map(([name, type]) =>
+            card(
+              `${type.icon}  ${type.label}`,
+              type.colour,
+              pairs(type, POWERUP_META),
+              probe
+                ? el("div", { className: "pairs" }, [
+                    el("b", { textContent: "sells for" }),
+                    el("span", {}, document.createTextNode(`${probe.powerupSellValue(name)} ore`)),
+                  ])
+                : null,
+              type.apply
+                ? el(
+                    "details",
+                    {},
+                    el("summary", { textContent: "WHAT USING IT DOES (CODE)" }),
+                    el("pre", { textContent: source(type.apply) }),
+                  )
+                : el("p", {
+                    className: "note",
+                    textContent: "no immediate effect; its fields are read while it is active",
+                  }),
+            ),
+          ),
+        ),
+      )
+
+      // ---- shop -------------------------------------------------------------
+
+      // Prices come from the shop's own cost(), asked once per level with the
+      // throwaway game set to that level, so the curve is the one a player pays.
+      function shopRows(entry) {
+        if (!probe || entry.max === undefined) {
+          return null
+        }
+        const before = probe.upgrades[entry.id]
+        const rows = []
+        for (let level = 0; level <= entry.max; level++) {
+          probe.upgrades[entry.id] = level
+          const maxed = entry.maxed(probe)
+          rows.push([
+            entry.info(probe),
+            maxed ? "-" : `${entry.cost(probe)} ore`,
+            maxed ? "the last one" : `buys level ${level + 1}`,
+          ])
+        }
+        probe.upgrades[entry.id] = before
+        return dataTable(["at", "next costs", ""], rows)
+      }
+
+      // The tables in CONFIG an upgrade indexes, matched by name: an upgrade's
+      // levels and its effect table are the same length, and the table is named
+      // after it. Nothing is inferred beyond that, so a table that stops matching
+      // simply stops being shown.
+      function effectTables(entry) {
+        if (entry.max === undefined) {
+          return []
+        }
+        const prefix = entry.id.toUpperCase()
+        return Object.entries(CONFIG).filter(
+          ([key, value]) =>
+            Array.isArray(value) &&
+            value.length === entry.max + 1 &&
+            (key.startsWith(prefix) ||
+              key.startsWith(`PLAYER_${prefix}`) ||
+              prefix.startsWith(key.split("_")[0])),
+        )
+      }
+
+      // Where the game itself will answer what a level is worth, ask it instead of
+      // reading a table: the energy cap comes from Game.maxEnergy, which is what
+      // the ship is actually given.
+      const MEASURED_EFFECTS = {
+        core: (level) => {
+          probe.upgrades.core = level
+          return `${probe.maxEnergy()} energy`
+        },
+      }
+
+      function measuredEffect(entry) {
+        const measure = MEASURED_EFFECTS[entry.id]
+        if (!probe || !measure || entry.max === undefined) {
+          return null
+        }
+        const before = probe.upgrades[entry.id]
+        const rows = []
+        for (let level = 0; level <= entry.max; level++) {
+          rows.push([`lv ${level}`, measure(level)])
+        }
+        probe.upgrades[entry.id] = before
+        return el(
+          "div",
+          {},
+          el("h3", { textContent: "ASKED OF THE GAME" }),
+          dataTable(["level", "capacity"], rows),
+        )
+      }
+
+      const shopCards = config.SHOP.map((entry) => {
+        const levels = shopRows(entry)
+        const effects = effectTables(entry)
+        return card(
+          entry.name,
+          null,
+          el("p", { className: "note", style: "margin:0 0 8px", textContent: entry.desc }),
+          el("div", { className: "pairs" }, [
+            el("b", { textContent: "id" }),
+            el("span", {}, document.createTextNode(entry.id)),
+            el("b", { textContent: "levels" }),
+            el("span", {}, show(entry.max === undefined ? "not levelled" : entry.max)),
+            ...(probe
+              ? [
+                  el("b", { textContent: "at a fresh run" }),
+                  el("span", {}, document.createTextNode(entry.info(probe))),
+                ]
+              : []),
+            ...(probe && entry.max === undefined
+              ? [
+                  el("b", { textContent: "cost" }),
+                  el("span", {}, document.createTextNode(`${entry.cost(probe)} ore`)),
+                ]
+              : []),
+          ]),
+          levels,
+          measuredEffect(entry),
+          effects.length
+            ? el(
+                "div",
+                {},
+                el("h3", { textContent: "EFFECT PER LEVEL" }),
+                dataTable(
+                  ["table", ...CONFIG[effects[0][0]].map((_, i) => `lv ${i}`)],
+                  effects.map(([key, value]) => [
+                    key,
+                    ...value.map((v) => (typeof v === "boolean" ? (v ? "YES" : "no") : num(v))),
+                  ]),
+                ),
+              )
+            : null,
+        )
+      })
+
+      // Slots are not sold from the shop rows but from the pop-over on a slot, so
+      // their price comes from Game.slotUnlockCost with the count set.
+      const slotRows = []
+      if (probe) {
+        const before = probe.upgrades.slots
+        for (let slots = 1; slots < config.MAX_SLOTS; slots++) {
+          probe.upgrades.slots = slots
+          slotRows.push([
+            `${slots} of ${config.MAX_SLOTS}`,
+            `${probe.slotUnlockCost()} ore`,
+            `unlocks slot ${slots + 1}`,
+          ])
+        }
+        probe.upgrades.slots = before
+        shopCards.push(
+          card(
+            "POWERUP SLOT",
+            null,
+            el("p", {
+              className: "note",
+              style: "margin:0 0 8px",
+              textContent:
+                "Bought from the pop-over on an empty slot, not from the shop's own rows.",
+            }),
+            dataTable(["carrying", "next costs", ""], slotRows),
+          ),
+        )
+      }
+
+      // Every CONFIG array long enough to be a per-level table, listed whole so a
+      // table the name match above does not reach is still here.
+      const levelTables = Object.entries(CONFIG).filter(
+        ([, value]) => Array.isArray(value) && value.length >= 3,
+      )
+      const widest = Math.max(...levelTables.map(([, value]) => value.length))
+      shopCards.push(
+        card(
+          "EVERY LEVEL-INDEXED TABLE",
+          null,
+          el("p", {
+            className: "note",
+            style: "margin:0 0 6px",
+            textContent:
+              "All of them, whichever upgrade reads them, since a card above only shows the ones its name reaches.",
+          }),
+          dataTable(
+            ["table", ...Array.from({ length: widest }, (_, i) => `lv ${i}`)],
+            levelTables.map(([key, value]) => [
+              key,
+              ...Array.from({ length: widest }, (_, i) =>
+                i < value.length
+                  ? typeof value[i] === "boolean"
+                    ? value[i]
+                      ? "YES"
+                      : "no"
+                    : num(value[i])
+                  : "-",
+              ),
+            ]),
+          ),
+        ),
+      )
+
+      section(
+        "shop",
+        "UPGRADES AND THE SHOP",
+        "One card per SHOP row, in menu order. Prices are read from each row's own cost() with " +
+          "the upgrade set to that level, so the curve is exactly what a player is charged. Effect " +
+          "tables are the CONFIG arrays of matching length whose names line up with the upgrade, " +
+          "and the last card lists every level-indexed table so nothing is left out.",
+        el("div", { className: "cards" }, shopCards),
+      )
+
+      // ---- asteroids and ore ------------------------------------------------
+
+      function rockSvg(radius, width = 220, height = 150) {
+        const verts = entities.makeAsteroidPolygon(0, 0, radius)
+        const reach = Math.max(...verts.map((v) => Math.hypot(v.x, v.y)))
+        const scale = (Math.min(width, height) / (reach * 2)) * 0.88
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+        svg.setAttribute("viewBox", `0 0 ${width} ${height}`)
+        svg.setAttribute("width", width)
+        svg.setAttribute("height", height)
+        const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon")
+        poly.setAttribute(
+          "points",
+          verts.map((v) => `${width / 2 + v.x * scale},${height / 2 + v.y * scale}`).join(" "),
+        )
+        poly.setAttribute("fill", "#ffffff08")
+        poly.setAttribute("stroke", PALETTE.rock.cut)
+        poly.setAttribute("stroke-width", "1.4")
+        svg.append(poly)
+        const area = mathlib.polygonArea(verts)
+        return el(
+          "div",
+          {},
+          svg,
+          el("p", {
+            className: "note",
+            style: "margin:2px 0 0",
+            textContent: `radius ${radius}, area ${Math.round(area)}, mass ${num(entities.rockMass(area))}`,
+          }),
+        )
+      }
+
+      // Ore from a whole rock, measured by handing the throwaway game a stub rock
+      // and counting what it spawns. The formula is never restated here.
+      function measureWholeRockOre(area) {
+        if (!probe) {
+          return null
+        }
+        const before = probe.oreChunks.length
+        probe.shatterToOre({
+          area,
+          center: { x: 0, y: 0 },
+          boundRadius: Math.sqrt(area / Math.PI),
+          vx: 0,
+          vy: 0,
+        })
+        const count = probe.oreChunks.length - before
+        probe.oreChunks.length = 0
+        probe.particles.length = 0
+        return count
+      }
+
+      const spawnAreas = (() => {
+        const areaOf = (r) => Math.PI * r * r * config.AST_SHAPE.areaFactor
+        const [low, high] = config.PROGRESSION.spawn.radius
+        return [areaOf(CONFIG.AST_MAX_R * low), areaOf(CONFIG.AST_MAX_R * high)]
+      })()
+
+      const oreAreas = [200, 620, 1240, 1860, 2480, 3100, CONFIG.AST_MIN_AREA - 1]
+      const wholeAreas = [
+        3300,
+        6600,
+        10000,
+        Math.round(spawnAreas[0]),
+        16000,
+        Math.round(spawnAreas[1]),
+      ].sort((x, y) => x - y)
+
+      section(
+        "rocks",
+        "ASTEROIDS AND ORE",
+        "Rock shapes come from makeAsteroidPolygon, so the silhouettes below are real ones, freshly " +
+          "rolled each load. The ore tables are measured by calling the game: oreFromFragment for a " +
+          "cut piece, and Game.shatterToOre on a stub rock for a whole one, counting what it spawns.",
+        el("div", { className: "cards" }, [
+          card(
+            "SHAPE",
+            PALETTE.rock.cut,
+            el("div", { style: "display:flex;gap:10px;flex-wrap:wrap" }, [
+              rockSvg(CONFIG.AST_MAX_R),
+              rockSvg(CONFIG.AST_MAX_R * 0.72),
+            ]),
+            pairs(config.AST_SHAPE),
+            el("p", {
+              className: "note",
+              textContent: `a sector spawns radii ${num(CONFIG.AST_MAX_R * config.PROGRESSION.spawn.radius[0])} to ${CONFIG.AST_MAX_R}, so areas ${Math.round(spawnAreas[0])} to ${Math.round(spawnAreas[1])}`,
+            }),
+          ),
+          card(
+            "ORE FROM A CUT PIECE",
+            PALETTE.ore.body,
+            el("p", {
+              className: "note",
+              style: "margin:0 0 6px",
+              textContent: `A cut piece under AST_MIN_AREA (${CONFIG.AST_MIN_AREA}) becomes ore at once; anything larger stays a rock to be cut again. Ship plating uses its own, lower threshold of ${config.SHIP_PLATING.minArea}.`,
+            }),
+            dataTable(
+              ["piece area", "chunks", "area per chunk"],
+              oreAreas.map((area) => {
+                const chunks = entities.oreFromFragment(area)
+                return [area, chunks, Math.round(area / chunks)]
+              }),
+            ),
+          ),
+          card(
+            "ORE FROM A WHOLE ROCK",
+            PALETTE.ore.spark,
+            el("p", {
+              className: "note",
+              style: "margin:0 0 6px",
+              textContent:
+                "What an overdrive shot, or a blast at close range, gets for consuming a rock outright.",
+            }),
+            dataTable(
+              ["rock area", "chunks", "area per chunk"],
+              wholeAreas.map((area) => {
+                const chunks = measureWholeRockOre(area)
+                return [area, chunks, chunks ? Math.round(area / chunks) : "-"]
+              }),
+            ),
+            el("p", {
+              className: "note",
+              textContent: `a chunk is worth ${CONFIG.ORE_SCORE} score and ${CONFIG.ORE_ENERGY} energy, and expires ${CONFIG.ORE_LIFE}s after it appears`,
+            }),
+          ),
+          card(
+            "ARMED AND SHIELDED ROCKS",
+            PALETTE.rock.gunShielded,
+            el("p", {
+              className: "note",
+              style: "margin:0 0 6px",
+              textContent:
+                "A hazard trait joins the roll at its own sector. `weightPerSector` adds an entry per sector past that, up to `weightCap`, so a trait can come to crowd the others out.",
+            }),
+            dataTable(
+              ["trait", "from sector", "weight growth", "cap"],
+              config.HAZARD_TRAITS.map((hazard) => [
+                Object.keys(hazard.traits).sort().join(" + "),
+                hazard.fromSector,
+                hazard.weightPerSector ? `+${hazard.weightPerSector}/sector` : "flat",
+                hazard.weightCap ?? "none",
+              ]),
+            ),
+            pairs({
+              AST_ENERGY_SHIELD: CONFIG.AST_ENERGY_SHIELD,
+              AST_ENERGY_GUN: CONFIG.AST_ENERGY_GUN,
+              AST_REGEN: CONFIG.AST_REGEN,
+              BLAST_R: CONFIG.BLAST_R,
+              BLAST_DAMAGE: CONFIG.BLAST_DAMAGE,
+            }),
+          ),
+        ]),
+      )
+
+      // ---- sectors ----------------------------------------------------------
+
+      // The curve, taken from Game.planLevel itself. What a plan decides at random
+      // is measured over many plans rather than recomputed, so the numbers stay
+      // true to the code even if the formula behind them changes.
+      const SECTOR_SAMPLES = 600
+      const LAST_SECTOR = 24
+
+      function sectorRows() {
+        const rows = []
+        const mixes = []
+        for (let sector = 1; sector <= LAST_SECTOR; sector++) {
+          const plan = probe.planLevel(sector)
+          let rocks = 0
+          let hazardous = 0
+          const mix = new Map()
+          for (let i = 0; i < SECTOR_SAMPLES; i++) {
+            for (const spawn of probe.planLevel(sector).spawns) {
+              rocks++
+              const keys = Object.keys(spawn.traits)
+              if (!keys.length) {
+                continue
+              }
+              hazardous++
+              const label = keys.sort().join(" + ")
+              mix.set(label, (mix.get(label) || 0) + 1)
+            }
+          }
+          // What an armed rock may be carrying, once armed rocks are rolled at all.
+          const armed = config.HAZARD_TRAITS.filter((h) => h.traits.gun)
+          const gunFrom = armed.length ? Math.min(...armed.map((h) => h.fromSector)) : Infinity
+          const guns =
+            sector < gunFrom
+              ? []
+              : probe.gunsForSector(armed[0].traits.gun, sector).map((entry) => entry.weapon)
+          rows.push([
+            sector,
+            plan.spawns.length,
+            `${Math.round((hazardous / Math.max(1, rocks)) * 100)}%`,
+            plan.rivals,
+            plan.rivals ? `${num(plan.rivalInterval)}s` : "-",
+            plan.powerups ? "yes" : "no",
+            guns.join(", ") || "-",
+          ])
+          mixes.push([
+            sector,
+            ...["explosive", "shield", "gun", "gun + shield"].map((kind) =>
+              hazardous ? `${Math.round(((mix.get(kind) || 0) / hazardous) * 100)}%` : "-",
+            ),
+          ])
+        }
+        return { rows, mixes }
+      }
+
+      if (probe) {
+        const { rows, mixes } = sectorRows()
+        section(
+          "sectors",
+          "SECTOR BY SECTOR",
+          `Asked of Game.planLevel for each sector in turn. The hazard chance and the trait mix are ` +
+            `measured over ${SECTOR_SAMPLES} plans a sector, since a plan rolls them; everything else ` +
+            `a plan states outright. Rocks are capped at ${config.PROGRESSION.rocks.max}, rivals at ` +
+            `${config.PROGRESSION.rivals.max}.`,
+          dataTable(
+            [
+              "sector",
+              "rocks",
+              "hazard chance",
+              "rivals at once",
+              "arrival gap",
+              "powerups",
+              "rock guns",
+            ],
+            rows,
+          ),
+          el("h3", { textContent: "WHICH HAZARD, WHEN ONE IS ROLLED" }),
+          dataTable(["sector", "explosive", "shielded", "armed", "armed + shielded"], mixes),
+        )
+      }
+
+      // ---- controls ---------------------------------------------------------
+
+      const keyName = (code) => String(code).replace(/^(Key|Digit|Numpad|Arrow)/, "") || code
+
+      section(
+        "controls",
+        "CONTROLS",
+        "The ship controls a player may rebind, in menu order, with each device's default. An " +
+          "action with no entry for a device does not appear in that device's section: a pad steers " +
+          "with a stick, so there is nothing to bind for turning.",
+        dataTable(
+          ["action", "name", "keyboard", "gamepad", "powerup slot"],
+          config.BINDABLE_CONTROLS.map((action) => [
+            action.id,
+            action.name,
+            (action.defaults.keys || []).map(keyName).join(" or ") || "-",
+            action.defaults.buttons !== undefined
+              ? `button ${action.defaults.buttons}${config.GAMEPAD.slotLabels[action.defaults.buttons] ? ` (${config.GAMEPAD.slotLabels[action.defaults.buttons]})` : ""}`
+              : "-",
+            action.slot !== undefined ? action.slot + 1 : "-",
+          ]),
+        ),
+        el("div", { className: "cards" }, [
+          card("GAMEPAD", null, pairs(config.GAMEPAD)),
+          card(
+            "NOT BINDABLE",
+            null,
+            el("p", {
+              className: "note",
+              style: "margin:0 0 6px",
+              textContent:
+                "Menu navigation and pause are fixed, so a rebind can never leave a player unable to reach the menu and put it back.",
+            }),
+            el("div", { className: "pairs" }, [
+              el("b", { textContent: "reserved keys" }),
+              el("span", {}, show([...config.RESERVED_KEYS].map(keyName))),
+              el("b", { textContent: "reserved buttons" }),
+              el("span", {}, show([...config.RESERVED_BUTTONS])),
+            ]),
+          ),
+          card(
+            "HUD SCALES",
+            null,
+            el("div", { className: "pairs" }, [
+              el("b", { textContent: "UI_SCALES" }),
+              el("span", {}, show(config.UI_SCALES)),
+            ]),
+          ),
+        ]),
+      )
+
+      // ---- everything else --------------------------------------------------
+
+      section(
+        "tuning",
+        "TUNING",
+        "Every value in CONFIG, in the order the file states them. Use the filter at the top to " +
+          "find one.",
+        pairs(CONFIG),
+      )
+
+      section(
+        "scalars",
+        "HOW A SHIP'S SETTINGS ARE WORKED OUT",
+        "The relationships deriveShipStats applies, and the material a hull is made of. A design " +
+          "states a shape, mass, power and armour; these turn that into how it flies and how much " +
+          "it can take.",
+        el("div", { className: "cards" }, [
+          card("SHIP_SCALARS", null, pairs(config.SHIP_SCALARS)),
+          card("SHIP_PLATING", null, pairs(config.SHIP_PLATING)),
+          card("deriveShipStats", null, el("pre", { textContent: source(config.deriveShipStats) })),
+        ]),
+      )
+
+      section(
+        "controllers",
+        "FIRING BEHAVIOURS",
+        "The controller a loadout entry names decides when a mounted weapon fires. Each is called " +
+          "once a frame for a ready weapon; the code is the whole definition.",
+        el(
+          "div",
+          { className: "cards" },
+          Object.entries(entities.WEAPON_CONTROLLERS).map(([name, fn]) =>
+            card(name, null, el("pre", { textContent: source(fn) })),
+          ),
+        ),
+      )
+
+      section(
+        "arena",
+        "ARENA AND VIEW",
+        "The play field is a circle larger than the viewport; the camera follows the ship and the " +
+          "boundary confines it.",
+        el("div", { className: "cards" }, [
+          card(
+            "ARENA",
+            null,
+            pairs({ ...config.ARENA, VIEW_W: config.VIEW_W, VIEW_H: config.VIEW_H }),
+          ),
+          card("PROGRESSION", null, pairs(config.PROGRESSION)),
+        ]),
+      )
+
+      section(
+        "palette",
+        "PALETTE",
+        "Every colour the player sees is named here, so retheming is a single-file edit and related " +
+          "elements stay in step.",
+        el(
+          "div",
+          { className: "cards" },
+          Object.entries(PALETTE).map(([group, value]) =>
+            card(
+              group,
+              typeof value === "string" ? value : null,
+              pairs(typeof value === "string" ? { [group]: value } : value),
+            ),
+          ),
+        ),
+      )
+
+      // ---- nav and filter ---------------------------------------------------
+
+      const nav = document.getElementById("nav")
+      for (const { id, title } of SECTIONS) {
+        nav.append(el("a", { href: `#${id}`, textContent: title }))
+      }
+
+      // Everything the filter can hide, with the text it matches against and the
+      // section it belongs to gathered once, so typing stays instant and a section
+      // is judged on the rows the filter actually governs.
+      const filterable = []
+      const add = (node, also) =>
+        filterable.push({
+          node,
+          also,
+          text: node.textContent.toLowerCase(),
+          section: node.closest("section"),
+        })
+      for (const node of page.querySelectorAll(
+        "section > .cards > .card, section table tbody tr",
+      )) {
+        add(node)
+      }
+      for (const node of page.querySelectorAll("section > .pairs > b")) {
+        add(node, node.nextElementSibling)
+      }
+
+      const sections = new Map()
+      for (const item of filterable) {
+        if (!sections.has(item.section)) {
+          sections.set(item.section, [])
+        }
+        sections.get(item.section).push(item)
+      }
+
+      const counts = document.getElementById("counts")
+      const total = filterable.length
+      function applyFilter(text) {
+        const needle = text.trim().toLowerCase()
+        let shown = 0
+        for (const item of filterable) {
+          const hit = !needle || item.text.includes(needle)
+          item.node.classList.toggle("hidden", !hit)
+          if (item.also) {
+            item.also.classList.toggle("hidden", !hit)
+          }
+          item.hit = hit
+          shown += hit ? 1 : 0
+        }
+        for (const [node, items] of sections) {
+          node.classList.toggle("hidden", !items.some((item) => item.hit))
+        }
+        counts.textContent = needle ? `${shown} of ${total} rows` : `${total} rows`
+      }
+      const filter = document.getElementById("filter")
+      filter.addEventListener("input", () => applyFilter(filter.value))
+      applyFilter("")
+    </script>
+  </body>
+</html>
