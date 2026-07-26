@@ -75,6 +75,14 @@ function fullChargeShot(game, chargeFraction = 1) {
   player.fireLaser(game)
 }
 
+// A shield is bought, not issued: a run starts without one. A test about a
+// shield fits it the way the shop does.
+function withShield(game, level = 1) {
+  game.upgrades.shield = level
+  game.fitUpgrade("shield")
+  return game
+}
+
 // The ship arrives by warping in, and is intangible until it lands.
 function beSolid(player) {
   player.warp = 1
@@ -213,18 +221,13 @@ test("a rock reaches the nose, which sits beyond the old collision circle", () =
 })
 
 // A bare hull, so the outline is the surface a shot has to reach. With a shield
-// raised the bubble is the surface instead, which the next test covers. The
-// shield is left overloaded rather than merely down: at full energy it recovers
-// within the same frame, and the pose would be gone before the shot arrived.
+// raised the bubble is the surface instead, which the next test covers.
 function bareHullGame() {
   const game = liveGame()
   const player = game.player
   player.angle = 0 // nose along +x, so the hull tapers to a point at the tail
   player.x = 400
   player.y = 320
-  const shield = player.shieldModule()
-  shield.up = false
-  shield.downTimer = 10
   return game
 }
 
@@ -249,7 +252,7 @@ test("a shot through the empty space beside a bare hull misses", () => {
 test("a shot is stopped by the shield bubble, on the same surface a beam is", () => {
   const bubble = PLAYER_TYPE.size * PLAYER_TYPE.shieldScale
   const shootFrom = (offset) => {
-    const game = liveGame()
+    const game = withShield(liveGame())
     const player = game.player
     player.angle = 0
     player.x = 400
@@ -772,8 +775,8 @@ function beamPastPlayer(offset, weaponType, { shielded }) {
   player.x = 400
   player.y = 320
   player.energy = player.energyMax
-  if (!shielded) {
-    player.shieldModule().up = false
+  if (shielded) {
+    withShield(game)
   }
   const shooter = new RivalShip(400 + offset, 320 - 300, "scout", [])
   game.rivals = [shooter]
@@ -1447,8 +1450,7 @@ test("the player's hull is never cut into wreckage", () => {
   player.angle = 0
   player.x = 400
   player.y = 320
-  player.energy = 0 // no shield to hide behind
-  player.shieldModule().up = false
+  player.energy = 0 // nothing to hide behind
   const shooter = new RivalShip(100, 320, "scout", [])
   game.rivals = [shooter]
   const beam = { a: { x: 100, y: 320 }, dir: { x: 1, y: 0 }, b: { x: 900, y: 320 } }
@@ -1538,7 +1540,7 @@ test("charge buys reach, and damage follows it more gently", () => {
 // ---- the sector summary ---------------------------------------------------
 
 test("damage taken is recorded even when the shield absorbs it", () => {
-  const game = liveGame()
+  const game = withShield(liveGame())
   const player = game.player
   const shield = player.shieldModule()
   assert.ok(shield && shield.up, "the shield should start up")
@@ -1770,6 +1772,67 @@ test("what rock contact costs a hull is the type's business, not the code's", ()
   assert.equal(cost(0), 0, "a type that declares no susceptibility takes nothing")
   assert.ok(cost(0.2) > 0, "and one that does is worn down")
   assert.ok(cost(0.1) < cost(0.2), "proportionally to what it declares")
+})
+
+// ---- the shop sells the loadout --------------------------------------------
+
+test("a run starts with no shield, and the first level of plating fits one", () => {
+  const game = liveGame()
+  assert.equal(game.upgrades.shield, 0, "nothing is issued with the ship")
+  assert.equal(game.player.shieldModule(), null, "and there is no bubble to hide behind")
+
+  const plating = SHOP.find((item) => item.id === "shield")
+  game.oreBalance = 999
+  game.shopSelection = SHOP.indexOf(plating)
+  game.phase = "shop"
+  game.doShopAction()
+  assert.equal(game.upgrades.shield, 1)
+  const shield = game.player.shieldModule()
+  assert.ok(shield && shield.up, "level 1 mounts a shield, raised")
+
+  // and the levels above it are what they always were: a cheaper hit
+  const drain = (level) => {
+    const g = withShield(liveGame(), level)
+    g.player.takeDamage(100, g, "projectile", 0, { x: g.player.x + 5, y: g.player.y })
+    return g.player.energyMax - g.player.energy
+  }
+  const top = CONFIG.SHIELD_EFFICIENCY.length - 1
+  assert.ok(drain(top) < drain(1), "the top level drains less than the first")
+})
+
+test("a resumed run re-mounts the shield it had bought", () => {
+  const game = liveGame()
+  game.upgrades.shield = 2
+  game.level = 4
+  game.enterShop()
+  const resumed = new Game()
+  resumed.savedRun = game.savedRun
+  resumed.resumeRun()
+  assert.ok(resumed.player.shieldModule(), "the bubble comes back with the run")
+})
+
+// Every levelled upgrade indexes one or more tables by the same level, so a table
+// left one entry short is a level the shop can reach and the game cannot answer.
+test("every level the shop offers is one every table it indexes can answer", () => {
+  const tables = {
+    core: [CONFIG.CORE_MAX, CONFIG.PLAYER_REGEN],
+    shield: [CONFIG.SHIELD_EFFICIENCY],
+    laser: [
+      CONFIG.LASER_RATE_MULT,
+      CONFIG.LASER_COST_MULT,
+      CONFIG.LASER_DAMAGE_MULT,
+      CONFIG.LASER_OVERDRIVE,
+    ],
+    magnet: [CONFIG.MAGNET_RANGE],
+  }
+  for (const [id, indexed] of Object.entries(tables)) {
+    const item = SHOP.find((entry) => entry.id === id)
+    assert.ok(item, `${id} should be on sale`)
+    assert.equal(item.max, 4, `${id} should offer four levels`)
+    for (const table of indexed) {
+      assert.equal(table.length, item.max + 1, `a ${id} table is short of level ${item.max}`)
+    }
+  }
 })
 
 // ---- what a laser level buys -----------------------------------------------
@@ -2557,6 +2620,7 @@ test("a rock can be armed with the fast gun as well as the slow one", () => {
     game.startNewGame()
     game.startLevel(sector)
     game.phase = "play"
+    withShield(game) // and it holds fire again once the player has died
     const player = game.player
     player.warp = 1
     player.warpTarget = 1
@@ -2631,7 +2695,7 @@ test("a trait naming one gun is a pool of one", () => {
 test("a beam in a turret slot fires as a beam, not as a broken projectile", () => {
   // The controller used to call fireProjectile whatever it was given, and a beam
   // type has no `speed`, so it launched rounds with a velocity of NaN.
-  const game = liveGame()
+  const game = withShield(liveGame()) // a turret holds fire once the player has died
   const player = game.player
   player.x = 500
   player.y = 400

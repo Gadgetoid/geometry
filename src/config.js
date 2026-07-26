@@ -157,7 +157,10 @@ export const CONFIG = {
   BARREL_CYCLE_RATE: 4,
 
   // upgrade effects, indexed by upgrade level
-  SHIELD_EFFICIENCY: [1, 0.72, 0.5, 0.32], // energy drained per point of damage (player shield plating)
+  // Shield plating: level 1 fits the shield, and each level above it drains less
+  // energy per point of damage. Level 0 flies without one, so its entry is never
+  // read.
+  SHIELD_EFFICIENCY: [1, 1, 0.72, 0.5, 0.32],
   MAGNET_RANGE: [62, 120, 190, 270, 350],
   LASER_RATE_MULT: [1, 1.45, 1.45, 1.45, 1.45],
   LASER_COST_MULT: [1, 1, 0.55, 0.55, 0.55],
@@ -905,15 +908,14 @@ const PLAYER_DESIGN = {
     { local: [0, 0], role: "core" },
     { local: [0.2, 0], role: "aux" }, // filled by a fitting, see below
   ],
-  loadout: [
-    { hp: 0, weapon: "playerLaser", controller: "manual" },
-    { hp: 1, shield: "player" },
-  ],
+  loadout: [{ hp: 0, weapon: "playerLaser", controller: "manual" }],
   // Modules the shop bolts on after the fact, keyed by the upgrade that pays for
   // them. Each entry is an ordinary loadout entry, mounted the same way a spawn
   // loadout is, and re-mounted when a saved run is resumed. A one-off fitting in
-  // SHOP needs no `apply` of its own to reach this.
+  // SHOP needs no `apply` of its own to reach this. A levelled upgrade reaches it
+  // from its own `apply`, and mounts at level 1.
   fittings: {
+    shield: { hp: 1, shield: "player" },
     turret: { hp: 2, weapon: "defenseBlaster", controller: "defense" },
   },
 }
@@ -1163,9 +1165,10 @@ export const SHOP = [
   levelled(
     "shield",
     "SHIELD PLATING",
-    "Your shield drains less energy per hit.",
+    "Lv1 fits a shield, every level after drains less energy per hit.",
     CONFIG.SHIELD_EFFICIENCY.length - 1,
     (level) => 40 + level * 45,
+    (g) => g.fitUpgrade("shield"),
   ),
   levelled(
     "laser",
