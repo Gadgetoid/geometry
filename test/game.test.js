@@ -2838,6 +2838,19 @@ test("the grace period after arriving is time the ship can actually be flown", (
   }
   assert.ok(player.invincible > 0, "and it lasts the whole of what it says")
 })
+
+test("the screen stops shaking once the run is over", () => {
+  const game = liveGame()
+  game.lives = 1
+  game.playerLoseLife()
+  assert.equal(game.phase, "over")
+  assert.ok(game.screenShake > 0, "losing the last life throws the screen about")
+  for (let frame = 0; frame < 120; frame++) {
+    game.advance(1 / 60)
+  }
+  assert.equal(game.screenShake, 0, "and it settles, rather than shaking for good")
+})
+
 // Range used to be measured to the rock's middle, so a boulder with its face in
 // the exhaust counted as most of a range away and was barely moved, which is
 // exactly the rock the wash is wanted for.

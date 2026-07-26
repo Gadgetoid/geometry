@@ -1297,9 +1297,6 @@ export class Game {
   // ---- per-frame update ------------------------------------------------
   update(dt) {
     this.#tickSlotHolds(dt)
-    if (this.screenShake > 0) {
-      this.screenShake = Math.max(0, this.screenShake - dt * 22)
-    }
     if (this.toast) {
       this.toast.life -= dt
       if (this.toast.life <= 0) {
@@ -2258,6 +2255,12 @@ export class Game {
   // paints via GameView after this returns.
   advance(dt) {
     this.gameTime += dt
+    // A screen effect settles wherever it was started. Losing the last life throws
+    // the shake and ends the sector in the same breath, and decaying it only while
+    // a sector is running left the game-over screen shaking for good.
+    if (this.screenShake > 0) {
+      this.screenShake = Math.max(0, this.screenShake - dt * 22)
+    }
     // the backdrop only parallaxes against a ship that is actually flying
     const flying = this.player && this.canFly()
     this.backdrop.update(dt, flying ? this.player.vx : 0, flying ? this.player.vy : 0)
