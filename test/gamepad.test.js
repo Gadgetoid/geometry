@@ -234,13 +234,14 @@ test("A confirms as well as start, in every menu", () => {
   const buying = liveGame()
   buying.enterShop()
   buying.oreBalance = 500
+  buying.shopSelection = SHOP.findIndex((item) => item.id === "core") + 1 // past the slots row
   const coreLevel = buying.upgrades.core
   new GamepadInput(buying).apply(readPad(pad({ buttons: { [B.confirmAlt]: 1 } })))
   assert.equal(buying.upgrades.core, coreLevel + 1, "A bought the highlighted upgrade")
 
   const launching = liveGame()
   launching.enterShop()
-  launching.shopSelection = SHOP.length
+  launching.shopSelection = launching.launchRow
   new GamepadInput(launching).apply(readPad(pad({ buttons: { [B.confirmAlt]: 1 } })))
   assert.equal(launching.phase, "arriving", "A launched from the launch row")
 })
@@ -282,10 +283,10 @@ test("the dpad walks the shop and A confirms", () => {
   assert.equal(game.shopSelection, 0)
   // wrap backwards off the top onto the settings cell, which is the last of them
   press({ buttons: { [B.dpadUp]: 1 } })
-  assert.equal(game.shopSelection, SHOP.length + 1, "wraps onto the options cell")
+  assert.equal(game.shopSelection, game.optionsRow, "wraps onto the options cell")
   // and left or right moves between it and the launch beside it
   press({ buttons: { [B.dpadRight]: 1 } })
-  assert.equal(game.shopSelection, SHOP.length, "right moves to the launch")
+  assert.equal(game.shopSelection, game.launchRow, "right moves to the launch")
   press({ buttons: { [B.confirmAlt]: 1 } })
   assert.equal(game.phase, "arriving", "A launched from the shop")
 })
@@ -309,7 +310,7 @@ test("START launches from the shop, and pauses only in a sector", () => {
   const launching = liveGame()
   launching.level = 2
   launching.enterShop()
-  launching.shopSelection = SHOP.length // the launch row
+  launching.shopSelection = launching.launchRow
   const input = new GamepadInput(launching)
   input.apply(readPad(pad({ buttons: { [B.confirm]: 1 } })))
   assert.equal(launching.phase, "arriving", "START launched")

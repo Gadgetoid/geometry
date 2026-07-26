@@ -1781,10 +1781,11 @@ test("a run starts with no shield, and the first level of plating fits one", () 
   assert.equal(game.upgrades.shield, 0, "nothing is issued with the ship")
   assert.equal(game.player.shieldModule(), null, "and there is no bubble to hide behind")
 
-  const plating = SHOP.find((item) => item.id === "shield")
   game.oreBalance = 999
-  game.shopSelection = SHOP.indexOf(plating)
   game.phase = "shop"
+  game.shopSelection = [...Array(SHOP.length + 1).keys()].find(
+    (row) => game.shopItem(row) && game.shopItem(row).id === "shield",
+  )
   game.doShopAction()
   assert.equal(game.upgrades.shield, 1)
   const shield = game.player.shieldModule()
@@ -1893,6 +1894,141 @@ test("the charge glow turns over at exactly the charge the shot does", () => {
   assert.equal(game.player.overdriven, false)
   weapon.charge = weapon.type.chargeMax
   assert.equal(game.player.overdriven, true)
+})
+
+// ---- what the shop does with a powerup -------------------------------------
+
+test("every powerup is worth something to sell", () => {
+  for (const [id, type] of Object.entries(POWERUP_TYPES)) {
+    assert.equal(typeof type.sell, "number", `${id} needs a sell value`)
+    assert.ok(type.sell > 0, `${id} should be worth something`)
+  }
+})
+
+test("carried powerups survive the trip to the next sector, and a saved run", () => {
+  const game = liveGame()
+  game.player.items = ["repel", "booster"]
+  game.level = 4
+  game.enterShop()
+  assert.deepEqual(game.player.items, ["repel", "booster"], "the shop does not empty the slots")
+  game.shopSelection = game.launchRow
+  game.doShopAction()
+  assert.equal(game.level, 5)
+  assert.deepEqual(game.player.items, ["repel", "booster"], "and neither does the next sector")
+
+  const resumed = new Game()
+  resumed.savedRun = game.savedRun
+  resumed.resumeRun()
+  assert.deepEqual(resumed.player.items, ["repel", "booster"], "nor a session boundary")
+})
+
+test("a saved run drops a powerup the registry no longer knows", () => {
+  const game = liveGame()
+  game.player.items = ["repel"]
+  game.level = 2
+  game.enterShop()
+  game.savedRun.items = ["repel", "somethingRemoved"]
+  const resumed = new Game()
+  resumed.savedRun = game.savedRun
+  resumed.resumeRun()
+  assert.deepEqual(resumed.player.items, ["repel"])
+})
+
+test("the shop groups the spare ship and the powerups above the loadout", () => {
+  const game = liveGame()
+  game.enterShop()
+  assert.equal(SHOP[0].id, "life", "a spare ship heads the page")
+  assert.equal(game.shopItem(game.slotsRow), null, "and the powerups row follows it")
+  assert.equal(game.slotsRow, 1)
+  // every purchase is still reachable, exactly once, in registry order
+  const walked = []
+  for (let row = 0; row <= SHOP.length; row++) {
+    const item = game.shopItem(row)
+    if (item) {
+      walked.push(item.id)
+    }
+  }
+  assert.deepEqual(
+    walked,
+    SHOP.map((item) => item.id),
+  )
+  assert.equal(game.launchRow, SHOP.length + 1)
+  assert.equal(game.optionsRow, SHOP.length + 2)
+  assert.equal(game.menuRows(), SHOP.length + 3, "the cursor can reach all of them")
+})
+
+test("the cursor walks the slots that were bought, and stops at either end", () => {
+  const game = liveGame()
+  game.upgrades.slots = 3
+  game.enterShop()
+  game.shopSelection = game.slotsRow
+  assert.equal(game.shopSlot, 0)
+  assert.equal(game.menuAdjust(-1), true, "left is taken by the row, not passed on")
+  assert.equal(game.shopSlot, 0, "and stops at the first")
+  game.menuAdjust(1)
+  game.menuAdjust(1)
+  assert.equal(game.shopSlot, 2)
+  game.menuAdjust(1)
+  assert.equal(game.shopSlot, 2, "the last slot bought is the last it reaches")
+  // and the launch line still moves the way it always did
+  game.shopSelection = game.optionsRow
+  game.menuAdjust(1)
+  assert.equal(game.shopSelection, game.launchRow)
+})
+
+test("the pop-over opens on a slot with something in it, and not on an empty one", () => {
+  const game = liveGame()
+  game.upgrades.slots = 2
+  game.player.items = ["booster"]
+  game.enterShop()
+  game.shopSelection = game.slotsRow
+
+  game.shopSlot = 1 // empty
+  game.menuConfirm()
+  assert.equal(game.slotMenu, null, "an empty slot has nothing to offer yet")
+
+  game.shopSlot = 0
+  game.menuConfirm()
+  assert.deepEqual(game.slotMenu, { slot: 0, selection: 0 })
+  assert.deepEqual(
+    game.slotMenuRows(0).map((row) => row.name),
+    ["SELL"],
+  )
+})
+
+test("the pop-over takes the input the shop behind it would have taken", () => {
+  const game = liveGame()
+  game.player.items = ["booster"]
+  game.enterShop()
+  game.shopSelection = game.slotsRow
+  game.menuConfirm()
+  const row = game.shopSelection
+  game.menuMove(1)
+  assert.equal(game.shopSelection, row, "the shop's cursor stays where it was")
+  assert.equal(game.menuAdjust(1), true, "and sideways presses are swallowed too")
+  assert.equal(game.shopSlot, 0)
+  game.menuBack()
+  assert.equal(game.slotMenu, null, "back closes it")
+  game.menuConfirm()
+  game.escape()
+  assert.equal(game.slotMenu, null, "and so does escape")
+})
+
+test("selling a slot pays what the powerup is worth and empties it", () => {
+  const game = liveGame()
+  game.upgrades.slots = 3
+  game.player.items = ["repel", "booster", "magnet"]
+  game.level = 3
+  game.enterShop()
+  const ore = game.oreBalance
+  game.shopSelection = game.slotsRow
+  game.shopSlot = 1
+  game.menuConfirm()
+  game.menuConfirm() // SELL
+  assert.equal(game.oreBalance, ore + POWERUP_TYPES.booster.sell)
+  assert.deepEqual(game.player.items, ["repel", "magnet"], "the rest close up behind it")
+  assert.equal(game.slotMenu, null, "and the pop-over goes with it")
+  assert.deepEqual(game.savedRun.items, ["repel", "magnet"], "the sale is banked with the run")
 })
 
 // ---- progression is data ---------------------------------------------------
@@ -2921,7 +3057,7 @@ test("a resumed run carries on into the sector after the one it saved", () => {
   assert.equal(next.resumeSector(), cleared + 1, "the run carries on into the next sector")
   assert.equal(next.shopSector, fresh, "and offers the same launch as the shop that saved it")
 
-  next.shopSelection = SHOP.length // the LAUNCH row
+  next.shopSelection = next.launchRow
   next.doShopAction()
   assert.equal(next.level, cleared + 1, "launching flies the next sector, not the cleared one")
 })

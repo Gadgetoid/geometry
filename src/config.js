@@ -928,6 +928,7 @@ export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
 //   short   name shown in the active-buff list (omit to reuse `label`)
 //   icon    single character drawn on the pickup and in the inventory slot
 //   colour  pickup outline, inventory slot and buff text
+//   sell    ore paid for one traded in from a shop slot
 //   seconds how long the effect lasts; omit for an instant effect
 //   apply   optional immediate effect, run on use
 //
@@ -949,6 +950,7 @@ export const POWERUP_TYPES = {
     label: "REPEL",
     icon: "R",
     colour: PALETTE.powerup.repel,
+    sell: 20,
     impulse: 300,
     apply: (game, player, type) => {
       for (const asteroid of game.asteroids) {
@@ -971,6 +973,7 @@ export const POWERUP_TYPES = {
     label: "REFUEL",
     icon: "F",
     colour: PALETTE.powerup.refuel,
+    sell: 12,
     apply: (game, player, type) => {
       player.energy = game.maxEnergy()
       game.ring(player.x, player.y, 24, type.colour, 150, 0.6)
@@ -981,6 +984,7 @@ export const POWERUP_TYPES = {
     short: "BOOST",
     icon: "B",
     colour: PALETTE.powerup.booster,
+    sell: 30,
     seconds: 6.5,
     beamLengthMult: 1.6, // charged shots reach further...
     freeCharge: true, // ...and cost nothing to charge
@@ -995,6 +999,7 @@ export const POWERUP_TYPES = {
     short: "MULTI",
     icon: "L",
     colour: PALETTE.powerup.multi,
+    sell: 26,
     seconds: 9,
     beamOffsets: [-28, 0, 28], // parallel beams either side of the nose
   },
@@ -1003,6 +1008,7 @@ export const POWERUP_TYPES = {
     short: "MAGNET",
     icon: "M",
     colour: PALETTE.powerup.magnet,
+    sell: 18,
     seconds: 6.5,
     pull: 260,
   },
@@ -1011,7 +1017,7 @@ export const POWERUP_TYPES = {
 export const POWERUP_IDS = Object.keys(POWERUP_TYPES)
 
 // Maximum powerup slots the ship can be fitted with.
-const MAX_SLOTS = 4
+export const MAX_SLOTS = 4
 
 export function freshUpgrades() {
   return { slots: 1, core: 0, shield: 0, laser: 0, magnet: 0, turret: false, reverse: false }
@@ -1127,6 +1133,19 @@ const fitting = (id, name, desc, price, apply) => ({
 })
 
 export const SHOP = [
+  // A spare ship and the powerups already carried are not part of the loadout the
+  // rest of the page sells, so they head the list as their own group.
+  {
+    id: "life",
+    name: "EXTRA LIFE",
+    desc: "One more spare ship.",
+    info: (g) => `${g.lives} / ${CONFIG.MAX_LIVES}`,
+    cost: () => 60,
+    maxed: (g) => g.lives >= CONFIG.MAX_LIVES,
+    apply: (g) => {
+      g.lives++
+    },
+  },
   levelled(
     "core",
     "POWER CORE",
@@ -1140,17 +1159,6 @@ export const SHOP = [
       }
     },
   ),
-  {
-    id: "life",
-    name: "EXTRA LIFE",
-    desc: "One more spare ship.",
-    info: (g) => `${g.lives} / ${CONFIG.MAX_LIVES}`,
-    cost: () => 60,
-    maxed: (g) => g.lives >= CONFIG.MAX_LIVES,
-    apply: (g) => {
-      g.lives++
-    },
-  },
   {
     id: "slot",
     name: "POWERUP SLOT",
@@ -1191,4 +1199,27 @@ export const SHOP = [
     85,
   ),
   fitting("reverse", "REVERSE THRUST", "Forward thrusters: hold DOWN or S to back away.", 55),
+]
+
+// Where the shop's own rows sit among the purchases: the powerup slots follow
+// EXTRA LIFE, and the gap under them sets that pair apart from the loadout below.
+export const SHOP_LAYOUT = { slotsRow: 1, groupGap: 14 }
+
+// ---------------------------------------------------------------------------
+// SLOT MENU - the pop-over that opens on a powerup slot in the shop. One entry
+// per row, in menu order, each taking the slot it was opened on. Fields:
+//   name      the label
+//   value     optional (game, slot) => text shown on the right
+//   available optional (game, slot) => whether the row belongs on this slot
+//   action    (game, slot) => run on ENTER / A
+// A slot whose rows are all unavailable does not open, so an empty one is inert
+// until there is something to offer for it.
+// ---------------------------------------------------------------------------
+export const SLOT_MENU = [
+  {
+    name: "SELL",
+    value: (g, slot) => `+${g.slotSellValue(slot)} ore`,
+    available: (g, slot) => g.slotItem(slot) !== undefined,
+    action: (g, slot) => g.sellSlot(slot),
+  },
 ]

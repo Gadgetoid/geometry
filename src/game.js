@@ -14,6 +14,8 @@ import {
   SHIP_TYPES,
   PAUSE_MENU,
   SHOP,
+  SHOP_LAYOUT,
+  SLOT_MENU,
   POWERUP_TYPES,
   POWERUP_IDS,
   SHIELD_SPARK,
@@ -138,6 +140,8 @@ export class Game {
 
     this.shopSelection = 0
     this.shopSector = 1
+    this.shopSlot = 0 // which powerup slot the cursor is on, along the slots row
+    this.slotMenu = null // the open pop-over: { slot, selection }
     this.pauseSelection = 0
     this.pauseConfirming = null // a row waiting to be confirmed a second time
     // Settings live here rather than on the things they affect, so one place holds
@@ -896,6 +900,8 @@ export class Game {
       totalBonus,
     }
     this.shopSelection = 0
+    this.shopSlot = 0
+    this.slotMenu = null
     this.shopSector = cleared ? this.level + 1 : this.level
     this.recordBest()
     this.rememberRun()
@@ -915,16 +921,93 @@ export class Game {
     this.enterShop(false)
   }
 
+  // The shop's page in cursor order: the purchases, with the powerup slots at the
+  // row SHOP_LAYOUT names, then the launch line. Everything that walks or draws
+  // the shop takes its indices from here, so the layout is stated once.
+  get slotsRow() {
+    return SHOP_LAYOUT.slotsRow
+  }
+  get launchRow() {
+    return SHOP.length + 1
+  }
+  get optionsRow() {
+    return SHOP.length + 2
+  }
+
+  // The upgrade a row is selling, or null for one of the rows the shop adds.
+  shopItem(row) {
+    if (row === this.slotsRow || row > SHOP.length) {
+      return null
+    }
+    return SHOP[row < this.slotsRow ? row : row - 1]
+  }
+
+  // What is held in a powerup slot, or undefined for an empty one.
+  slotItem(slot) {
+    return this.player ? this.player.items[slot] : undefined
+  }
+
+  slotSellValue(slot) {
+    const id = this.slotItem(slot)
+    return id === undefined ? 0 : POWERUP_TYPES[id].sell
+  }
+
+  // Trade a carried powerup back in for ore.
+  sellSlot(slot) {
+    const id = this.slotItem(slot)
+    if (id === undefined) {
+      return
+    }
+    this.oreBalance += POWERUP_TYPES[id].sell
+    this.player.items.splice(slot, 1)
+    this.closeSlotMenu()
+    this.rememberRun()
+    Sound.collect()
+  }
+
+  // The pop-over's rows for one slot, dropping those that have nothing to act on.
+  slotMenuRows(slot) {
+    return SLOT_MENU.filter((row) => !row.available || row.available(this, slot))
+  }
+
+  openSlotMenu(slot) {
+    if (!this.slotMenuRows(slot).length) {
+      return
+    }
+    this.slotMenu = { slot, selection: 0 }
+  }
+
+  closeSlotMenu() {
+    this.slotMenu = null
+  }
+
+  // Work the open pop-over: move the cursor, or run the highlighted row.
+  #slotMenuMove(delta) {
+    const rows = this.slotMenuRows(this.slotMenu.slot).length
+    this.slotMenu.selection = (this.slotMenu.selection + delta + rows) % rows
+  }
+  #slotMenuConfirm() {
+    const { slot, selection } = this.slotMenu
+    const row = this.slotMenuRows(slot)[selection]
+    if (row) {
+      row.action(this, slot)
+    }
+  }
+
   doShopAction() {
-    if (this.shopSelection === SHOP.length) {
+    if (this.shopSelection === this.slotsRow) {
+      this.openSlotMenu(this.shopSlot)
+      return
+    }
+    if (this.shopSelection === this.launchRow) {
       this.startLevel(this.shopSector)
       return
     }
-    if (this.shopSelection === SHOP.length + 1) {
+    if (this.shopSelection === this.optionsRow) {
       this.toggleOptions()
       return
     }
-    const item = SHOP[this.shopSelection]
+    const item = this.shopItem(this.shopSelection)
     if (item.maxed(this)) {
       return
     }
@@ -1313,6 +1396,9 @@ export class Game {
       oreBalance: this.oreBalance,
       rivalScore: this.rivalScore,
       upgrades: { ...this.upgrades },
+      // Carried powerups are part of the loadout the shop sends you out with, so
+      // they survive a session the way the upgrades do.
+      items: this.player ? [...this.player.items] : [],
     }
     saveRun(this.savedRun)
   }
@@ -1351,6 +1437,9 @@ export class Game {
     this.level = run.level
     this.player = new PlayerShip(this)
     this.player.fitPurchased(this.upgrades)
+    // Drop anything the registry no longer knows, so an old save cannot put a
+    // powerup that has since been removed into a slot.
+    this.player.items = (run.items || []).filter((id) => POWERUP_TYPES[id])
     this.stats = this.blankStats()
     this.asteroids = []
     this.oreChunks = []
@@ -1361,6 +1450,8 @@ export class Game {
     this.laserShots = []
     this.summaryData = { level: run.level, bailed: !!run.bailed, resumed: true }
     this.shopSelection = 0
+    this.shopSlot = 0
+    this.slotMenu = null
     this.shopSector = this.resumeSector()
     this.phase = "shop"
   }
@@ -1557,14 +1648,18 @@ export class Game {
     if (this.paused) {
       return this.pauseMenu().length
     }
-    // the shop's rows, then LAUNCH, then SETTINGS beside it
-    return this.phase === "shop" ? SHOP.length + 2 : 0
+    // the purchases, the POWERUPS row among them, then LAUNCH and SETTINGS
+    return this.phase === "shop" ? SHOP.length + 3 : 0
   }
 
   // Move the cursor, wrapping at both ends. A row waiting for a key or button holds
   // it still, so the input that lands is the binding and not a cursor move.
   menuMove(delta) {
     const rows = this.menuRows()
+    if (this.slotMenu) {
+      this.#slotMenuMove(delta)
+      return
+    }
     if (!rows || this.rebinding) {
       return
     }
@@ -1579,6 +1674,10 @@ export class Game {
   // Act on the highlighted row: buy, launch, start a run, or work the pause menu.
   // A row carrying `confirm` asks once and acts on the second press.
   menuConfirm() {
+    if (this.slotMenu) {
+      this.#slotMenuConfirm()
+      return
+    }
     if (this.paused) {
       const row = this.pauseMenu()[this.pauseSelection]
       if (!row || !row.action) {
@@ -1610,6 +1709,9 @@ export class Game {
   // LEFT / RIGHT. In the pause menu it works the highlighted row's scale; in the dev
   // shop it steps the sector. Returns whether it did anything, so a caller can stop.
   menuAdjust(step) {
+    if (this.slotMenu) {
+      return true // one column of rows, and the shop behind it must not move
+    }
     if (this.paused) {
       if (this.rebinding) {
         return true // a waiting row swallows it, as it does a cursor move
@@ -1632,10 +1734,23 @@ export class Game {
       // cursor down the page, least of all onto a row that throws a run away.
       return rows.some((entry) => entry.section) ? this.#stepPair(rows, step) : false
     }
+    if (this.#slotStep(step)) {
+      return true
+    }
     if (this.devSectorStep(step)) {
       return true
     }
     return this.#shopSideStep(step)
+  }
+
+  // The powerup slots sit side by side on one row, so left and right walk along
+  // them. It stops at each end: the row is a row of boxes, not a loop.
+  #slotStep(step) {
+    if (this.phase !== "shop" || this.shopSelection !== this.slotsRow) {
+      return false
+    }
+    this.shopSlot = clamp(this.shopSlot + Math.sign(step), 0, this.upgrades.slots - 1)
+    return true
   }
 
   // LAUNCH and SETTINGS share the shop's bottom line, SETTINGS to the left, so left
@@ -1644,12 +1759,12 @@ export class Game {
     if (this.phase !== "shop") {
       return false
     }
-    if (step < 0 && this.shopSelection === SHOP.length) {
-      this.shopSelection = SHOP.length + 1
+    if (step < 0 && this.shopSelection === this.launchRow) {
+      this.shopSelection = this.optionsRow
       return true
     }
-    if (step > 0 && this.shopSelection === SHOP.length + 1) {
-      this.shopSelection = SHOP.length
+    if (step > 0 && this.shopSelection === this.optionsRow) {
+      this.shopSelection = this.launchRow
       return true
     }
     return false
@@ -1706,9 +1821,14 @@ export class Game {
     return this.inSector() || this.phase === "shop"
   }
 
-  // Back out one step: off a sub page of the options menu, then out of the menu
-  // itself. ESCAPE on a keyboard and B on a pad, so the two cannot drift apart.
+  // Back out one step: off the shop's slot pop-over, off a sub page of the options
+  // menu, then out of the menu itself. ESCAPE on a keyboard and B on a pad, so the
+  // two cannot drift apart.
   menuBack() {
+    if (this.slotMenu) {
+      this.closeSlotMenu()
+      return
+    }
     if (!this.paused) {
       return
     }
@@ -1722,7 +1842,7 @@ export class Game {
   // ESCAPE, which opens the menu when it is closed and backs out of it when it is
   // not, so one key does the whole journey in and out.
   escape() {
-    if (this.paused) {
+    if (this.paused || this.slotMenu) {
       this.menuBack()
     } else {
       this.toggleOptions()
@@ -1747,6 +1867,7 @@ export class Game {
       return
     }
     this.paused = !this.paused
+    this.slotMenu = null
     this.pausePage = "root"
     this.pauseSelection = 0
     this.pauseConfirming = null

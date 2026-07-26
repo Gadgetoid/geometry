@@ -5,7 +5,16 @@
 // the Renderer without touching game logic. Entities still paint themselves via
 // their own draw(renderer, game) methods.
 
-import { VIEW_W, VIEW_H, TAU, ARENA, SHOP, POWERUP_TYPES } from "./config.js"
+import {
+  VIEW_W,
+  VIEW_H,
+  TAU,
+  ARENA,
+  SHOP,
+  SHOP_LAYOUT,
+  MAX_SLOTS,
+  POWERUP_TYPES,
+} from "./config.js"
 import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
 import { PALETTE } from "./palette.js"
@@ -681,18 +690,27 @@ export class GameView {
       rightX = VIEW_W / 2 + 250,
       top = 146,
       rowHeight = 32
-    for (let i = 0; i < SHOP.length; i++) {
-      const item = SHOP[i],
-        y = top + i * rowHeight
-      const selected = game.shopSelection === i,
-        maxed = item.maxed(game),
-        cost = item.cost(game),
-        affordable = game.oreBalance >= cost && !maxed
+    // The purchases and the powerups row share one column, so the running y is what
+    // places the group gap and everything below the list.
+    let y = top,
+      slotsY = top
+    for (let row = 0; row <= SHOP.length; row++) {
+      const selected = game.shopSelection === row
       if (selected) {
         r.rect(leftX - 16, y - 18, rightX - leftX + 32, rowHeight - 4, {
           fill: "rgba(95,215,255,.12)",
         })
       }
+      const item = game.shopItem(row)
+      if (!item) {
+        slotsY = y
+        this.#shopSlots(game, leftX, rightX, y, selected)
+        y += rowHeight + SHOP_LAYOUT.groupGap
+        continue
+      }
+      const maxed = item.maxed(game),
+        cost = item.cost(game),
+        affordable = game.oreBalance >= cost && !maxed
       r.text(`${selected ? "> " : "  "}${item.name}`, leftX, y, {
         size: 15,
         bold: selected,
@@ -709,22 +727,26 @@ export class GameView {
               : PALETTE.text.disabled,
         align: "right",
       })
+      y += rowHeight
     }
-    if (game.shopSelection < SHOP.length) {
-      r.text(SHOP[game.shopSelection].desc, VIEW_W / 2, top + SHOP.length * rowHeight + 8, {
-        size: 12,
-        color: PALETTE.text.soft,
-        align: "center",
-      })
+
+    const selectedItem = game.shopItem(game.shopSelection)
+    const hint = selectedItem
+      ? selectedItem.desc
+      : game.shopSelection === game.slotsRow
+        ? "What you are carrying into the next sector. Sell what you will not use."
+        : null
+    if (hint) {
+      r.text(hint, VIEW_W / 2, y + 8, { size: 12, color: PALETTE.text.soft, align: "center" })
     }
 
     // The last line holds both, sharing the column edges the rows above use: OPTIONS
     // left-aligned under the item names, LAUNCH right-aligned under the costs. Each
     // keeps the two-space placeholder the rows above use, so the cursor arrow
     // replaces it instead of shoving the text along.
-    const launchY = top + SHOP.length * rowHeight + 42,
-      launchSelected = game.shopSelection === SHOP.length,
-      optionsSelected = game.shopSelection === SHOP.length + 1
+    const launchY = y + 42,
+      launchSelected = game.shopSelection === game.launchRow,
+      optionsSelected = game.shopSelection === game.optionsRow
     const midX = (leftX + rightX) / 2
     if (optionsSelected) {
       r.rect(leftX - 16, launchY - 19, midX - leftX + 8, 28, { fill: "rgba(95,215,255,.12)" })
@@ -747,7 +769,7 @@ export class GameView {
     r.text(
       this.#prompt(
         game,
-        "UP / DOWN select    LEFT / RIGHT launch or options    ENTER choose    ESC options",
+        "UP / DOWN select    LEFT / RIGHT along a row    ENTER choose    ESC options",
         "DPAD select    A / START choose    BACK options",
       ),
       VIEW_W / 2,
@@ -766,6 +788,95 @@ export class GameView {
         { size: 11, color: PALETTE.ui.accentAlt, align: "center" },
       )
     }
+    // Last, so the pop-over sits over the rows it is opened from.
+    if (game.slotMenu) {
+      this.#slotPopover(game, rightX, slotsY)
+    }
+  }
+
+  // Where a powerup slot sits on the shop's right-hand column. The row and the
+  // pop-over that opens on one both place themselves from here, so they line up.
+  #slotBox(rightX, index) {
+    const size = 26,
+      spacing = 6,
+      width = MAX_SLOTS * (size + spacing) - spacing
+    return { x: rightX - width + index * (size + spacing), size }
+  }
+
+  // The powerups row: the heading under the item names, the slots under the costs.
+  // Slots beyond the ones bought are drawn faint, so what another POWERUP SLOT buys
+  // is visible before it is paid for.
+  #shopSlots(game, leftX, rightX, y, selected) {
+    const r = this.renderer
+    r.text(`${selected ? "> " : "  "}POWERUPS`, leftX, y, {
+      size: 15,
+      bold: selected,
+      color: selected ? PALETTE.text.bright : PALETTE.text.normal,
+    })
+    for (let index = 0; index < MAX_SLOTS; index++) {
+      const { x, size } = this.#slotBox(rightX, index),
+        boxY = y - size + 7
+      const owned = index < game.upgrades.slots,
+        spec = POWERUP_TYPES[game.slotItem(index)],
+        onCursor = selected && game.shopSlot === index
+      if (onCursor) {
+        r.rect(x - 3, boxY - 3, size + 6, size + 6, { fill: "rgba(95,215,255,.28)" })
+      }
+      r.rect(x, boxY, size, size, {
+        stroke: spec ? spec.colour : PALETTE.ui.slotEmpty,
+        width: onCursor ? 1.8 : 1.2,
+        alpha: owned ? 1 : 0.55,
+      })
+      if (spec) {
+        r.text(spec.icon, x + size / 2, boxY + size / 2 + 5, {
+          size: 14,
+          bold: true,
+          color: spec.colour,
+          align: "center",
+        })
+      }
+    }
+  }
+
+  // The pop-over on one powerup slot, hung under the slot it belongs to and pulled
+  // back inside the right-hand column where it would otherwise overhang.
+  #slotPopover(game, rightX, slotsY) {
+    const r = this.renderer,
+      { slot, selection } = game.slotMenu,
+      rows = game.slotMenuRows(slot)
+    const { x } = this.#slotBox(rightX, slot)
+    const width = 156,
+      rowHeight = 20,
+      height = rows.length * rowHeight + 28 // the rows, plus the line saying how to work them
+    const panelX = Math.min(x - 6, rightX - width),
+      panelY = slotsY + 15
+    r.rect(panelX, panelY, width, height, { fill: "rgba(4,8,16,.95)" })
+    r.rect(panelX, panelY, width, height, { stroke: PALETTE.ui.accent, width: 1.2, glow: 8 })
+    rows.forEach((row, index) => {
+      const rowY = panelY + 18 + index * rowHeight,
+        on = selection === index
+      if (on) {
+        r.rect(panelX + 3, rowY - 12, width - 6, rowHeight - 3, { fill: "rgba(95,215,255,.16)" })
+      }
+      r.text(`${on ? "> " : "  "}${row.name}`, panelX + 8, rowY, {
+        size: 13,
+        bold: on,
+        color: on ? PALETTE.text.bright : PALETTE.text.normal,
+      })
+      if (row.value) {
+        r.text(row.value(game, slot), panelX + width - 8, rowY, {
+          size: 11,
+          color: PALETTE.fx.flash,
+          align: "right",
+        })
+      }
+    })
+    r.text(
+      this.#prompt(game, "ENTER choose   ESC back", "A choose   B back"),
+      panelX + width / 2,
+      panelY + height - 8,
+      { size: 10, color: PALETTE.text.muted, align: "center" },
+    )
   }
 
   #gameOver(game) {
