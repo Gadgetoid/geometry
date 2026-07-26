@@ -193,7 +193,8 @@ const PLANET_FS = `#version 300 es
   uniform vec2 uLight;   // 2D light direction on the disc
   uniform float uSeed;
   uniform float uTime;
-  uniform int uType;     // 0 rocky, 1 volcanic, 2 inhabited, 3 gas, 4 ice
+  uniform int uType;     // 0 rocky, 1 volcanic, 2 inhabited, 3 gas, 4 ice,
+                         // 5 forge, 6 alien, 7 shattered
   float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise(vec2 p){
     vec2 i = floor(p), f = fract(p);
@@ -232,6 +233,32 @@ const PLANET_FS = `#version 300 es
       float night = 1.0 - smoothstep(0.02, 0.32, lambert);
       float cities = smoothstep(0.68, 0.9, fbm(sp * 15.0 + uSeed * 4.0));
       emit += uEmit * cities * night * step(0.48, land) * 1.8;
+    } else if (uType == 5) {                // forge: soot bands over furnace light
+      // Tighter bands than a gas giant, and the glow is banked in the low ones.
+      // It burns on the day side too: industry does not stop for the terminator.
+      float bands = sin(sp.y * 13.0 + fbm(sp * 3.0 + uSeed) * 2.2) * 0.5 + 0.5;
+      float soot = fbm(sp * 5.0 + uSeed * 2.0);
+      albedo = mix(uBase, uHi, smoothstep(0.45, 0.85, mix(bands, soot, 0.45)));
+      float furnace = smoothstep(0.30, 0.0, bands) * smoothstep(0.30, 0.62, soot);
+      emit += uEmit * furnace * (1.1 + 0.3 * sin(uTime * 1.3 + uSeed * 3.0));
+    } else if (uType == 6) {                // alien: cells and bioluminescent veins
+      // Big smooth cells with a lit web between them, pulsing slowly and out of
+      // phase with every other world in the sector.
+      float cells = fbm(sp * 1.7 + uSeed);
+      albedo = mix(uBase, uHi, smoothstep(0.35, 0.8, cells));
+      float veins = smoothstep(0.86, 0.99, ridged(sp * 2.4 + uSeed * 1.5));
+      float pulse = 0.65 + 0.35 * sin(uTime * 0.9 + uSeed * 5.0 + cells * 4.0);
+      emit += uEmit * veins * pulse * 0.75;
+    } else if (uType == 7) {                // shattered: a split crust over a cooling core
+      float crust = fbm(sp * 3.4 + uSeed);
+      albedo = mix(uBase, uHi, smoothstep(0.4, 0.8, crust));
+      // The fracture network, and a belt where the crust has come apart
+      // altogether. Only the cracks glow; the rest is dead rock.
+      float cracks = smoothstep(0.88, 1.0, ridged(sp * 2.8 + uSeed));
+      float belt = smoothstep(0.30, 0.0, abs(sp.y + 0.12 * fbm(sp * 2.0 + uSeed)));
+      float split = max(cracks, belt * smoothstep(0.55, 0.95, ridged(sp * 6.0 + uSeed)));
+      albedo *= 1.0 - belt * 0.55;
+      emit += uEmit * split * 0.5;
     } else {                                // rocky
       float bands = fbm(sp * 2.2 + uSeed);
       float mottle = fbm(sp * 6.0 + uSeed * 3.0);

@@ -3,8 +3,9 @@
 // state and nothing here can affect the simulation.
 //
 // Each sector's look is generated from a seeded PRNG, so the same sector number
-// always produces the same worlds, and the base hue advances with the sector so
-// the palette evolves as you travel. GameView reads these arrays directly.
+// always produces the same worlds. How far out the sector is drives the whole
+// palette: a run opens on cool, quiet space and arrives somewhere hostile,
+// industrial and alien. See SKY below. GameView reads these arrays directly.
 
 import { VIEW_W, VIEW_H, TAU } from "./config.js"
 import { randRange, randInt, mulberry32 } from "./math.js"
@@ -22,59 +23,181 @@ const PLANET_COLS = 3
 const PLANET_ROWS = 2
 
 // Planet surface kinds, matching the uType switch in the planet shader.
-const WORLD = { rocky: 0, volcanic: 1, inhabited: 2, gas: 3, ice: 4 }
+const WORLD = {
+  rocky: 0,
+  volcanic: 1,
+  inhabited: 2,
+  gas: 3,
+  ice: 4,
+  forge: 5,
+  alien: 6,
+  shattered: 7,
+}
 
-// Palette for an ordinary world (rocky / gas / ice), tinted by the sector hue
-// for cohesion. The rare emissive worlds are handled separately so there is at
-// most one per sector. Returns { type, base, hi, atmo, emit }.
-function ordinaryPalette(rng, baseHue) {
-  const jitter = (h, d) => Math.round((((h + (rng() * 2 - 1) * d) % 360) + 360) % 360)
-  const roll = rng()
-  if (roll < 0.35) {
-    // gas giant with banding
-    const h = jitter(baseHue, 25)
+// ---------------------------------------------------------------------------
+// THE ARC - how far out a sector is, as 0 to 1, and everything that reads off
+// it. A run opens on cool, quiet space and arrives somewhere hostile and alien;
+// `arcSectors` is how long that takes, after which the sky holds where it is.
+//
+// Every pair below is [early, late] and is read at the arc, so retuning the
+// whole progression is an edit to this table. A sector still wanders around the
+// trend by `hueWander`, so neighbours differ and travel stays interesting; what
+// changed from cycling the whole wheel every eight sectors is that the wander
+// now rides on an anchor that goes somewhere.
+// ---------------------------------------------------------------------------
+export const SKY = {
+  arcSectors: 30,
+  // The anchor hue travels the short way from blue to ember, which passes
+  // through violet and magenta rather than through green.
+  hueEarly: 205,
+  hueLate: 18,
+  hueWander: 22,
+  // The nebula's two colours. The gap between them opens with the arc, from
+  // analogous and serene to two hues that genuinely oppose each other, and they
+  // sit at different lightnesses so one reads as the highlight of the pair.
+  // The shader multiplies these by the cloud mask and by 0.9 over a near-black
+  // base, so they have to be well clear of black to read as two colours at all,
+  // while staying a base layer the ship and the rocks sit in front of.
+  //
+  // A is the anchor and B the contrast. B starts as bright as A, so an early sky
+  // is two serene tones of one idea, and ends darker, so a late sky is ember with
+  // a cold accent in its shadows rather than the other way about.
+  nebulaGap: [40, 165],
+  nebulaSatA: [42, 62],
+  nebulaLightA: [20, 19],
+  nebulaSatB: [34, 52],
+  nebulaLightB: [18, 12],
+  // Glowing worlds are what a late sector has more of, but bloom means two is
+  // plenty in one sky.
+  emissiveCap: [1, 2],
+  // Planet radius, by class. A late sector is more likely to have something
+  // looming in it; one giant at a time, since the grid is only so wide.
+  sizes: [
+    { r: [30, 55], depth: [0.05, 0.1], weight: [1.5, 1.5] },
+    { r: [60, 110], depth: [0.08, 0.16], weight: [3, 2] },
+    { r: [150, 220], depth: [0.14, 0.22], weight: [0.35, 1.6], giant: true },
+  ],
+}
+
+// What kinds of world a sector may roll, and how heavily. `from` holds a kind
+// back until the arc reaches it, so the first sectors cannot turn up anything
+// that belongs to the far end of the run.
+const WORLDS = [
+  { type: WORLD.ice, weight: [3, 0.2] },
+  { type: WORLD.gas, weight: [3, 1] },
+  { type: WORLD.rocky, weight: [2, 1] },
+  { type: WORLD.inhabited, weight: [0.6, 0.8], emissive: true },
+  { type: WORLD.volcanic, weight: [0.3, 1.5], emissive: true },
+  { type: WORLD.forge, weight: [0, 2], from: 0.3, emissive: true },
+  { type: WORLD.shattered, weight: [0, 1.5], from: 0.5, emissive: true },
+  { type: WORLD.alien, weight: [0, 3], from: 0.55, emissive: true },
+]
+
+const lerp = (from, to, t) => from + (to - from) * t
+const at = (pair, arc) => lerp(pair[0], pair[1], arc)
+const wrapHue = (h) => ((h % 360) + 360) % 360
+
+// The short way round from one hue to another, so the anchor does not sweep
+// backwards through half the wheel to get where it is going.
+function lerpHue(from, to, t) {
+  let delta = wrapHue(to - from)
+  if (delta > 180) {
+    delta -= 360
+  }
+  return wrapHue(from + delta * t)
+}
+
+// Draw from a set of [early, late] weights at this arc. Anything held back by
+// `from`, or weighted to nothing, cannot come up.
+function weightedPick(entries, arc, rng) {
+  const pool = entries.filter((entry) => arc >= (entry.from ?? 0) && at(entry.weight, arc) > 0)
+  const total = pool.reduce((sum, entry) => sum + at(entry.weight, arc), 0)
+  let roll = rng() * total
+  for (const entry of pool) {
+    roll -= at(entry.weight, arc)
+    if (roll <= 0) {
+      return entry
+    }
+  }
+  return pool[pool.length - 1]
+}
+
+// A world's colours. Most take the sector's anchor hue so the sky hangs
+// together; the ones that are meant to unsettle deliberately do not.
+function worldPalette(type, anchor, arc, rng) {
+  const jitter = (h, d) => Math.round(wrapHue(h + (rng() * 2 - 1) * d))
+  if (type === WORLD.gas) {
+    const h = jitter(anchor, 25)
     return {
-      type: WORLD.gas,
-      base: `hsl(${h} 34% 26%)`,
-      hi: `hsl(${(h + 20) % 360} 40% 52%)`,
-      atmo: `hsl(${h} 45% 60%)`,
+      base: `hsl(${h} ${Math.round(at([34, 26], arc))}% ${Math.round(at([26, 20], arc))}%)`,
+      hi: `hsl(${wrapHue(h + 20)} 40% ${Math.round(at([52, 38], arc))}%)`,
+      atmo: `hsl(${h} 45% ${Math.round(at([60, 44], arc))}%)`,
       emit: "#000000",
     }
   }
-  if (roll < 0.55) {
-    // ice world (cool, high albedo)
+  if (type === WORLD.ice) {
+    // Cool and high-albedo whatever the sector, which is why it belongs to the
+    // opening: it is the one world that does not take the anchor at all.
     const h = jitter(210, 30)
     return {
-      type: WORLD.ice,
       base: `hsl(${h} 20% 40%)`,
       hi: `hsl(${h} 14% 82%)`,
       atmo: `hsl(${h} 40% 78%)`,
       emit: "#000000",
     }
   }
-  // rocky world tinted by the sector hue
-  const h = jitter(baseHue, 35)
-  return {
-    type: WORLD.rocky,
-    base: `hsl(${h} 26% 22%)`,
-    hi: `hsl(${h} 30% 45%)`,
-    atmo: `hsl(${(h + 30) % 360} 34% 58%)`,
-    emit: "#000000",
-  }
-}
-
-// The rare, cool worlds: volcanic (glowing lava) and inhabited (city lights).
-function fancyPalette(type, baseHue, rng) {
   if (type === WORLD.volcanic) {
-    return { type, base: "#241c18", hi: "#4a352a", atmo: "#7a3a24", emit: "#ff5a1e" }
+    return { base: "#241c18", hi: "#4a352a", atmo: "#7a3a24", emit: "#ff5a1e" }
   }
-  const h = Math.round(baseHue + (rng() * 2 - 1) * 40 + 360) % 360
+  if (type === WORLD.inhabited) {
+    const h = jitter(anchor, 40)
+    return {
+      base: `hsl(${h} 30% 15%)`,
+      hi: `hsl(${h} 26% 30%)`,
+      atmo: `hsl(${wrapHue(h + 180)} 40% 55%)`,
+      emit: "#ffd98a",
+    }
+  }
+  if (type === WORLD.forge) {
+    // Industry: soot over a furnace. Barely tinted by the sector, since what
+    // colours it is what is being done to it.
+    const h = jitter(anchor, 12)
+    return {
+      base: `hsl(${h} 8% 12%)`,
+      hi: `hsl(${h} 12% 26%)`,
+      atmo: `hsl(30 50% 30%)`,
+      emit: "#ffa32e", // amber, so it reads as worked rather than molten
+    }
+  }
+  if (type === WORLD.alien) {
+    // Wrong on purpose: not the sector's hue but one of two bands that belong to
+    // nothing else out here. Both are far from the ember sky they hang in, and
+    // both stay clear of the player's cyan, which the ship and the HUD own.
+    const h = jitter(rng() < 0.5 ? 115 : 285, 25)
+    return {
+      base: `hsl(${h} 32% 14%)`,
+      hi: `hsl(${wrapHue(h + 30)} 44% 32%)`,
+      atmo: `hsl(${wrapHue(h + 40)} 60% 46%)`,
+      emit: `hsl(${wrapHue(h + 50)} 80% 46%)`,
+    }
+  }
+  if (type === WORLD.shattered) {
+    // Dead: rock, a split crust, and a core still cooling inside the cracks.
+    const h = jitter(anchor, 20)
+    return {
+      base: `hsl(${h} 10% 15%)`,
+      hi: `hsl(${h} 14% 34%)`,
+      atmo: `hsl(${h} 18% 22%)`, // almost no rim, so the silhouette stays hard
+      emit: "#c2331a", // deep and dim: cooling, not erupting
+    }
+  }
+  // rocky, tinted by the sector hue
+  const h = jitter(anchor, 35)
   return {
-    type: WORLD.inhabited,
-    base: `hsl(${h} 30% 15%)`,
-    hi: `hsl(${h} 26% 30%)`,
-    atmo: `hsl(${(h + 180) % 360} 40% 55%)`,
-    emit: "#ffd98a",
+    base: `hsl(${h} 26% ${Math.round(at([22, 17], arc))}%)`,
+    hi: `hsl(${h} 30% ${Math.round(at([45, 34], arc))}%)`,
+    atmo: `hsl(${wrapHue(h + 30)} 34% ${Math.round(at([58, 42], arc))}%)`,
+    emit: "#000000",
   }
 }
 
@@ -119,15 +242,21 @@ export class Backdrop {
   }
 
   // Rebuild the backdrop for a sector: a seeded palette so each sector has its
-  // own repeatable vibe, evolving slowly as the base hue advances. Planets are
-  // spread over a jittered grid so they never clump.
+  // own repeatable vibe, and everything about that vibe read off how far out the
+  // sector is (see SKY). Planets are spread over a jittered grid so they never
+  // clump.
   regenSector(sector) {
     const rng = mulberry32((Math.imul(sector, 2654435761) ^ 0x9e3779b9) >>> 0)
     const rand = (a, b) => a + rng() * (b - a)
-    const baseHue = (sector * 43) % 360 // advances each sector for slow evolution
+    const arc = Math.max(0, Math.min(1, sector / SKY.arcSectors))
+    // The trend, and this sector's wander around it.
+    const anchor = wrapHue(
+      lerpHue(SKY.hueEarly, SKY.hueLate, arc) + (rng() * 2 - 1) * SKY.hueWander,
+    )
+    const gap = at(SKY.nebulaGap, arc)
     this.nebula = {
-      colorA: `hsl(${baseHue} 45% 16%)`,
-      colorB: `hsl(${(baseHue + 55) % 360} 40% 14%)`,
+      colorA: `hsl(${Math.round(anchor)} ${Math.round(at(SKY.nebulaSatA, arc))}% ${Math.round(at(SKY.nebulaLightA, arc))}%)`,
+      colorB: `hsl(${Math.round(wrapHue(anchor + gap))} ${Math.round(at(SKY.nebulaSatB, arc))}% ${Math.round(at(SKY.nebulaLightB, arc))}%)`,
       seed: rand(0, 30),
     }
 
@@ -144,25 +273,40 @@ export class Backdrop {
       ;[cells[i], cells[j]] = [cells[j], cells[i]]
     }
     const count = 3 + Math.floor(rng() * 2) // 3-4, one per grid cell, well spaced
-    // at most one rare emissive world per sector, and only sometimes
-    const fancyRoll = rng()
-    const fancyType =
-      fancyRoll < 0.2 ? WORLD.volcanic : fancyRoll < 0.4 ? WORLD.inhabited : WORLD.rocky
-    const fancySlot = fancyType ? Math.floor(rng() * count) : -1
+    let emissiveLeft = Math.round(at(SKY.emissiveCap, arc))
+    let giantLeft = 1
     this.planets = []
     for (let i = 0; i < count; i++) {
       const [cx, cy] = cells[i]
-      const pal =
-        i === fancySlot ? fancyPalette(fancyType, baseHue, rng) : ordinaryPalette(rng, baseHue)
+      // A glowing world once the sky has had its fill of them is an ordinary one
+      // instead, so the cap never costs the sector a planet.
+      const kind = weightedPick(
+        WORLDS.filter((entry) => !entry.emissive || emissiveLeft > 0),
+        arc,
+        rng,
+      )
+      if (kind.emissive) {
+        emissiveLeft--
+      }
+      const size = weightedPick(
+        SKY.sizes.filter((entry) => !entry.giant || giantLeft > 0),
+        arc,
+        rng,
+      )
+      if (size.giant) {
+        giantLeft--
+      }
       this.planets.push({
         x: -PLANET_MARGIN_X + cx * cellW + rand(cellW * 0.2, cellW * 0.8),
         y: -PLANET_MARGIN_Y + cy * cellH + rand(cellH * 0.2, cellH * 0.8),
-        r: rand(50, 120),
-        depth: rand(0.05, 0.2), // far: barely parallaxes
+        r: rand(size.r[0], size.r[1]),
+        // A bigger world sits nearer, so it parallaxes like one.
+        depth: rand(size.depth[0], size.depth[1]),
         seed: rand(0, 20),
         light: rand(-Math.PI, Math.PI),
         drift: rand(2, 6),
-        ...pal,
+        type: kind.type,
+        ...worldPalette(kind.type, anchor, arc, rng),
       })
     }
   }
