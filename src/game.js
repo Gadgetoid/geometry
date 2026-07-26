@@ -1272,12 +1272,19 @@ export class Game {
     Sound.bump()
   }
 
-  // The player as anything hunting it can see it, or null while a powerup is
-  // hiding the ship. Every site that steers toward, aims at or shoots at the
-  // player asks through this, so one effect hides it from all of them.
+  // The player as anything hunting it can see it, or null when nothing should be
+  // able to. Every site that steers toward, aims at or shoots at the player asks
+  // through this, so one answer hides it from all of them.
+  //
+  // Two things hide it. A powerup that declares `invisible`, and simply not being
+  // reachable: a ship still warping in, or inside the grace period that follows,
+  // cannot be harmed, and anything allowed to keep shooting at it would only be
+  // stacking up rounds to land the moment the grace runs out.
   visiblePlayer() {
-    const player = this.player
-    return player && !player.buffField("invisible", false) ? player : null
+    if (!this.player || this.player.untouchable) {
+      return null
+    }
+    return this.player.buffField("invisible", false) ? null : this.player
   }
 
   // The nearest body of `bodies` to a point, as { target, distance }, or null when

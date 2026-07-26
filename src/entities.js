@@ -667,11 +667,7 @@ export const WEAPON_CONTROLLERS = {
   turret(weapon, dt, game, host, world) {
     const player = game.visiblePlayer()
     // don't snipe the player from off-screen where they can't see the shooter
-    if (
-      !player ||
-      player.invincible > 0 ||
-      !game.onScreen(host.x, host.y, CONFIG.OFFSCREEN_FIRE_MARGIN)
-    ) {
+    if (!player || !game.onScreen(host.x, host.y, CONFIG.OFFSCREEN_FIRE_MARGIN)) {
       return
     }
     const reach = weapon.cutReach(player, distanceTo(world, player))
@@ -1154,19 +1150,23 @@ export class PlayerShip extends Ship {
   get severable() {
     return false
   }
-  // Mid-warp the ship is not really in the sector, so nothing can reach it:
-  // not rocks, and not the bullets and blasts that bypass contact entirely.
+  // Nothing can reach the ship while it is still warping in, when it is not really
+  // in the sector, nor during the grace period that follows. Named once because two
+  // things turn on it: what damage is turned away, and whether anything hunting the
+  // ship can see it at all, via Game.visiblePlayer. Those must not disagree.
+  get untouchable() {
+    return !this.inPlay() || this.invincible > 0
+  }
+
+  // Answered here, and not at each thing that can hurt, because the hull has no
+  // health of its own: a single shot that reaches it costs a life, so being proof
+  // against rocks alone is no protection.
   //
-  // The grace period after arriving turns away everything as well, which is why
-  // it is answered here and not at each thing that can hurt: the hull has no
-  // health of its own, so a single shot that reaches it costs a life, and being
-  // proof against rocks alone is no protection at all.
-  //
-  // Everything that lands is totalled for the sector summary, whether the
-  // shield soaked it or the hull did, so "flawless" means untouched. Neither of
-  // these counts, since neither landed.
+  // Everything that lands is totalled for the sector summary, whether the shield
+  // soaked it or the hull did, so "flawless" means untouched. Nothing turned away
+  // counts, since none of it landed.
   takeDamage(amount, game, channel, scoreOnKill, impact) {
-    if (!this.inPlay() || this.invincible > 0) {
+    if (this.untouchable) {
       return false
     }
     game.stats.damage += amount

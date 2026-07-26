@@ -970,6 +970,10 @@ test("a hull cannot be flown inside a shield bubble it can see", () => {
     () => frigate,
     () => frigate.shieldRadius(),
     () => {
+      // A pinned hull still re-accelerates along its facing inside the frame, and
+      // where it steers depends on what it can see. This is about geometry, so
+      // stop it flying at all.
+      frigate.accel = 0
       frigate.x = 600
       frigate.y = 320
       frigate.vx = 0
@@ -996,6 +1000,10 @@ test("an unshielded hull is still touched on its outline", () => {
     () => frigate,
     () => 0,
     () => {
+      // A pinned hull still re-accelerates along its facing inside the frame, and
+      // where it steers depends on what it can see. This is about geometry, so
+      // stop it flying at all.
+      frigate.accel = 0
       frigate.x = 600
       frigate.y = 320
       frigate.vx = 0
@@ -3154,6 +3162,119 @@ test("a respawn cannot be shot down before it can be flown", () => {
   game.projectiles.push(new Projectile(player.x, player.y, 0, 0, CONFIG.DMG_RIVAL_GUN, null))
   game.advance(1 / 60)
   assert.equal(game.lives, lives - 1, "the grace period is a period")
+})
+
+// If nothing can hurt the ship, nothing should be able to see it either. A gun
+// allowed to keep shooting at a ship it cannot hurt is only stacking up rounds to
+// land the moment the grace period runs out, and a cannon that commits to a shot
+// mid-warp fires it into a ship that has only just arrived. The turret controller
+// held its fire for this and the hunter did not, which is the same case answered
+// two ways.
+test("nothing can see the ship while nothing can reach it", () => {
+  const game = liveGame()
+  const player = game.player
+  assert.equal(game.visiblePlayer(), player, "a flying ship is there to be seen")
+
+  player.invincible = CONFIG.INVIN_TIME
+  assert.equal(game.visiblePlayer(), null, "not during the grace period")
+  assert.equal(player.untouchable, true)
+
+  player.invincible = 0
+  player.warp = 0.5
+  player.warpTarget = 1
+  assert.equal(game.visiblePlayer(), null, "nor mid-warp")
+  assert.equal(player.untouchable, true)
+
+  player.warp = 1
+  assert.equal(game.visiblePlayer(), player, "and visible again once it can be hurt")
+  assert.equal(player.untouchable, false)
+})
+
+test("a cannon does not wind up on a ship that has just arrived", () => {
+  // The hunter controller commits: once winding up it fires even if the player
+  // slips away, so starting a wind-up on an untouchable ship lands a shot on one
+  // that has only just become solid.
+  const hunter = Object.keys(SHIP_TYPES).find((name) =>
+    SHIP_TYPES[name].loadout.some((entry) => entry.controller === "hunter"),
+  )
+  assert.ok(hunter, "some ship should carry a committed cannon")
+
+  const game = liveGame()
+  const player = game.player
+  player.x = ARENA.cx
+  player.y = ARENA.cy
+  game.asteroids = [new Asteroid({ vertices: square(ARENA.cx, ARENA.cy - 900, 60) })]
+  const rival = new RivalShip(ARENA.cx + 180, ARENA.cy, hunter, SHIP_TYPES[hunter].loadout)
+  rival.lifeTimer = 99
+  rival.accel = 0
+  game.rivals = [rival]
+  game.lives = 3
+  game.playerLoseLife()
+  const lives = game.lives
+
+  const hold = () => {
+    rival.x = ARENA.cx + 180
+    rival.y = ARENA.cy
+    rival.vx = 0
+    rival.vy = 0
+    rival.angle = Math.PI // pointed at the spawn point the whole time
+    rival.energy = rival.energyMax
+  }
+  const windingUp = () =>
+    rival.hardpoints.some(
+      (hp) => hp.module && hp.module.kind === "weapon" && hp.module.charging > 0,
+    )
+
+  // Only frames that ended still untouchable are asserted: the grace runs out
+  // inside a frame, and the frame it runs out in is fair game.
+  let frames = 0
+  while (frames < 60 * 10) {
+    hold()
+    game.advance(1 / 60)
+    frames++
+    if (!player.untouchable) {
+      break
+    }
+    assert.equal(windingUp(), false, `it began a shot ${(frames / 60).toFixed(2)}s in`)
+    assert.equal(game.lives, lives, "and the respawn survives untouched")
+  }
+  assert.ok(frames > 60, "the untouchable window must be worth measuring")
+
+  // a guard, not a mute: it commits as soon as the ship can be hurt again
+  let committed = false
+  for (let after = 0; after < 60 * 3 && !committed; after++) {
+    hold()
+    game.advance(1 / 60)
+    committed = windingUp() || game.lives < lives
+  }
+  assert.ok(committed, "and it takes the shot once the ship is fair game")
+})
+
+test("a hunting rival does not beeline for a spawn point", () => {
+  const hunter = Object.keys(SHIP_TYPES).find((name) => SHIP_TYPES[name].hunts)
+  const game = liveGame()
+  const player = game.player
+  player.x = ARENA.cx
+  player.y = ARENA.cy
+  game.asteroids = [new Asteroid({ vertices: square(ARENA.cx, ARENA.cy - 900, 60) })]
+  const rival = new RivalShip(ARENA.cx + 700, ARENA.cy, hunter, [])
+  rival.angle = Math.PI // already pointed at the spawn point
+  rival.lifeTimer = 99
+  game.rivals = [rival]
+  game.lives = 3
+  game.playerLoseLife()
+
+  const startedAt = Math.hypot(rival.x - ARENA.cx, rival.y - ARENA.cy)
+  let frames = 0
+  while (player.untouchable && frames < 60 * 10) {
+    game.advance(1 / 60)
+    frames++
+  }
+  assert.ok(frames > 60, "the untouchable window must be worth measuring")
+  const closed = startedAt - Math.hypot(rival.x - ARENA.cx, rival.y - ARENA.cy)
+  // it wanders toward whatever else is in the sector instead; without this it
+  // closed 630 of the 700 units and was waiting on top of the spawn point
+  assert.ok(closed < startedAt / 4, `it closed ${closed.toFixed(0)} of ${startedAt.toFixed(0)}`)
 })
 
 // ---- progression is data ---------------------------------------------------
