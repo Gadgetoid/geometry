@@ -29,6 +29,17 @@ export const normalize = (v) => {
 }
 export const perpendicular = (v) => ({ x: -v.y, y: v.x })
 
+// Distance and direction between two points, which is what every site that aims
+// at something wants. Named `...To` because `distance` and `bearing` are both
+// already in use as locals in the files that import these.
+export const distanceTo = (from, to) => Math.hypot(to.x - from.x, to.y - from.y)
+export const bearingTo = (from, to) => Math.atan2(to.y - from.y, to.x - from.x)
+
+// The shortest way round from one angle to another, in (-PI, PI]. Neither input
+// need be normalised: a ship's heading accumulates without bound, so a wrap that
+// assumes a range will eventually be handed one outside it.
+export const shortestTurn = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from))
+
 // Shoelace polygon area (always positive).
 export function polygonArea(vertices) {
   let area = 0

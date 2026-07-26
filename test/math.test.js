@@ -22,6 +22,9 @@ import {
   convexContact,
   convexPartition,
   supportDistance,
+  distanceTo,
+  bearingTo,
+  shortestTurn,
 } from "../src/math.js"
 
 const point = (x, y) => ({ x, y })
@@ -66,6 +69,45 @@ test("clamp and lerp", () => {
   assert.equal(clamp(11, 0, 10), 10)
   assert.equal(lerp(0, 10, 0.25), 2.5)
   assert.equal(lerp(10, 0, 0.25), 7.5)
+})
+
+test("distanceTo and bearingTo measure between two points", () => {
+  assert.equal(distanceTo(point(0, 0), point(3, 4)), 5)
+  assert.equal(distanceTo(point(3, 4), point(0, 0)), 5, "and either way round")
+  assert.equal(distanceTo(point(-2, -2), point(-2, -2)), 0)
+
+  const from = point(4, 4)
+  assert.equal(bearingTo(from, point(9, 4)), 0, "east")
+  assert.equal(bearingTo(from, point(4, 9)), Math.PI / 2, "south, y running down")
+  assert.equal(bearingTo(from, point(-1, 4)), Math.PI, "west")
+  assert.equal(bearingTo(from, point(4, -1)), -Math.PI / 2, "north")
+  // A turret sitting exactly over its target must not draw a NaN barrel.
+  assert.equal(bearingTo(from, from), 0)
+})
+
+// A heading accumulates without bound (nothing normalises Ship.angle), so this
+// has to hold for inputs well outside one turn. The idiom it replaces,
+// ((to - from + 3 * PI) % 2PI) - PI, is only correct while to - from > -3 * PI.
+test("shortestTurn is the short way round, at any angle", () => {
+  const close = (a, b, what) =>
+    assert.ok(Math.abs(a - b) < 1e-9, `${what}: ${a.toFixed(4)} is not ${b.toFixed(4)}`)
+
+  close(shortestTurn(0, 0), 0, "no turn")
+  close(shortestTurn(0, 1), 1, "a short turn is itself")
+  close(shortestTurn(0, Math.PI * 2 - 0.5), -0.5, "just short of a full turn goes back")
+  close(shortestTurn(0.5, -0.5), -1, "across zero")
+
+  // never further than half a turn, whatever it is given
+  for (const from of [-30, -9.5, -3, 0, 3, 9.5, 30]) {
+    for (const to of [-Math.PI, -1, 0, 1, Math.PI]) {
+      const turn = shortestTurn(from, to)
+      assert.ok(Math.abs(turn) <= Math.PI + 1e-9, `${from} to ${to} turned ${turn}`)
+      // and it lands on the target bearing, give or take whole turns
+      const landed = from + turn
+      const off = Math.abs(((landed - to) / (Math.PI * 2)) % 1)
+      assert.ok(off < 1e-9 || Math.abs(off - 1) < 1e-9, `${from} to ${to} landed at ${landed}`)
+    }
+  }
 })
 
 test("polygonArea is winding-independent", () => {
