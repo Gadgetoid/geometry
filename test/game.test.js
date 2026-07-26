@@ -2466,10 +2466,15 @@ test("a weapon carries its barrel count, for the view to draw", () => {
 })
 
 test("a rock can be armed with the fast gun as well as the slow one", () => {
-  const trait = HAZARD_TRAITS.map((h) => h.traits.gun).find(Boolean)
-  const pooled = trait.guns.map((g) => g.weapon)
-  const fast = pooled.filter((name) => barrelCount(WEAPON_TYPES[name]) > 1)
-  assert.ok(fast.length > 0, `the rock pool ${JSON.stringify(pooled)} should include a fast gun`)
+  // A fast gun is gated to a later sector than the slow one, so find the first
+  // hazard that offers one and fly a sector well past it.
+  const armed = HAZARD_TRAITS.filter((hazard) => hazard.traits.gun)
+  const isFast = (name) => barrelCount(WEAPON_TYPES[name]) > 1
+  const withFast = armed.filter((hazard) => hazard.traits.gun.guns.some((g) => isFast(g.weapon)))
+  const pooled = [...new Set(armed.flatMap((h) => h.traits.gun.guns.map((g) => g.weapon)))]
+  assert.ok(withFast.length > 0, `the rock pools ${JSON.stringify(pooled)} should offer a fast gun`)
+  const fast = pooled.filter(isFast)
+  const sector = Math.min(...withFast.map((hazard) => hazard.fromSector)) + 5
 
   // and one actually turns up, armed and firing, in a real sector
   let sawFast = false
@@ -2477,7 +2482,7 @@ test("a rock can be armed with the fast gun as well as the slow one", () => {
   seeded(9100, () => {
     const game = new Game()
     game.startNewGame()
-    game.startLevel(10)
+    game.startLevel(sector)
     game.phase = "play"
     const player = game.player
     player.warp = 1
