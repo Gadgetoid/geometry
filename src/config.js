@@ -165,10 +165,13 @@ export const CONFIG = {
   LASER_RATE_MULT: [1, 1.45, 1.45, 1.45, 1.45],
   LASER_COST_MULT: [1, 1, 0.55, 0.55, 0.55],
   LASER_DAMAGE_MULT: [1, 1, 1, 1.5, 1.5],
-  // Overdrive: at a level that has it, a beam held to full charge shatters
-  // whatever rock it touches. The beam turns red as soon as the charge is there,
-  // so the guarantee is visible before the shot goes.
+  // Overdrive: at a level that has it, a beam held past full charge winds up over
+  // LASER_OVERDRIVE_TIME seconds, drawing LASER_OVERDRIVE_COST energy a second as
+  // it does. The charge glow fades from green to red across the wind-up and pulses
+  // once it is there, so the guaranteed shatter is visible before the shot goes.
   LASER_OVERDRIVE: [false, false, false, false, true],
+  LASER_OVERDRIVE_TIME: 1.5,
+  LASER_OVERDRIVE_COST: 120,
 }
 
 // ---------------------------------------------------------------------------

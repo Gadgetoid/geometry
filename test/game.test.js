@@ -65,11 +65,12 @@ function liveGame() {
 // Fire the player's laser at a charge held for it. The reload rolls on, so the
 // cooldown is cleared and the cell refilled: a probe that skips either measures
 // a shot that never went.
-function fullChargeShot(game, chargeFraction = 1) {
+function fullChargeShot(game, chargeFraction = 1, overdrive = 0) {
   const player = game.player,
     weapon = player.mainWeapon
   weapon.cooldown = 0
   weapon.charge = weapon.type.chargeMax * chargeFraction
+  weapon.overdrive = overdrive
   player.energy = player.energyMax
   game.laserShots = []
   player.fireLaser(game)
@@ -1860,40 +1861,93 @@ test("a laser level that pays for damage lands more of it", () => {
   assert.ok(damageAt(first) > damageAt(first - 1), "and land more than the level below it")
 })
 
-test("overdrive shatters a rock, but only at full charge and only where it is sold", () => {
-  const fire = (level, chargeFraction) => {
+test("overdrive shatters a rock, but only wound up and only where it is sold", () => {
+  const fire = (level, overdrive) => {
     const game = liveGame()
     game.upgrades.laser = level
     const player = game.player
     player.x = 300
     player.y = 320
     player.angle = 0
-    const rock = new Asteroid({ vertices: square(600, 320, 80) })
-    game.asteroids = [rock]
-    fullChargeShot(game, chargeFraction)
+    const rocks = [
+      new Asteroid({ vertices: square(600, 320, 60) }),
+      new Asteroid({ vertices: square(800, 320, 60) }),
+    ]
+    game.asteroids = [...rocks]
+    fullChargeShot(game, 1, overdrive)
     return {
-      shattered: !game.asteroids.includes(rock) && game.oreChunks.length > 0,
-      colour: game.laserShots[0].color,
+      shattered: rocks.every((rock) => !game.asteroids.includes(rock)) && game.oreChunks.length > 0,
+      shots: game.laserShots,
     }
   }
   const top = CONFIG.LASER_OVERDRIVE.length - 1
   assert.equal(CONFIG.LASER_OVERDRIVE[top], true, "the top level should be the one that has it")
-  assert.equal(fire(top, 1).shattered, true, "a full charge at the top level shatters")
-  assert.equal(fire(top, 0.9).shattered, false, "short of full it does not")
+  assert.equal(fire(top, 1).shattered, true, "a wound-up shot shatters every rock it reaches")
+  assert.equal(fire(top, 0.9).shattered, false, "short of wound up it does not")
   assert.equal(fire(top - 1, 1).shattered, false, "and neither does the level below")
-  // and the guarantee is visible: the beam is drawn in its own colour
-  assert.equal(fire(top, 1).colour, PALETTE.player.overdrive)
-  assert.equal(fire(top, 0.9).colour, WEAPON_TYPES.playerLaser.colour)
+  // the guarantee is visible: the beam is drawn in its own colour
+  assert.equal(fire(top, 1).shots[0].color, PALETTE.player.overdrive)
+  assert.equal(fire(top, 0.9).shots[0].color, WEAPON_TYPES.playerLaser.colour)
+
+  // and the effect beam is one shot the length of the beam, not one per rock
+  const effects = fire(top, 1).shots.filter((shot) => shot.color === PALETTE.ore.shatterBeam)
+  assert.equal(effects.length, 1, "two rocks shattered, one effect beam")
+  const [drawn] = effects[0].beams
+  const fired = fire(top, 1).shots[0].beams[0]
+  assert.equal(drawn.b.x, fired.b.x, "and it runs the whole length of the shot")
+  assert.equal(drawn.b.y, fired.b.y)
 })
 
-test("the charge glow turns over at exactly the charge the shot does", () => {
+test("overdrive winds up past full charge, on time and energy it draws for itself", () => {
   const game = liveGame()
   game.upgrades.laser = CONFIG.LASER_OVERDRIVE.length - 1
-  const weapon = game.player.mainWeapon
-  weapon.charge = weapon.type.chargeMax - 1
-  assert.equal(game.player.overdriven, false)
-  weapon.charge = weapon.type.chargeMax
-  assert.equal(game.player.overdriven, true)
+  const player = game.player,
+    weapon = player.mainWeapon
+  game.holding = (name) => name === "fire"
+
+  // the ordinary charge first, which reaches its own ceiling and stops
+  for (let frame = 0; frame < 300 && weapon.charge < weapon.type.chargeMax; frame++) {
+    player.energy = player.energyMax
+    player.update(1 / 60, game)
+  }
+  assert.equal(weapon.charge, weapon.type.chargeMax, "the charge fills")
+  assert.equal(player.overdriveWind, 0, "and no overdrive is wound onto it yet")
+
+  // then the wind-up, at its own rate and its own price
+  player.energy = player.energyMax
+  const before = player.energy
+  let held = 0
+  while (!player.overdriven && held < 10) {
+    player.update(1 / 60, game)
+    held += 1 / 60
+  }
+  assert.ok(player.overdriven, "holding on reaches overdrive")
+  assert.ok(
+    Math.abs(held - CONFIG.LASER_OVERDRIVE_TIME) < 0.05,
+    `it should take ${CONFIG.LASER_OVERDRIVE_TIME}s, took ${held.toFixed(2)}s`,
+  )
+  const drawn = before - player.energy
+  const expected = CONFIG.LASER_OVERDRIVE_TIME * CONFIG.LASER_OVERDRIVE_COST
+  assert.ok(Math.abs(drawn - expected) < 15, `it should draw ${expected}, drew ${drawn.toFixed(1)}`)
+
+  // and letting go drops the whole shot, wind-up and all
+  game.holding = () => false
+  player.update(1 / 60, game)
+  assert.equal(weapon.charge, 0)
+  assert.equal(weapon.overdrive, 0)
+})
+
+test("a level without overdrive never winds one up, however long it is held", () => {
+  const game = liveGame()
+  game.upgrades.laser = CONFIG.LASER_OVERDRIVE.findIndex((has) => !has)
+  const player = game.player
+  game.holding = (name) => name === "fire"
+  for (let frame = 0; frame < 400; frame++) {
+    player.energy = player.energyMax
+    player.update(1 / 60, game)
+  }
+  assert.equal(player.overdriveWind, 0)
+  assert.equal(player.overdriven, false)
 })
 
 // ---- what the shop does with a powerup -------------------------------------

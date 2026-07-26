@@ -439,6 +439,7 @@ export class Game {
 
   applyBeam(beam, attacker, weapon, damage = weapon.type.damage) {
     let didHit = false
+    let shatterDrawn = false // one overdrive effect beam per shot, not per rock
     // The beam is a capsule this thick either side of its centreline, which is
     // the bright core the view draws. Every surface it can strike is grown by it,
     // so a shot that visibly laps a target is a shot that connects.
@@ -549,24 +550,21 @@ export class Game {
         this.shatterToOre(asteroid)
         didHit = true
         this.score += CONFIG.SLICE_SCORE
-        // the effect beam follows the laser trajectory, ending level with the
-        // rock (projected onto the beam) rather than veering to its centre
-        const reach =
-          (asteroid.center.x - beam.a.x) * beam.dir.x + (asteroid.center.y - beam.a.y) * beam.dir.y
-        this.laserShots.push({
-          beams: [
-            {
-              a: { x: beam.a.x, y: beam.a.y },
-              b: { x: beam.a.x + beam.dir.x * reach, y: beam.a.y + beam.dir.y * reach },
-              dir: beam.dir,
-            },
-          ],
-          age: 0,
-          color: PALETTE.ore.shatterBeam,
-          width: 5.5,
-          glow: 26,
-          life: 0.5,
-        })
+        // One effect beam for the shot, the whole length of it, however many rocks
+        // it goes on to shatter.
+        if (!shatterDrawn) {
+          shatterDrawn = true
+          this.laserShots.push({
+            beams: [
+              { a: { x: beam.a.x, y: beam.a.y }, b: { x: beam.b.x, y: beam.b.y }, dir: beam.dir },
+            ],
+            age: 0,
+            color: PALETTE.ore.shatterBeam,
+            width: 5.5,
+            glow: 26,
+            life: 0.5,
+          })
+        }
         this.burst(
           asteroid.center.x,
           asteroid.center.y,
@@ -1061,7 +1059,7 @@ export class Game {
     p.vy = 0
     p.energy = this.maxEnergy() * 0.6
     p.invincible = CONFIG.INVIN_TIME
-    p.mainWeapon.charge = 0
+    p.mainWeapon.release()
     p.beginWarpIn(CONFIG.RESPAWN_PAUSE)
     this.phase = "arriving"
     this.clearInput()
@@ -1892,7 +1890,7 @@ export class Game {
     if (this.canFly() && !this.paused) {
       this.player.fireLaser(this)
     }
-    this.player.mainWeapon.charge = 0
+    this.player.mainWeapon.release()
   }
 
   // ---- keyboard --------------------------------------------------------

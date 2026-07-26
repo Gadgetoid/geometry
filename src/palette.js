@@ -10,6 +10,14 @@
 // backdrop hues are generated per sector in background.js; neither is part of
 // this vocabulary.
 
+// Blend two "#rrggbb" colours, `t` running 0 at `from` to 1 at `to`. For an
+// element that crosses between two named colours rather than holding either.
+export function mixColour(from, to, t) {
+  const channel = (hex, at) => parseInt(hex.slice(at, at + 2), 16)
+  const blend = (at) => Math.round(channel(from, at) + (channel(to, at) - channel(from, at)) * t)
+  return `rgb(${blend(1)},${blend(3)},${blend(5)})`
+}
+
 export const PALETTE = {
   // deep space, behind everything
   space: "#02040a",

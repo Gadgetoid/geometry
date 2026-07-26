@@ -46,7 +46,7 @@ import {
   barrelCount,
 } from "./config.js"
 import { Sound } from "./audio.js"
-import { PALETTE } from "./palette.js"
+import { PALETTE, mixColour } from "./palette.js"
 
 const SINGLE_BEAM_OFFSETS = [0] // the player's laser without the multi powerup
 
@@ -528,8 +528,15 @@ export class Weapon {
     this.barrels = barrelCount(this.type)
     this.cooldown = this.rollReload() * randRange(0.15, 1) // random phase so turrets don't fire in unison
     this.charge = 0
+    this.overdrive = 0 // 0 to 1 across the wind-up past full charge
     this.charging = 0 // wind-up time left before a charged beam fires
     this.chargeDuration = 0
+  }
+
+  // Drop a held charge, including any overdrive wound onto it.
+  release() {
+    this.charge = 0
+    this.overdrive = 0
   }
 
   rollReload() {
@@ -1304,7 +1311,7 @@ export class PlayerShip extends Ship {
       game.stats.hits++
     }
     w.cooldown = w.type.reload
-    w.charge = 0
+    w.release()
     Sound.fire(0.9 + 0.35 * chargeFrac) // pitch rises slightly with charge
   }
 
@@ -1313,12 +1320,17 @@ export class PlayerShip extends Ship {
     return this.buffField("beamLengthMult", 1)
   }
 
-  // A laser held to full charge, at a level that has overdrive. The shot shatters
-  // any rock it reaches, and the beam and the charge glow turn red while it is
-  // held there, so the guarantee is visible before it is fired.
+  // A laser wound all the way up, at a level that has overdrive. The shot shatters
+  // any rock it reaches.
   get overdriven() {
+    return this.overdriveWind >= 1
+  }
+
+  // How far the shot is into its overdrive wind-up, 0 to 1. Zero at a level that
+  // does not have overdrive, so the glow never leaves its usual colour.
+  get overdriveWind() {
     const w = this.mainWeapon
-    return !!(CONFIG.LASER_OVERDRIVE[this.game.upgrades.laser] && w && w.charge >= w.type.chargeMax)
+    return CONFIG.LASER_OVERDRIVE[this.game.upgrades.laser] && w ? w.overdrive : 0
   }
 
   // Damage multiplier for the charge held, running across the usable charge
@@ -1474,14 +1486,21 @@ export class PlayerShip extends Ship {
       const rate = w.type.chargeRate * CONFIG.LASER_RATE_MULT[game.upgrades.laser]
       const cost = w.type.chargeCost * CONFIG.LASER_COST_MULT[game.upgrades.laser]
       if (this.energy > 4 || freeShot) {
-        w.charge = Math.min(w.type.chargeMax, w.charge + rate * dt)
+        // Past full charge the hold keeps drawing, winding the shot up to overdrive
+        // at its own rate and its own price.
+        const winding = w.charge >= w.type.chargeMax && CONFIG.LASER_OVERDRIVE[game.upgrades.laser]
+        if (winding) {
+          w.overdrive = Math.min(1, w.overdrive + dt / CONFIG.LASER_OVERDRIVE_TIME)
+        } else {
+          w.charge = Math.min(w.type.chargeMax, w.charge + rate * dt)
+        }
         if (!freeShot) {
-          this.energy -= cost * dt
+          this.energy -= (winding ? CONFIG.LASER_OVERDRIVE_COST : cost) * dt
         }
       }
     } else {
       if (w.charge > 0) {
-        w.charge = 0
+        w.release()
       }
       if (!this.thrusting) {
         this.energy = Math.min(
@@ -1700,16 +1719,20 @@ export class PlayerShip extends Ship {
       const nose = this.mountWorld(this.nose.local)
       const length = w.charge * this.beamLengthMult() + w.type.chargeReach
       const frac = clamp(w.charge / w.type.chargeMax, 0.3, 1)
+      // The glow crosses to the overdrive colour across the wind-up and pulses once
+      // it is there, so a primed shot reads differently from one still winding up.
+      const wind = this.overdriveWind
+      const pulse = this.overdriven ? 0.78 + 0.22 * Math.sin(game.gameTime * 11) : 1
       renderer.line(
         nose.x,
         nose.y,
         nose.x + Math.cos(this.angle) * length,
         nose.y + Math.sin(this.angle) * length,
         {
-          color: this.overdriven ? PALETTE.player.overdrive : PALETTE.player.charge,
-          alpha: frac,
-          width: 1.5 + 2.5 * (w.charge / w.type.chargeMax),
-          glow: this.overdriven ? 22 : 14,
+          color: mixColour(PALETTE.player.charge, PALETTE.player.overdrive, wind),
+          alpha: frac * pulse,
+          width: 1.5 + 2.5 * (w.charge / w.type.chargeMax) + 2 * wind,
+          glow: 14 + 10 * wind,
         },
       )
     }
