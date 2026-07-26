@@ -751,7 +751,24 @@ export class Game {
         pool.push(hazard.traits)
       }
     }
-    return pool.length ? { ...pick(pool) } : {}
+    return pool.length ? this.#traitsForSector(pick(pool), sector) : {}
+  }
+
+  // Which of a gun trait's pool a sector may arm a rock from. Each kind joins at
+  // its own sector, so a late sector arms its rocks from a broader mix than an
+  // early one without arming any more of them.
+  gunsForSector(gun, sector) {
+    return gun.guns.filter((entry) => sector >= (entry.fromSector ?? 0))
+  }
+
+  // Nothing downstream knows which sector it is in, so the pool is cut to size
+  // here, on the copy the spawn is handed.
+  #traitsForSector(traits, sector) {
+    const rolled = { ...traits }
+    if (rolled.gun && rolled.gun.guns) {
+      rolled.gun = { ...rolled.gun, guns: this.gunsForSector(rolled.gun, sector) }
+    }
+    return rolled
   }
 
   planLevel(sector) {

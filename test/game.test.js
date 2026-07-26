@@ -2792,15 +2792,20 @@ test("a weapon carries its barrel count, for the view to draw", () => {
 })
 
 test("a rock can be armed with the fast gun as well as the slow one", () => {
-  // A fast gun is gated to a later sector than the slow one, so find the first
-  // hazard that offers one and fly a sector well past it.
+  // A fast gun joins the pool at a later sector than the slow one, so find where
+  // one arrives and fly a sector well past it.
   const armed = HAZARD_TRAITS.filter((hazard) => hazard.traits.gun)
   const isFast = (name) => barrelCount(WEAPON_TYPES[name]) > 1
-  const withFast = armed.filter((hazard) => hazard.traits.gun.guns.some((g) => isFast(g.weapon)))
-  const pooled = [...new Set(armed.flatMap((h) => h.traits.gun.guns.map((g) => g.weapon)))]
-  assert.ok(withFast.length > 0, `the rock pools ${JSON.stringify(pooled)} should offer a fast gun`)
-  const fast = pooled.filter(isFast)
-  const sector = Math.min(...withFast.map((hazard) => hazard.fromSector)) + 5
+  const pool = armed.flatMap((hazard) => hazard.traits.gun.guns)
+  const fastGuns = pool.filter((gun) => isFast(gun.weapon))
+  const pooled = [...new Set(pool.map((gun) => gun.weapon))]
+  assert.ok(fastGuns.length > 0, `the rock pools ${JSON.stringify(pooled)} should offer a fast gun`)
+  const fast = [...new Set(fastGuns.map((gun) => gun.weapon))]
+  const sector =
+    Math.max(
+      ...armed.map((hazard) => hazard.fromSector),
+      ...fastGuns.map((gun) => gun.fromSector ?? 0),
+    ) + 5
 
   // and one actually turns up, armed and firing, in a real sector
   let sawFast = false
@@ -2834,6 +2839,45 @@ test("a rock can be armed with the fast gun as well as the slow one", () => {
   })
   assert.ok(sawFast, "a sector should arm some rock with it")
   assert.ok(rounds > 0, "and it should be firing")
+})
+
+test("a gun pool always has something to roll, at every sector it is offered", () => {
+  const game = new Game()
+  for (const hazard of HAZARD_TRAITS.filter((entry) => entry.traits.gun)) {
+    for (let sector = hazard.fromSector; sector <= hazard.fromSector + 40; sector++) {
+      const guns = game.gunsForSector(hazard.traits.gun, sector)
+      assert.ok(guns.length > 0, `an armed rock at sector ${sector} has nothing to mount`)
+    }
+  }
+})
+
+test("a gun joins the pool at its own sector, and the rocks are no more armed for it", () => {
+  const game = new Game()
+  const pool = HAZARD_TRAITS.find((entry) => entry.traits.gun).traits.gun
+  const late = pool.guns.find((gun) => gun.fromSector)
+  assert.ok(late, "some gun should arrive later than the rest")
+  const namesAt = (sector) => game.gunsForSector(pool, sector).map((gun) => gun.weapon)
+  assert.ok(!namesAt(late.fromSector - 1).includes(late.weapon), "not before its sector")
+  assert.ok(namesAt(late.fromSector).includes(late.weapon), "and in from it on")
+
+  // the mix widens; the share of rocks carrying any gun at all does not
+  const armedShare = (sector) => {
+    let armed = 0
+    seeded(4700 + sector, () => {
+      for (let roll = 0; roll < 4000; roll++) {
+        if (game.rollHazardTraits(sector).gun) {
+          armed++
+        }
+      }
+    })
+    return armed / 4000
+  }
+  const before = armedShare(late.fromSector - 1),
+    after = armedShare(late.fromSector + 5)
+  assert.ok(
+    Math.abs(after - before) < 0.05,
+    `armed share went ${(before * 100).toFixed(1)}% to ${(after * 100).toFixed(1)}%`,
+  )
 })
 
 test("a rock rolls each turret from the trait's pool", () => {
