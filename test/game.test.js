@@ -2595,6 +2595,27 @@ test("a loose powerup names itself for a ship close by, when help text is on", (
   assert.ok(!labels(near, false).includes(POWERUP_TYPES.magnet.label), "nor with help text off")
 })
 
+test("the shop stocks only what the registry says is for sale", () => {
+  const game = liveGame()
+  game.devMode = true
+  assert.deepEqual(game.buyablePowerups(), POWERUP_IDS, "everything is for sale today")
+  for (const id of POWERUP_IDS) {
+    assert.equal(typeof POWERUP_TYPES[id].buyable, "boolean", `${id} must say either way`)
+  }
+  // and one taken off the shelf is gone from the list, dev mode or not
+  const id = POWERUP_IDS[0]
+  const was = POWERUP_TYPES[id].buyable
+  POWERUP_TYPES[id].buyable = false
+  try {
+    assert.ok(!game.buyablePowerups().includes(id), "not offered in dev mode")
+    game.findPowerup(id)
+    game.devMode = false
+    assert.ok(!game.buyablePowerups().includes(id), "nor once the run has found one")
+  } finally {
+    POWERUP_TYPES[id].buyable = was
+  }
+})
+
 // ---- progression is data ---------------------------------------------------
 
 // ---- an exploding rock and its neighbours ---------------------------------

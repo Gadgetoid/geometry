@@ -944,6 +944,8 @@ export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
 //   icon    single character drawn on the pickup and in the inventory slot
 //   colour   pickup outline, inventory slot and buff text
 //   cost     ore price in the shop, once the run has found one
+//   buyable  whether the shop will ever stock it; one that is not can still be
+//            found in a sector, it just cannot be bought
 //   mode     how using it works, one of:
 //              pulse  one-off effect, then the cooldown
 //              single one-off effect that is used up, emptying the slot
@@ -986,6 +988,7 @@ export const POWERUP_TYPES = {
     icon: "R",
     colour: PALETTE.powerup.repel,
     cost: 90,
+    buyable: true,
     mode: "pulse",
     energy: 0.22,
     cooldown: 4,
@@ -1024,6 +1027,7 @@ export const POWERUP_TYPES = {
     icon: "F",
     colour: PALETTE.powerup.refuel,
     cost: 70,
+    buyable: true,
     mode: "single",
     energy: 0,
     apply: (game, player, type) => {
@@ -1037,6 +1041,7 @@ export const POWERUP_TYPES = {
     icon: "B",
     colour: PALETTE.powerup.booster,
     cost: 140,
+    buyable: true,
     mode: "timed",
     energy: 0.38,
     cooldown: 60,
@@ -1055,6 +1060,7 @@ export const POWERUP_TYPES = {
     icon: "L",
     colour: PALETTE.powerup.multi,
     cost: 130,
+    buyable: true,
     mode: "timed",
     energy: 0.44,
     cooldown: 75,
@@ -1067,6 +1073,7 @@ export const POWERUP_TYPES = {
     icon: "M",
     colour: PALETTE.powerup.magnet,
     cost: 100,
+    buyable: true,
     mode: "timed",
     energy: 0.19,
     cooldown: 45,
@@ -1080,6 +1087,7 @@ export const POWERUP_TYPES = {
     icon: "S",
     colour: PALETTE.powerup.stealth,
     cost: 160,
+    buyable: true,
     mode: "toggle",
     drain: 0.2,
     cooldown: 2,

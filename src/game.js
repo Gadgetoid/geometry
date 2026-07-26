@@ -1250,10 +1250,13 @@ export class Game {
     this.seenPowerups.add(id)
   }
 
-  // What the shop can put in an empty slot. Dev mode stocks the lot, so a new
-  // powerup can be tried without hunting for one first.
+  // What the shop can put in an empty slot. Dev mode waives having found one, so
+  // a new powerup can be tried without hunting for it, but not the registry's own
+  // say on whether it is for sale at all.
   buyablePowerups() {
-    return POWERUP_IDS.filter((id) => this.devMode || this.seenPowerups.has(id))
+    return POWERUP_IDS.filter(
+      (id) => POWERUP_TYPES[id].buyable && (this.devMode || this.seenPowerups.has(id)),
+    )
   }
 
   // ---- per-frame update ------------------------------------------------
