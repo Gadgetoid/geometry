@@ -1942,27 +1942,11 @@ export class RivalShip extends Ship {
       this.arrived = true
     }
 
-    let target = null,
-      nearest = 1e9
-    for (const chunk of game.oreChunks) {
-      const d = Math.hypot(chunk.x - this.x, chunk.y - this.y)
-      if (d < nearest) {
-        nearest = d
-        target = chunk
-      }
-    }
-    const wantsOre = target && nearest < CONFIG.RIVAL_ORE_INTEREST
-    if (!wantsOre) {
-      target = null
-      nearest = 1e9
-      for (const asteroid of game.asteroids) {
-        const d = Math.hypot(asteroid.center.x - this.x, asteroid.center.y - this.y)
-        if (d < nearest) {
-          nearest = d
-          target = asteroid.center
-        }
-      }
-    }
+    // Ore close by is worth a detour; with none in reach it makes for the nearest
+    // rock, which is where ore comes from. A rock's own x/y is its centroid, so
+    // steering at the body steers at the middle of it.
+    const found = game.nearestOre(this, CONFIG.RIVAL_ORE_INTEREST) || game.nearestAsteroid(this)
+    const target = found && found.target
     if (this.lifeTimer <= 0) {
       this.leaving = true
     }
@@ -1976,7 +1960,7 @@ export class RivalShip extends Ship {
       : this.hunts && player
         ? { x: player.x, y: player.y }
         : target || { x: ARENA.cx, y: ARENA.cy }
-    const wantAngle = Math.atan2(goal.y - this.y, goal.x - this.x)
+    const wantAngle = bearingTo(this, goal)
     const angleDelta = ((wantAngle - this.angle + Math.PI * 3) % TAU) - Math.PI
     this.angle += clamp(angleDelta, -this.turnRate * dt, this.turnRate * dt)
     this.vx += Math.cos(this.angle) * this.accel * dt
