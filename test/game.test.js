@@ -2557,6 +2557,44 @@ test("the defense turret holds fire in stealth, but still answers the player's h
   assert.ok(armed(true, true) > 0, "unless the player is working it by hand")
 })
 
+test("a powerup left too long flashes out rather than blinking away", () => {
+  const game = liveGame()
+  game.player.x = -9000 // well clear, so it expires rather than being collected
+  game.player.y = -9000
+  const pickup = new Powerup(ARENA.cx, ARENA.cy, 0, 0, "magnet")
+  game.powerupPickups = [pickup]
+  pickup.life = CONFIG.EXPIRY_WARN
+  game.particles = []
+  for (let frame = 0; frame < Math.ceil(CONFIG.EXPIRY_WARN * 60) + 2; frame++) {
+    pickup.update(1 / 60, game)
+  }
+  assert.equal(pickup.dead, true, "it went")
+  assert.ok(game.particles.length > 0, "and left something behind when it did")
+})
+
+test("a loose powerup names itself for a ship close by, when help text is on", () => {
+  // Counted as drawn text, since the label is the whole point of the feature.
+  const labels = (distance, help) => {
+    const game = liveGame()
+    game.settings.help = help
+    game.player.x = ARENA.cx
+    game.player.y = ARENA.cy
+    const pickup = new Powerup(ARENA.cx + distance, ARENA.cy, 0, 0, "magnet")
+    const drawn = []
+    const renderer = { strokePoly() {}, line() {}, circle() {}, text: (str) => drawn.push(str) }
+    pickup.draw(renderer, game)
+    return drawn
+  }
+  const near = CONFIG.POWERUP_LABEL_RANGE * 0.5,
+    far = CONFIG.POWERUP_LABEL_RANGE * 1.5
+  assert.ok(labels(near, true).includes(POWERUP_TYPES.magnet.label), "named when close by")
+  assert.ok(
+    !labels(far, true).includes(POWERUP_TYPES.magnet.label),
+    "and not from across the sector",
+  )
+  assert.ok(!labels(near, false).includes(POWERUP_TYPES.magnet.label), "nor with help text off")
+})
+
 // ---- progression is data ---------------------------------------------------
 
 // ---- an exploding rock and its neighbours ---------------------------------

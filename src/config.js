@@ -121,6 +121,12 @@ export const CONFIG = {
   ORE_DRAG: 0.55, // velocity retained per second
   ORE_SIZE: [4, 6.5],
   POWERUP_LIFE: 26,
+  // Seconds of flashing before an uncollected ore chunk or powerup goes, so the
+  // last of a run at one is not a surprise.
+  EXPIRY_WARN: 6,
+  // How close the ship has to be for a loose powerup to name itself, when help
+  // text is on.
+  POWERUP_LABEL_RANGE: 260,
 
   // camera, pacing and end-of-sector scoring
   CAMERA_FOLLOW: 6, // how quickly the view eases toward the ship
@@ -1130,6 +1136,12 @@ export const PAUSE_MENU = [
     value: (g) => (g.settings.crt ? "ON" : "OFF"),
     action: (g) => g.setCrt(!g.settings.crt),
     adjust: (g, step) => g.setCrt(step > 0),
+  },
+  {
+    name: "HELP TEXT",
+    value: (g) => (g.settings.help ? "ON" : "OFF"),
+    action: (g) => g.setHelp(!g.settings.help),
+    adjust: (g, step) => g.setHelp(step > 0),
   },
   { name: "CONTROLS", value: () => ">", action: (g) => g.openPausePage("controls") },
   {

@@ -2659,6 +2659,12 @@ export class Asteroid extends Entity {
 // ---------------------------------------------------------------------------
 // Ore chunk and powerup pickup (simple drifting collectables).
 // ---------------------------------------------------------------------------
+// How close a collectable is to expiring, 0 until its last few seconds and 1 as
+// it goes. Drives the flash that warns it is about to be lost.
+function expiryUrgency(life) {
+  return life < CONFIG.EXPIRY_WARN ? clamp(1 - life / CONFIG.EXPIRY_WARN, 0, 1) : 0
+}
+
 export class Ore extends Entity {
   constructor(x, y, vx, vy) {
     super(x, y)
@@ -2695,7 +2701,7 @@ export class Ore extends Entity {
   }
 
   draw(renderer, game) {
-    const urgency = this.life < 6 ? clamp(1 - this.life / 6, 0, 1) : 0
+    const urgency = expiryUrgency(this.life)
     const flash = urgency * (0.5 + 0.5 * Math.sin(game.gameTime * (7 + urgency * 36)))
     const g = lerp(126, 255, flash) | 0,
       b = lerp(224, 255, flash) | 0,
@@ -2729,7 +2735,7 @@ export class Powerup extends Entity {
     this.drag = 1
   }
 
-  update(dt) {
+  update(dt, game) {
     this.life -= dt
     this.arming = Math.max(0, this.arming - dt)
     this.angle += dt * 1.4
@@ -2740,22 +2746,32 @@ export class Powerup extends Entity {
     // instead of leaving the sector.
     this.confine(0.5, 24)
     if (this.life <= 0) {
+      const spec = POWERUP_TYPES[this.type]
+      game.burst(this.x, this.y, randInt(10, 16), spec.colour, 40, 170, 0.5)
+      game.ring(this.x, this.y, 10, spec.colour, 90, 0.4)
       this.dead = true
     }
   }
 
   draw(renderer, game) {
     const spec = POWERUP_TYPES[this.type]
-    const colour = spec.colour,
+    // Two flashes with nothing to do with each other: one still arming cannot be
+    // picked up, and one near the end of its life is about to be lost.
+    const urgency = expiryUrgency(this.life)
+    const flash = urgency * (0.5 + 0.5 * Math.sin(game.gameTime * (7 + urgency * 36)))
+    const alpha = this.arming > 0 ? 0.35 + 0.4 * (Math.sin(game.gameTime * 22) + 1) * 0.5 : 1
+    const colour = mixColour(spec.colour, PALETTE.white, flash),
       pts = []
     for (let i = 0; i < 6; i++) {
       const a = this.angle + (i / 6) * TAU
       pts.push({ x: this.x + Math.cos(a) * 12, y: this.y + Math.sin(a) * 12 })
     }
-    // One still arming flashes, so a ship flying over it can see it is not there
-    // to be taken yet.
-    const alpha = this.arming > 0 ? 0.35 + 0.4 * (Math.sin(game.gameTime * 22) + 1) * 0.5 : 1
-    renderer.strokePoly(pts, { color: colour, width: 1.7, glow: 14, alpha })
+    renderer.strokePoly(pts, {
+      color: colour,
+      width: 1.7 + 0.8 * flash,
+      glow: 14 + 12 * flash,
+      alpha,
+    })
     renderer.text(spec.icon, this.x, this.y, {
       size: 12,
       color: colour,
@@ -2764,6 +2780,45 @@ export class Powerup extends Entity {
       bold: true,
       glow: 14,
       alpha,
+    })
+    this.#label(renderer, game, spec, alpha)
+  }
+
+  // Name it on a leader line for a ship close enough to be going for it, so a
+  // pickup does not have to be recognised by its letter. Help text is a setting,
+  // and it takes the HUD's scale since it is there to be read.
+  #label(renderer, game, spec, alpha) {
+    const player = game.player
+    if (!game.settings.help || !player || !game.canFly()) {
+      return
+    }
+    const range = CONFIG.POWERUP_LABEL_RANGE
+    const distance = Math.hypot(this.x - player.x, this.y - player.y)
+    if (distance > range) {
+      return
+    }
+    const scale = game.settings.uiScale
+    const fade = clamp((1 - distance / range) * 2.5, 0, 1) * alpha
+    const rise = 20 * scale,
+      run = 14 * scale
+    const cornerX = this.x + rise,
+      cornerY = this.y - rise
+    renderer.line(this.x + 9, this.y - 9, cornerX, cornerY, {
+      color: spec.colour,
+      width: 1,
+      alpha: fade * 0.8,
+    })
+    renderer.line(cornerX, cornerY, cornerX + run, cornerY, {
+      color: spec.colour,
+      width: 1,
+      alpha: fade * 0.8,
+    })
+    renderer.text(spec.label, cornerX + run + 4 * scale, cornerY + 3 * scale, {
+      size: 10 * scale,
+      color: spec.colour,
+      baseline: "middle",
+      glow: 6,
+      alpha: fade,
     })
   }
 }

@@ -154,7 +154,7 @@ export class Game {
     this.pauseConfirming = null // a row waiting to be confirmed a second time
     // Settings live here rather than on the things they affect, so one place holds
     // them and main.js applies whatever changes. Loaded below.
-    this.settings = { volume: 0.8, sound: true, crt: true }
+    this.settings = { volume: 0.8, sound: true, crt: true, help: true }
     // Control bindings, and the row waiting for a key or button when one is being
     // rebound. Menu navigation is never in here; see BINDABLE_CONTROLS.
     this.bindings = freshBindings()
@@ -1537,6 +1537,10 @@ export class Game {
   }
   setCrt(on) {
     this.settings.crt = !!on
+    this.rememberSettings()
+  }
+  setHelp(on) {
+    this.settings.help = !!on
     this.rememberSettings()
   }
   applySound() {
