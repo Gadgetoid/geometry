@@ -839,21 +839,36 @@ export class GameView {
   }
 
   // The pop-over on one powerup slot, hung under the slot it belongs to and pulled
-  // back inside the right-hand column where it would otherwise overhang.
+  // back inside the right-hand column where it would otherwise overhang. It is
+  // headed by what is in the slot, so which one is being worked on is never in
+  // doubt once the panel covers the row.
   #slotPopover(game, rightX, slotsY) {
     const r = this.renderer,
       { slot, selection } = game.slotMenu,
       rows = game.slotMenuRows(slot)
     const { x } = this.#slotBox(rightX, slot)
+    const spec = POWERUP_TYPES[game.slotItem(slot)]
+    const titleHeight = 20
     const width = 156,
       rowHeight = 20,
-      height = rows.length * rowHeight + 28 // the rows, plus the line saying how to work them
+      // the title, the rows, and the line saying how to work them
+      height = titleHeight + rows.length * rowHeight + 28
     const panelX = Math.min(x - 6, rightX - width),
       panelY = slotsY + 15
     r.rect(panelX, panelY, width, height, { fill: "rgba(4,8,16,.95)" })
     r.rect(panelX, panelY, width, height, { stroke: PALETTE.ui.accent, width: 1.2, glow: 8 })
+    r.text(spec ? spec.label : "EMPTY", panelX + width / 2, panelY + 15, {
+      size: 12,
+      bold: true,
+      color: spec ? spec.colour : PALETTE.text.faint,
+      align: "center",
+    })
+    r.line(panelX + 6, panelY + titleHeight + 1, panelX + width - 6, panelY + titleHeight + 1, {
+      color: PALETTE.ui.edge,
+      width: 1,
+    })
     rows.forEach((row, index) => {
-      const rowY = panelY + 18 + index * rowHeight,
+      const rowY = panelY + titleHeight + 18 + index * rowHeight,
         on = selection === index
       if (on) {
         r.rect(panelX + 3, rowY - 12, width - 6, rowHeight - 3, { fill: "rgba(95,215,255,.16)" })
