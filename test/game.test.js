@@ -2955,6 +2955,85 @@ test("a nearest scan answers for every collection it is asked about", () => {
   assert.ok(Math.abs(game.nearestOre(from).distance - 50) < 1e-9)
 })
 
+// A turret that swings toward a ship nothing can see gives its position away, so
+// the drawn bearing has to ask the same question the controller does. Rock
+// turrets were fixed for this and ships were missed.
+function drawnBearings(game, body) {
+  const bearings = []
+  const renderer = {
+    strokePoly() {},
+    circle() {},
+    rect() {},
+    text() {},
+    line: (ax, ay, bx, by) => bearings.push(Math.atan2(by - ay, bx - ax)),
+  }
+  body.draw(renderer, game)
+  return bearings
+}
+
+function hideThePlayer(game) {
+  game.player.energy = game.player.energyMax
+  equip(game, 0, "stealth")
+  game.usePowerupSlot(0)
+  assert.equal(game.visiblePlayer(), null, "the pose must actually be hidden")
+}
+
+test("a turret does not track a ship nothing can see", () => {
+  const poses = [
+    [400, 0],
+    [0, 400],
+    [-400, 0],
+  ]
+  const swing = (bearings) => Math.max(...bearings) - Math.min(...bearings)
+
+  for (const armed of ["a rival", "a rock"]) {
+    const build = (game) => {
+      if (armed === "a rival") {
+        const rival = new RivalShip(ARENA.cx, ARENA.cy, "frigate", [
+          { hp: 1, weapon: "autocannon", controller: "turret" },
+        ])
+        game.rivals = [rival]
+        return rival
+      }
+      const rock = new Asteroid({ vertices: square(ARENA.cx, ARENA.cy, 60) })
+      rock.hardpoints.push({
+        x: rock.center.x,
+        y: rock.center.y,
+        module: new Weapon("blaster", "turret"),
+      })
+      rock.refreshEnergy()
+      game.asteroids = [rock]
+      return rock
+    }
+
+    // seen: the barrels follow the ship, which is what makes a turret legible
+    const open = liveGame()
+    const seen = build(open)
+    const followed = poses.map(([dx, dy]) => {
+      open.player.x = ARENA.cx + dx
+      open.player.y = ARENA.cy + dy
+      const bearings = drawnBearings(open, seen)
+      assert.equal(bearings.length, 1, `${armed} should draw one barrel`)
+      return bearings[0]
+    })
+    assert.ok(swing(followed) > 1, `${armed} should track a ship it can see`)
+
+    // hidden: they hold whatever bearing they had, however the ship moves
+    const dark = liveGame()
+    const hiding = build(dark)
+    hideThePlayer(dark)
+    const held = poses.map(([dx, dy]) => {
+      dark.player.x = ARENA.cx + dx
+      dark.player.y = ARENA.cy + dy
+      return drawnBearings(dark, hiding)[0]
+    })
+    assert.ok(
+      swing(held) < 1e-9,
+      `${armed} tracked a hidden ship across ${((swing(held) * 180) / Math.PI).toFixed(1)} degrees`,
+    )
+  }
+})
+
 // ---- progression is data ---------------------------------------------------
 
 // ---- an exploding rock and its neighbours ---------------------------------

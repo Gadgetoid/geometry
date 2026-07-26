@@ -502,6 +502,18 @@ export class Entity {
 // carries, fanned either side of the aim. Every turret in the game goes through
 // here, so a rock's, a rival's and the player's all read the same way and a
 // glance at one says how fast it fires.
+// Where a turret points: at the player while it can see one, and at its last
+// bearing while it cannot, so a swing toward a hidden ship does not give it away.
+// The bearing is remembered on the hardpoint, which is why this takes one rather
+// than a bare point; `at` is where the mount actually is, since a ship stores a
+// local offset and a rock stores a world position.
+function trackedAim(seen, hp, at, fallback) {
+  if (seen) {
+    hp.aim = bearingTo(at, seen)
+  }
+  return hp.aim ?? fallback
+}
+
 export function drawTurret(renderer, x, y, aim, barrels, colour, length = 10, alpha = 1) {
   renderer.circle(x, y, 3.4, { stroke: colour, width: 1.6, glow: 8, alpha })
   const across = 2.6 // barrel separation, across the line of fire
@@ -1048,6 +1060,7 @@ export class Ship extends Entity {
         game.gameTime,
       )
     }
+    const seen = game.visiblePlayer()
     for (const hp of this.hardpoints) {
       const m = hp.module
       if (!m || m.kind !== "weapon") {
@@ -1078,8 +1091,7 @@ export class Ship extends Entity {
       }
       if (m.type.kind === "projectile") {
         // pointed where the controller points it, so a heavy turret is legible
-        const player = game.player
-        const aim = player ? Math.atan2(player.y - w.y, player.x - w.x) : this.angle
+        const aim = trackedAim(seen, hp, w, this.angle)
         drawTurret(renderer, w.x, w.y, aim, m.barrels, PALETTE.weapon.gun, 8)
       } else if (hp.role === "nose") {
         renderer.line(w.x, w.y, w.x + Math.cos(this.angle) * 8, w.y + Math.sin(this.angle) * 8, {
@@ -2626,17 +2638,13 @@ export class Asteroid extends Entity {
         game.gameTime,
       )
     }
-    // A turret holds its last bearing while the player is hidden, so a swing
-    // toward an invisible ship does not give it away.
     const seen = game.visiblePlayer()
     for (const hp of this.hardpoints) {
       if (!hp.module || hp.module.kind !== "weapon") {
         continue
       }
-      if (seen) {
-        hp.aim = Math.atan2(seen.y - hp.y, seen.x - hp.x)
-      }
-      drawTurret(renderer, hp.x, hp.y, hp.aim ?? 0, hp.module.barrels, PALETTE.weapon.gun)
+      const aim = trackedAim(seen, hp, hp, 0)
+      drawTurret(renderer, hp.x, hp.y, aim, hp.module.barrels, PALETTE.weapon.gun)
     }
   }
 }
