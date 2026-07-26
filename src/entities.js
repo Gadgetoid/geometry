@@ -1447,7 +1447,12 @@ export class PlayerShip extends Ship {
   }
 
   update(dt, game) {
-    this.invincible = Math.max(0, this.invincible - dt)
+    // The grace period is for flying, so it does not run down while the ship is
+    // still warping in and cannot be flown. Counting it from the arrival is what
+    // makes INVIN_TIME the number of seconds a player actually gets.
+    if (this.solid) {
+      this.invincible = Math.max(0, this.invincible - dt)
+    }
     this.#tickWarp(dt, game)
     this.#tickBuffs(dt)
     this.#tickSlots(dt, game)
@@ -1524,19 +1529,26 @@ export class PlayerShip extends Ship {
       for (const a of game.asteroids) {
         const dx = a.center.x - this.x,
           dy = a.center.y - this.y
-        const dist = Math.hypot(dx, dy)
-        if (dist < 1 || dist > range) {
+        const centre = Math.hypot(dx, dy)
+        if (centre < 1) {
           continue
         }
-        const ux = dx / dist,
-          uy = dy / dist
+        const ux = dx / centre,
+          uy = dy / centre
         const align = ux * bx + uy * by // 1 = directly behind the ship
         if (align < 0.25) {
           continue
         }
-        const push =
-          (CONFIG.EXHAUST_WASH_FORCE * (1 - dist / range) * align) /
-          clamp(a.area / CONFIG.AST_MASS_AREA, 0.5, 4)
+        // Range is measured to the rock's near surface, as a blast's is. Measured
+        // to the middle, a boulder with its face in the exhaust counted as most of
+        // a range away and was barely moved, which is exactly the rock the wash is
+        // wanted for. Mass is the sim's own, so the wash agrees with everything
+        // else about how heavy a rock is.
+        const gap = Math.max(0, centre - a.boundRadius)
+        if (gap > range) {
+          continue
+        }
+        const push = (CONFIG.EXHAUST_WASH_FORCE * (1 - gap / range) * align) / rockMass(a.area)
         a.vx += ux * push * dt
         a.vy += uy * push * dt
       }

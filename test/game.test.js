@@ -2797,6 +2797,53 @@ test("a spawn point that is already clear is left alone", () => {
   assert.equal(far.vx, 0, "nothing was shoved")
 })
 
+// Range used to be measured to the rock's middle, so a boulder with its face in
+// the exhaust counted as most of a range away and was barely moved, which is
+// exactly the rock the wash is wanted for.
+test("the exhaust wash shoves a boulder behind the ship, not only a pebble", () => {
+  const pushed = (radius, gap) => {
+    const game = liveGame()
+    const player = game.player
+    player.x = ARENA.cx
+    player.y = ARENA.cy
+    player.angle = 0 // nose along +x, so the exhaust washes along -x
+    player.energyMax = 1e6
+    game.holding = (name) => name === "thrust"
+    const rock = new Asteroid({ radius, x: 0, y: 0, vx: 0, vy: 0, spin: 0 })
+    // parked by its true surface, so nothing is overlapping and only the wash acts
+    rock.translate(ARENA.cx - (gap + rock.boundRadius) - rock.center.x, ARENA.cy - rock.center.y)
+    game.asteroids = [rock]
+    for (let frame = 0; frame < 60; frame++) {
+      player.x = ARENA.cx
+      player.y = ARENA.cy
+      player.vx = 0
+      player.vy = 0
+      player.energy = player.energyMax
+      player.update(1 / 60, game)
+    }
+    return { pushed: -rock.vx, mass: rockMass(rock.area) }
+  }
+
+  const gap = CONFIG.EXHAUST_WASH_RANGE / 2
+  const pebble = pushed(30, gap),
+    boulder = pushed(100, gap)
+  assert.ok(boulder.mass > pebble.mass * 3, "the two are worth comparing")
+  assert.ok(pebble.pushed > 0, "a pebble is blown clear")
+  assert.ok(boulder.pushed > 0, "and a boulder is moved too, however heavy it is")
+  assert.ok(boulder.pushed < pebble.pushed, "less, in proportion to what it weighs")
+
+  // the falloff runs on the gap to the rock's surface, so the reach is the same
+  // whatever size the rock is
+  for (const radius of [30, 100]) {
+    const close = pushed(radius, 5),
+      far = pushed(radius, CONFIG.EXHAUST_WASH_RANGE * 0.9)
+    assert.ok(close.pushed > far.pushed, `a ${radius} rock is shoved harder up close`)
+    assert.ok(far.pushed > 0, `and still felt at the edge of the wash's reach`)
+    const beyond = pushed(radius, CONFIG.EXHAUST_WASH_RANGE * 1.2).pushed
+    assert.ok(Math.abs(beyond) < 1e-9, `and not past it, but it moved ${beyond}`)
+  }
+})
+
 // ---- progression is data ---------------------------------------------------
 
 // ---- an exploding rock and its neighbours ---------------------------------
