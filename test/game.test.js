@@ -3572,6 +3572,69 @@ test("a beam aimed at a target carries past it, so it can cut", () => {
   }
 })
 
+test("a turret's beam is sent past the player, by the default overshoot", () => {
+  // The defense turret's side of this rule is covered above with a declared
+  // `overshoot`. This is the other caller, and the fall-through when a weapon
+  // names none. Measured on the reach the controller asks for, not on the drawn
+  // beam: applyBeam clips what is drawn at the first surface that blocks it, so a
+  // shielded player would report the distance to the bubble either way.
+  const game = withShield(liveGame()) // a rock turret holds fire once the player has died
+  const player = game.player
+  player.x = 500
+  player.y = 500
+  assert.equal(WEAPON_TYPES.minerLaser.overshoot, undefined, "this one names no overshoot")
+
+  const rock = new Asteroid({ vertices: square(500, 320, 60) })
+  const gun = new Weapon("minerLaser", "turret")
+  rock.hardpoints.push({ x: rock.center.x, y: rock.center.y, module: gun })
+  rock.refreshEnergy()
+  game.asteroids = [rock, new Asteroid({ vertices: square(500, -900, 60) })]
+
+  let asked = 0,
+    from = null
+  const realEmit = gun.emitBeam.bind(gun)
+  gun.emitBeam = (g, host, ax, ay, angle, length) => {
+    asked = length
+    from = { x: ax, y: ay }
+    realEmit(g, host, ax, ay, angle, length)
+  }
+
+  for (let frame = 0; frame < 300 && asked === 0; frame++) {
+    player.x = 500
+    player.y = 500
+    player.vx = 0
+    player.vy = 0
+    player.energy = player.energyMax
+    rock.vx = 0
+    rock.vy = 0
+    rock.spin = 0
+    game.advance(1 / 60)
+  }
+  assert.ok(asked > 0, "the turret should have fired a beam")
+  const farSide = Math.hypot(500 - from.x, 500 - from.y) + player.boundRadius
+  assert.ok(
+    asked > farSide,
+    `it asked for ${asked.toFixed(0)}, not past the far side at ${farSide.toFixed(0)}`,
+  )
+})
+
+test("cutReach carries past a target's far side, by a default or a declared overshoot", () => {
+  const target = { boundRadius: 40 }
+  const plain = new Weapon("minerLaser", "turret")
+  assert.equal(WEAPON_TYPES.minerLaser.overshoot, undefined)
+  const byDefault = plain.cutReach(target, 200)
+  assert.ok(byDefault > 240, `${byDefault} must clear the far side at 240`)
+
+  // a type naming its own overshoot is honoured instead of the default
+  const original = WEAPON_TYPES.minerLaser.overshoot
+  WEAPON_TYPES.minerLaser.overshoot = byDefault - 240 + 100
+  try {
+    assert.equal(new Weapon("minerLaser", "turret").cutReach(target, 200), byDefault + 100)
+  } finally {
+    WEAPON_TYPES.minerLaser.overshoot = original
+  }
+})
+
 test("a rock's turrets are spread around it, not stacked on one bearing", () => {
   // Each used to pick its own vertex to sit under, and independent picks put a
   // pair on the same bearing often enough to read as a cluster.

@@ -29,6 +29,8 @@ import {
   slicePolygon,
   convexContact,
   supportDistance,
+  distanceTo,
+  bearingTo,
 } from "./math.js"
 import {
   TAU,
@@ -518,6 +520,10 @@ export function drawTurret(renderer, x, y, aim, barrels, colour, length = 10, al
   }
 }
 
+// How far past a target a beam carries by default, so it cuts rather than grazes.
+// A weapon type can name its own `overshoot` instead.
+const CUT_OVERSHOOT = 20
+
 // ---------------------------------------------------------------------------
 // Weapon module. `kind` projectile or beam; `controller` decides firing.
 // ---------------------------------------------------------------------------
@@ -539,6 +545,14 @@ export class Weapon {
   release() {
     this.charge = 0
     this.overdrive = 0
+  }
+
+  // How far a beam has to carry to cut a target rather than graze it: past the far
+  // side of it, measured from wherever the shot starts. Stopping at the middle
+  // crosses the outline once, which severs nothing. A projectile ignores the reach
+  // and flies on its own speed, so this only shapes a beam.
+  cutReach(target, toCentre) {
+    return toCentre + target.boundRadius + (this.type.overshoot ?? CUT_OVERSHOOT)
   }
 
   rollReload() {
@@ -647,23 +661,14 @@ export const WEAPON_CONTROLLERS = {
     ) {
       return
     }
-    const aim = Math.atan2(player.y - world.y, player.x - world.x)
-    // A beam carries past the player, as it must to cut anything; a projectile
-    // ignores the reach and flies on its own speed.
-    const range = Math.hypot(player.x - world.x, player.y - world.y)
-    weapon.fire(game, host, world.x, world.y, aim, range + player.boundRadius + 20)
+    const reach = weapon.cutReach(player, distanceTo(world, player))
+    weapon.fire(game, host, world.x, world.y, bearingTo(world, player), reach)
   },
 
   // cuts rocks for ore, firing along the host's facing when one is near
   miner(weapon, dt, game, host, world) {
-    let nearest = Infinity
-    for (const asteroid of game.asteroids) {
-      nearest = Math.min(
-        nearest,
-        Math.hypot(asteroid.center.x - host.x, asteroid.center.y - host.y),
-      )
-    }
-    if (nearest < weapon.type.triggerRange) {
+    // No trigger range means it never fires, which is what a missing one always did.
+    if (game.nearestAsteroid(host, weapon.type.triggerRange ?? 0)) {
       weapon.emitBeam(game, host, world.x, world.y, host.angle, weapon.rollLength())
     }
   },
@@ -683,12 +688,10 @@ export const WEAPON_CONTROLLERS = {
       }
       return
     }
-    const toPlayer = Math.atan2(player.y - host.y, player.x - host.x)
-    const arc = ((toPlayer - host.angle + Math.PI * 3) % TAU) - Math.PI
-    const dist = Math.hypot(player.x - host.x, player.y - host.y)
+    const arc = ((bearingTo(host, player) - host.angle + Math.PI * 3) % TAU) - Math.PI
     if (
       Math.abs(arc) < weapon.type.arc &&
-      dist < weapon.type.length &&
+      distanceTo(host, player) < weapon.type.length &&
       game.onScreen(host.x, host.y, CONFIG.OFFSCREEN_FIRE_MARGIN)
     ) {
       weapon.charging = weapon.type.chargeTime || 0.8
@@ -714,24 +717,10 @@ export const WEAPON_CONTROLLERS = {
     if (host.buffField("invisible", false)) {
       return
     }
-    let target = null,
-      nearest = weapon.type.range
-    for (const rival of game.rivals) {
-      if (rival.dead || !rival.inPlay()) {
-        continue
-      }
-      const d = Math.hypot(rival.x - world.x, rival.y - world.y)
-      if (d < nearest) {
-        nearest = d
-        target = rival
-      }
-    }
-    if (target) {
-      host.turretAim = Math.atan2(target.y - world.y, target.x - world.x)
-      // A beam has to carry past the target to cut it. Stopping at the target's
-      // middle crosses its outline once, which counts as a graze and never
-      // severs anything.
-      const reach = nearest + target.boundRadius + (weapon.type.overshoot ?? 0)
+    const found = game.nearestRival(world, weapon.type.range)
+    if (found) {
+      host.turretAim = bearingTo(world, found.target)
+      const reach = weapon.cutReach(found.target, found.distance)
       weapon.fire(game, host, world.x, world.y, host.turretAim, reach)
     }
   },
