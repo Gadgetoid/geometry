@@ -3063,6 +3063,99 @@ test("a rival past a full turn still turns the short way", () => {
   )
 })
 
+// The player's hull has no health of its own: onHull costs a life outright. So a
+// grace period that turns away rock contact and nothing else is no protection at
+// all, and a single shot arriving as the ship lands is a one-shot kill. It was
+// checked at the one thing that reads it and not in takeDamage, which is where
+// every channel arrives.
+test("the grace period after arriving turns away every kind of damage", () => {
+  const arrived = () => {
+    const game = liveGame()
+    const player = game.player
+    player.x = 400
+    player.y = 320
+    player.invincible = CONFIG.INVIN_TIME
+    return game
+  }
+
+  const shot = arrived()
+  shot.projectiles = [new Projectile(400, 320, 0, 0, CONFIG.DMG_RIVAL_GUN, null)]
+  shot.projectiles[0].update(1 / 60, shot)
+  assert.equal(shot.lives, CONFIG.START_LIVES, "a bullet must not cost a life")
+
+  const beamed = arrived()
+  const shooter = new RivalShip(100, 320, "scout", [])
+  beamed.rivals = [shooter]
+  beamed.applyBeam(
+    { a: { x: 100, y: 320 }, dir: { x: 1, y: 0 }, b: { x: 900, y: 320 } },
+    shooter,
+    { type: WEAPON_TYPES.cannonLaser },
+    CONFIG.DMG_FRIGATE_LASER,
+  )
+  assert.equal(beamed.lives, CONFIG.START_LIVES, "nor a beam")
+
+  const blasted = arrived()
+  const bomb = new Asteroid({ vertices: square(400 + 60, 320, 40) })
+  bomb.explosive = true
+  blasted.asteroids = [bomb]
+  bomb.detonate(blasted)
+  assert.equal(blasted.lives, CONFIG.START_LIVES, "nor a blast going off beside it")
+
+  const ground = arrived()
+  ground.asteroids = [new Asteroid({ vertices: square(400, 320, 70), vx: 0, vy: 0 })]
+  for (let frame = 0; frame < 60; frame++) {
+    ground.player.x = 400
+    ground.player.y = 320
+    ground.advance(1 / 60)
+  }
+  assert.equal(ground.lives, CONFIG.START_LIVES, "nor grinding against a rock")
+
+  // none of it counts toward the sector summary, because none of it landed
+  for (const game of [shot, beamed, blasted, ground]) {
+    assert.equal(game.stats.damage, 0, "nothing that was turned away is totalled")
+  }
+
+  // and once it runs out, everything lands again
+  const exposed = arrived()
+  exposed.player.invincible = 0
+  exposed.projectiles = [new Projectile(400, 320, 0, 0, CONFIG.DMG_RIVAL_GUN, null)]
+  exposed.projectiles[0].update(1 / 60, exposed)
+  assert.equal(exposed.lives, CONFIG.START_LIVES - 1, "the grace period is a period")
+})
+
+test("a respawn cannot be shot down before it can be flown", () => {
+  // The whole journey, with a round arriving on the spawn point every frame: the
+  // pause, the warp in, and the grace period after it. Stops a frame short of the
+  // end, since a shot already touching the hull the instant the grace runs out is
+  // meant to land.
+  const game = liveGame()
+  const player = game.player
+  game.asteroids = [new Asteroid({ vertices: square(ARENA.cx, ARENA.cy - 900, 60) })]
+  game.lives = 3
+  game.playerLoseLife()
+  const lives = game.lives
+
+  const covered = CONFIG.RESPAWN_PAUSE + CONFIG.WARP_TIME + CONFIG.INVIN_TIME
+  let warpingFrames = 0
+  for (let frame = 0; frame < Math.floor((covered - 0.1) * 60); frame++) {
+    game.projectiles.push(new Projectile(player.x, player.y, 0, 0, CONFIG.DMG_RIVAL_GUN, null))
+    game.advance(1 / 60)
+    if (!player.solid) {
+      warpingFrames++
+    }
+    assert.equal(game.lives, lives, `a life went ${(frame / 60).toFixed(2)}s in`)
+  }
+  assert.ok(warpingFrames > 0, "the journey must include the warp, not just the grace")
+  assert.ok(player.solid, "and must reach the point the ship is solid")
+  assert.ok(player.invincible > 0, "with the grace period not yet spent")
+
+  // and it does end: the same round costs a life once it has
+  player.invincible = 0
+  game.projectiles.push(new Projectile(player.x, player.y, 0, 0, CONFIG.DMG_RIVAL_GUN, null))
+  game.advance(1 / 60)
+  assert.equal(game.lives, lives - 1, "the grace period is a period")
+})
+
 // ---- progression is data ---------------------------------------------------
 
 // ---- an exploding rock and its neighbours ---------------------------------

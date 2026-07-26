@@ -1156,10 +1156,17 @@ export class PlayerShip extends Ship {
   }
   // Mid-warp the ship is not really in the sector, so nothing can reach it:
   // not rocks, and not the bullets and blasts that bypass contact entirely.
+  //
+  // The grace period after arriving turns away everything as well, which is why
+  // it is answered here and not at each thing that can hurt: the hull has no
+  // health of its own, so a single shot that reaches it costs a life, and being
+  // proof against rocks alone is no protection at all.
+  //
   // Everything that lands is totalled for the sector summary, whether the
-  // shield soaked it or the hull did, so "flawless" means untouched.
+  // shield soaked it or the hull did, so "flawless" means untouched. Neither of
+  // these counts, since neither landed.
   takeDamage(amount, game, channel, scoreOnKill, impact) {
-    if (!this.inPlay()) {
+    if (!this.inPlay() || this.invincible > 0) {
       return false
     }
     game.stats.damage += amount
