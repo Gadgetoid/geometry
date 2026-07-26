@@ -1106,6 +1106,10 @@ export function freshUpgrades() {
   return { slots: 1, core: 0, shield: 0, laser: 0, magnet: 0, turret: false, reverse: false }
 }
 
+// Sizes the in-game HUD can be drawn at, in menu order. The menus themselves are
+// not scaled: they already fill the page, and there is nowhere for them to grow.
+export const UI_SCALES = [1, 1.5, 2]
+
 // ---------------------------------------------------------------------------
 // PAUSE MENU - one entry per row, in order. Fields:
 //   name    the label
@@ -1144,6 +1148,12 @@ export const PAUSE_MENU = [
     value: (g) => (g.settings.crt ? "ON" : "OFF"),
     action: (g) => g.setCrt(!g.settings.crt),
     adjust: (g, step) => g.setCrt(step > 0),
+  },
+  {
+    name: "HUD SIZE",
+    value: (g) => `${g.settings.uiScale}x`,
+    action: (g) => g.stepUiScale(1),
+    adjust: (g, step) => g.stepUiScale(step),
   },
   {
     name: "HELP TEXT",

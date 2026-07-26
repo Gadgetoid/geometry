@@ -12,6 +12,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import { Game } from "../src/game.js"
+import { GameView } from "../src/view.js"
 import { PALETTE } from "../src/palette.js"
 import {
   Asteroid,
@@ -40,6 +41,9 @@ import {
   SHIP_PLATING,
   SHIP_SCALARS,
   SHOP,
+  UI_SCALES,
+  VIEW_W,
+  VIEW_H,
   WEAPON_TYPES,
   SHIP_TYPES,
   barrelCount,
@@ -2614,6 +2618,143 @@ test("the shop stocks only what the registry says is for sale", () => {
   } finally {
     POWERUP_TYPES[id].buyable = was
   }
+})
+
+test("help text and HUD size are settings that survive a session", () => {
+  const game = new Game()
+  assert.equal(game.settings.help, true, "help text starts on")
+  assert.equal(game.settings.uiScale, UI_SCALES[0])
+
+  game.setHelp(false)
+  assert.equal(game.settings.help, false)
+
+  // one row steps the sizes offered, and wraps at the end of them
+  for (const expected of [...UI_SCALES.slice(1), UI_SCALES[0]]) {
+    game.stepUiScale(1)
+    assert.equal(game.settings.uiScale, expected)
+  }
+  game.stepUiScale(-1)
+  assert.equal(game.settings.uiScale, UI_SCALES[UI_SCALES.length - 1], "and the other way")
+
+  const resumed = new Game()
+  resumed.settings = { ...resumed.settings, ...JSON.parse(JSON.stringify(game.settings)) }
+  assert.equal(resumed.settings.help, false)
+  assert.equal(resumed.settings.uiScale, game.settings.uiScale)
+})
+
+// Every HUD element is anchored to a screen edge and grows inward, so raising the
+// scale must make things bigger without pushing any of them off the page. A
+// coordinate left unscaled is exactly what this catches.
+function hudAt(uiScale, { shield = false } = {}) {
+  const game = liveGame()
+  game.settings.uiScale = uiScale
+  game.upgrades.slots = MAX_SLOTS
+  equip(game, 0, "repel")
+  if (shield) {
+    withShield(game)
+  }
+  game.lives = CONFIG.MAX_LIVES
+  game.plan = { ...game.plan, rivals: 1 }
+  game.showToast("A TOAST")
+
+  const shapes = [],
+    labels = []
+  const note = (x, y, w, h) => shapes.push({ x, y, w, h })
+  const renderer = {
+    rect: (x, y, w, h) => note(x, y, w, h),
+    circle: (x, y, radius) => note(x - radius, y - radius, radius * 2, radius * 2),
+    line: (ax, ay, bx, by) =>
+      note(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay)),
+    strokePoly: (points) => {
+      const xs = points.map((p) => p.x),
+        ys = points.map((p) => p.y)
+      note(
+        Math.min(...xs),
+        Math.min(...ys),
+        Math.max(...xs) - Math.min(...xs),
+        Math.max(...ys) - Math.min(...ys),
+      )
+    },
+    text: (str, x, y, opts = {}) => labels.push({ str, x, y, size: opts.size || 12 }),
+  }
+  new GameView(renderer).drawHud(game)
+  return { shapes, labels }
+}
+
+test("every HUD element is anchored to the page and scales from where it is anchored", () => {
+  // The property, rather than the layout: a coordinate is measured from the left
+  // edge, the right edge or the middle, and whichever it is, raising the scale
+  // multiplies that distance. A `* ui` left off any of them breaks exactly this.
+  // The shield's markers are the one exception, sitting a fraction of the way
+  // along a bar that spans the page; the test below covers those.
+  const factor = UI_SCALES[UI_SCALES.length - 1]
+  const small = hudAt(1),
+    large = hudAt(factor)
+  assert.ok(small.shapes.length > 0 && small.labels.length > 0, "something was drawn")
+  assert.equal(large.shapes.length, small.shapes.length, "the same shapes at either size")
+  assert.equal(large.labels.length, small.labels.length, "and the same readouts")
+
+  const axis = (at1, at2, span, what) => {
+    const ways = [
+      [at1, at2], // from the left or the top
+      [span - at1, span - at2], // from the right or the bottom
+      [at1 - span / 2, at2 - span / 2], // from the middle
+    ]
+    assert.ok(
+      ways.some(([from, to]) => Math.abs(to - from * factor) < 0.5),
+      `${what} sits at ${at1.toFixed(1)} then ${at2.toFixed(1)}, which is no edge scaled by ${factor}`,
+    )
+  }
+
+  for (let i = 0; i < small.shapes.length; i++) {
+    const a = small.shapes[i],
+      b = large.shapes[i]
+    axis(a.x, b.x, VIEW_W, `shape ${i} left`)
+    axis(a.x + a.w, b.x + b.w, VIEW_W, `shape ${i} right`)
+    axis(a.y, b.y, VIEW_H, `shape ${i} top`)
+    axis(a.y + a.h, b.y + b.h, VIEW_H, `shape ${i} bottom`)
+  }
+  for (let i = 0; i < small.labels.length; i++) {
+    const a = small.labels[i],
+      b = large.labels[i]
+    axis(a.x, b.x, VIEW_W, `"${a.str}" x`)
+    axis(a.y, b.y, VIEW_H, `"${a.str}" y`)
+    assert.ok(
+      Math.abs(b.size - a.size * factor) < 0.01,
+      `"${a.str}" is ${a.size} then ${b.size}, not ${factor} times bigger`,
+    )
+  }
+})
+
+test("the shield's markers hold their place along the bar at any HUD size", () => {
+  const factor = UI_SCALES[UI_SCALES.length - 1]
+  // The bar is the widest thing the HUD draws, so it is the widest shape recorded.
+  const bar = (hud) => hud.shapes.reduce((a, b) => (b.w > a.w ? b : a))
+  const markers = (hud) => {
+    const along = bar(hud)
+    return hud.shapes
+      .filter((shape) => shape.w === 0 && shape.x > along.x && shape.x < along.x + along.w)
+      .map((shape) => ({ fraction: (shape.x - along.x) / along.w, height: shape.h }))
+  }
+  const small = markers(hudAt(1, { shield: true })),
+    large = markers(hudAt(factor, { shield: true }))
+  assert.equal(small.length, 2, "an offline marker and a recovery marker")
+  assert.equal(large.length, small.length)
+  for (let i = 0; i < small.length; i++) {
+    assert.ok(
+      Math.abs(large[i].fraction - small[i].fraction) < 0.001,
+      `marker ${i} moved along the bar, ${small[i].fraction} to ${large[i].fraction}`,
+    )
+    assert.ok(
+      Math.abs(large[i].height - small[i].height * factor) < 0.5,
+      `marker ${i} did not grow with the bar`,
+    )
+  }
+  const labels = hudAt(factor, { shield: true }).labels.map((label) => label.str)
+  assert.ok(
+    labels.some((str) => str.startsWith("SHIELD")),
+    "and the bar is still labelled",
+  )
 })
 
 // ---- progression is data ---------------------------------------------------

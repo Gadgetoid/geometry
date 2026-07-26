@@ -237,7 +237,7 @@ export class GameView {
       this.#title(game)
     } else if (this.showHud) {
       this.#radar(game)
-      this.#hud(game)
+      this.drawHud(game)
     }
     r.popView()
     this.#warp(game, c)
@@ -467,45 +467,59 @@ export class GameView {
   }
 
   // ---- HUD + overlays --------------------------------------------------
-  #hud(game) {
+  // The HUD pass, called by render once the world is drawn. In-game readouts, at
+  // the size the player has asked for. Everything here is
+  // anchored to a screen edge and grows inward from it, so raising the scale makes
+  // the readouts bigger without moving them off the page. The menus drawn at the
+  // end are left alone: they already fill the screen.
+  drawHud(game) {
     const r = this.renderer
-    r.text(`SCORE ${String(game.score).padStart(6, "0")}`, 18, 30, {
-      size: 18,
+    const ui = game.settings.uiScale
+    const margin = 18 * ui
+
+    r.text(`SCORE ${String(game.score).padStart(6, "0")}`, margin, 30 * ui, {
+      size: 18 * ui,
       bold: true,
       color: PALETTE.text.bright,
     })
-    r.text(`SECTOR ${game.level}   ROCKS ${game.asteroids.length}`, 18, 48, {
-      size: 12,
+    r.text(`SECTOR ${game.level}   ROCKS ${game.asteroids.length}`, margin, 48 * ui, {
+      size: 12 * ui,
       color: PALETTE.text.dim,
     })
-    r.text(`ORE ${game.oreBalance}`, 18, 64, { size: 12, color: PALETTE.fx.flash })
+    r.text(`ORE ${game.oreBalance}`, margin, 64 * ui, { size: 12 * ui, color: PALETTE.fx.flash })
     if (game.plan && game.plan.rivals > 0) {
-      r.text(`RIVAL ${String(game.rivalScore).padStart(6, "0")}`, 18, 80, {
-        size: 12,
+      r.text(`RIVAL ${String(game.rivalScore).padStart(6, "0")}`, margin, 80 * ui, {
+        size: 12 * ui,
         color: PALETTE.rival.hull,
       })
     }
 
-    r.text("LIVES", VIEW_W - 18, 24, { size: 12, color: PALETTE.player.hull, align: "right" })
+    r.text("LIVES", VIEW_W - margin, 24 * ui, {
+      size: 12 * ui,
+      color: PALETTE.player.hull,
+      align: "right",
+    })
     for (let i = 0; i < game.lives; i++) {
-      const x = VIEW_W - 24 - i * 22,
-        y = 40
+      const x = VIEW_W - (24 + i * 22) * ui,
+        y = 40 * ui
       r.strokePoly(
         [
-          { x, y: y - 7 },
-          { x: x - 8, y: y + 5 },
-          { x, y: y + 2 },
-          { x: x + 8, y: y + 5 },
+          { x, y: y - 7 * ui },
+          { x: x - 8 * ui, y: y + 5 * ui },
+          { x, y: y + 2 * ui },
+          { x: x + 8 * ui, y: y + 5 * ui },
         ],
-        { color: PALETTE.player.hull, width: 1.5, glow: 6 },
+        { color: PALETTE.player.hull, width: 1.5 * ui, glow: 6 },
       )
     }
 
-    const barW = VIEW_W - 36,
-      barX = 18,
-      barY = VIEW_H - 26,
-      barH = 12
-    r.rect(barX, barY, barW, barH, { stroke: PALETTE.ui.edge, width: 1 })
+    // The bar keeps the full width of the page at any scale; what grows is how
+    // deep it is and how far off the bottom edge it sits.
+    const barW = VIEW_W - 36 * ui,
+      barX = margin,
+      barY = VIEW_H - 26 * ui,
+      barH = 12 * ui
+    r.rect(barX, barY, barW, barH, { stroke: PALETTE.ui.edge, width: 1 * ui })
     const fraction = game.player ? game.player.energy / game.maxEnergy() : 0
     const low = fraction < 0.22
     let fillW = barW * fraction
@@ -515,41 +529,51 @@ export class GameView {
     // a powerup that tints the ship tints its energy bar to match
     const tint = game.player ? game.player.buffWith("tintsShip") : null
     const barColour = tint ? tint.colour : low ? PALETTE.ui.warn : PALETTE.player.hull
-    r.rect(barX + 1, barY + 1, Math.max(0, fillW - 2), barH - 2, { fill: barColour, glow: 10 })
-    r.text("ENERGY", barX + 2, barY - 4, { size: 9, color: PALETTE.text.faint })
+    r.rect(barX + ui, barY + ui, Math.max(0, fillW - 2 * ui), barH - 2 * ui, {
+      fill: barColour,
+      glow: 10,
+    })
+    r.text("ENERGY", barX + 2 * ui, barY - 4 * ui, {
+      size: 9 * ui,
+      color: PALETTE.text.faint,
+    })
 
     // Shield: mark the offline / recovery energy levels and show online state.
     const shield = game.player ? game.player.shieldModule() : null
     if (shield) {
       const dropX = barX + barW * shield.type.dropAt
       const recoverX = barX + barW * shield.type.recoverAt
-      r.line(dropX, barY - 2, dropX, barY + barH + 2, { color: PALETTE.ui.warn, width: 1 }) // offline level
-      r.line(recoverX, barY - 2, recoverX, barY + barH + 2, {
+      r.line(dropX, barY - 2 * ui, dropX, barY + barH + 2 * ui, {
+        color: PALETTE.ui.warn,
+        width: 1 * ui,
+      }) // offline level
+      r.line(recoverX, barY - 2 * ui, recoverX, barY + barH + 2 * ui, {
         color: PALETTE.shield.spark,
-        width: 1,
+        width: 1 * ui,
         alpha: 0.55,
       }) // recovery level
       // offline while overloaded, or whenever energy is at/below the drop marker
       // (below that the shield can't absorb a hit)
       const offline = !shield.up || game.player.energy <= shield.type.dropAt * game.player.energyMax
-      r.text(offline ? "SHIELD OFFLINE" : "SHIELD", barX + 46, barY - 4, {
-        size: 9,
+      r.text(offline ? "SHIELD OFFLINE" : "SHIELD", barX + 46 * ui, barY - 4 * ui, {
+        size: 9 * ui,
         color: offline ? PALETTE.ui.warn : PALETTE.shield.spark,
       }) // beside ENERGY, clear of the powerup slots at the right edge
     }
 
     if (game.player) {
-      const size = 20,
+      const size = 20 * ui,
+        gap = 4 * ui,
         count = game.upgrades.slots,
-        startX = VIEW_W - 14 - count * (size + 4)
+        startX = VIEW_W - 14 * ui - count * (size + gap)
       for (let i = 0; i < count; i++) {
-        const sx = startX + i * (size + 4),
-          sy = barY - 4 - size,
+        const sx = startX + i * (size + gap),
+          sy = barY - 4 * ui - size,
           item = game.player.items[i]
         const spec = item ? POWERUP_TYPES[item.id] : null
         r.rect(sx, sy, size, size, {
           stroke: spec ? spec.colour : PALETTE.ui.slotEmpty,
-          width: 1.2,
+          width: 1.2 * ui,
           alpha: spec && item.cooldown > 0 ? 0.35 : 1,
         })
         // A slot recovering, or running a timed effect, walks a bar back round its
@@ -561,7 +585,7 @@ export class GameView {
           if (left > 0) {
             r.strokePoly(boxPerimeter(sx, sy, size, size, clamp(left, 0, 1)), {
               color: running > 0 ? spec.colour : PALETTE.ui.accent,
-              width: 2,
+              width: 2 * ui,
               glow: 8,
               closed: false,
             })
@@ -570,22 +594,22 @@ export class GameView {
           // switched off again, so it pulses instead of counting anything down.
           if (item.active) {
             const pulse = 0.5 + 0.5 * Math.sin(game.gameTime * 6)
-            r.rect(sx + 1, sy + 1, size - 2, size - 2, {
+            r.rect(sx + ui, sy + ui, size - 2 * ui, size - 2 * ui, {
               fill: spec.colour,
               alpha: 0.22 + 0.2 * pulse,
             })
             r.rect(sx, sy, size, size, {
               stroke: spec.colour,
-              width: 2,
+              width: 2 * ui,
               glow: 6 + 8 * pulse,
             })
           }
         }
         const label = game.slotLabel(i)
-        r.text(label, sx + 2, sy + 9, { size: 8, color: PALETTE.text.muted })
+        r.text(label, sx + 2 * ui, sy + 9 * ui, { size: 8 * ui, color: PALETTE.text.muted })
         if (spec) {
-          r.text(spec.icon, sx + size / 2, sy + size / 2 + 5, {
-            size: 12,
+          r.text(spec.icon, sx + size / 2, sy + size / 2 + 5 * ui, {
+            size: 12 * ui,
             bold: true,
             color: spec.colour,
             align: "center",
@@ -599,18 +623,19 @@ export class GameView {
       let row = 0
       for (const [id, remaining] of game.player.buffs) {
         const spec = POWERUP_TYPES[id]
-        r.text(`${spec.short || spec.label} ${remaining.toFixed(1)}s`, VIEW_W / 2, 26 + row * 15, {
-          size: 11,
-          color: spec.colour,
-          align: "center",
-        })
+        r.text(
+          `${spec.short || spec.label} ${remaining.toFixed(1)}s`,
+          VIEW_W / 2,
+          (26 + row * 15) * ui,
+          { size: 11 * ui, color: spec.colour, align: "center" },
+        )
         row++
       }
     }
 
     if (game.toast) {
-      r.text(game.toast.text, 18, VIEW_H - 72, {
-        size: 12,
+      r.text(game.toast.text, margin, VIEW_H - 72 * ui, {
+        size: 12 * ui,
         color: PALETTE.ore.spark,
         glow: 8,
         alpha: clamp(game.toast.life / 0.6, 0, 1),
@@ -619,8 +644,8 @@ export class GameView {
 
     // the ship sits at screen centre (camera follows), so warn just above it
     if (game.player && game.player.atBoundary && game.canFly()) {
-      r.text("OUT OF BOUNDS", VIEW_W / 2, VIEW_H / 2 - 42, {
-        size: 14,
+      r.text("OUT OF BOUNDS", VIEW_W / 2, VIEW_H / 2 - 42 * ui, {
+        size: 14 * ui,
         bold: true,
         color: PALETTE.ui.warn,
         align: "center",

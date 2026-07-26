@@ -19,6 +19,7 @@ import {
   POWERUP_TYPES,
   POWERUP_IDS,
   MAX_SLOTS,
+  UI_SCALES,
   SHIELD_SPARK,
   GAMEPAD,
   BINDABLE_CONTROLS,
@@ -154,7 +155,7 @@ export class Game {
     this.pauseConfirming = null // a row waiting to be confirmed a second time
     // Settings live here rather than on the things they affect, so one place holds
     // them and main.js applies whatever changes. Loaded below.
-    this.settings = { volume: 0.8, sound: true, crt: true, help: true }
+    this.settings = { volume: 0.8, sound: true, crt: true, help: true, uiScale: 1 }
     // Control bindings, and the row waiting for a key or button when one is being
     // rebound. Menu navigation is never in here; see BINDABLE_CONTROLS.
     this.bindings = freshBindings()
@@ -1545,6 +1546,20 @@ export class Game {
   setHelp(on) {
     this.settings.help = !!on
     this.rememberSettings()
+  }
+  // Step the HUD's scale along the sizes offered, wrapping, so one row works
+  // whether it is pressed or nudged left and right.
+  setUiScale(value) {
+    const nearest = UI_SCALES.reduce((best, size) =>
+      Math.abs(size - value) < Math.abs(best - value) ? size : best,
+    )
+    this.settings.uiScale = nearest
+    this.rememberSettings()
+  }
+  stepUiScale(step) {
+    const at = UI_SCALES.indexOf(this.settings.uiScale)
+    const next = (at + (step > 0 ? 1 : -1) + UI_SCALES.length) % UI_SCALES.length
+    this.setUiScale(UI_SCALES[next])
   }
   applySound() {
     Sound.enabled = this.settings.sound
