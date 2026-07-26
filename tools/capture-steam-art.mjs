@@ -118,8 +118,15 @@ await new Promise((r) => setTimeout(r, 150))
 await page.evaluate(async () => {
   const { mulberry32 } = await import("./src/math.js")
   const { Asteroid, RivalShip } = await import("./src/entities.js")
-  const { ARENA, WEAPON_TYPES } = await import("./src/config.js")
+  const { ARENA, WEAPON_TYPES, HAZARD_TRAITS } = await import("./src/config.js")
   const { PALETTE } = await import("./src/palette.js")
+
+  // What a hazard trait is, taken from the registry that spawns it, so a scene
+  // asking for an armed rock gets whatever an armed rock currently is.
+  const hazard = (name) => {
+    const found = HAZARD_TRAITS.find((entry) => entry.traits[name])
+    return found ? found.traits[name] : null
+  }
 
   window.__art = {
     // Seeded while a scene is built, so the same command gives the same artwork
@@ -168,7 +175,21 @@ await page.evaluate(async () => {
       return ship
     },
 
-    rock(game, dx, dy, radius, traits = {}) {
+    // `want` names the hazards in shorthand ({ gun: true }); each is resolved to
+    // the trait HAZARD_TRAITS holds for it, and a gun pool is cut to what this
+    // sector would arm a rock from, so a plate shows what the sector really has.
+    rock(game, dx, dy, radius, want = {}) {
+      const traits = {}
+      if (want.explosive) {
+        traits.explosive = true
+      }
+      if (want.shield) {
+        traits.shield = hazard("shield")
+      }
+      if (want.gun) {
+        const gun = hazard("gun")
+        traits.gun = gun && { ...gun, guns: game.gunsForSector(gun, game.level) }
+      }
       const rock = new Asteroid({
         x: game.viewCenter.x + dx,
         y: game.viewCenter.y + dy,
