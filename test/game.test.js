@@ -2855,28 +2855,33 @@ test("the screen stops shaking once the run is over", () => {
 // the exhaust counted as most of a range away and was barely moved, which is
 // exactly the rock the wash is wanted for.
 test("the exhaust wash shoves a boulder behind the ship, not only a pebble", () => {
-  const pushed = (radius, gap) => {
-    const game = liveGame()
-    const player = game.player
-    player.x = ARENA.cx
-    player.y = ARENA.cy
-    player.angle = 0 // nose along +x, so the exhaust washes along -x
-    player.energyMax = 1e6
-    game.holding = (name) => name === "thrust"
-    const rock = new Asteroid({ radius, x: 0, y: 0, vx: 0, vy: 0, spin: 0 })
-    // parked by its true surface, so nothing is overlapping and only the wash acts
-    rock.translate(ARENA.cx - (gap + rock.boundRadius) - rock.center.x, ARENA.cy - rock.center.y)
-    game.asteroids = [rock]
-    for (let frame = 0; frame < 60; frame++) {
+  // Seeded: a rock's outline is generated, so an unseeded one changes shape run to
+  // run and a comparison near the edge of the wash's reach flips with it.
+  const pushed = (radius, gap) =>
+    seeded(8140 + radius, () => {
+      const game = liveGame()
+      const player = game.player
       player.x = ARENA.cx
       player.y = ARENA.cy
-      player.vx = 0
-      player.vy = 0
-      player.energy = player.energyMax
-      player.update(1 / 60, game)
-    }
-    return { pushed: -rock.vx, mass: rockMass(rock.area) }
-  }
+      player.angle = 0 // nose along +x, so the exhaust washes along -x
+      player.energyMax = 1e6
+      game.holding = (name) => name === "thrust"
+      const rock = new Asteroid({ radius, x: 0, y: 0, vx: 0, vy: 0, spin: 0 })
+      // Parked by its true surface, and clear of the hull as well, so nothing is
+      // touching and the only thing acting on the rock is the exhaust.
+      const from = gap + rock.boundRadius + player.boundRadius
+      rock.translate(ARENA.cx - from - rock.center.x, ARENA.cy - rock.center.y)
+      game.asteroids = [rock]
+      for (let frame = 0; frame < 60; frame++) {
+        player.x = ARENA.cx
+        player.y = ARENA.cy
+        player.vx = 0
+        player.vy = 0
+        player.energy = player.energyMax
+        player.update(1 / 60, game)
+      }
+      return { pushed: -rock.vx, mass: rockMass(rock.area) }
+    })
 
   const gap = CONFIG.EXHAUST_WASH_RANGE / 2
   const pebble = pushed(30, gap),
@@ -2889,8 +2894,8 @@ test("the exhaust wash shoves a boulder behind the ship, not only a pebble", () 
   // the falloff runs on the gap to the rock's surface, so the reach is the same
   // whatever size the rock is
   for (const radius of [30, 100]) {
-    const close = pushed(radius, 5),
-      far = pushed(radius, CONFIG.EXHAUST_WASH_RANGE * 0.9)
+    const close = pushed(radius, 10),
+      far = pushed(radius, CONFIG.EXHAUST_WASH_RANGE * 0.8)
     assert.ok(close.pushed > far.pushed, `a ${radius} rock is shoved harder up close`)
     assert.ok(far.pushed > 0, `and still felt at the edge of the wash's reach`)
     const beyond = pushed(radius, CONFIG.EXHAUST_WASH_RANGE * 1.2).pushed

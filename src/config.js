@@ -184,7 +184,7 @@ export const CONFIG = {
   // Shield plating: level 1 fits the shield, and each level above it drains less
   // energy per point of damage. Level 0 flies without one, so its entry is never
   // read.
-  SHIELD_EFFICIENCY: [1, 1, 0.72, 0.5, 0.32],
+  SHIELD_EFFICIENCY: [2, 2, 1.44, 1, 0.64],
   MAGNET_RANGE: [62, 120, 190, 270, 350],
   LASER_RATE_MULT: [1, 1.45, 1.45, 1.45, 1.45],
   LASER_COST_MULT: [1, 1, 0.55, 0.55, 0.55],
@@ -997,7 +997,7 @@ export const POWERUP_TYPES = {
     cost: 90,
     buyable: true,
     mode: "pulse",
-    energy: 0.44,
+    energy: 0.22,
     cooldown: 4,
     range: 240,
     impulse: 300,
@@ -1050,7 +1050,7 @@ export const POWERUP_TYPES = {
     cost: 140,
     buyable: true,
     mode: "timed",
-    energy: 0.76,
+    energy: 0.38,
     cooldown: 60,
     seconds: 6.5,
     beamLengthMult: 1.6, // charged shots reach further...
@@ -1069,7 +1069,7 @@ export const POWERUP_TYPES = {
     cost: 130,
     buyable: true,
     mode: "timed",
-    energy: 0.88,
+    energy: 0.44,
     cooldown: 75,
     seconds: 9,
     beamOffsets: [-28, 0, 28], // parallel beams either side of the nose
@@ -1082,7 +1082,7 @@ export const POWERUP_TYPES = {
     cost: 100,
     buyable: true,
     mode: "timed",
-    energy: 0.38,
+    energy: 0.19,
     cooldown: 45,
     seconds: 6.5,
     pull: 260,
@@ -1096,7 +1096,7 @@ export const POWERUP_TYPES = {
     cost: 160,
     buyable: true,
     mode: "toggle",
-    drain: 0.4,
+    drain: 0.2,
     cooldown: 2,
     invisible: true,
     hullAlpha: 0.35,
