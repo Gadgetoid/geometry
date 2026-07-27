@@ -1718,9 +1718,10 @@ const levelRow = (id, name, desc, spec) => ({
 // A slot whose options are owned rather than levelled: the row reports what is
 // fitted and opens a pop-over of everything that could be. Buying and swapping
 // both happen in there, so the row itself has no action of its own.
-const equipmentRow = (slot) => ({
+const equipmentRow = (slot, inset = false) => ({
   id: slot,
   equipment: slot,
+  inset,
   name: EQUIPMENT[slot].label,
   desc: EQUIPMENT[slot].desc,
   info: (g) => g.equipmentName(slot),
@@ -1757,16 +1758,17 @@ export const SHOP = [
       },
     },
   ),
-  equipmentRow("shield"),
-  equipmentRow("radar"),
+  equipmentRow("shield", true),
+  equipmentRow("radar", true),
   equipmentRow("laser"),
   equipmentRow("turret"),
   equipmentRow("engine"),
 ]
 
-// Where the shop's own rows sit among the purchases: the special slots follow
-// EXTRA LIFE, and the gap under them sets that pair apart from the loadout below.
-export const SHOP_LAYOUT = { slotsRow: 1, groupGap: 14 }
+// Where the shop's own rows sit among the purchases, and how the page is grouped.
+// The specials row is the third thing the core carries, so it follows the shield and
+// the radar under it, and `groupGap` sets that group apart from the loadout below.
+export const SHOP_LAYOUT = { slotsRow: 4, groupGap: 14, insetBy: 18 }
 
 // ---------------------------------------------------------------------------
 // SLOT MENU - the pop-over that opens on a special slot in the shop. One entry

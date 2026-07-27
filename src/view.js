@@ -800,7 +800,9 @@ export class GameView {
       const item = game.shopItem(row)
       if (!item) {
         slotsY = y
-        this.#shopSlots(game, leftX, rightX, y, selected)
+        // The specials row is the last of what the core carries, so it is inset with
+        // the shield and the radar and the gap falls under the group.
+        this.#shopSlots(game, leftX + SHOP_LAYOUT.insetBy, rightX, y, selected)
         y += rowHeight + SHOP_LAYOUT.groupGap
         continue
       }
@@ -810,11 +812,16 @@ export class GameView {
       // A row that opens a pop-over has no price of its own: what it costs depends on
       // which option is chosen in there, so the column marks it as a way in instead.
       const opens = !!(item.equipment || item.levels)
-      r.text(`${selected ? "> " : "  "}${item.name}`, leftX, y, {
-        size: 15,
-        bold: selected,
-        color: maxed ? PALETTE.ui.good : selected ? PALETTE.text.bright : PALETTE.text.normal,
-      })
+      r.text(
+        `${selected ? "> " : "  "}${item.name}`,
+        leftX + (item.inset ? SHOP_LAYOUT.insetBy : 0),
+        y,
+        {
+          size: 15,
+          bold: selected,
+          color: maxed ? PALETTE.ui.good : selected ? PALETTE.text.bright : PALETTE.text.normal,
+        },
+      )
       // The row a pop-over was opened from wears the panel's own outline, and the
       // panel hangs directly off it, so the two read as one thing rather than as a
       // box that happens to be nearby.

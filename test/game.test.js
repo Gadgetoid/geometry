@@ -2136,22 +2136,38 @@ test("a saved run drops a special the registry no longer knows", () => {
   assert.deepEqual(carried(resumed), ["repel"])
 })
 
-test("the shop groups the spare ship and the specials above the loadout", () => {
+test("the shop sits what the core carries under it, and the loadout below", () => {
   const game = liveGame()
   game.enterShop()
   assert.equal(SHOP[0].id, "life", "a spare ship heads the page")
-  assert.equal(game.shopItem(game.slotsRow), null, "and the specials row follows it")
-  assert.equal(game.slotsRow, 1)
-  // every purchase is still reachable, exactly once, in registry order
-  const walked = []
+
+  // The page reads as three groups: the spare ship, then the core and the three
+  // things it carries, then what is bolted to the hull outside it.
+  const order = []
   for (let row = 0; row <= SHOP.length; row++) {
     const item = game.shopItem(row)
-    if (item) {
-      walked.push(item.id)
-    }
+    order.push(item ? item.id : "specials")
   }
+  assert.deepEqual(order, [
+    "life",
+    "core",
+    "shield",
+    "radar",
+    "specials",
+    "laser",
+    "turret",
+    "engine",
+  ])
+
+  // and the three the core carries are the inset ones, which is how the page says so
+  const inset = order.filter((id) => {
+    const item = SHOP.find((entry) => entry.id === id)
+    return id === "specials" || (item && item.inset)
+  })
+  assert.deepEqual(inset, ["shield", "radar", "specials"])
+  // every purchase is still reachable, exactly once, in registry order
   assert.deepEqual(
-    walked,
+    order.filter((id) => id !== "specials"),
     SHOP.map((item) => item.id),
   )
   assert.equal(game.launchRow, SHOP.length + 1)

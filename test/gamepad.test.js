@@ -251,7 +251,12 @@ test("A confirms as well as start, in every menu", () => {
   const buying = liveGame()
   buying.enterShop()
   buying.oreBalance = 500
-  buying.shopSelection = SHOP.findIndex((item) => item.id === "core") + 1 // past the slots row
+  // Found by walking the page rather than by offsetting an index: where the specials
+  // row falls among the purchases is the layout's business and has moved once already.
+  buying.shopSelection = [...Array(SHOP.length + 1).keys()].find((row) => {
+    const item = buying.shopItem(row)
+    return item && item.id === "core"
+  })
   const coreLevel = buying.upgrades.core
   const input = new GamepadInput(buying)
   // The core opens on its ladder, at the step there is something to do with, so A
