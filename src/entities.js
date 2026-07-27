@@ -741,6 +741,7 @@ export class Weapon {
     this.overdrive = 0 // 0 to 1 across the wind-up past full charge
     this.charging = 0 // wind-up time left before a charged beam fires
     this.chargeDuration = 0
+    this.resting = 0 // what a hull waits out between shots, see rollPace
   }
 
   // Drop a held charge, including any overdrive wound onto it.
@@ -773,6 +774,26 @@ export class Weapon {
     }
     return Array.isArray(r) ? randRange(r[0], r[1]) : r
   }
+  // Whether the host can pay for this and still hold its bubble up afterwards. A hull
+  // that empties its cell into one gun has no shield for the seconds that follow, which
+  // is not a trade a ship makes with itself: `reserve` is what it keeps back, as a
+  // fraction of its own cell. The player is free to make it, which is why this is asked
+  // by the controllers rather than by the gun.
+  affordableBy(host) {
+    const cost = this.type.energy ?? 0
+    return host.energy >= cost + (this.type.reserve ?? 0) * (host.energyMax || 0)
+  }
+
+  // How long a hull waits after this before it lines the next one up. Rolled, so two of
+  // them in a sector do not fall into step.
+  rollPace() {
+    const pace = this.type.pace
+    if (!pace) {
+      return 0
+    }
+    return Array.isArray(pace) ? randRange(pace[0], pace[1]) : pace
+  }
+
   rollLength() {
     const l = this.type.length
     return Array.isArray(l) ? randRange(l[0], l[1]) : l
@@ -1034,6 +1055,9 @@ export const WEAPON_CONTROLLERS = {
   // heavy cannon: winds up with a growing glow (drawn by drawShip) and, once
   // committed, fires even if the player slips away, so the shot is telegraphed
   hunter(weapon, dt, game, host, world) {
+    if (weapon.resting > 0) {
+      weapon.resting -= dt
+    }
     const found = game.hostileTarget(host)
     if (!found) {
       return
@@ -1050,7 +1074,14 @@ export const WEAPON_CONTROLLERS = {
       if (weapon.charging <= 0) {
         weapon.charging = 0
         weapon.fire(game, host, world.x, world.y, host.angle, weapon.type.length)
+        weapon.resting = weapon.rollPace()
       }
+      return
+    }
+    // Not while it is between shots, and not if paying for this one would leave it
+    // flying about with no bubble: a hull that manages its own cell is a harder thing to
+    // fight than one that empties it into the first shot it can line up.
+    if (weapon.resting > 0 || !weapon.affordableBy(host)) {
       return
     }
     if (

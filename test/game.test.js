@@ -4267,6 +4267,57 @@ test("every gun a flown hull carries is drawn on it", () => {
   )
 })
 
+test("a hull keeps its bubble up rather than spending it on the big gun", () => {
+  // A pincer that put everything into the gun flew about with no bubble for 55 seconds in
+  // every 60: a hull fighting itself as much as the player. It keeps a reserve back, and
+  // paces itself rather than winding up again the instant it can afford to.
+  const game = liveGame()
+  const player = beSolid(game.player)
+  game.asteroids = [new Asteroid({ x: 60, y: 60, radius: 30 })] // so the sector stays live
+  player.x = 760
+  player.y = 320
+  const pincer = plainRival(300, 320, "alienFrigate")
+  pincer.arrived = true
+  pincer.angle = 0
+  game.rivals = [pincer]
+  const shield = pincer.shieldModule()
+  assert.ok(shield && shield.up, "it starts with its field up")
+
+  let down = 0
+  let thrown = 0
+  const at = []
+  for (let frame = 0; frame < 60 * 40; frame++) {
+    pincer.x = 300
+    pincer.y = 320
+    pincer.angle = 0
+    player.x = 760
+    player.y = 320
+    player.hull = 1e9
+    player.energy = player.energyMax
+    const before = game.projectiles.filter((shot) => shot instanceof Singularity).length
+    game.advance(1 / 60)
+    if (game.projectiles.filter((shot) => shot instanceof Singularity).length > before) {
+      at.push(frame / 60)
+      thrown++
+    }
+    if (!shield.up) {
+      down++
+    }
+  }
+  assert.ok(thrown > 0, "it does throw them")
+  assert.equal(down, 0, `and never goes without its field to do it, down for ${down} frames`)
+  assert.ok(
+    pincer.energy > WEAPON_TYPES.singularityGun.reserve * pincer.energyMax * 0.5,
+    "with something left in the cell",
+  )
+  for (let i = 1; i < at.length; i++) {
+    assert.ok(
+      at[i] - at[i - 1] > WEAPON_TYPES.singularityGun.pace[0],
+      `and a beat between them, got ${(at[i] - at[i - 1]).toFixed(1)}s`,
+    )
+  }
+})
+
 test("a well already out there is not raw material for the next one", () => {
   // Wells pull each other, which is the behaviour. A gun winding up a new one towing the
   // last one about is not: it sent a single well out on its own the moment the ship that

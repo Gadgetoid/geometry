@@ -676,6 +676,13 @@ export const WEAPON_TYPES = {
     // shot that starts wide still arrives.
     arc: 1.57,
     chargeTime: 2.2, // a long tell, because the answer is to not be in front of it
+    // What a hull keeps back rather than spending on this, as a fraction of its own cell.
+    // A pincer that put everything into the gun flew around with no bubble for 55 seconds
+    // in every 60, which is a hull fighting itself as much as the player.
+    reserve: 0.35,
+    // And a beat between shots, so it paces itself rather than throwing one the instant
+    // it can afford to. Rolled, so two in a sector do not fall into step.
+    pace: [1.6, 3.2],
     sound: "bigLaser",
     colour: PALETTE.alien.beam,
     generate: { radius: 240, pull: 260, motes: 40 },
