@@ -2795,6 +2795,7 @@ export class RivalShip extends Ship {
     }
 
     this.wanderFor -= dt
+    this.#considerBreakingOff(dt, prey)
     const outAngle = Math.atan2(this.y - ARENA.cy, this.x - ARENA.cx)
     const goal = this.leaving
       ? {
@@ -2802,7 +2803,9 @@ export class RivalShip extends Ship {
           y: ARENA.cy + Math.sin(outAngle) * (ARENA.radius + CONFIG.RIVAL_EXIT_MARGIN),
         }
       : this.hunts && prey
-        ? { x: prey.target.x, y: prey.target.y }
+        ? this.breaking > 0
+          ? this.#awayFrom(prey.target)
+          : { x: prey.target.x, y: prey.target.y }
         : target || this.#wanderGoal()
     const turn = shortestTurn(this.angle, bearingTo(this, goal))
     this.angle += clamp(turn, -this.turnRate * dt, this.turnRate * dt)
@@ -2874,6 +2877,36 @@ export class RivalShip extends Ship {
 
   // Every engine draws its own plume from its own hardpoint, so a hull with two
   // nozzles shows two streams and one that has lost an engine stops showing its.
+  // A hull that hunts can also know when to be somewhere else. `breakOff` on the type says
+  // when: inside `near` it is too close to be shooting from, and inside `aimedWithin` with
+  // the prey pointed at it within `facing` it is about to be shot at. Either sends it out
+  // for `hold` seconds, which is what stops it dithering on the line: a hull that turned
+  // back the instant it was clear would sit at the boundary being shot.
+  //
+  // A type that says nothing keeps flying straight at what it hunts, which is what a slab
+  // does: it has no dodge in it and nothing to gain by trying.
+  #considerBreakingOff(dt, prey) {
+    const spec = this.type.breakOff
+    this.breaking = Math.max(0, (this.breaking ?? 0) - dt)
+    if (!spec || !prey || this.leaving) {
+      return
+    }
+    const tooClose = prey.distance < spec.near
+    const aimed =
+      prey.target.angle != null &&
+      prey.distance < spec.aimedWithin &&
+      Math.abs(shortestTurn(prey.target.angle, bearingTo(prey.target, this))) < spec.facing
+    if (tooClose || aimed) {
+      this.breaking = spec.hold
+    }
+  }
+
+  // Somewhere well away from a body, on the bearing straight out from it.
+  #awayFrom(body) {
+    const out = bearingTo(body, this)
+    return { x: this.x + Math.cos(out) * 400, y: this.y + Math.sin(out) * 400 }
+  }
+
   #thrust(dt, game) {
     const back = this.angle + Math.PI
     for (const hp of this.hardpoints) {

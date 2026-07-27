@@ -3899,12 +3899,15 @@ test("nothing hunting the player can see a stealthed ship", () => {
   assert.equal(shots(true), 0, "and holds fire at one it cannot")
 })
 
-test("a hunting rival steers for the player only while it can see one", () => {
-  // The player is parked out near the wall with the rival between it and the
-  // centre, so closing on the player means turning outward. A rival that cannot see
-  // the player searches, and a search may wander toward it as easily as away, so
-  // the blind case is a tendency measured over several of them rather than one run.
-  const closingSpeed = (hidden) => {
+test("a hunting rival comes for a ship it can see, and not for one it cannot", () => {
+  // The player is parked out near the wall with the rival between it and the centre, so
+  // closing on the player means turning outward.
+  //
+  // Measured as how close it ever came rather than where it ended up: a dart that breaks
+  // off makes a pass and leaves, so the distance at the end of a run says nothing about
+  // whether it came at all. And a rival that cannot see the player searches, and a search
+  // wanders toward it as readily as away, so both cases are means over the same seeds.
+  const approach = (hidden) => {
     const game = liveGame()
     const player = game.player
     player.x = ARENA.cx + 780
@@ -3916,24 +3919,29 @@ test("a hunting rival steers for the player only while it can see one", () => {
     }
     const hunter = Object.keys(SHIP_TYPES).find((name) => SHIP_TYPES[name].hunts)
     assert.ok(hunter, "some ship should hunt the player")
-    const rival = plainRival(ARENA.cx + 620, ARENA.cy, hunter)
+    const rival = plainRival(ARENA.cx + 400, ARENA.cy, hunter)
     rival.angle = Math.PI // pointing at the centre, away from the player
     game.rivals = [rival]
     const before = Math.hypot(rival.x - player.x, rival.y - player.y)
+    let nearest = before
     for (let frame = 0; frame < 240; frame++) {
       player.energy = player.energyMax
       rival.update(1 / 60, game)
+      nearest = Math.min(nearest, Math.hypot(rival.x - player.x, rival.y - player.y))
     }
-    return before - Math.hypot(rival.x - player.x, rival.y - player.y)
+    return before - nearest
   }
-  assert.ok(closingSpeed(false) > 0, "it closes on a ship it can see")
-  const blind = [13, 29, 47, 61, 79, 97, 113, 131].map((seed) =>
-    seeded(seed, () => closingSpeed(true)),
-  )
-  const mean = blind.reduce((sum, closed) => sum + closed, 0) / blind.length
+  const seeds = [13, 29, 47, 61, 79, 97, 113, 131]
+  const seen = seeds.map((seed) => seeded(seed, () => approach(false)))
+  const blind = seeds.map((seed) => seeded(seed, () => approach(true)))
+  const mean = (runs) => runs.reduce((sum, run) => sum + run, 0) / runs.length
   assert.ok(
-    mean < 40,
-    `hidden, it closed a mean of ${mean.toFixed(0)} of 160: ${blind.map((b) => b.toFixed(0)).join(", ")}`,
+    Math.min(...seen) > 90,
+    `seeing it, every run should come for it: ${seen.map((r) => r.toFixed(0)).join(", ")}`,
+  )
+  assert.ok(
+    mean(blind) < mean(seen) * 0.65,
+    `blind ${mean(blind).toFixed(0)} against seeing ${mean(seen).toFixed(0)}`,
   )
 })
 

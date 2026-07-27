@@ -1551,6 +1551,10 @@ const SHIP_DESIGNS = {
     },
     spawn: { fromSector: 4, weight: 2, maxConcurrent: 1 },
     hunts: true,
+    // A dart lines up, fires and leaves rather than closing to a knife fight it cannot win.
+    // Half its own beam's reach is close enough, and it will not sit in front of a ship
+    // that is pointed at it inside the reach of a charged one.
+    breakOff: { near: 210, facing: 0.55, aimedWithin: 520, hold: 1.3 },
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 260, ring: 19, shake: 10 },
     killScore: 420,
@@ -1883,6 +1887,10 @@ const SHIP_DESIGNS = {
     },
     spawn: { fromSector: 20, weight: 2, maxConcurrent: 1 },
     hunts: true,
+    // A dart lines up, fires and leaves rather than closing to a knife fight it cannot win.
+    // Half its own beam's reach is close enough, and it will not sit in front of a ship
+    // that is pointed at it inside the reach of a charged one.
+    breakOff: { near: 210, facing: 0.55, aimedWithin: 520, hold: 1.3 },
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 260, ring: 19, shake: 10 },
     killScore: 420,
