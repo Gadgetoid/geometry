@@ -28,7 +28,6 @@ import {
   slicePolygon,
   convexContact,
   supportDistance,
-  distanceTo,
   bearingTo,
   shortestTurn,
 } from "./math.js"
@@ -408,6 +407,13 @@ export class Entity {
     return true
   }
 
+  // Which side this body is on, for deciding what shoots at what. A rock is a
+  // hazard, and so is the wreckage cut from a hull: whatever it was made of, once
+  // it is debris it fires on the player alone.
+  get faction() {
+    return "hazard"
+  }
+
   // Is a shield raised over this entity?
   shieldUp() {
     const shield = this.shieldModule()
@@ -662,15 +668,15 @@ export const WEAPON_CONTROLLERS = {
   // driven directly by player input, see PlayerShip.fireLaser
   manual() {},
 
-  // leads nothing: fires straight at the player whenever they are visible
+  // leads nothing: fires straight at whatever the host is hostile to
   turret(weapon, dt, game, host, world) {
-    const player = game.visiblePlayer()
-    // don't snipe the player from off-screen where they can't see the shooter
-    if (!player || !game.onScreen(host.x, host.y, CONFIG.OFFSCREEN_FIRE_MARGIN)) {
+    const found = game.hostileTarget(host, world)
+    // don't snipe from off-screen, where the target cannot see the shooter
+    if (!found || !game.onScreen(host.x, host.y, CONFIG.OFFSCREEN_FIRE_MARGIN)) {
       return
     }
-    const reach = weapon.cutReach(player, distanceTo(world, player))
-    weapon.fire(game, host, world.x, world.y, bearingTo(world, player), reach)
+    const reach = weapon.cutReach(found.target, found.distance)
+    weapon.fire(game, host, world.x, world.y, bearingTo(world, found.target), reach)
   },
 
   // cuts rocks for ore, firing along the host's facing when one is near
@@ -684,8 +690,8 @@ export const WEAPON_CONTROLLERS = {
   // heavy cannon: winds up with a growing glow (drawn by drawShip) and, once
   // committed, fires even if the player slips away, so the shot is telegraphed
   hunter(weapon, dt, game, host, world) {
-    const player = game.visiblePlayer()
-    if (!player) {
+    const found = game.hostileTarget(host)
+    if (!found) {
       return
     }
     if (weapon.charging > 0) {
@@ -696,10 +702,10 @@ export const WEAPON_CONTROLLERS = {
       }
       return
     }
-    const arc = shortestTurn(host.angle, bearingTo(host, player))
+    const arc = shortestTurn(host.angle, bearingTo(host, found.target))
     if (
       Math.abs(arc) < weapon.type.arc &&
-      distanceTo(host, player) < weapon.type.length &&
+      found.distance < weapon.type.length &&
       game.onScreen(host.x, host.y, CONFIG.OFFSCREEN_FIRE_MARGIN)
     ) {
       weapon.charging = weapon.type.chargeTime || 0.8
@@ -710,8 +716,8 @@ export const WEAPON_CONTROLLERS = {
 
   // The player's nose turret, firing from its hardpoint. Arrow keys aim
   // host.turretAim and fire on demand; with no input it auto-targets the nearest
-  // rival in range. Rocks are the main laser's business: a bare rock has no hull
-  // to lose and is destroyed by being cut, so a turret spent on one achieves
+  // hostile hull in range. Rocks are the main laser's business: a bare rock has no
+  // hull to lose and is destroyed by being cut, so a turret spent on one achieves
   // nothing while pointing away from what does.
   defense(weapon, dt, game, host, world) {
     if (host.turretManual > 0) {
@@ -725,7 +731,7 @@ export const WEAPON_CONTROLLERS = {
     if (host.buffField("invisible", false)) {
       return
     }
-    const found = game.nearestRival(world, weapon.type.range)
+    const found = game.hostileTarget(host, world, weapon.type.range)
     if (found) {
       host.turretAim = bearingTo(world, found.target)
       const reach = weapon.cutReach(found.target, found.distance)
@@ -985,6 +991,12 @@ export class Ship extends Entity {
     return this.type.mass ?? 1
   }
 
+  // A hull flies for whichever side its type names, and for the rivals without
+  // one, so a new type is still a shape and three numbers.
+  get faction() {
+    return this.type.faction ?? "rival"
+  }
+
   // Whether an unshielded hull comes apart when a beam passes through it, as a
   // rock does. True for anything the sector can throw at you; how big the pieces
   // are is the material's business, not this flag's.
@@ -1056,7 +1068,8 @@ export class Ship extends Entity {
         game.gameTime,
       )
     }
-    const seen = game.visiblePlayer()
+    const found = game.hostileTarget(this)
+    const seen = found && found.target
     for (const hp of this.hardpoints) {
       const m = hp.module
       if (!m || m.kind !== "weapon") {
@@ -1951,7 +1964,7 @@ export class RivalShip extends Ship {
     if (this.dead) {
       return // killed earlier this frame, and dropped from the list after this loop
     }
-    const player = game.visiblePlayer()
+    const prey = game.hostileTarget(this)
     this.regenEnergy(dt)
     this.updateShield(dt)
     this.slamCooldown = Math.max(0, this.slamCooldown - dt)
@@ -1976,8 +1989,8 @@ export class RivalShip extends Ship {
           x: ARENA.cx + Math.cos(outAngle) * (ARENA.radius + CONFIG.RIVAL_EXIT_MARGIN),
           y: ARENA.cy + Math.sin(outAngle) * (ARENA.radius + CONFIG.RIVAL_EXIT_MARGIN),
         }
-      : this.hunts && player
-        ? { x: player.x, y: player.y }
+      : this.hunts && prey
+        ? { x: prey.target.x, y: prey.target.y }
         : target || { x: ARENA.cx, y: ARENA.cy }
     const turn = shortestTurn(this.angle, bearingTo(this, goal))
     this.angle += clamp(turn, -this.turnRate * dt, this.turnRate * dt)
@@ -2635,7 +2648,8 @@ export class Asteroid extends Entity {
         game.gameTime,
       )
     }
-    const seen = game.visiblePlayer()
+    const found = game.hostileTarget(this)
+    const seen = found && found.target
     for (const hp of this.hardpoints) {
       if (!hp.module || hp.module.kind !== "weapon") {
         continue

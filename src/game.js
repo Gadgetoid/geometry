@@ -11,6 +11,7 @@ import {
   CONFIG,
   PROGRESSION,
   HAZARD_TRAITS,
+  FACTIONS,
   SHIP_TYPES,
   PAUSE_MENU,
   SHOP,
@@ -1347,6 +1348,34 @@ export class Game {
   }
   nearestOre(from, within) {
     return this.#nearest(this.oreChunks, from, within)
+  }
+
+  // What `host` would shoot at: the nearest body of a faction its own is hostile
+  // to, measured from `from` (a gun asks from its own hardpoint, a hull from
+  // itself) and no further than `within`.
+  //
+  // This is the only question a weapon or a hunting hull asks about targets, so
+  // adding a side is an edit to FACTIONS and nothing else. Being seen at all is
+  // part of the answer and not a separate test the callers could forget: the
+  // player is the one body that can hide, and visiblePlayer is where that lives.
+  hostileTarget(host, from = host, within = Infinity) {
+    const hostile = FACTIONS[host.faction]
+    if (!hostile) {
+      return null
+    }
+    const candidates = []
+    if (hostile.includes("player")) {
+      const player = this.visiblePlayer()
+      if (player && player !== host) {
+        candidates.push(player)
+      }
+    }
+    for (const rival of this.rivals) {
+      if (rival !== host && hostile.includes(rival.faction)) {
+        candidates.push(rival)
+      }
+    }
+    return this.#nearest(candidates, from, within)
   }
 
   // Powerups the run has met. A kind has to be found in a sector before the shop

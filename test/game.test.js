@@ -2963,6 +2963,63 @@ test("a nearest scan answers for every collection it is asked about", () => {
   assert.ok(Math.abs(game.nearestOre(from).distance - 50) < 1e-9)
 })
 
+// ---- who shoots at whom ----------------------------------------------------
+
+// Hostility was hard-wired: every gun read visiblePlayer and the player's turret
+// read nearestRival, so a third side could not be said at all. These pin the rule
+// that replaced it. No alien type ships yet, so one is flown for that side here,
+// which is what a real one will do through its own registry entry.
+function flyingFor(typeName, faction, body) {
+  const type = SHIP_TYPES[typeName]
+  const original = type.faction
+  type.faction = faction
+  try {
+    return body()
+  } finally {
+    type.faction = original
+  }
+}
+
+test("a hull takes aim at the sides its own faction is hostile to", () => {
+  flyingFor("seeker", "alien", () => {
+    const game = liveGame()
+    const rival = new RivalShip(ARENA.cx + 100, ARENA.cy, "scout", [])
+    const alien = new RivalShip(ARENA.cx + 160, ARENA.cy, "seeker", [])
+    game.rivals = [rival, alien]
+    assert.equal(rival.faction, "rival", "a type says nothing and flies for the rivals")
+    assert.equal(alien.faction, "alien")
+
+    // the rival is 100 from the player and 60 from the alien, so it takes the alien
+    assert.equal(game.hostileTarget(rival).target, alien, "a rival fights the aliens as well")
+    assert.equal(game.hostileTarget(alien).target, rival, "and is fought back")
+    assert.equal(game.hostileTarget(game.player).target, rival, "the player fights both")
+  })
+})
+
+test("a hidden player is no target, and the other side still is", () => {
+  flyingFor("seeker", "alien", () => {
+    const game = liveGame()
+    const rival = new RivalShip(ARENA.cx + 60, ARENA.cy, "scout", [])
+    const alien = new RivalShip(ARENA.cx + 300, ARENA.cy, "seeker", [])
+    game.rivals = [rival, alien]
+    assert.equal(game.hostileTarget(rival).target, game.player, "in the open the player is nearest")
+    hideThePlayer(game)
+    assert.equal(game.hostileTarget(rival).target, alien, "hidden, the rival turns on the alien")
+  })
+})
+
+test("a rock is a hazard: it fights the player and leaves the rivals to it", () => {
+  const game = liveGame()
+  const rock = new Asteroid({ x: ARENA.cx + 200, y: ARENA.cy, radius: 40, traits: {} })
+  const rival = new RivalShip(ARENA.cx + 210, ARENA.cy, "scout", [])
+  game.asteroids = [rock]
+  game.rivals = [rival]
+  assert.equal(rock.faction, "hazard")
+  // the rival is 10 units off it and the player 200, and it still takes the player:
+  // scenery that fought the AI would be a sector the player could sit out
+  assert.equal(game.hostileTarget(rock).target, game.player)
+})
+
 // A turret that swings toward a ship nothing can see gives its position away, so
 // the drawn bearing has to ask the same question the controller does. Rock
 // turrets were fixed for this and ships were missed.

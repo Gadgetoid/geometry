@@ -598,6 +598,26 @@ export const SHIELD_TYPES = {
 }
 
 // ---------------------------------------------------------------------------
+// FACTIONS - who shoots at whom. One entry per side, listing the sides it is
+// hostile to, and Game.hostileTarget is the only thing that reads it: every gun
+// and every hull that steers at something asks that one question, so no
+// behaviour has to know which sides exist.
+//
+// A ship type states its own `faction` and defaults to `rival` without one, so a
+// new hull is still a shape and three numbers. `hazard` is what everything else
+// is: a rock, and the wreckage cut from a hull. Armed rocks shoot at the player
+// and at nothing else, which is what they have always done, and keeping them off
+// the rivals' backs is deliberate - a sector where the scenery fights the AI is a
+// sector the player can sit out.
+// ---------------------------------------------------------------------------
+export const FACTIONS = {
+  player: ["rival", "alien"],
+  rival: ["player", "alien"],
+  alien: ["player", "rival"],
+  hazard: ["player"],
+}
+
+// ---------------------------------------------------------------------------
 // SHIP STATS - how a ship's settings come out of what the ship is.
 //
 // A type states its shape (`outline` and `size`) and three numbers a person can
@@ -923,6 +943,7 @@ const PLAYER_DESIGN = {
     [-0.8, 0.85],
   ],
   colour: PALETTE.player.hull,
+  faction: "player",
   size: 13,
   mass: 1, // the scale every other hull's mass is quoted against
   hardpoints: [
