@@ -815,6 +815,13 @@ export class Core {
     return this.fitted.filter((module) => module.slot === slot).length
   }
 
+  // Take whatever is in `slot` out. Returns whether anything was there.
+  remove(slot) {
+    const before = this.fitted.length
+    this.fitted = this.fitted.filter((module) => module.slot !== slot)
+    return this.fitted.length !== before
+  }
+
   // Fit `entry` into `slot`, replacing what is there when the core has no room for
   // a second. Returns whether anything changed, so a repeat purchase is a no-op.
   equip(slot, entry) {
@@ -1563,7 +1570,20 @@ export class PlayerShip extends Ship {
     for (const [slot, spec] of Object.entries(EQUIPMENT)) {
       const id = game.fittedEquipment(slot)
       const hp = this.hardpoints[spec.hp]
-      if (!id || !hp) {
+      if (!hp) {
+        continue
+      }
+      // Nothing fitted means the slot is empty on purpose, so whatever it put there
+      // comes off. Each slot owns its mount outright, so there is nothing else on it
+      // to lose.
+      if (!id) {
+        if (spec.slot) {
+          if (hp.module && hp.module.kind === "core") {
+            hp.module.remove(spec.slot)
+          }
+        } else if (hp.module) {
+          hp.module = null
+        }
         continue
       }
       const entry = { hp: spec.hp, [spec.mount]: id }

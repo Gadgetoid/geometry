@@ -3767,6 +3767,65 @@ test("a specials pop-over is still titled by what is in its slot", () => {
   assert.ok(said.includes(SPECIAL_TYPES.oreMagnet.label), "named for what it holds")
 })
 
+test("a slot that will go without can be emptied, and stays empty across a save", () => {
+  // A shieldless run is a way to play, so what is fitted can be taken off. It is not
+  // sold: it stays owned, so the choice can be taken back.
+  const game = liveGame()
+  game.oreBalance = 500
+  const mark = optionAt("shield", 0)
+  game.equipmentRows("shield")[0].action(game)
+  assert.ok(game.player.shieldModule(), "bought and fitted")
+
+  const none = game.equipmentRows("shield").at(-1)
+  assert.equal(none.name, "NONE", "the last row is the one that takes it off")
+  none.action(game)
+  assert.equal(game.player.shieldModule(), null, "the bubble is gone")
+  assert.ok(game.ownsEquipment("shield", mark), "but it is still owned")
+  assert.equal(game.equipmentRows("shield").at(-1).value(game), "FITTED", "and NONE is what is on")
+
+  // an empty slot must not be quietly refilled by a resume
+  game.level = 3
+  game.enterShop()
+  const resumed = new Game()
+  resumed.savedRun = game.savedRun
+  resumed.resumeRun()
+  assert.equal(resumed.player.shieldModule(), null, "still off after a resume")
+  assert.ok(resumed.ownsEquipment("shield", mark), "and still owned")
+
+  // and it goes back on for nothing
+  const ore = resumed.oreBalance
+  resumed.equipmentRows("shield")[0].action(resumed)
+  assert.ok(resumed.player.shieldModule(), "back on")
+  assert.equal(resumed.oreBalance, ore, "at no cost, since it was never sold")
+})
+
+test("a radar taken off leaves the ship seeing only what is close", () => {
+  const game = liveGame()
+  const far = game.player.sensorRange("rocks")
+  assert.equal(far, Infinity, "the hull comes with a set that finds rock anywhere")
+  game.equipmentRows("radar").at(-1).action(game)
+  assert.equal(game.player.sensorRange("rocks"), CONFIG.SENSOR_FLOOR, "off, it sees to the floor")
+  assert.equal(
+    [...game.player.modules()].filter((module) => module.kind === "radar").length,
+    0,
+    "and the set is out of the core rather than merely ignored",
+  )
+})
+
+test("the laser and the drive cannot be taken off", () => {
+  // There is no run without a gun to mine with or an engine to move, so those slots
+  // are not marked removable and offer no way to empty them.
+  const game = liveGame()
+  for (const slot of ["laser", "engine"]) {
+    assert.ok(!EQUIPMENT[slot].removable, `${slot} must not be removable`)
+    const rows = game.equipmentRows(slot)
+    assert.ok(!rows.some((row) => row.name === "NONE"), `${slot} must not offer a NONE row`)
+    const fitted = game.fittedEquipment(slot)
+    game.removeEquipment(slot)
+    assert.equal(game.fittedEquipment(slot), fitted, `${slot} stays fitted`)
+  }
+})
+
 // ---- control bindings -----------------------------------------------------
 
 test("the default bindings are the controls the game shipped with", () => {

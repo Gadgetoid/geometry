@@ -305,6 +305,21 @@ export class Game {
     Sound.power()
   }
 
+  // Take what is fitted off, for a slot that will go without. Nothing is sold: it
+  // stays owned and goes back on whenever it is wanted, so this is a choice about how
+  // to fly rather than a refund.
+  removeEquipment(slot) {
+    if (!EQUIPMENT[slot].removable || !this.fittedEquipment(slot)) {
+      return
+    }
+    this.upgrades.fitted[slot] = null
+    if (this.player) {
+      this.player.fitEquipment(this)
+    }
+    this.rememberRun()
+    Sound.power()
+  }
+
   // Buy one, which also fits it: nobody buys a drive to leave in the hold.
   buyEquipment(slot, id) {
     const option = this.equipmentOption(slot, id)
@@ -331,7 +346,7 @@ export class Game {
   // it costs, or that it is already owned or already in.
   equipmentRows(slot) {
     const spec = EQUIPMENT[slot]
-    return spec.options.map((option, index) => {
+    const rows = spec.options.map((option, index) => {
       // A ladder is climbed in order, so a mark is out of reach until the one below
       // it is owned. Everything else is a straight choice.
       const locked =
@@ -360,6 +375,17 @@ export class Game {
         },
       }
     })
+    // Under the options, for a slot that will go without: flying with no shield is a
+    // way to play rather than a mistake, so it is offered rather than merely possible.
+    if (spec.removable) {
+      rows.push({
+        name: "NONE",
+        desc: "Fly without one. It stays bought, and goes back on whenever you like.",
+        value: (g) => (g.fittedEquipment(slot) ? "REMOVE" : "FITTED"),
+        action: (g) => g.removeEquipment(slot),
+      })
+    }
+    return rows
   }
 
   // How many specials the ship has room for, which the power core decides.
@@ -1964,8 +1990,13 @@ export class Game {
           fresh.owned[slot].push(id)
         }
       }
-      const wanted = saved.fitted && saved.fitted[slot]
-      if (known(wanted) && fresh.owned[slot].includes(wanted)) {
+      // A slot saved as empty was emptied on purpose, so it is not quietly refilled
+      // with whatever came free with the hull.
+      const stated = saved.fitted && slot in saved.fitted
+      const wanted = stated ? saved.fitted[slot] : undefined
+      if (wanted === null && EQUIPMENT[slot].removable) {
+        fresh.fitted[slot] = null
+      } else if (known(wanted) && fresh.owned[slot].includes(wanted)) {
         fresh.fitted[slot] = wanted
       }
     }

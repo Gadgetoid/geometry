@@ -1249,6 +1249,11 @@ export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
 //   label   what the shop calls the slot
 //   hp      the hardpoint it mounts on, in PLAYER_DESIGN's list
 //   slot    for equipment the core carries, the core slot it goes in
+//   removable  whether the slot may be left empty. A shield, a radar and a turret
+//              are additions, so a run can be flown without them and some players
+//              will want to. A laser and a drive are what make the hull a ship, the
+//              way the core is: there is no run without them, so they cannot come
+//              off and are not marked.
 //   options in the order the shop lists them:
 //             id    the registry entry it fits
 //             name  what the shop calls it
@@ -1262,6 +1267,7 @@ export const EQUIPMENT = {
   shield: {
     label: "SHIELD",
     desc: "An energy bubble. Damage drains the cell instead of the hull, until it runs out.",
+    removable: true,
     hp: 1,
     mount: "shield",
     slot: "shield",
@@ -1299,6 +1305,7 @@ export const EQUIPMENT = {
   radar: {
     label: "RADAR",
     desc: "What the ship picks out beyond the screen. Everything close by shows regardless.",
+    removable: true,
     hp: 1,
     mount: "radar",
     slot: "radar",
@@ -1336,6 +1343,7 @@ export const EQUIPMENT = {
   turret: {
     label: "TURRET",
     desc: "A gun that minds the ship on its own while the laser is busy elsewhere.",
+    removable: true,
     hp: 2,
     mount: "weapon",
     controller: "defense",
@@ -1750,6 +1758,7 @@ export const SHOP = [
     },
   ),
   equipmentRow("shield"),
+  equipmentRow("radar"),
   equipmentRow("laser"),
   equipmentRow("turret"),
   equipmentRow("engine"),
