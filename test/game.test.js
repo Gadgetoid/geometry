@@ -4190,8 +4190,14 @@ test("an alien beam bends the space along it, and an honest one bends nothing", 
     Math.abs(along[0].endX - along[0].x) > 0.1,
     "the two ends are the two ends of the beam, not a point",
   )
-  assert.ok(along[0].radius < 0.06, `close in, got ${along[0].radius.toFixed(3)} of the width`)
-  assert.ok(along[0].strength < 0.3, `and gentle, got ${along[0].strength.toFixed(2)}`)
+  assert.ok(
+    along[0].radius < 0.15,
+    `a band beside the shot rather than half the screen, got ${along[0].radius.toFixed(3)}`,
+  )
+  assert.ok(
+    along[0].strength < 0.7,
+    `and a bend rather than a smear, got ${along[0].strength.toFixed(2)}`,
+  )
 
   // The yard's own laser burns rather than bending, and states no warp.
   const ours = lensesAfterFiring("playerLaserMk1")
@@ -4265,6 +4271,70 @@ test("every gun a flown hull carries is drawn on it", () => {
     drawn.every((nub) => nub.stroke === PALETTE.alien.turret),
     "in the colour of whoever's hull it is",
   )
+})
+
+test("the nose gun is the player's own, whatever the hull had it doing", () => {
+  // A hull out of the dev page brings its own controller with it, and a nose still set to
+  // hunt or to mine fires itself: an alien scout arrived shooting on its own.
+  for (const hull of ["ALIEN SCOUT", "SCOUT", "SEEKER", "FRIGATE"]) {
+    const game = liveGame()
+    beSolid(game.player)
+    game.asteroids = [new Asteroid({ x: 200, y: 320, radius: 50 })] // what a miner shoots at
+    game.openDevMenu()
+    game.openPausePage("devShip")
+    game
+      .pauseMenu()
+      .find((row) => row.name === hull)
+      .action(game)
+    game.paused = false
+    const player = beSolid(game.player)
+    player.x = 400
+    player.y = 320
+    assert.equal(player.mainWeapon.controller, "manual", `${hull}'s nose is the player's`)
+    let fired = 0
+    for (let frame = 0; frame < 300; frame++) {
+      player.x = 400
+      player.y = 320
+      player.energy = player.energyMax
+      const before = game.laserShots.length + game.projectiles.length
+      game.advance(1 / 60) // never touching the trigger
+      fired += game.laserShots.length + game.projectiles.length > before ? 1 : 0
+    }
+    assert.equal(fired, 0, `${hull} fires nothing on its own`)
+  }
+})
+
+test("an alien round tears the picture wherever it lands, not only on the player", () => {
+  // The shot is what breaks the fabric, so a round going off against a rival across the
+  // sector is the same round: it was gated on having hit the player.
+  const game = liveGame()
+  const player = beSolid(game.player)
+  game.asteroids = [new Asteroid({ x: 60, y: 60, radius: 30 })] // so the sector stays live
+  // On screen, since a hull holds fire off it, but not something anything can see: the
+  // round has to land on the rival for this to be measuring what it says.
+  player.x = 700
+  player.y = 500
+  // Close in, so the orbs it throws actually arrive inside the run.
+  const pincer = plainRival(300, 320, "alienFrigate")
+  const mark = plainRival(430, 320, "scout")
+  pincer.arrived = true
+  mark.arrived = true
+  game.rivals = [pincer, mark]
+  let tears = 0
+  for (let frame = 0; frame < 60 * 20; frame++) {
+    player.invincible = 1e9 // nothing can see it, so the pincer shoots the scout
+    pincer.x = 300
+    pincer.y = 320
+    pincer.angle = 0
+    mark.x = 430
+    mark.y = 320
+    mark.hull = 1e9
+    mark.energy = mark.energyMax
+    const before = game.glitches.length
+    game.advance(1 / 60)
+    tears += game.glitches.length > before ? 1 : 0
+  }
+  assert.ok(tears > 0, "an alien round landing on a rival tears the picture where it lands")
 })
 
 test("a hull keeps its bubble up rather than spending it on the big gun", () => {

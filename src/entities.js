@@ -1574,9 +1574,11 @@ export class Projectile extends Entity {
       if (hitPlayer && impact.shake) {
         game.screenShake = Math.max(game.screenShake, impact.shake)
       }
-      // A hit that should feel like it reached out of the game tears the picture where
-      // it landed. Only on the player: nothing else has a screen to break.
-      if (hitPlayer && impact.glitch) {
+      // A hit that should feel like it reached out of the game tears the picture where it
+      // landed, whatever it landed on: the shot is what breaks the fabric, and a round
+      // going off against a rival across the sector is the same round. The shake above is
+      // the player's own screen and stays theirs.
+      if (impact.glitch) {
         const tear = impact.glitch
         game.glitchAt(at.x, at.y, tear.strength, tear.radius, tear.seconds)
       }
@@ -2099,6 +2101,7 @@ export class PlayerShip extends Ship {
     this.nose = this.hardpointByRole("nose")
     this.aux = this.hardpointByRole("aux") // the turret's mount, filled from EQUIPMENT
     this.mainWeapon = this.nose.module
+    this.takeTheNose()
     this.energyMax = game.maxEnergy()
     this.energy = this.energyMax
     this.regen = 0 // regen handled explicitly (paused while charging/thrusting)
@@ -2426,8 +2429,18 @@ export class PlayerShip extends Ship {
     const nose = this.hardpointByRole("nose")
     if (nose) {
       this.mainWeapon = nose.module
+      this.takeTheNose()
     }
     this.refreshFitting()
+  }
+
+  // The gun on the nose is the player's own, whatever the hull it came on had it doing.
+  // A hull brought out of the dev page carries its own controller, and a nose still set
+  // to hunt or to mine fires itself: the trigger is what fires the main gun.
+  takeTheNose() {
+    if (this.mainWeapon) {
+      this.mainWeapon.controller = "manual"
+    }
   }
 
   // Is a turret fitted? Asked of the mount rather than of an upgrade flag, so it is

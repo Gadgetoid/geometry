@@ -717,9 +717,11 @@ export const WEAPON_TYPES = {
     kind: "beam",
     mass: 0.04,
     damage: 45,
-    // It cuts by bending what it crosses, so the bend is the shot: close in along the
-    // whole length of it, and gentle enough to be felt rather than looked at.
-    warp: { radius: 26, strength: 0.16 },
+    // It cuts by bending what it crosses, so the bend is the shot, laid along the whole
+    // length of it. It lives for a third of a second, which is not long enough for
+    // something subtle to register: a band either side wide enough to see the stars
+    // behind it move.
+    warp: { radius: 70, strength: 0.45 },
     energy: 24,
     reload: [0.9, 1.4],
     length: 440,
@@ -736,9 +738,8 @@ export const WEAPON_TYPES = {
     kind: "beam",
     mass: 0.02,
     damage: 30,
-    // It cuts by bending what it crosses, so the bend is the shot: close in along the
-    // whole length of it, and gentle enough to be felt rather than looked at.
-    warp: { radius: 30, strength: 0.2 },
+    // As the needle, and heavier: it is the bigger cutter of the two.
+    warp: { radius: 85, strength: 0.5 },
     energy: 16,
     reload: [1.4, 2.6],
     length: [320, 520],
