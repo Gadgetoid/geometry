@@ -4339,6 +4339,68 @@ test("the player's speed is its drive's, through the same relationship as any hu
   )
 })
 
+// Every polyline a ship draws. A flame is the open three-point one: a rival's hull
+// is stroked in the same colour as its plume, so the colour cannot tell them apart
+// and the shape has to.
+function polysDrawn(entity, game) {
+  const polys = []
+  const renderer = {
+    strokePoly: (points, opts = {}) =>
+      polys.push({ points, colour: opts.color, closed: opts.closed }),
+    line() {},
+    circle() {},
+    rect() {},
+    point() {},
+    text() {},
+  }
+  entity.draw(renderer, game)
+  return polys
+}
+
+test("the thruster flame is the engine's, so any hull with one burns", () => {
+  const game = liveGame()
+  const flameOf = (entity) => {
+    // Ten frames, since the flame's length flickers and one frame could be any of
+    // them: the longest is what the drive states plus its full flicker.
+    let longest = null
+    for (let i = 0; i < 10; i++) {
+      for (const poly of polysDrawn(entity, game)) {
+        if (poly.closed !== false || poly.points.length !== 3) {
+          continue
+        }
+        const reach = Math.max(
+          ...poly.points.map((p) => Math.hypot(p.x - entity.x, p.y - entity.y)),
+        )
+        if (!longest || reach > longest) {
+          longest = reach
+        }
+      }
+    }
+    return longest
+  }
+
+  // The player only burns while the drive is lit.
+  game.player.thrusting = false
+  assert.equal(flameOf(game.player), null, "an idle drive shows nothing")
+  game.player.thrusting = true
+  assert.ok(flameOf(game.player) > 0, "a lit one does")
+
+  // And a rival, which was drawing no flame at all: the shape was written into the
+  // player's own draw method rather than into the engine both of them mount.
+  const rival = new RivalShip(400, 300, "scout", SHIP_TYPES.scout.loadout)
+  assert.ok(flameOf(rival) > 0, "a rival's drive burns too")
+
+  // An engine that states no flame draws none, so a drive can show only its plume.
+  const flame = ENGINE_TYPES.pulseDrive.flame
+  delete ENGINE_TYPES.pulseDrive.flame
+  try {
+    const dark = new RivalShip(400, 300, "scout", SHIP_TYPES.scout.loadout)
+    assert.equal(flameOf(dark), null, "no flame block, no flame")
+  } finally {
+    ENGINE_TYPES.pulseDrive.flame = flame
+  }
+})
+
 test("stating a setting on a type keeps it, for tuning one ship", () => {
   const design = { ...SHIP_TYPES.scout, mass: 0.7, armour: 1, drag: 0.123, hull: 99 }
   delete design.accel

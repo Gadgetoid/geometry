@@ -905,6 +905,36 @@ export class Engine {
       )
     }
   }
+
+  // The fire at the throat, drawn back along `back` from `world`. It is the engine's
+  // own rather than the hull's, so every drive burns its own way and a hull with two
+  // of them burns twice.
+  drawFlame(renderer, world, back, alpha = 1) {
+    const flame = this.type.flame
+    if (!flame) {
+      return
+    }
+    const reach = flame.length + Math.random() * flame.flicker
+    const half = (flame.width ?? this.type.plume.width ?? 0) / 2
+    const bx = Math.cos(back),
+      by = Math.sin(back)
+    const acrossX = -by,
+      acrossY = bx
+    renderer.strokePoly(
+      [
+        { x: world.x + acrossX * half, y: world.y + acrossY * half },
+        { x: world.x + bx * reach, y: world.y + by * reach },
+        { x: world.x - acrossX * half, y: world.y - acrossY * half },
+      ],
+      {
+        color: flame.colour ?? this.type.colour,
+        width: 1.4,
+        glow: 10,
+        closed: false,
+        alpha,
+      },
+    )
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1238,7 +1268,18 @@ export class Ship extends Entity {
   }
 
   // Draw hull, shield, weapon nubs, and any beam emitter.
+  // The fire at every nozzle, drawn before the hull so the hull sits over it.
+  drawFlames(renderer, alpha = 1) {
+    const back = this.angle + Math.PI
+    for (const hp of this.hardpoints) {
+      if (hp.module && hp.module.kind === "engine") {
+        hp.module.drawFlame(renderer, this.mountWorld(hp.local), back, alpha)
+      }
+    }
+  }
+
   drawShip(renderer, game, hullWidth) {
+    this.drawFlames(renderer)
     renderer.strokePoly(this.worldOutline(), { color: this.colour, width: hullWidth, glow: 12 })
     const shield = this.shieldModule()
     if (shield && shield.up) {
@@ -1626,12 +1667,6 @@ export class PlayerShip extends Ship {
     }
     this.accel = thrust / (this.type.mass ?? 1)
     this.maxSpeed = this.accel * SHIP_SCALARS.speedPerAccel
-  }
-
-  #toWorld(lx, ly) {
-    const c = Math.cos(this.angle),
-      s = Math.sin(this.angle)
-    return { x: this.x + lx * c - ly * s, y: this.y + lx * s + ly * c }
   }
 
   fireLaser(game) {
@@ -2048,19 +2083,7 @@ export class PlayerShip extends Ship {
     const fade = this.buffField("hullAlpha", 1)
 
     if (this.thrusting) {
-      const flame = randRange(0.7, 1.3)
-      const pts = [
-        this.#toWorld(-this.radius * 0.7, -4),
-        this.#toWorld(-this.radius * (1.1 + flame), 0),
-        this.#toWorld(-this.radius * 0.7, 4),
-      ]
-      renderer.strokePoly(pts, {
-        color: PALETTE.player.exhaustFlame,
-        width: 1.4,
-        glow: 10,
-        closed: false,
-        alpha: fade,
-      })
+      this.drawFlames(renderer, fade)
     }
     renderer.strokePoly(this.worldOutline(), {
       color: colour,

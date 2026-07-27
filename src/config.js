@@ -670,6 +670,12 @@ function playerShields(marks) {
 //           `width` how wide the throat is, which spreads where a plume starts
 //           rather than where it goes: a wide nozzle is already broad where it
 //           leaves the hull. Omit `width` for a point emitter.
+//   flame   the fire at the throat while the drive is lit, which is drawn rather
+//           than thrown: `length` is how far it reaches back, `flicker` how much of
+//           that it gains and loses frame to frame, `width` how wide it is at the
+//           throat (the plume's, unless it says otherwise) and `colour` what it
+//           burns (the plume's, unless it says otherwise). All in world units. Omit
+//           the block for a drive that shows nothing but its plume.
 //   colour  the plume's colour
 //
 // A main engine pushes along the hull's facing and cannot reverse, so a hull
@@ -683,6 +689,7 @@ export const ENGINE_TYPES = {
   pulseDrive: {
     thrust: 100,
     plume: { rate: 26, speed: 55, life: 0.4, spread: 20 },
+    flame: { length: 6, flicker: 4, width: 6 },
     colour: PALETTE.rival.hull,
   },
   // A tight pair, cycling fast and barely fanning at all, so the seeker reads as
@@ -690,6 +697,7 @@ export const ENGINE_TYPES = {
   ionDrive: {
     thrust: 75,
     plume: { rate: 40, speed: 30, life: 0.48, spread: 4 },
+    flame: { length: 5, flicker: 3, width: 3 },
     colour: PALETTE.rival.hull,
   },
   // A long heavy plume: a single small stream read far too light for a hull the
@@ -697,6 +705,7 @@ export const ENGINE_TYPES = {
   siegeDrive: {
     thrust: 100,
     plume: { rate: 44, speed: 150, life: 0.62, spread: 26, width: 9 },
+    flame: { length: 16, flicker: 8 }, // as wide as the throat it comes out of
     colour: PALETTE.rival.hull,
   },
   // The player's, and the one thing the hull starts with that can be replaced by
@@ -704,6 +713,8 @@ export const ENGINE_TYPES = {
   minerDrive: {
     thrust: 270,
     plume: { rate: 30, speed: 60, life: 0.4, spread: 18, width: 4 },
+    // Broader than the throat and paler than the plume: a yard drive run hot.
+    flame: { length: 13, flicker: 8, width: 8, colour: PALETTE.player.exhaustFlame },
     colour: PALETTE.player.exhaust,
   },
   // Vanes that can turn the thrust around, at the cost of some of it: the plumbing
@@ -713,6 +724,9 @@ export const ENGINE_TYPES = {
     thrust: 225,
     reverseAmount: 0.6,
     plume: { rate: 30, speed: 60, life: 0.4, spread: 18, width: 4 },
+    // Shorter than the miner drive's, since there is less thrust behind it, and
+    // split around the vanes that turn it.
+    flame: { length: 9, flicker: 6, width: 9, colour: PALETTE.player.exhaustFlame },
     colour: PALETTE.player.exhaust,
   },
 }
