@@ -715,6 +715,11 @@ export const ENGINE_TYPES = {
   },
 }
 
+// One mark of the player's survey set: everything it can pick out, at any range.
+function surveyMarks(marks) {
+  return Object.fromEntries(Object.entries(marks).map(([name, sees]) => [name, { sees }]))
+}
+
 // What a design's engines add up to, which is what pushes it. A hull with none
 // mounted does not move under its own power.
 export function thrustOf(type) {
@@ -837,11 +842,16 @@ export function coreOf(type) {
 // until its target is on screen.
 // ---------------------------------------------------------------------------
 export const RADAR_TYPES = {
-  // The player's. Everything, everywhere, which is where the shop's levels start
-  // from rather than where they end up.
-  surveyArray: {
-    sees: { ships: Infinity, rocks: Infinity, ore: Infinity, specials: Infinity },
-  },
+  // The player's, in the marks the shop sells. Each adds a kind of thing to what the
+  // set will pick out beyond the sensor floor, in the order a run comes to need
+  // them: rock is the work, ore matters once something else is competing for it,
+  // and hulls matter once they are worth avoiding.
+  ...surveyMarks({
+    surveyMk1: { rocks: Infinity },
+    surveyMk2: { rocks: Infinity, ore: Infinity },
+    surveyMk3: { rocks: Infinity, ore: Infinity, ships: Infinity },
+    surveyMk4: { rocks: Infinity, ore: Infinity, ships: Infinity, specials: Infinity },
+  }),
   // A hunter's: tuned for hulls and vague about the scenery. It loses the player
   // across the full width of the arena, which is 1720 corner to corner.
   huntingArray: {
@@ -1218,7 +1228,7 @@ const PLAYER_DESIGN = {
   ],
   // The nose and the engine are filled from EQUIPMENT, since what is in them is the
   // run's to choose; the core is the hull's own.
-  loadout: [{ hp: 1, core: "minerCore", fitted: { radar: "surveyArray" } }],
+  loadout: [{ hp: 1, core: "minerCore" }],
   // What the ship is fitted with before anything is bought, one id per slot. The
   // magnet is here rather than in the shop because a ship that cannot pick ore up
   // is not a ship: it can be ejected, which is a choice, not a starting state.
@@ -1280,6 +1290,43 @@ export const EQUIPMENT = {
         name: "SHIELD MK IV",
         desc: "0.64 a point: the cell goes three times as far against fire as Mk I.",
         cost: 175,
+      },
+    ],
+  },
+  // The set comes with the hull, seeing rock and nothing else beyond what is on
+  // screen. Each mark adds a kind of thing, so a quiet early sector needs none of
+  // them and a crowded late one wants the lot. It sits in the core.
+  radar: {
+    label: "RADAR",
+    desc: "What the ship picks out beyond the screen. Everything close by shows regardless.",
+    hp: 1,
+    mount: "radar",
+    slot: "radar",
+    ladder: true,
+    options: [
+      {
+        id: "surveyMk1",
+        name: "RADAR MK I",
+        desc: "Finds rock anywhere in the sector, which is the job.",
+        cost: 0,
+      },
+      {
+        id: "surveyMk2",
+        name: "RADAR MK II",
+        desc: "Adds loose ore, so a rival cannot quietly clear up behind you.",
+        cost: 60,
+      },
+      {
+        id: "surveyMk3",
+        name: "RADAR MK III",
+        desc: "Adds hulls, so what is hunting you is on the edge of the screen before it arrives.",
+        cost: 110,
+      },
+      {
+        id: "surveyMk4",
+        name: "RADAR MK IV",
+        desc: "Adds specials, so nothing drifting past is missed.",
+        cost: 160,
       },
     ],
   },
