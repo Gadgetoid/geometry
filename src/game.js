@@ -582,7 +582,11 @@ export class Game {
         }
         const offset = subtract(body, centre)
         const away = Math.hypot(offset.x, offset.y)
-        const distance = Math.max(0, away - (toSurface ? body.boundRadius : 0))
+        // A body with no extent of its own is its own surface. A loose shot is one, and
+        // subtracting the reach it has not got put NaN into its velocity, which a
+        // comparison against the radius then waved through.
+        const reach = toSurface ? (body.boundRadius ?? 0) : 0
+        const distance = Math.max(0, away - reach)
         if (distance > radius) {
           continue
         }

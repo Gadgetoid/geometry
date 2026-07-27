@@ -457,6 +457,15 @@ export class Entity {
     return !!(shield && shield.up)
   }
 
+  // Is that shield something other bodies cannot pass through? A bubble is a wall: a
+  // hull cannot be flown inside one and a rock stops against it. A field that repels
+  // instead is not - it leans on what comes near it and lets a rock that pushes hard
+  // enough arrive anyway - so what other bodies meet is the outline inside it.
+  barrierUp() {
+    const shield = this.shieldModule()
+    return !!(shield && shield.up && shield.solid)
+  }
+
   // Radius of the shield bubble. The view draws the bubble at exactly this, and
   // incoming beams are stopped by it, so what looks like the target is the target.
   // Zero means nothing is raised and the body's own outline is the surface.
@@ -468,7 +477,7 @@ export class Entity {
   // broadphase reject every contact site does first. A raised shield stands
   // further out than the hull inside it, so it sets the reach while it is up.
   contactReach() {
-    return Math.max(this.boundRadius, this.shieldUp() ? this.shieldRadius() : 0)
+    return Math.max(this.boundRadius, this.barrierUp() ? this.shieldRadius() : 0)
   }
 
   // The surface an incoming hit of this channel has to reach: the shield bubble
@@ -529,13 +538,16 @@ export class Entity {
     return false
   }
 
-  updateShield(dt) {
+  updateShield(dt, game) {
     if (this.fxCooldown > 0) {
       this.fxCooldown -= dt
     }
     const shield = this.shieldModule()
     if (shield) {
       shield.tick(dt, this)
+      if (game) {
+        shield.repel(dt, this, game)
+      }
     }
   }
 
@@ -995,6 +1007,12 @@ export class Shield {
     return this.type.blocks.includes(channel)
   }
 
+  // Whether the bubble is a wall other bodies stop against. Everything is unless it
+  // says otherwise, since that is what a shield was before any of them repelled.
+  get solid() {
+    return this.type.solid !== false
+  }
+
   // Energy drained per point of damage on this channel. One number covers every
   // channel the shield blocks; a bubble braced against one kind of fire states them
   // separately, and anything it blocks without pricing costs a point for a point.
@@ -1021,6 +1039,49 @@ export class Shield {
   }
 
   // Recover once the cooldown has elapsed and energy has recharged enough.
+  // Lean on the rock and the loose shot around the host, and pay for it. `repel` is
+  // the field's: `force` is what it pushes with at the host's own surface, dying away
+  // to nothing at the edge of the bubble, and `energyPerPush` what a unit of momentum
+  // turned away costs.
+  //
+  // The cost follows what is actually being held off, so a hull in open space runs the
+  // field for almost nothing and one backed into a rock field bleeds: burying it in
+  // debris is a way to strip it. A push is a force rather than an acceleration, so a
+  // boulder is moved less than a pebble and costs the same to shift, which is what
+  // "how much was repelled" means.
+  //
+  // Rocks and shots only. A hull is not pushed, so ramming one still works and the
+  // pincer's mouth stays as dangerous as it looks.
+  repel(dt, host, game) {
+    const spec = this.type.repel
+    if (!spec || !this.up || host.energy <= 0) {
+      return
+    }
+    const radius = host.shieldRadius()
+    if (!(radius > 0)) {
+      return
+    }
+    let spent = 0
+    game.applyRadialForce({
+      centre: host,
+      radius,
+      include: ["asteroids", "projectiles"],
+      toSurface: true,
+      skip: host,
+      visit: (body, { dir, falloff }) => {
+        const push = spec.force * falloff * dt
+        const mass = body.mass ?? 1
+        body.vx += (dir.x * push) / mass
+        body.vy += (dir.y * push) / mass
+        spent += push
+      },
+    })
+    if (spent > 0) {
+      host.energy = Math.max(0, host.energy - spent * spec.energyPerPush)
+      this.checkOverload(host)
+    }
+  }
+
   tick(dt, host) {
     if (this.flash > 0) {
       this.flash = Math.max(0, this.flash - dt)
@@ -1040,10 +1101,14 @@ export class Shield {
 
   // `fade` dims the whole bubble, for a host that is drawing itself faint.
   draw(renderer, cx, cy, radius, fraction, time, fade = 1) {
-    // gentle pulse that never fades to invisible; brightness tracks energy
-    const pulse = 0.88 + 0.12 * Math.sin(time * 1.8)
+    // A pulse that never fades to invisible, with brightness tracking energy. Rate,
+    // depth and which way the shape turns are the type's, so a bubble that is switched
+    // on and a field that is being held there do not read the same: the alien one turns
+    // against everything else and breathes twice as fast.
+    const depth = this.type.pulseDepth ?? 0.12
+    const pulse = 1 - depth + depth * Math.sin(time * (this.type.pulseRate ?? 1.8))
     const alpha = clamp((0.24 + 0.4 * fraction) * pulse, 0.2, 0.75) * fade
-    const rotation = time * 0.3,
+    const rotation = time * (this.type.spin ?? 0.3),
       sides = this.type.sides,
       points = []
     for (let i = 0; i < sides; i++) {
@@ -1284,10 +1349,10 @@ export class Ship extends Entity {
     return this.collisionParts.map((part) => part.map((i) => world[i]))
   }
 
-  // What other bodies touch: the bubble while a shield is raised, the outline
-  // when none is. The outline is not built while it is not the surface.
+  // What other bodies touch: the bubble while one stands in the way, the outline
+  // when none does. The outline is not built while it is not the surface.
   contactShape() {
-    const bubble = this.shieldUp() ? this.shieldRadius() : 0
+    const bubble = this.barrierUp() ? this.shieldRadius() : 0
     return bubble > 0
       ? { centre: this, radius: bubble }
       : { centre: this, parts: this.collisionOutline() }
@@ -1296,7 +1361,7 @@ export class Ship extends Entity {
   // How far that surface reaches from the centre in a direction, for placing an
   // impact on it.
   contactSupport(ux, uy) {
-    const bubble = this.shieldUp() ? this.shieldRadius() : 0
+    const bubble = this.barrierUp() ? this.shieldRadius() : 0
     return bubble > 0 ? bubble : supportDistance(this.worldOutline(), this, ux, uy)
   }
 
@@ -1365,8 +1430,14 @@ export class Ship extends Entity {
 
   // The bubble sits clear of the hull by the type's own margin, so a long ship
   // does not wear a shield that clips through it. In world units, as the outline is.
+  // A bubble sits where the shape says, a little clear of the hull. A field that leans
+  // on what comes near it needs room to lean in, so a shield may stand further off by
+  // saying so: without the standoff the pincer's field reached 30 units past a hull
+  // that reaches 92, and a rock was inside the outline before the field had touched it.
   shieldRadius() {
-    return this.type.bubbleRadius ?? this.boundRadius * 1.33
+    const shield = this.shieldModule()
+    const base = this.type.bubbleRadius ?? this.boundRadius * 1.33
+    return base * ((shield && shield.type.standoff) || 1)
   }
 
   buildHardpoints(list) {
@@ -2056,7 +2127,7 @@ export class PlayerShip extends Ship {
       }
     }
     this.energy = clamp(this.energy, 0, this.energyMax)
-    this.updateShield(dt)
+    this.updateShield(dt, game)
 
     // Auto weapons (defense turret) fire via their controllers.
     this.updateWeapons(dt, game)
@@ -2364,7 +2435,7 @@ export class RivalShip extends Ship {
     }
     const prey = game.hostileTarget(this)
     this.regenEnergy(dt)
-    this.updateShield(dt)
+    this.updateShield(dt, game)
     this.slamCooldown = Math.max(0, this.slamCooldown - dt)
     if (this.arrived) {
       this.lifeTimer -= dt
@@ -2696,7 +2767,7 @@ export class Asteroid extends Entity {
   }
 
   contactShape() {
-    const bubble = this.shieldUp() ? this.shieldRadius() : 0
+    const bubble = this.barrierUp() ? this.shieldRadius() : 0
     return bubble > 0
       ? { centre: this.center, radius: bubble }
       : { centre: this.center, parts: this.convexParts() }
@@ -2800,7 +2871,7 @@ export class Asteroid extends Entity {
       return // detonated or shattered earlier this frame
     }
     this.regenEnergy(dt)
-    this.updateShield(dt)
+    this.updateShield(dt, game)
     const centre = this.center
     const cosA = Math.cos(this.spin * dt),
       sinA = Math.sin(this.spin * dt)

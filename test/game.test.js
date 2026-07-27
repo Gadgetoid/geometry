@@ -1245,8 +1245,10 @@ test("a shield braced against one channel pays for it on another", () => {
   const plain = SHIELD_TYPES.standard
   const drain = (type, channel) =>
     typeof type.efficiency === "number" ? type.efficiency : (type.efficiency[channel] ?? 1)
+  // Only where there is more than one channel to trade between: a field that stops
+  // lasers and repels everything else has one price and nothing to weigh it against.
   const braced = Object.entries(SHIELD_TYPES).filter(
-    ([, type]) => typeof type.efficiency === "object",
+    ([, type]) => typeof type.efficiency === "object" && type.blocks.length > 1,
   )
   assert.ok(braced.length, "some shield should price its channels apart")
   for (const [name, type] of braced) {
@@ -1267,6 +1269,135 @@ test("a shield braced against one channel pays for it on another", () => {
   assert.equal(shield.drainPer("laser"), SHIELD_TYPES.bulwark.efficiency.laser)
   // A channel it blocks without pricing costs a point for a point rather than none.
   assert.equal(new Shield("bulwark").drainPer("gravity"), 1)
+})
+
+// A hull with the alien field up, and a square rock `gap` from its centre.
+function fieldAndRock(gap) {
+  const game = liveGame()
+  game.player.x = -9000
+  game.player.y = -9000
+  const alien = plainRival(500, 320, "alienFrigate")
+  game.rivals = [alien]
+  const rock = new Asteroid({ vertices: square(500 + gap, 320, 45), vx: 0, vy: 0 })
+  game.asteroids = [rock]
+  return { game, alien, rock }
+}
+
+test("the alien field leans on what comes near it and pays for what it turns away", () => {
+  const { game, alien, rock } = fieldAndRock(150)
+  assert.ok(alien.shieldUp(), "the field is on")
+  alien.regen = 0 // measure the drain rather than the balance
+  const cell = alien.energy
+  const from = rock.center.x
+  for (let i = 0; i < 60; i++) {
+    alien.vx = 0
+    alien.vy = 0
+    alien.x = 500
+    alien.y = 320
+    game.advance(1 / 60)
+  }
+  assert.ok(rock.center.x > from + 10, "the rock was pushed away")
+  assert.ok(alien.energy < cell, "and the field paid for pushing it")
+
+  // Nothing to hold off is free, which is what makes a rock field a way to strip one.
+  const quiet = liveGame()
+  quiet.player.x = -9000
+  quiet.player.y = -9000
+  const alone = plainRival(500, 320, "alienFrigate")
+  alone.regen = 0
+  quiet.rivals = [alone]
+  const held = alone.energy
+  for (let i = 0; i < 60; i++) {
+    quiet.advance(1 / 60)
+  }
+  assert.equal(alone.energy, held, "in open space it costs nothing at all")
+
+  // And the more there is to lean on, the faster it goes.
+  const drain = (rocks) => {
+    const g = liveGame()
+    g.player.x = -9000
+    g.player.y = -9000
+    const host = plainRival(500, 320, "alienFrigate")
+    host.regen = 0
+    g.rivals = [host]
+    g.asteroids = rocks.map(
+      ([dx, dy]) => new Asteroid({ vertices: square(500 + dx, 320 + dy, 45) }),
+    )
+    const before = host.energy
+    for (let i = 0; i < 60; i++) {
+      host.vx = 0
+      host.vy = 0
+      host.x = 500
+      host.y = 320
+      for (const r of g.asteroids) {
+        r.vx = 0
+        r.vy = 0
+      }
+      g.advance(1 / 60)
+    }
+    return before - host.energy
+  }
+  // Three at the same distance as the one, so only the count differs: on a circle
+  // round the hull rather than mirrored in y, which would put two of them further out.
+  // The radius sits in the shell where the field reaches and the hull does not, which
+  // for the pincer is a rock centre between 137 and 216.
+  const ring = (count, at) =>
+    Array.from({ length: count }, (_, i) => {
+      const angle = (i / count) * Math.PI * 2
+      return [Math.cos(angle) * at, Math.sin(angle) * at]
+    })
+  const one = drain(ring(1, 160))
+  const three = drain(ring(3, 160))
+  assert.ok(one > 0, "one rock costs something")
+  assert.ok(
+    three > one * 2,
+    `three (${three.toFixed(1)}) should cost about three times one (${one.toFixed(1)})`,
+  )
+})
+
+test("the alien field is not a wall: it is passed through by what pushes hard enough", () => {
+  // A bubble is a barrier a rock stops against and a hull cannot be flown inside. A
+  // field that leans on things is not, so what other bodies meet is the outline.
+  const { alien } = fieldAndRock(150)
+  assert.ok(alien.shieldUp(), "the field is up")
+  assert.equal(alien.barrierUp(), false, "but it is not a wall")
+  assert.ok(alien.contactShape().parts, "so bodies meet the outline")
+  assert.equal(alien.contactReach(), alien.boundRadius, "and its reach is the hull's")
+
+  // A bubble still is one.
+  const frigate = plainRival(500, 320, "frigate")
+  assert.ok(frigate.barrierUp(), "a bulwark is a wall")
+  assert.equal(frigate.contactShape().radius, frigate.shieldRadius())
+
+  // A laser is still stopped by the field, which is the half it does absorb.
+  assert.equal(alien.blockingRadius("laser"), alien.shieldRadius())
+  assert.equal(alien.blockingRadius("projectile"), 0, "and shot is not blocked, but repelled")
+})
+
+test("a slow orb is turned away where a fast round gets through", () => {
+  const closest = (gun) => {
+    const game = liveGame()
+    game.player.x = -9000
+    game.player.y = -9000
+    const alien = plainRival(500, 320, "alienFrigate")
+    game.rivals = [alien]
+    const type = WEAPON_TYPES[gun]
+    const shot = new Projectile(700, 320, -type.speed, 0, 10, null, type)
+    game.projectiles = [shot]
+    let near = Infinity
+    for (let i = 0; i < 180 && !shot.dead; i++) {
+      game.advance(1 / 60)
+      near = Math.min(near, Math.hypot(shot.x - alien.x, shot.y - alien.y))
+    }
+    return near
+  }
+  const slow = closest("warpOrb")
+  const fast = closest("autocannon")
+  assert.ok(
+    fast < slow,
+    `a fast round reaches ${fast.toFixed(0)}, a slow orb only ${slow.toFixed(0)}`,
+  )
+  assert.ok(fast < SHIP_TYPES.alienFrigate.boundRadius, "the fast one reaches the hull")
 })
 
 test("the frigate's cell soaks far more shot than beam", () => {
@@ -2052,9 +2183,11 @@ test("an alien orb leans after what it was fired at", () => {
   const alien = plainRival(500, 500, "alienSeeker")
   game.rivals = [alien]
 
-  // Fired straight along +x, with the player well off that line.
+  // Fired straight along +x, with the player well off that line, and started clear of
+  // the alien's own field: that repels loose shot, including its own, which would bend
+  // the very thing being measured.
   const orb = new Projectile(
-    500,
+    800,
     500,
     WEAPON_TYPES.warpOrb.speed,
     0,

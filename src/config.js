@@ -718,6 +718,41 @@ export const SHIELD_TYPES = {
   // Eight sides rather than six because it is the largest bubble in the game and the
   // one where the drawn shape parts company with the collided circle most; see
   // KNOWN_ISSUES.md.
+  // What the aliens carry, and not a bubble at all. It leans on the rock and the loose
+  // shot around the hull and pays for what it turns away, so a hull in open space runs
+  // it for almost nothing and one backed into a rock field bleeds. A laser it absorbs
+  // the way any shield does.
+  //
+  // `solid: false` is the difference between leaning on something and stopping it: a
+  // rock is pushed rather than parked against a wall, and a rock pushing hard enough
+  // arrives anyway. Nor does it block shot, so a fast round punches through what a
+  // slow one is turned away from. Hulls are not repelled at all, so the pincer's mouth
+  // is as dangerous as it looks.
+  //
+  // It holds down to almost nothing and takes four and a half seconds to come back,
+  // which is the window a hull can be cut in. Twelve sides where everything else has
+  // six, turning the other way and breathing faster: a surface being held there rather
+  // than switched on. It is also much rounder, which matters most here - see
+  // KNOWN_ISSUES.md.
+  alienField: {
+    mass: 0.1,
+    solid: false,
+    efficiency: { laser: 1.15 },
+    blocks: ["laser"],
+    repel: { force: 900, energyPerPush: 0.02 },
+    // It stands well clear of the hull, because a field that pushes needs somewhere to
+    // push in: at the bubble's own radius the pincer had 30 units of standoff against a
+    // hull reaching 92, and a rock was through it before it had leant on anything.
+    standoff: 1.4,
+    sides: 12,
+    spin: -0.5,
+    pulseRate: 4.2,
+    pulseDepth: 0.2,
+    colour: PALETTE.alien.shield,
+    dropAt: 0.08,
+    recoverAt: 0.7,
+    recoverDelay: 4.5,
+  },
   bulwark: {
     mass: 0.5, // heavy even for a bubble, as one braced against shot should be
     efficiency: { projectile: 0.55, laser: 1.6 },
@@ -1580,7 +1615,7 @@ const SHIP_DESIGNS = {
       {
         hp: 5,
         core: "siegeCore",
-        fitted: { shield: "bulwark", radar: "huntingArray", thruster: "siegeJets" },
+        fitted: { shield: "alienField", radar: "huntingArray", thruster: "siegeJets" },
       },
     ],
     spawn: { fromSector: 22, weight: 2, maxConcurrent: 1 },
@@ -1640,7 +1675,13 @@ const SHIP_DESIGNS = {
         chancePerSector: 0.15,
         chanceCap: 0.85,
       },
-      shield: { hp: 2, slot: "shield", shield: "standard", chancePerSector: 0.12, chanceCap: 0.8 },
+      shield: {
+        hp: 2,
+        slot: "shield",
+        shield: "alienField",
+        chancePerSector: 0.12,
+        chanceCap: 0.8,
+      },
     },
     spawn: { fromSector: 20, weight: 6, maxConcurrent: 2 },
     debrisMaterial: SHIP_PLATING,
@@ -1685,7 +1726,7 @@ const SHIP_DESIGNS = {
       {
         hp: 2,
         core: "seekerCore",
-        fitted: { shield: "deflector", radar: "huntingArray", thruster: "gimbalRing" },
+        fitted: { shield: "alienField", radar: "huntingArray", thruster: "gimbalRing" },
       },
       { hp: 3, engine: "ionDrive" },
       { hp: 4, engine: "ionDrive" },
