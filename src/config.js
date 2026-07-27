@@ -895,17 +895,17 @@ const SHIP_DESIGNS = {
   seeker: {
     outline: [
       [18, 0],
-      [0, -4.8],
-      [-0.6, -7.2],
-      [-10.8, -7.2],
-      [-10.2, -4.8],
-      [-7.8, -4.8],
-      [-10.2, 0],
-      [-7.8, 4.8],
-      [-10.2, 4.8],
-      [-10.8, 7.2],
-      [-0.6, 7.2],
-      [0, 4.8],
+      [0, -5],
+      [-1, -7],
+      [-11, -7],
+      [-10, -5],
+      [-8, -5],
+      [-10, 0],
+      [-8, 5],
+      [-10, 5],
+      [-11, 7],
+      [-1, 7],
+      [0, 5],
     ],
     colour: PALETTE.ore.body,
     mass: 0.8,
@@ -915,10 +915,10 @@ const SHIP_DESIGNS = {
     regen: 34,
     hardpoints: [
       { local: [18, 0], role: "nose" },
-      { local: [-5.4, 0], role: "gun" },
-      { local: [-0.6, 0], role: "core" },
-      { local: [-10.8, 6], role: "engine" },
-      { local: [-10.8, -6], role: "engine" },
+      { local: [-5, 0], role: "gun" },
+      { local: [-1, 0], role: "core" },
+      { local: [-11, 6], role: "engine" },
+      { local: [-11, -6], role: "engine" },
     ],
     loadout: [
       // `hunter` is the behaviour, not the ship: line up, wind up briefly, fire.
@@ -946,10 +946,10 @@ const SHIP_DESIGNS = {
   },
   scout: {
     outline: [
-      [16.8, 0],
-      [-10.8, -12],
+      [17, 0],
+      [-11, -12],
       [-6, 0],
-      [-10.8, 12],
+      [-11, 12],
     ],
     colour: PALETTE.rival.hull,
     mass: 0.7, // a light dart
@@ -958,10 +958,10 @@ const SHIP_DESIGNS = {
     energyMax: 90,
     regen: 22,
     hardpoints: [
-      { local: [16.8, 0], role: "nose" },
-      { local: [2.4, 0], role: "gun" },
+      { local: [17, 0], role: "nose" },
+      { local: [2, 0], role: "gun" },
       { local: [0, 0], role: "core" },
-      { local: [-14.04, 0], role: "engine" },
+      { local: [-14, 0], role: "engine" },
     ],
     loadout: [
       { hp: 0, weapon: "minerLaser", controller: "miner" }, // always has a mining laser
@@ -994,15 +994,15 @@ const SHIP_DESIGNS = {
     regen: 30,
     hardpoints: [
       { local: [68, 0], role: "nose" },
-      { local: [45.2, -21.2], role: "gun" },
-      { local: [-45.2, -21.2], role: "gun" },
-      { local: [45.2, 21.2], role: "gun" },
-      { local: [-45.2, 21.2], role: "gun" },
+      { local: [45, -21], role: "gun" },
+      { local: [-45, -21], role: "gun" },
+      { local: [45, 21], role: "gun" },
+      { local: [-45, 21], role: "gun" },
       { local: [0, 0], role: "core" },
       // set either side of the tail, so the pair sweeps the hull round rather
       // than pivoting it
-      { local: [-71.2, -14.4], role: "engine" },
-      { local: [-71.2, 14.4], role: "engine" },
+      { local: [-71, -14], role: "engine" },
+      { local: [-71, 14], role: "engine" },
     ],
     loadout: [
       { hp: 0, weapon: "cannonLaser", controller: "hunter" },
@@ -1034,10 +1034,10 @@ export const SHIP_TYPES = Object.fromEntries(
 // bubble and the outline weight still come from the shape, as every hull's do.
 const PLAYER_DESIGN = {
   outline: [
-    [18.2, 0],
-    [-10.4, -11.05],
-    [-5.2, 0],
-    [-10.4, 11.05],
+    [18, 0],
+    [-10, -11],
+    [-5, 0],
+    [-10, 11],
   ],
   colour: PALETTE.player.hull,
   faction: "player",
@@ -1050,13 +1050,13 @@ const PLAYER_DESIGN = {
   // for one mount. They are internal, so where they are drawn matters less than
   // that there are enough of them.
   hardpoints: [
-    { local: [18.2, 0], role: "nose" },
+    { local: [18, 0], role: "nose" },
     { local: [0, 0], role: "core" }, // shield
-    { local: [-2.2, 0], role: "core" }, // generator
-    { local: [-4.4, 0], role: "core" }, // radar
-    { local: [-6.6, 0], role: "core" }, // ore magnet
-    { local: [2.6, 0], role: "aux" }, // filled by a fitting, see below
-    { local: [-10.4, 0], role: "engine" },
+    { local: [-2, 0], role: "core" }, // generator
+    { local: [-4, 0], role: "core" }, // radar
+    { local: [-6, 0], role: "core" }, // ore magnet
+    { local: [3, 0], role: "aux" }, // filled by a fitting, see below
+    { local: [-10, 0], role: "engine" },
   ],
   loadout: [
     { hp: 0, weapon: "playerLaser", controller: "manual" },
