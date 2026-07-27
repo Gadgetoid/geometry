@@ -754,9 +754,23 @@ export class GameView {
       return
     }
     r.rect(0, 0, VIEW_W, VIEW_H, { fill: "rgba(2,4,10,.74)" })
+
+    // The page is centred, so it clears the dev buttons along the top instead of
+    // starting under them. Every offset below is measured from `blockTop`, and the
+    // first and last of them are what the centring is worked out from, so a row added
+    // to the shop moves the whole page up half a row instead of being estimated
+    // around.
+    const rowHeight = 36
+    const headerHeight = 114 // the title, the stats and the ore, above the first row
+    const titleOffset = 26
+    const listHeight = (SHOP.length + 1) * rowHeight + SHOP_LAYOUT.groupGap
+    const launchOffset = headerHeight + listHeight + 44
+    const lastOffset = launchOffset + (game.devMode ? 28 : 0)
+    const blockTop = Math.max(24, Math.round((VIEW_H - titleOffset - lastOffset) / 2))
+
     // A sector walked out of was not cleared, and the screen should not say it was.
-    r.text(`SECTOR ${d.level} ${d.bailed ? "ABANDONED" : "CLEARED"}`, VIEW_W / 2, 58, {
-      size: 30,
+    r.text(`SECTOR ${d.level} ${d.bailed ? "ABANDONED" : "CLEARED"}`, VIEW_W / 2, blockTop + 26, {
+      size: 34,
       bold: true,
       color: d.bailed ? PALETTE.ui.warn : PALETTE.ui.goodBright,
       align: "center",
@@ -771,21 +785,20 @@ export class GameView {
           ? `mined ${d.mined}    ore this run ${d.ore}    damage ${d.damage}    -    no bonus for a sector left unfinished`
           : `accuracy ${Math.round(d.accuracy * 100)}%    mined ${d.mined}    ore this run ${d.ore}    damage ${d.damage}    bonus +${d.totalBonus}`,
       VIEW_W / 2,
-      82,
-      { size: 12, color: PALETTE.text.dim, align: "center" },
+      blockTop + 52,
+      { size: 13, color: PALETTE.text.dim, align: "center" },
     )
-    r.text(`ORE  ${game.oreBalance}`, VIEW_W / 2, 112, {
-      size: 20,
+    r.text(`ORE  ${game.oreBalance}`, VIEW_W / 2, blockTop + 84, {
+      size: 23,
       bold: true,
       color: PALETTE.fx.flash,
       align: "center",
       glow: 12,
     })
 
-    const leftX = VIEW_W / 2 - 250,
-      rightX = VIEW_W / 2 + 250,
-      top = 146,
-      rowHeight = 32
+    const leftX = VIEW_W / 2 - 262,
+      rightX = VIEW_W / 2 + 262,
+      top = blockTop + headerHeight
     // The purchases and the specials row share one column, so the running y is what
     // places the group gap and everything below the list.
     let y = top,
@@ -793,7 +806,7 @@ export class GameView {
     for (let row = 0; row <= SHOP.length; row++) {
       const selected = game.shopSelection === row
       if (selected) {
-        r.rect(leftX - 16, y - 18, rightX - leftX + 32, rowHeight - 4, {
+        r.rect(leftX - 16, y - 20, rightX - leftX + 32, rowHeight - 4, {
           fill: "rgba(95,215,255,.12)",
         })
       }
@@ -817,7 +830,7 @@ export class GameView {
         leftX + (item.inset ? SHOP_LAYOUT.insetBy : 0),
         y,
         {
-          size: 15,
+          size: 17,
           bold: selected,
           color: maxed ? PALETTE.ui.good : selected ? PALETTE.text.bright : PALETTE.text.normal,
         },
@@ -825,24 +838,24 @@ export class GameView {
       // The row a pop-over was opened from wears the panel's own outline, and the
       // panel hangs directly off it, so the two read as one thing rather than as a
       // box that happens to be nearby.
-      const infoX = leftX + 206
+      const infoX = leftX + 226
       const openedHere =
         game.slotMenu &&
         ((item.equipment && item.equipment === game.slotMenu.equipment) ||
           (item.levels && item.id === game.slotMenu.levels))
       const fitted = item.info(game)
       if (openedHere) {
-        const tabW = Math.max(60, fitted.length * 11 * 0.62 + 14)
-        this.menuAnchor = { x: infoX - 7, y: y + 7, w: tabW }
-        r.rect(this.menuAnchor.x, y - 13, tabW, 20, { fill: "rgba(95,215,255,.14)" })
-        r.rect(this.menuAnchor.x, y - 13, tabW, 20, {
+        const tabW = Math.max(66, fitted.length * 12 * 0.62 + 16)
+        this.menuAnchor = { x: infoX - 8, y: y + 8, w: tabW }
+        r.rect(this.menuAnchor.x, y - 15, tabW, 23, { fill: "rgba(95,215,255,.14)" })
+        r.rect(this.menuAnchor.x, y - 15, tabW, 23, {
           stroke: PALETTE.ui.accent,
           width: 1.2,
           glow: 8,
         })
       }
       r.text(fitted, infoX, y, {
-        size: 11,
+        size: 12,
         color: openedHere ? PALETTE.text.bright : PALETTE.text.faint,
       })
       const price = opens
@@ -855,7 +868,7 @@ export class GameView {
             ? "FREE"
             : `${cost} ore`
       r.text(price, rightX, y, {
-        size: 14,
+        size: 16,
         color:
           maxed || (game.devMode && !opens)
             ? PALETTE.ui.good
@@ -876,14 +889,14 @@ export class GameView {
         ? "What you carry into the next sector. Fit a slot, or buy and sell what is in one."
         : null
     if (hint) {
-      r.text(hint, VIEW_W / 2, y + 8, { size: 12, color: PALETTE.text.soft, align: "center" })
+      r.text(hint, VIEW_W / 2, y + 10, { size: 13, color: PALETTE.text.soft, align: "center" })
     }
 
     // The last line holds both, sharing the column edges the rows above use: OPTIONS
     // left-aligned under the item names, LAUNCH right-aligned under the costs. Each
     // keeps the two-space placeholder the rows above use, so the cursor arrow
     // replaces it instead of shoving the text along.
-    const launchY = y + 42,
+    const launchY = y + 44,
       launchSelected = game.shopSelection === game.launchRow,
       optionsSelected = game.shopSelection === game.optionsRow
     const midX = (leftX + rightX) / 2
@@ -1223,7 +1236,14 @@ export class GameView {
     const r = this.renderer
     r.rect(0, 0, VIEW_W, VIEW_H, { fill: "rgba(2,4,10,.72)" })
     const onControls = game.pausePage === "controls"
-    r.text(onControls ? "CONTROLS" : "OPTIONS", VIEW_W / 2, 92, {
+    // Measured and centred, as the shop is: a row added to the menu moves the page
+    // rather than pushing its last row down the screen. The controls page lays itself
+    // out in columns and keeps its own top.
+    // Title to last row, which is the whole of it now the caption underneath is gone.
+    const paused = game.pauseMenu()
+    const lastRowOffset = 62 + (paused.length - 1) * 38
+    const menuTop = onControls ? 92 : Math.max(48, Math.round((VIEW_H - lastRowOffset) / 2))
+    r.text(onControls ? "CONTROLS" : "OPTIONS", VIEW_W / 2, menuTop, {
       size: 34,
       bold: true,
       color: PALETTE.text.bright,
@@ -1252,23 +1272,23 @@ export class GameView {
       }
       return
     }
-    const leftX = VIEW_W / 2 - 190,
-      rightX = VIEW_W / 2 + 190,
-      top = 168,
-      rowHeight = 34
+    const leftX = VIEW_W / 2 - 205,
+      rightX = VIEW_W / 2 + 205,
+      top = menuTop + 62,
+      rowHeight = 38
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i],
         y = top + i * rowHeight
       const selected = game.pauseSelection === i
-      const asking = this.#menuRow(game, row, selected, leftX, rightX, y, 15)
+      const asking = this.#menuRow(game, row, selected, leftX, rightX, y, 17)
       // a scale gets arrows, so it is clear it is adjusted rather than pressed
       if (selected && row.adjust && !asking) {
-        r.text("<", leftX + 244, y, { size: 13, color: PALETTE.text.muted })
-        r.text(">", rightX - 74, y, { size: 13, color: PALETTE.text.muted })
+        r.text("<", leftX + 264, y, { size: 14, color: PALETTE.text.muted })
+        r.text(">", rightX - 80, y, { size: 14, color: PALETTE.text.muted })
       }
     }
 
-    const hintY = top + rows.length * rowHeight + 18
+    const hintY = top + rows.length * rowHeight + 20
     if (game.pauseConfirming) {
       r.text("press again to confirm", VIEW_W / 2, hintY, {
         size: 11,
