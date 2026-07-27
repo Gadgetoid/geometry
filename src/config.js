@@ -632,14 +632,37 @@ export const WEAPON_TYPES = {
     damage: 0, // it does its damage by existing, see well.damage
     energy: 150,
     reload: [5.5, 7.5],
-    speed: 95, // slow enough to be flown around, if you saw it coming
+    // It drifts rather than flies, slow enough to be outrun by anything with a drive, so
+    // it is a place to be away from rather than a thing to duck. And it stays: long enough
+    // that a sector with two of them in it has to be flown around rather than through.
+    speed: 80,
+    life: 16,
+    homing: { turn: 0.5, reach: 900 },
     length: 700, // how far off it will start winding up
-    arc: 0.5,
+    // The front half of the ship. It winds up at anything ahead of it rather than only at
+    // what is dead in the jaws, and the well leans after the target once it is away, so a
+    // shot that starts wide still arrives.
+    arc: 1.57,
     chargeTime: 2.2, // a long tell, because the answer is to not be in front of it
     sound: "bigLaser",
     colour: PALETTE.alien.beam,
     generate: { radius: 240, pull: 260, motes: 40 },
-    well: { radius: 210, bite: 120, pull: 340, damage: 260, collapse: 220, core: 13 },
+    // It arrives as a point and opens out over `grow` seconds, so what it does grows with
+    // it: a well is at its worst once it is fully there.
+    well: {
+      radius: 210,
+      bite: 120,
+      pull: 340,
+      damage: 260,
+      collapse: 220,
+      core: 17,
+      grow: 0.9,
+      motes: 26, // struck off the rim and thrown inward, so the accretion can be seen
+    },
+    // And the space around it does not merely bend, it rings: the strongest distortion in
+    // the game, and the only one that puts waves through what is behind it. Tighter than
+    // the reach of the well itself, so what is bent is the hole rather than the room.
+    warp: { radius: 130, strength: 0.55, wave: 0.4 },
   },
   // The alien seeker's: a snap, as its rival counterpart's is.
   warpNeedle: {

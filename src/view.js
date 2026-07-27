@@ -286,11 +286,12 @@ export class GameView {
     }
     // World to uv, with the same vertical flip the ripple uses: the scene target has its
     // origin at the bottom.
-    const source = (x, y, radius, strength) => ({
+    const source = (x, y, radius, strength, wave = 0) => ({
       x: (VIEW_W / 2 + (x - centre.x)) / VIEW_W,
       y: 1 - (VIEW_H / 2 + (y - centre.y)) / VIEW_H,
       radius: radius / VIEW_W,
       strength,
+      wave,
     })
     const lenses = []
     for (const rival of game.rivals) {
@@ -302,7 +303,12 @@ export class GameView {
     for (const shot of game.projectiles) {
       const warp = shot.type && shot.type.warp
       if (warp) {
-        lenses.push(source(shot.x, shot.y, warp.radius, warp.strength))
+        // A shot may bend more as it grows, which is what a singularity does: `grown` is
+        // how much of itself it has become, and anything without one is simply all there.
+        const grown = shot.grown ?? 1
+        lenses.push(
+          source(shot.x, shot.y, warp.radius * grown, warp.strength * grown, warp.wave || 0),
+        )
       }
     }
     lenses.sort((a, b) => b.strength * b.radius - a.strength * a.radius)

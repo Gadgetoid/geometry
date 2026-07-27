@@ -87,6 +87,7 @@ export const PALETTE = {
     shotCore: "#e8fff0", // and the bright middle of one
     beam: "#3dffb4",
     shield: "#7dffd0",
+    void: "#000000", // the middle of a singularity, which is not a colour but an absence
   },
 
   // asteroids. Plain rock is a size ramp between `sizeCool` and `sizeWarm`;

@@ -1448,6 +1448,99 @@ test("the pincer's wind-up drags in what is loose, and never the rocks", () => {
   assert.equal(rock.center.x, rockAt, "the rock does not move: a sector heaving would be mayhem")
 })
 
+test("a pincer winds up at anything in front of it, and not behind", () => {
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ vertices: square(-900, -900, 40), spin: 0 })]
+  beSolid(game.player)
+  // Immortal without being invisible: the invincibility grace is also what hides the ship
+  // from anything hunting it, so pinning it would measure a gun with no target.
+  game.player.takeDamage = () => {}
+  const alien = plainRival(500, 320, "alienFrigate")
+  alien.angle = 0
+  game.rivals = [alien]
+  const gun = alien.hardpoints.find(
+    (hp) => hp.module && hp.module.typeName === "singularityGun",
+  ).module
+
+  const windsUp = (degrees) => {
+    gun.charging = 0
+    gun.cooldown = 0
+    const bearing = (degrees * Math.PI) / 180
+    game.player.x = 500 + Math.cos(bearing) * 400
+    game.player.y = 320 + Math.sin(bearing) * 400
+    for (let i = 0; i < 10 && gun.charging <= 0; i++) {
+      alien.angle = 0
+      game.player.vx = 0
+      game.player.vy = 0
+      game.advance(1 / 60)
+    }
+    return gun.charging > 0
+  }
+  for (const degrees of [0, 45, 80]) {
+    assert.ok(windsUp(degrees), `it should wind up at something ${degrees} degrees off the nose`)
+  }
+  for (const degrees of [95, 135, 180]) {
+    assert.ok(!windsUp(degrees), `and not at something ${degrees} degrees off it`)
+  }
+})
+
+test("a well drifts, and leans after what it was thrown at", () => {
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ vertices: square(-900, -900, 40), spin: 0 })]
+  beSolid(game.player)
+  game.player.takeDamage = () => {}
+  game.player.x = 1100
+  game.player.y = 60
+  const { alien, well } = withSingularity(game)
+  assert.ok(
+    Math.hypot(well.vx, well.vy) < SHIP_TYPES.alienFrigate.maxSpeed * 2,
+    "it drifts rather than flies",
+  )
+  const toTarget = bearingTo(well, game.player)
+  const before = Math.abs(shortestTurn(Math.atan2(well.vy, well.vx), toTarget))
+  for (let i = 0; i < 90; i++) {
+    game.player.x = 1100
+    game.player.y = 60
+    game.player.vx = 0
+    game.player.vy = 0
+    alien.x = 500
+    alien.y = 320
+    game.advance(1 / 60)
+  }
+  const after = Math.abs(shortestTurn(Math.atan2(well.vy, well.vx), bearingTo(well, game.player)))
+  assert.ok(after < before, "and comes round toward what it was thrown at")
+})
+
+test("a field does not repel the fire of the ship carrying it", () => {
+  // Every gun on the hull sits inside the field, so one that turned away its own fire
+  // would fling each shot out sideways and hold its own well at arm's length.
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ vertices: square(-900, -900, 40), spin: 0 })]
+  beSolid(game.player)
+  game.player.takeDamage = () => {}
+  game.player.x = 900
+  game.player.y = 320
+  const alien = plainRival(500, 320, "alienFrigate")
+  alien.angle = 0
+  game.rivals = [alien]
+  let orb = null
+  for (let i = 0; i < 600 && !orb; i++) {
+    alien.x = 500
+    alien.y = 320
+    alien.vx = 0
+    alien.vy = 0
+    game.player.x = 900
+    game.player.y = 320
+    game.advance(1 / 60)
+    orb = game.projectiles.find((shot) => shot.type === WEAPON_TYPES.warpOrb)
+  }
+  assert.ok(orb, "a jaw gun should have fired")
+  assert.ok(
+    Math.abs(Math.hypot(orb.vx, orb.vy) - WEAPON_TYPES.warpOrb.speed) < 1,
+    `its own orb should leave at ${WEAPON_TYPES.warpOrb.speed}, left at ${Math.hypot(orb.vx, orb.vy).toFixed(0)}`,
+  )
+})
+
 test("a singularity pulls, bites through a shield, and spares whoever fired it", () => {
   const game = liveGame()
   game.player.x = -9000
@@ -1486,6 +1579,48 @@ test("a singularity pulls, bites through a shield, and spares whoever fired it",
     game.advance(1 / 60)
   }
   assert.equal(alien.hull, own, "its own hull is spared")
+})
+
+test("a well grows into itself, and shows what it is pulling", () => {
+  const game = liveGame()
+  game.player.x = -9000
+  game.player.y = -9000
+  game.asteroids = [new Asteroid({ vertices: square(-900, -900, 40), spin: 0 })]
+  const { well } = withSingularity(game)
+  const hold = () => {
+    well.x = 500
+    well.y = 320
+    well.vx = 0
+    well.vy = 0
+  }
+  assert.ok(well.grown < 0.2, "it arrives as a point")
+  for (let i = 0; i < 60; i++) {
+    hold()
+    game.advance(1 / 60)
+  }
+  assert.equal(well.grown, 1, "and opens out")
+
+  // What it does grows with it: a mote at the rim of the grown well is drawn in, and one
+  // outside its reach is not.
+  const mote = (at) => {
+    game.emit(500 + at, 320, 0, 0, 6, PALETTE.alien.beam)
+    return game.particles[game.particles.length - 1]
+  }
+  const inside = mote(well.type.well.radius * 0.5)
+  const outside = mote(well.type.well.radius * 1.5)
+  const wasIn = inside.x
+  const wasOut = outside.x
+  for (let i = 0; i < 45; i++) {
+    hold()
+    game.advance(1 / 60)
+  }
+  assert.ok(inside.x < wasIn - 10, "a mote inside it falls in")
+  assert.equal(outside.x, wasOut, "one beyond its reach is untouched")
+
+  // And it strikes motes off its own rim, so the accretion reads whether or not the sector
+  // has anything loose near it.
+  const own = game.particles.filter((p) => p.color === PALETTE.alien.beam).length
+  assert.ok(own > 5, `it should be throwing its own motes, found ${own}`)
 })
 
 test("a pincer cut while its well is up is finished by its own singularity", () => {

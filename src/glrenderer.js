@@ -368,6 +368,10 @@ const COMPOSITE_FS = `#version 300 es
   const int LENSES = 8;
   const int TEARS = 6;
   uniform vec4 uLens[LENSES];
+  // How much each source ripples as well as pulls: 0 is a smooth bend, above that puts
+  // standing waves through the region, which is what a singularity does to the space it
+  // is sitting in.
+  uniform float uLensWave[LENSES];
   uniform int uLensCount;
   uniform vec4 uTear[TEARS];
   uniform int uTearCount;
@@ -389,8 +393,14 @@ const COMPOSITE_FS = `#version 300 es
       float dist = length(d);
       if (dist >= l.w) { continue; }
       float fall = 1.0 - dist / l.w;
+      vec2 dir = d / max(dist, 1e-5);
       d.x /= uAspect;
+      dir.x /= uAspect;
       uv -= d * (l.z * fall * fall);
+      float wave = uLensWave[i];
+      if (wave > 0.0) {
+        uv += dir * sin(dist * 90.0 - uTime * 7.0) * wave * fall * fall * 0.05;
+      }
     }
     return uv;
   }
@@ -544,6 +554,7 @@ export class WebGLRenderer extends Renderer {
     this.warp = [0, 0, 0] // ripple centre in uv plus strength
     // Space bent and space torn, packed as vec4s for the composite pass.
     this.lensData = new Float32Array(LENS_LIMIT * 4)
+    this.lensWave = new Float32Array(LENS_LIMIT)
     this.lensCount = 0
     this.tearData = new Float32Array(TEAR_LIMIT * 4)
     this.tearCount = 0
@@ -1294,6 +1305,7 @@ export class WebGLRenderer extends Renderer {
     gl.uniform1i(this.#uniform(prog, "uLensCount"), this.lensCount)
     if (this.lensCount > 0) {
       gl.uniform4fv(this.#uniform(prog, "uLens"), this.lensData)
+      gl.uniform1fv(this.#uniform(prog, "uLensWave"), this.lensWave)
     }
     gl.uniform1i(this.#uniform(prog, "uTearCount"), this.tearCount)
     if (this.tearCount > 0) {
@@ -1325,6 +1337,9 @@ export class WebGLRenderer extends Renderer {
   // the view's business rather than this one's.
   setLenses(list) {
     this.lensCount = this.#packSources(list, this.lensData, LENS_LIMIT)
+    for (let i = 0; i < this.lensCount; i++) {
+      this.lensWave[i] = list[i].wave || 0
+    }
   }
 
   setTears(list) {

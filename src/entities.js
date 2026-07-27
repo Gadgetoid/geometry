@@ -1144,6 +1144,12 @@ export class Shield {
         toSurface: true,
         skip: host,
         visit: (body, { dir, falloff }) => {
+          // Not its own fire. Every gun on the hull sits inside the field, so a field that
+          // turned away what it launched would fling every shot out sideways and hold the
+          // ship's own well at arm's length.
+          if (body.owner === host) {
+            return
+          }
           const push = force * falloff * dt
           const mass = body.mass ?? 1
           body.vx += (dir.x * push) / mass
@@ -1224,14 +1230,16 @@ export class Projectile extends Entity {
     // The gun that fired it, so a round is drawn the way that gun's rounds look
     // rather than the way every round in the game used to look.
     this.type = type
-    this.life = CONFIG.BULLET_LIFE
+    // A round lives as long as any round unless its gun says otherwise, which is how a
+    // well hangs about long enough to be a place to avoid rather than a thing to duck.
+    this.life = (type && type.life) || CONFIG.BULLET_LIFE
     this.age = 0
   }
 
   update(dt, game) {
     this.life -= dt
     this.age += dt
-    this.#steer(dt, game)
+    this.steer(dt, game)
     this.integrate(dt)
     if (
       this.life <= 0 ||
@@ -1348,13 +1356,14 @@ export class Projectile extends Entity {
 
   // A shot that leans toward what it was fired at. `homing` is the gun's: `turn` is
   // how many radians a second it can bend its course by and `reach` how far it looks.
+  // Not private, because a well is a shot that leans as well.
   // Speed is untouched, so it curves rather than accelerating, and a slow one can
   // still be flown around, which is the whole point of a slow one.
   //
   // It hunts through the faction table, like everything else that picks a target, and
   // asks on behalf of whoever fired it. With that host gone it stops steering: a ball
   // with nothing behind it carries on as it was going.
-  #steer(dt, game) {
+  steer(dt, game) {
     const homing = this.type && this.type.homing
     if (!homing || !this.owner || this.owner.dead) {
       return
@@ -3377,21 +3386,31 @@ export class Asteroid extends Entity {
 // knows them. Nothing about that case is written down.
 // ---------------------------------------------------------------------------
 export class Singularity extends Projectile {
+  // How much of itself it has become. It arrives as a point and opens out, so everything
+  // it does opens out with it: what it pulls, what it bites, how it is drawn and how hard
+  // it rings the space behind it. The view reads this too.
+  get grown() {
+    const grow = this.type.well.grow || 0
+    return grow > 0 ? clamp(this.age / grow, 0.05, 1) : 1
+  }
+
   update(dt, game) {
     this.life -= dt
     this.age += dt
+    this.steer(dt, game) // it leans after its target, as the orbs do
     this.integrate(dt)
     const well = this.type.well
+    const grown = this.grown
     // Everything loose nearby falls toward it, and other people's shots with it.
-    game.drawInParticles(this, well.radius, well.pull, dt)
+    game.drawInParticles(this, well.radius * grown, well.pull * grown, dt)
     game.applyRadialForce({
       centre: this,
-      radius: well.radius,
+      radius: well.radius * grown,
       include: ["projectiles"],
       skip: this,
       visit: (shot, { dir, falloff }) => {
-        shot.vx -= dir.x * well.pull * falloff * dt
-        shot.vy -= dir.y * well.pull * falloff * dt
+        shot.vx -= dir.x * well.pull * grown * falloff * dt
+        shot.vy -= dir.y * well.pull * grown * falloff * dt
       },
     })
     // And whatever is caught inside it is being pulled apart. A gravity channel, which no
@@ -3400,7 +3419,7 @@ export class Singularity extends Projectile {
     const spares = owner && !owner.dead ? owner : null
     game.applyRadialForce({
       centre: this,
-      radius: well.bite,
+      radius: well.bite * grown,
       include: ["asteroids", "rivals", "player"],
       toSurface: true,
       skip: spares,
@@ -3411,12 +3430,33 @@ export class Singularity extends Projectile {
         // own limit, so wreckage is torn apart further out than rock is and both go at
         // the middle. One rule, and the same one that governs a piece hitting anything.
         if (body.shatterAt !== undefined) {
-          game.impactShatter(body, well.pull * falloff)
+          game.impactShatter(body, well.pull * grown * falloff)
           return
         }
-        body.takeDamage(well.damage * falloff * dt, game, "gravity", 0, { x: this.x, y: this.y })
+        body.takeDamage(well.damage * grown * falloff * dt, game, "gravity", 0, {
+          x: this.x,
+          y: this.y,
+        })
       },
     })
+    // Something falling in, always: motes struck off at the rim and thrown inward, so the
+    // accretion is visible whether or not the sector happens to have anything loose near
+    // it. The pull is real either way; this is what makes it read.
+    this.moteBacklog = (this.moteBacklog ?? 0) + well.motes * grown * dt
+    while (this.moteBacklog >= 1) {
+      this.moteBacklog -= 1
+      const angle = Math.random() * TAU
+      const away = well.radius * grown * randRange(0.5, 1)
+      const inward = well.pull * 0.5
+      game.emit(
+        this.x + Math.cos(angle) * away,
+        this.y + Math.sin(angle) * away,
+        -Math.cos(angle) * inward + this.vx,
+        -Math.sin(angle) * inward + this.vy,
+        0.7,
+        Math.random() < 0.25 ? PALETTE.alien.shotCore : PALETTE.alien.beam,
+      )
+    }
     if (this.life <= 0) {
       this.collapse(game)
     }
@@ -3448,26 +3488,30 @@ export class Singularity extends Projectile {
 
   // A hole rather than a light: a dark middle, a bright rim being dragged round it, and
   // the accretion the view sees as a lens.
+  // A hole rather than a light: a dark middle with a bright rim, opening out of nothing,
+  // and rings running outward from it. The rings are the ripple made visible, so what is
+  // drawn and what the space behind it is doing say the same thing.
   draw(renderer) {
     const well = this.type.well
-    const spin = this.age * 4
-    renderer.circle(this.x, this.y, well.core, { fill: PALETTE.space, glow: 0 })
-    renderer.circle(this.x, this.y, well.core, {
+    const grown = this.grown
+    const core = well.core * grown
+    // Nothing in the middle: not the colour of space but the absence of any, so the stars
+    // and the rocks behind it are gone rather than dimmed.
+    renderer.circle(this.x, this.y, core * 1.08, { fill: PALETTE.alien.void, glow: 0 })
+    renderer.circle(this.x, this.y, core, {
       stroke: PALETTE.alien.shotCore,
-      width: 2,
-      glow: 22,
+      width: 1.4 + 1.6 * grown,
+      glow: 16 + 18 * grown,
     })
-    for (let arm = 0; arm < 3; arm++) {
-      const angle = spin + (arm / 3) * TAU
-      const from = well.core * 1.4,
-        to = well.core * 2.6
-      renderer.line(
-        this.x + Math.cos(angle) * from,
-        this.y + Math.sin(angle) * from,
-        this.x + Math.cos(angle + 0.9) * to,
-        this.y + Math.sin(angle + 0.9) * to,
-        { color: PALETTE.alien.beam, width: 1.6, glow: 14, alpha: 0.8 },
-      )
+    // Three rings, each a third of a cycle apart, swelling out and fading as they go.
+    for (let ring = 0; ring < 3; ring++) {
+      const phase = (this.age * 1.6 + ring / 3) % 1
+      renderer.circle(this.x, this.y, core + phase * well.bite * grown, {
+        stroke: PALETTE.alien.beam,
+        width: 1.4,
+        glow: 10,
+        alpha: (1 - phase) * 0.55 * grown,
+      })
     }
   }
 }
