@@ -609,7 +609,10 @@
       // ---- state -----------------------------------------------------------
 
       const ROLES = ["nose", "gun", "core", "aux"]
-      const GRID_STEPS = [10, 5, 2, 1, 0.5, 0.25, 0.1]
+      // World units. A hull runs from about 30 across to a couple of hundred, so
+      // these step in sizes worth nudging a vertex by rather than in fractions of
+      // one.
+      const GRID_STEPS = [50, 20, 10, 5, 2, 1, 0.5]
 
       // The stated fields of a ship design, in the order config.js writes them, so
       // the sidebar and the snippet are driven from one list. `kinds` says which
@@ -903,7 +906,7 @@
       let scaling = null
       const options = {
         snap: true,
-        grid: 1,
+        grid: 5,
         ghostType: "player",
         ghost: "origin",
         parts: false,
@@ -911,7 +914,7 @@
         plume: true,
         wheel: "pan", // a trackpad's two-finger drag, and a mouse wheel with it
       }
-      const view = { x: 0, y: 0, scale: 12 }
+      const view = { x: 0, y: 0, scale: 2 } // replaced by fitView on load
       const undoStack = []
       const redoStack = []
 
@@ -1976,7 +1979,10 @@
 
       // ---- sidebar ---------------------------------------------------------
 
-      const round = (n) => Number(n.toFixed(5))
+      // Three places is enough for a coordinate in world units and for the derived
+      // settings that can be overridden; five was for when an outline was drawn at
+      // unit scale and 1.4 was a whole nose.
+      const round = (n) => Number(n.toFixed(3))
       const fmt = (n) => String(round(Number(n) || 0))
 
       function setStatus(text, warn) {
@@ -2710,13 +2716,15 @@
           .filter(
             ([hp]) =>
               !pointInPolygon(hp.local, ship.outline) &&
-              distanceToOutline(hp.local, ship.outline) > 0.02,
+              distanceToOutline(hp.local, ship.outline) > reach * 0.01,
           )
           .map(([, i]) => i)
         if (loose.length) {
           warnings.push(`hardpoint ${loose.join(", ")} sits off the hull`)
         }
-        if (Math.hypot(cx, cy) > 0.35) {
+        // Judged against the hull's own reach, so the same shape warns whatever size
+        // it is drawn at.
+        if (Math.hypot(cx, cy) > reach * 0.2) {
           warnings.push("centroid is well off the origin, so the hull pivots about its edge")
         }
         if (!ship.hardpoints.some((hp) => hp.mount.module === "engine")) {
