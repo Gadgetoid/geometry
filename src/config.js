@@ -1433,11 +1433,20 @@ const SHIP_DESIGNS = {
     blastScore: 500,
     oreDrop: 9,
   },
-  // The first of the aliens: a pincer, the same length as a frigate and three times
-  // as wide, with its mouth facing forward and a spike down the middle of it. Nothing
-  // about the shape is decoration - it is the collision outline, the thing a beam
-  // crosses and the thing a cut divides, so the mouth is a real void a rock can sit
-  // in without touching anything.
+  // ---------------------------------------------------------------------------
+  // The aliens. One per rival tier, so the spawn tables and the controllers carry
+  // over: a hull is still a shape, two numbers and what is bolted to it, and being
+  // alien is a faction, a colour and (to come) how it is drawn.
+  //
+  // They arrive later than their rival counterparts because they share the rivals'
+  // arrival budget until they have one of their own, so an alien turning up is a
+  // rival that did not. `fromSector` is the one dial for that, per hull.
+  // ---------------------------------------------------------------------------
+  // A pincer, the same length as a frigate and three times as wide, with its mouth
+  // facing forward and a spike down the middle of it. Nothing about the shape is
+  // decoration: it is the collision outline, the thing a beam crosses and the thing a
+  // cut divides, so the mouth is a real void a rock can sit in without touching
+  // anything.
   //
   // The jaw guns are held to the front: a mount states how far off the hull's facing
   // it can be brought to bear, and one buried in a jaw covers what is ahead and
@@ -1445,9 +1454,7 @@ const SHIP_DESIGNS = {
   // it, which is what makes them the defensive ones.
   //
   // Still to come, see ROADMAP.md: the singularity it should hold in the jaws, the
-  // green burn where it is cut, the glitch pass over it, and a spawn budget of its
-  // own. Until that last one it shares the rivals' budget, so an alien arriving is a
-  // rival that did not.
+  // green burn where it is cut, and the warp and glitch it should be drawn with.
   alienFrigate: {
     outline: [
       [-20, 25],
@@ -1519,13 +1526,129 @@ const SHIP_DESIGNS = {
         fitted: { shield: "bulwark", radar: "huntingArray", thruster: "siegeJets" },
       },
     ],
-    spawn: { fromSector: 6, weight: 2, maxConcurrent: 1 },
+    spawn: { fromSector: 14, weight: 2, maxConcurrent: 1 },
     hunts: true,
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
     killScore: 900,
     blastScore: 500,
     oreDrop: 9,
+  },
+  // The alien answer to the scout: a swept arrowhead with the same reach and the same
+  // drive, fatter through the body, so it takes about as much cutting as its rival
+  // counterpart and comes apart into ore rather than wreckage.
+  alienScout: {
+    outline: [
+      [2, 0],
+      [4, -3],
+      [13, -3],
+      [14, -5],
+      [4, -9],
+      [-6, -11],
+      [-11, -11],
+      [-16, -3],
+      [-16, 3],
+      [-11, 11],
+      [-6, 11],
+      [4, 9],
+      [14, 5],
+      [13, 3],
+      [4, 3],
+    ],
+    colour: PALETTE.alien.hull,
+    faction: "alien",
+    mass: 0.6,
+    armour: 1,
+    lifeTime: [16, 26],
+    hardpoints: [
+      { local: [2, 0], role: "nose" },
+      { local: [-11, 0], role: "gun" },
+      { local: [-9, 0], role: "core" },
+      { local: [-16, 0], role: "engine" },
+    ],
+    loadout: [
+      { hp: 0, weapon: "minerLaser", controller: "miner" },
+      {
+        hp: 2,
+        core: "prospectorCore",
+        fitted: { radar: "prospectorArray", thruster: "attitudeJets" },
+      },
+      { hp: 3, engine: "pulseDrive" },
+    ],
+    arms: {
+      gun: {
+        hp: 1,
+        weapon: "autocannon",
+        controller: "turret",
+        chancePerSector: 0.15,
+        chanceCap: 0.85,
+      },
+      shield: { hp: 2, slot: "shield", shield: "standard", chancePerSector: 0.12, chanceCap: 0.8 },
+    },
+    spawn: { fromSector: 12, weight: 6, maxConcurrent: 2 },
+    debrisMaterial: SHIP_PLATING,
+    debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
+    killScore: 400,
+    blastScore: 200,
+    oreDrop: 5,
+  },
+  // And to the seeker: a narrow dart with a forked tail, near enough the same hull as
+  // the one it answers and a little quicker round for being shorter.
+  alienSeeker: {
+    outline: [
+      [4, 0],
+      [2, -2],
+      [16, -2],
+      [14, -4],
+      [-5, -7],
+      [-8, -5],
+      [-9, -5],
+      [-11, 0],
+      [-9, 5],
+      [-8, 5],
+      [-5, 7],
+      [14, 4],
+      [16, 2],
+      [2, 2],
+    ],
+    colour: PALETTE.alien.hull,
+    faction: "alien",
+    mass: 0.48,
+    armour: 1.2,
+    lifeTime: [26, 36],
+    hardpoints: [
+      { local: [4, 0], role: "nose" },
+      { local: [-6, 0], role: "gun" },
+      { local: [-2, 0], role: "core" },
+      { local: [-9, 3], role: "engine" },
+      { local: [-9, -3], role: "engine" },
+    ],
+    loadout: [
+      { hp: 0, weapon: "seekerLaser", controller: "hunter" },
+      {
+        hp: 2,
+        core: "seekerCore",
+        fitted: { shield: "deflector", radar: "huntingArray", thruster: "gimbalRing" },
+      },
+      { hp: 3, engine: "ionDrive" },
+      { hp: 4, engine: "ionDrive" },
+    ],
+    arms: {
+      gun: {
+        hp: 1,
+        weapon: "autocannon",
+        controller: "turret",
+        chancePerSector: 0.15,
+        chanceCap: 0.85,
+      },
+    },
+    spawn: { fromSector: 12, weight: 2, maxConcurrent: 1 },
+    hunts: true,
+    debrisMaterial: SHIP_PLATING,
+    debris: { particles: 26, speed: 260, ring: 19, shake: 10 },
+    killScore: 420,
+    blastScore: 200,
+    oreDrop: 0,
   },
 }
 
