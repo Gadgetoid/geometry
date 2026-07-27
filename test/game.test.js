@@ -112,6 +112,27 @@ function withoutShield(loadout) {
     })
 }
 
+// Fit a laser mark, owning it first the way buying it would. Marks are a ladder, so
+// everything below it comes too.
+function withLaser(game, id) {
+  const options = EQUIPMENT.laser.options
+  const wanted = options.findIndex((option) => option.id === id)
+  assert.ok(wanted >= 0, `no laser mark called ${id}`)
+  game.upgrades.owned.laser = options.slice(0, wanted + 1).map((option) => option.id)
+  game.upgrades.fitted.laser = id
+  game.player.fitEquipment(game)
+  return game
+}
+
+// The first mark that has a field, and the one below it, for a test that wants to
+// show a mark paying for something.
+function laserMarkThat(field) {
+  const options = EQUIPMENT.laser.options
+  const at = options.findIndex((option) => WEAPON_TYPES[option.id][field])
+  assert.ok(at > 0, `some laser mark should carry ${field}`)
+  return { with: options[at].id, without: options[at - 1].id }
+}
+
 // Slots come with the power core, so a test wanting room buys its way to it.
 function withSlots(game, wanted) {
   const level = CORE_TYPES.minerCore.levels.findIndex((step) => step.special >= wanted)
@@ -155,7 +176,7 @@ const square = (cx, cy, half) => [
   { x: cx - half, y: cy + half },
 ]
 
-const playerWeapon = { type: WEAPON_TYPES.playerLaser }
+const playerWeapon = { type: WEAPON_TYPES.playerLaserMk1 }
 
 // Run `body` with Math.random replaced by a seeded sequence, for anything whose
 // result depends on a random rock silhouette. Restores the real one afterwards.
@@ -879,7 +900,7 @@ test("a beam hits an unshielded player where its hull actually is", () => {
 test("a beam laid over a hull registers, rather than needing its centreline on it", () => {
   // The gap that used to be a clean miss: the hull inside the beam's bright core
   // but not under its centreline.
-  const laser = WEAPON_TYPES.playerLaser
+  const laser = WEAPON_TYPES.playerLaserMk1
   const game = liveGame()
   const scout = new RivalShip(500, 320, "scout", []) // unarmed, unshielded
   scout.angle = 0
@@ -1580,7 +1601,7 @@ test("a full-charge shot does not strip a shielded rival's shield in one hit", (
     const shield = rival.shieldModule()
     assert.ok(shield && shield.up, `${typeName} must start shielded`)
 
-    player.mainWeapon.charge = WEAPON_TYPES.playerLaser.chargeMax
+    player.mainWeapon.charge = WEAPON_TYPES.playerLaserMk1.chargeMax
     player.mainWeapon.cooldown = 0
     player.fireLaser(game)
 
@@ -1592,7 +1613,7 @@ test("a full-charge shot does not strip a shielded rival's shield in one hit", (
 })
 
 test("charge buys reach, and damage follows it more gently", () => {
-  const weapon = WEAPON_TYPES.playerLaser
+  const weapon = WEAPON_TYPES.playerLaserMk1
   const damageAt = (charge) => {
     const game = liveGame()
     const player = game.player
@@ -1897,15 +1918,11 @@ test("a resumed run re-mounts the shield it had bought", () => {
 // Every levelled upgrade indexes one or more tables by the same level, so a table
 // left one entry short is a level the shop can reach and the game cannot answer.
 test("every level the shop offers is one every table it indexes can answer", () => {
+  // Only what is still levelled. The laser is a slot of marks now, each stating
+  // its own gun, so there is no table left to run short.
   const tables = {
     core: [CORE_TYPES.minerCore.levels],
     shield: [CONFIG.SHIELD_EFFICIENCY],
-    laser: [
-      CONFIG.LASER_RATE_MULT,
-      CONFIG.LASER_COST_MULT,
-      CONFIG.LASER_DAMAGE_MULT,
-      CONFIG.LASER_OVERDRIVE,
-    ],
   }
   for (const [id, indexed] of Object.entries(tables)) {
     const item = SHOP.find((entry) => entry.id === id)
@@ -1919,14 +1936,14 @@ test("every level the shop offers is one every table it indexes can answer", () 
   }
 })
 
-// ---- what a laser level buys -----------------------------------------------
+// ---- what a laser mark buys ------------------------------------------------
 
-test("a laser level that pays for damage lands more of it", () => {
+test("a laser mark that pays for damage lands more of it", () => {
   // Measured on a raised shield, which drains by the damage landed. An unshielded
   // hull is cut through at either level, so it reports the same either way.
-  const damageAt = (level) => {
+  const damageAt = (id) => {
     const game = liveGame()
-    game.upgrades.laser = level
+    withLaser(game, id)
     const player = game.player
     player.x = 100
     player.y = 320
@@ -1937,16 +1954,20 @@ test("a laser level that pays for damage lands more of it", () => {
     fullChargeShot(game)
     return before - frigate.energy
   }
-  const table = CONFIG.LASER_DAMAGE_MULT
-  const first = table.findIndex((mult) => mult > table[0])
-  assert.ok(first > 0, "some level should pay for damage")
-  assert.ok(damageAt(first) > damageAt(first - 1), "and land more than the level below it")
+  const options = EQUIPMENT.laser.options
+  const base = WEAPON_TYPES[options[0].id].damage
+  const at = options.findIndex((option) => WEAPON_TYPES[option.id].damage > base)
+  assert.ok(at > 0, "some mark should pay for damage")
+  assert.ok(
+    damageAt(options[at].id) > damageAt(options[at - 1].id),
+    "and land more than the mark below it",
+  )
 })
 
 test("overdrive shatters a rock, but only wound up and only where it is sold", () => {
-  const fire = (level, overdrive) => {
+  const fire = (mark, overdrive) => {
     const game = liveGame()
-    game.upgrades.laser = level
+    withLaser(game, mark)
     const player = game.player
     player.x = 300
     player.y = 320
@@ -1962,27 +1983,30 @@ test("overdrive shatters a rock, but only wound up and only where it is sold", (
       shots: game.laserShots,
     }
   }
-  const top = CONFIG.LASER_OVERDRIVE.length - 1
-  assert.equal(CONFIG.LASER_OVERDRIVE[top], true, "the top level should be the one that has it")
-  assert.equal(fire(top, 1).shattered, true, "a wound-up shot shatters every rock it reaches")
-  assert.equal(fire(top, 0.9).shattered, false, "short of wound up it does not")
-  assert.equal(fire(top - 1, 1).shattered, false, "and neither does the level below")
+  const marks = laserMarkThat("canOverdrive")
+  assert.equal(
+    fire(marks.with, 1).shattered,
+    true,
+    "a wound-up shot shatters every rock it reaches",
+  )
+  assert.equal(fire(marks.with, 0.9).shattered, false, "short of wound up it does not")
+  assert.equal(fire(marks.without, 1).shattered, false, "and neither does the mark below")
   // the guarantee is visible: the beam is drawn in its own colour
-  assert.equal(fire(top, 1).shots[0].color, PALETTE.player.overdrive)
-  assert.equal(fire(top, 0.9).shots[0].color, WEAPON_TYPES.playerLaser.colour)
+  assert.equal(fire(marks.with, 1).shots[0].color, PALETTE.player.overdrive)
+  assert.equal(fire(marks.with, 0.9).shots[0].color, WEAPON_TYPES.playerLaserMk1.colour)
 
   // and the effect beam is one shot the length of the beam, not one per rock
-  const effects = fire(top, 1).shots.filter((shot) => shot.color === PALETTE.ore.shatterBeam)
+  const effects = fire(marks.with, 1).shots.filter((s) => s.color === PALETTE.ore.shatterBeam)
   assert.equal(effects.length, 1, "two rocks shattered, one effect beam")
   const [drawn] = effects[0].beams
-  const fired = fire(top, 1).shots[0].beams[0]
+  const fired = fire(marks.with, 1).shots[0].beams[0]
   assert.equal(drawn.b.x, fired.b.x, "and it runs the whole length of the shot")
   assert.equal(drawn.b.y, fired.b.y)
 })
 
 test("overdrive winds up past full charge, on time and energy it draws for itself", () => {
   const game = liveGame()
-  game.upgrades.laser = CONFIG.LASER_OVERDRIVE.length - 1
+  withLaser(game, laserMarkThat("canOverdrive").with)
   const player = game.player,
     weapon = player.mainWeapon
   game.holding = (name) => name === "fire"
@@ -2019,9 +2043,9 @@ test("overdrive winds up past full charge, on time and energy it draws for itsel
   assert.equal(weapon.overdrive, 0)
 })
 
-test("a level without overdrive never winds one up, however long it is held", () => {
+test("a mark without overdrive never winds one up, however long it is held", () => {
   const game = liveGame()
-  game.upgrades.laser = CONFIG.LASER_OVERDRIVE.findIndex((has) => !has)
+  withLaser(game, laserMarkThat("canOverdrive").without)
   const player = game.player
   game.holding = (name) => name === "fire"
   for (let frame = 0; frame < 400; frame++) {
@@ -3739,7 +3763,7 @@ test("a rebound fire key still fires on release", () => {
   const game = liveGame()
   game.asteroids = [new Asteroid({ vertices: square(600, 320, 60) })]
   game.bindings.keys.fire = ["KeyJ"]
-  game.player.mainWeapon.charge = WEAPON_TYPES.playerLaser.chargeMax
+  game.player.mainWeapon.charge = WEAPON_TYPES.playerLaserMk1.chargeMax
   game.player.mainWeapon.cooldown = 0
   const shots = game.stats.shots
   game.onKeyUp({ code: "KeyJ" })

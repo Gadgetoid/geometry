@@ -330,26 +330,36 @@ export class Game {
   // The pop-over's rows for an equipment slot: everything it could hold, with what
   // it costs, or that it is already owned or already in.
   equipmentRows(slot) {
-    return EQUIPMENT[slot].options.map((option) => ({
-      name: option.name,
-      desc: option.desc,
-      value: (g) => {
-        if (g.fittedEquipment(slot) === option.id) {
-          return "FITTED"
-        }
-        if (g.ownsEquipment(slot, option.id)) {
-          return "SWAP"
-        }
-        return g.devMode ? "FREE" : `${option.cost} ore`
-      },
-      action: (g) => {
-        if (g.ownsEquipment(slot, option.id)) {
-          g.fitEquipment(slot, option.id)
-        } else {
-          g.buyEquipment(slot, option.id)
-        }
-      },
-    }))
+    const spec = EQUIPMENT[slot]
+    return spec.options.map((option, index) => {
+      // A ladder is climbed in order, so a mark is out of reach until the one below
+      // it is owned. Everything else is a straight choice.
+      const locked =
+        spec.ladder && index > 0 && !this.ownsEquipment(slot, spec.options[index - 1].id)
+      return {
+        name: option.name,
+        desc: option.desc,
+        value: (g) => {
+          if (g.fittedEquipment(slot) === option.id) {
+            return "FITTED"
+          }
+          if (g.ownsEquipment(slot, option.id)) {
+            return "SWAP"
+          }
+          if (locked) {
+            return "-"
+          }
+          return g.devMode ? "FREE" : `${option.cost} ore`
+        },
+        action: (g) => {
+          if (g.ownsEquipment(slot, option.id)) {
+            g.fitEquipment(slot, option.id)
+          } else if (!locked) {
+            g.buyEquipment(slot, option.id)
+          }
+        },
+      }
+    })
   }
 
   // How many specials the ship has room for, which the power core decides.

@@ -1594,13 +1594,23 @@ export class PlayerShip extends Ship {
       if (!id || !hp) {
         continue
       }
+      const entry = { hp: spec.hp, [spec.mount]: id }
+      if (spec.controller) {
+        entry.controller = spec.controller
+      }
       if (spec.slot) {
         if (hp.module && hp.module.kind === "core") {
-          hp.module.equip(spec.slot, { [spec.slot]: id })
+          hp.module.equip(spec.slot, entry)
         }
       } else if (!hp.module || hp.module.typeName !== id) {
-        this.applyLoadout([{ hp: spec.hp, engine: id }])
+        this.applyLoadout([entry])
       }
+    }
+    // The main laser is whatever ended up on the nose, so swapping a mark in has to
+    // be followed by looking again.
+    const nose = this.hardpointByRole("nose")
+    if (nose) {
+      this.mainWeapon = nose.module
     }
     this.refreshDrive()
   }
@@ -1637,8 +1647,7 @@ export class PlayerShip extends Ship {
     }
     const chargeFrac = clamp(w.charge / w.type.chargeMax, 0, 1)
     const length = w.charge * this.beamLengthMult() + w.type.chargeReach
-    const damage =
-      w.type.damage * this.chargeDamageMult() * CONFIG.LASER_DAMAGE_MULT[game.upgrades.laser]
+    const damage = w.type.damage * this.chargeDamageMult()
     const colour = this.overdriven ? PALETTE.player.overdrive : w.type.colour
     const nose = this.mountWorld(this.nose.local)
     const dir = { x: Math.cos(this.angle), y: Math.sin(this.angle) },
@@ -1689,7 +1698,7 @@ export class PlayerShip extends Ship {
   // does not have overdrive, so the glow never leaves its usual colour.
   get overdriveWind() {
     const w = this.mainWeapon
-    return CONFIG.LASER_OVERDRIVE[this.game.upgrades.laser] && w ? w.overdrive : 0
+    return w && w.type.canOverdrive ? w.overdrive : 0
   }
 
   // Damage multiplier for the charge held, running across the usable charge
@@ -1856,12 +1865,12 @@ export class PlayerShip extends Ship {
     const holding = canControl && (game.holding("fire") || pad.charging)
     const freeShot = this.buffField("freeCharge", false)
     if (holding) {
-      const rate = w.type.chargeRate * CONFIG.LASER_RATE_MULT[game.upgrades.laser]
-      const cost = w.type.chargeCost * CONFIG.LASER_COST_MULT[game.upgrades.laser]
+      const rate = w.type.chargeRate
+      const cost = w.type.chargeCost
       if (this.energy > 4 || freeShot) {
         // Past full charge the hold keeps drawing, winding the shot up to overdrive
         // at its own rate and its own price.
-        const winding = w.charge >= w.type.chargeMax && CONFIG.LASER_OVERDRIVE[game.upgrades.laser]
+        const winding = w.charge >= w.type.chargeMax && w.type.canOverdrive
         if (winding) {
           w.overdrive = Math.min(1, w.overdrive + dt / CONFIG.LASER_OVERDRIVE_TIME)
         } else {

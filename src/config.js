@@ -183,14 +183,10 @@ export const CONFIG = {
   // energy per point of damage. Level 0 flies without one, so its entry is never
   // read.
   SHIELD_EFFICIENCY: [2, 2, 1.44, 1, 0.64],
-  LASER_RATE_MULT: [1, 1.45, 1.45, 1.45, 1.45],
-  LASER_COST_MULT: [1, 1, 0.55, 0.55, 0.55],
-  LASER_DAMAGE_MULT: [1, 1, 1, 1.5, 1.5],
-  // Overdrive: at a level that has it, a beam held past full charge winds up over
+  // Overdrive: on a mark that has it, a beam held past full charge winds up over
   // LASER_OVERDRIVE_TIME seconds, drawing LASER_OVERDRIVE_COST energy a second as
   // it does. The charge glow fades from green to red across the wind-up and pulses
   // once it is there, so the guaranteed shatter is visible before the shot goes.
-  LASER_OVERDRIVE: [false, false, false, false, true],
   LASER_OVERDRIVE_TIME: 1.5,
   LASER_OVERDRIVE_COST: 120,
 }
@@ -530,18 +526,32 @@ export const WEAPON_TYPES = {
     speed: 420,
     colour: PALETTE.player.turret,
   },
-  playerLaser: {
+  // The player's cutting beam, in the marks the shop sells. Each states the whole
+  // gun rather than a multiplier on the one below, so what a mark does is read off
+  // its own entry instead of out of four tables indexed in parallel.
+  //
+  // Reach is the point of charging, so damage follows it only gently:
+  // `chargeDamageMult` runs from the first entry at chargeMin to the second at
+  // chargeMax. Set both to 1 to make charge buy reach alone.
+  //
+  // A Mk I shot at full charge lands 68, which no shielded rival loses its shield
+  // to in one hit: 2 shots to strip a scout and a third to cut it, 4 to strip a
+  // frigate and a fifth to cut it. Mk IV takes one shot off each of those.
+  ...laserMarks({
+    playerLaserMk1: {},
+    playerLaserMk2: { chargeRate: 1044 },
+    playerLaserMk3: { chargeRate: 1044, chargeCost: 83 },
+    playerLaserMk4: { chargeRate: 1044, chargeCost: 83, damage: 57 },
+    playerLaserMk5: { chargeRate: 1044, chargeCost: 83, damage: 57, canOverdrive: true },
+  }),
+}
+
+// One mark of the player's beam: the shared gun with what this mark changes on top.
+function laserMarks(marks) {
+  const base = {
     kind: "beam",
     chargeable: true,
     damage: 38,
-    // Reach is the point of charging, so damage follows it only gently: the
-    // multiplier runs from the first entry at chargeMin to the second at
-    // chargeMax. Set both to 1 to make charge buy reach alone.
-    //
-    // A full-charge shot lands 68, which no shielded rival loses its shield to in
-    // one hit: 2 shots to strip a scout and a third to cut it, 4 to strip a frigate
-    // and a fifth to cut it. LASER_DAMAGE_MULT takes one shot off each of those at
-    // the levels that pay for it.
     chargeDamageMult: [1, 1.8],
     colour: PALETTE.player.beam,
     width: 2.4,
@@ -552,7 +562,10 @@ export const WEAPON_TYPES = {
     chargeMin: 95,
     chargeCost: 150,
     chargeReach: 40, // beam length is charge * reach multipliers, plus this
-  },
+  }
+  return Object.fromEntries(
+    Object.entries(marks).map(([name, mark]) => [name, { ...base, ...mark }]),
+  )
 }
 
 // How many barrels a gun needs to keep up with its own rate of fire, and is
@@ -1156,11 +1169,9 @@ const PLAYER_DESIGN = {
     { local: [3, 0], role: "aux" }, // filled by a fitting, see below
     { local: [-10, 0], role: "engine" },
   ],
-  loadout: [
-    { hp: 0, weapon: "playerLaser", controller: "manual" },
-    { hp: 1, core: "minerCore", fitted: { radar: "surveyArray" } },
-    { hp: 3, engine: "minerDrive" },
-  ],
+  // The nose and the engine are filled from EQUIPMENT, since what is in them is the
+  // run's to choose; the core is the hull's own.
+  loadout: [{ hp: 1, core: "minerCore", fitted: { radar: "surveyArray" } }],
   // What the ship is fitted with before anything is bought, one id per slot. The
   // magnet is here rather than in the shop because a ship that cannot pick ore up
   // is not a ship: it can be ejected, which is a choice, not a starting state.
@@ -1198,9 +1209,47 @@ export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
 //                   start and is what a swap falls back to.
 // ---------------------------------------------------------------------------
 export const EQUIPMENT = {
+  laser: {
+    label: "LASER",
+    hp: 0,
+    mount: "weapon",
+    controller: "manual",
+    // A ladder: each mark is the one below it and more, so they are bought in order
+    // and there is never a reason to go back down. Slots without this are a choice
+    // rather than a climb.
+    ladder: true,
+    options: [
+      { id: "playerLaserMk1", name: "BEAM MK I", desc: "The yard's cutting beam.", cost: 0 },
+      {
+        id: "playerLaserMk2",
+        name: "BEAM MK II",
+        desc: "Charges half again as fast, so a full shot comes round sooner.",
+        cost: 45,
+      },
+      {
+        id: "playerLaserMk3",
+        name: "BEAM MK III",
+        desc: "A charge costs 83 energy instead of 150, so the cell goes further.",
+        cost: 90,
+      },
+      {
+        id: "playerLaserMk4",
+        name: "BEAM MK IV",
+        desc: "Hits for 57 rather than 38: one shot fewer to strip a shield and cut a hull.",
+        cost: 135,
+      },
+      {
+        id: "playerLaserMk5",
+        name: "BEAM MK V",
+        desc: "Overdrive: hold past full charge to wind up a shot that shatters a rock outright.",
+        cost: 180,
+      },
+    ],
+  },
   engine: {
     label: "ENGINE",
     hp: 3,
+    mount: "engine",
     options: [
       {
         id: "minerDrive",
@@ -1402,7 +1451,7 @@ export const SPECIAL_IDS = Object.keys(SPECIAL_TYPES)
 export const MAX_SLOTS = 4
 
 export function freshUpgrades() {
-  return { core: 0, shield: 0, laser: 0, turret: false, ...freshEquipment() }
+  return { core: 0, shield: 0, turret: false, ...freshEquipment() }
 }
 
 // Sizes the in-game HUD can be drawn at, in menu order. The menus themselves are
@@ -1583,13 +1632,7 @@ export const SHOP = [
     (level) => 40 + level * 45,
     (g) => g.fitUpgrade("shield"),
   ),
-  levelled(
-    "laser",
-    "LASER SYSTEM",
-    "Lv1 charges faster, Lv2 costs less energy, Lv3 hits harder, Lv4 overdrive.",
-    CONFIG.LASER_RATE_MULT.length - 1,
-    (level) => 45 + level * 45,
-  ),
+  equipmentRow("laser"),
   fitting(
     "turret",
     "DEFENSE TURRET",
