@@ -433,6 +433,10 @@ export const HAZARD_TRAITS = [
   { traits: { gun: ROCK_TURRETS, shield: ROCK_SHIELD }, fromSector: 6 },
 ]
 
+// What to call a rock carrying each trait, for the dev page that offers one of each: a
+// trait key is what the rock is built from and not a word to put in front of a player.
+export const HAZARD_NAMES = { explosive: "EXPLOSIVE", shield: "SHIELDED", gun: "ARMED" }
+
 // ---------------------------------------------------------------------------
 // ASTEROID SHAPE - how makeAsteroidPolygon builds a silhouette. It hulls a ring
 // of points around each of `lobes` overlapping circles, so one lobe gives a
@@ -2431,38 +2435,53 @@ export const UI_SCALES = [1, 1.5, 2]
 // ---------------------------------------------------------------------------
 // What a dev-spawned hull turns up carrying: the design alone, whatever the spawner would
 // roll for it in this sector, or every arm it could ever have.
-export const DEV_ARMS = ["none", "rolled", "all"]
+export const DEV_ARMS = ["normal", "rolled", "all"]
 
+// An arrow is what a row that leads somewhere shows, so a row that simply does something
+// when it is pressed shows nothing and is not mistaken for a page.
 export const DEV_MENU = [
   {
     name: "TESTING ARENA",
-    value: (g) => (g.sandbox ? "IN ONE" : ">"),
+    value: (g) => (g.sandbox ? "IN ONE" : ""),
     action: (g) => g.enterSandbox(),
   },
   { name: "CLEAR SECTOR", action: (g) => g.clearSectorNow() },
-  { name: "OWN EVERYTHING", value: () => ">", action: (g) => g.devOwnEverything() },
-  { name: "FULLY UPGRADE", value: () => ">", action: (g) => g.devMaxOut() },
-  // What the spawn rows below hand the hull they make. Rolling at the sector the run is
-  // actually in gives almost nothing early on, which is the least useful of the three for
-  // looking at a hull, so all three are offered rather than a yes and a no.
-  {
-    name: "ARMS",
-    value: (g) => DEV_ARMS[g.devArms].toUpperCase(),
-    action: (g) => g.stepDevArms(1),
-    adjust: (g, step) => g.stepDevArms(step),
-  },
-  {
-    rows: (g) =>
-      Object.keys(g.spawnableTypes()).map((name) => ({
-        name: `SPAWN ${name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase()}`,
-        // How many of that hull are in the sector, so holding the row down reads back.
-        value: (game) => String(game.rivals.filter((r) => r.typeName === name).length),
-        action: (game) => game.devSpawn(name),
-      })),
-  },
+  { name: "OWN EVERYTHING", action: (g) => g.devOwnEverything() },
+  { name: "FULLY UPGRADE", action: (g) => g.devMaxOut() },
+  { name: "SPAWN", value: () => ">", action: (g) => g.openPausePage("devSpawn") },
   // Not "back": in a testing arena this page is what ESCAPE opens, so there is nothing
   // behind it. The options are a row of it, the way it is a row of them.
   { name: "OPTIONS", value: () => ">", action: (g) => g.openPausePage("root") },
+]
+
+// The spawn page: a row per hull, a row per kind of rock, and both lists generated, so
+// adding either to its registry puts it on the page.
+//
+// A hull row carries its own choice of what to arm it with rather than the page holding
+// one setting for all of them, since the interesting spawn is usually one hull rolled
+// against a plain one. Rolling at the sector the run is in gives almost nothing early on,
+// which is the least useful of the three for looking at a hull, so all three are offered.
+export const DEV_SPAWN_MENU = [
+  {
+    rows: (g) =>
+      Object.keys(g.spawnableTypes()).map((name) => ({
+        name: name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase(),
+        choices: (game) => ({
+          options: DEV_ARMS.map((arms) => arms.toUpperCase()),
+          at: game.devArmsFor(name),
+        }),
+        action: (game) => game.devSpawn(name),
+        adjust: (game, step) => game.stepDevArms(name, step),
+      })),
+  },
+  {
+    rows: (g) =>
+      g.devRockKinds().map((kind) => ({
+        name: kind.name,
+        action: (game) => game.devSpawnRock(kind),
+      })),
+  },
+  { name: "BACK", action: (g) => g.openPausePage("dev") },
 ]
 
 export const PAUSE_MENU = [

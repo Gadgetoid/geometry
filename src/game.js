@@ -7,12 +7,14 @@ import {
   DEV_ARMS,
   SHIP_SCALARS,
   DEV_MENU,
+  DEV_SPAWN_MENU,
   VIEW_W,
   VIEW_H,
   ARENA,
   TAU,
   CONFIG,
   PROGRESSION,
+  HAZARD_NAMES,
   HAZARD_TRAITS,
   FACTIONS,
   coreAt,
@@ -185,7 +187,7 @@ export class Game {
     this.devMode = false
     // A sector that never counts as cleared, so a dev arena stays put. See enterSandbox.
     this.sandbox = false
-    this.devArms = 0 // what a dev-spawned hull carries, an index into DEV_ARMS
+    this.devArms = {} // what a dev spawn of each hull carries, an index into DEV_ARMS
     this.paused = false
     this.gameTime = 0
     this.screenShake = 0
@@ -2353,16 +2355,20 @@ export class Game {
       return this.controlRows()
     }
     if (this.pausePage === "dev") {
-      return this.devRows()
+      return this.menuPage(DEV_MENU)
+    }
+    if (this.pausePage === "devSpawn") {
+      return this.menuPage(DEV_SPAWN_MENU)
     }
     return PAUSE_MENU.filter((row) => !row.available || row.available(this))
   }
 
-  // The dev page. An entry with `rows` stands for a group generated from a registry, so
-  // the list grows with the game rather than having to be kept level with it.
-  devRows() {
+  // A page of the menu from its registry. An entry with `rows` stands for a group
+  // generated from another registry, so a page grows with the game rather than having to
+  // be kept level with it.
+  menuPage(page) {
     const rows = []
-    for (const entry of DEV_MENU) {
+    for (const entry of page) {
       if (entry.rows) {
         rows.push(...entry.rows(this))
       } else if (!entry.available || entry.available(this)) {
@@ -2372,29 +2378,51 @@ export class Game {
     return rows
   }
 
-  // Every hull the spawner could send in, which is what the dev page offers one row each
-  // of. The player's own type is not among them: it is never spawned.
+  // Every hull the spawner could send in, which is what the spawn page offers one row
+  // each of. The player's own type is not among them: it is never spawned.
   spawnableTypes() {
     return SHIP_TYPES
   }
 
-  // Walk the choice of what a spawned hull carries.
-  stepDevArms(step) {
+  // What a spawn of this hull is set to carry, an index into DEV_ARMS.
+  devArmsFor(name) {
+    return this.devArms[name] || 0
+  }
+
+  // Walk that choice, which each hull holds for itself.
+  stepDevArms(name, step) {
     const count = DEV_ARMS.length
-    this.devArms = (this.devArms + (step > 0 ? 1 : count - 1)) % count
+    this.devArms[name] = (this.devArmsFor(name) + (step > 0 ? 1 : count - 1)) % count
   }
 
   // What a dev-spawned hull turns up with: nothing beyond its design, what the spawner
   // would roll for it here, or every arm it could ever carry.
-  devLoadout(type) {
+  devLoadout(name, type) {
     const arms = Object.values(type.arms || {})
-    if (DEV_ARMS[this.devArms] === "all") {
+    if (DEV_ARMS[this.devArmsFor(name)] === "all") {
       return [...(type.loadout || []), ...arms]
     }
-    if (DEV_ARMS[this.devArms] === "rolled") {
+    if (DEV_ARMS[this.devArmsFor(name)] === "rolled") {
       return this.rollLoadout(type)
     }
     return type.loadout || []
+  }
+
+  // One row's worth of rock per kind the sector generator can produce, plain one first.
+  // Named from the traits, so a hazard added to the registry is offered here.
+  devRockKinds() {
+    const named = (traits) =>
+      Object.keys(traits)
+        .map((trait) => HAZARD_NAMES[trait] || trait.toUpperCase())
+        .join(" + ")
+    return [
+      { name: "ASTEROID", traits: {}, fromSector: 1 },
+      ...HAZARD_TRAITS.map((entry) => ({
+        name: `ASTEROID, ${named(entry.traits)}`,
+        traits: entry.traits,
+        fromSector: entry.fromSector || 1,
+      })),
+    ]
   }
 
   // Put one in the sector, in front of the ship rather than out beyond the boundary: the
@@ -2411,10 +2439,34 @@ export class Game {
     const type = SHIP_TYPES[name]
     const ahead = this.player.angle
     const at = this.#clearSpawnSpot(this.player, ahead, 260 + type.boundRadius, type.boundRadius)
-    const ship = new RivalShip(at.x, at.y, name, this.devLoadout(type))
+    const ship = new RivalShip(at.x, at.y, name, this.devLoadout(name, type))
     ship.angle = ahead + Math.PI
     ship.arrived = true // it is already here; nothing to fly in from
     this.rivals.push(ship)
+    Sound.power()
+  }
+
+  // The same, for a rock of one of the kinds the generator makes. Its traits are cut to
+  // the sector as the generator cuts them, but never below the sector the kind joins at:
+  // a gun pool trimmed to sector one is empty, and asking for an armed rock and getting a
+  // bare one would be no use.
+  devSpawnRock(kind) {
+    if (!this.player) {
+      return
+    }
+    const radius = CONFIG.AST_MAX_R * 0.8
+    const ahead = this.player.angle
+    const at = this.#clearSpawnSpot(this.player, ahead, 260 + radius, radius)
+    const sector = Math.max(this.level, kind.fromSector)
+    this.asteroids.push(
+      new Asteroid({
+        x: at.x,
+        y: at.y,
+        radius,
+        traits: this.#traitsForSector(kind.traits, sector),
+        spin: randRange(-0.5, 0.5),
+      }),
+    )
     Sound.power()
   }
 

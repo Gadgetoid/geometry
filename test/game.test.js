@@ -1668,50 +1668,6 @@ test("the dev page reaches every part of the game without playing up to it", () 
     return found
   }
 
-  // One spawn row per hull the spawner could send, generated from the registry so the
-  // list grows with the game rather than being kept level with it by hand.
-  for (const name of Object.keys(SHIP_TYPES)) {
-    const label = `SPAWN ${name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase()}`
-    row(label)
-  }
-  // What a spawned hull carries is chosen rather than assumed: rolling at the sector the
-  // run is in gives almost nothing early on, which is the least useful of the three.
-  const arms = (name) => {
-    game.rivals = []
-    row(`SPAWN ${name}`).action(game)
-    return [...game.rivals[0].modules()].map((m) => m.typeName)
-  }
-  const armsRow = row("ARMS")
-  assert.equal(armsRow.value(game), "NONE", "it starts on the design alone")
-  const bare = arms("SCOUT")
-  const design = SHIP_TYPES.scout.loadout.map((entry) => entry.weapon).filter(Boolean)
-  assert.ok(
-    design.every((gun) => bare.includes(gun)),
-    "which is everything the design states",
-  )
-  assert.ok(
-    !bare.includes(SHIP_TYPES.scout.arms.gun.weapon),
-    "and nothing it only sometimes turns up with",
-  )
-  armsRow.action(game)
-  assert.equal(armsRow.value(game), "ROLLED")
-  armsRow.action(game)
-  assert.equal(armsRow.value(game), "ALL")
-  const loaded = arms("SCOUT")
-  for (const arm of Object.values(SHIP_TYPES.scout.arms)) {
-    const carried = arm.weapon || arm.shield
-    assert.ok(loaded.includes(carried), `every arm should be aboard, missing ${carried}`)
-  }
-  armsRow.action(game)
-  assert.equal(armsRow.value(game), "NONE", "and the choice wraps")
-
-  game.rivals = []
-  row("SPAWN ALIEN FRIGATE").action(game)
-  assert.equal(game.rivals.length, 1, "and spawning puts one in the sector")
-  assert.equal(game.rivals[0].typeName, "alienFrigate")
-  assert.ok(game.rivals[0].arrived, "already here, rather than flying in from beyond the ring")
-  assert.equal(row("SPAWN ALIEN FRIGATE").value(game), "1", "and the row counts them")
-
   // Owning everything is every option in every slot, at no cost.
   row("OWN EVERYTHING").action(game)
   for (const [slot, spec] of Object.entries(EQUIPMENT)) {
@@ -1729,6 +1685,132 @@ test("the dev page reaches every part of the game without playing up to it", () 
   // A slot that is a choice rather than a climb takes what the yard fits: the last by
   // position would just mean the slowest drive.
   assert.equal(game.fittedEquipment("engine"), EQUIPMENT.engine.options[0].id)
+
+  // The spawn rows are a page of their own, since there are more of them than the rest
+  // of the dev tools put together.
+  row("SPAWN").action(game)
+  assert.equal(game.pausePage, "devSpawn")
+  row("BACK").action(game)
+  assert.equal(game.pausePage, "dev", "and it leads back to where it was opened from")
+})
+
+test("a menu row showing an arrow is one that opens a page", () => {
+  // The arrow is what says "there is more behind this". A row that simply does something
+  // when it is pressed must not show one, or it reads as a page that never arrives.
+  const onPage = (page) => {
+    const game = liveGame()
+    beSolid(game.player)
+    game.openDevMenu()
+    game.openPausePage(page)
+    return game
+  }
+  for (const page of ["root", "dev", "devSpawn"]) {
+    for (const name of onPage(page)
+      .pauseMenu()
+      .map((row) => row.name)) {
+      // A fresh game a row at a time, since pressing one of these changes the run.
+      const game = onPage(page)
+      const row = game.pauseMenu().find((entry) => entry.name === name)
+      if (!row.action || !row.value || row.value(game) !== ">") {
+        continue
+      }
+      row.action(game)
+      assert.notEqual(game.pausePage, page, `${page} / ${name} shows an arrow but stays put`)
+    }
+  }
+})
+
+test("the spawn page offers every hull and every kind of rock", () => {
+  const game = liveGame()
+  beSolid(game.player)
+  game.openDevMenu()
+  game.openPausePage("devSpawn")
+  const row = (name) => {
+    const found = game.pauseMenu().find((entry) => entry.name === name)
+    assert.ok(found, `the spawn page should offer ${name}`)
+    return found
+  }
+
+  // A row per hull the spawner could send and one per kind of rock it could put in a
+  // sector, both generated from their registries so the page grows with the game.
+  for (const name of Object.keys(SHIP_TYPES)) {
+    row(name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase())
+  }
+  row("ASTEROID")
+  row("ASTEROID, EXPLOSIVE")
+  row("ASTEROID, ARMED")
+
+  game.rivals = []
+  row("ALIEN FRIGATE").action(game)
+  assert.equal(game.rivals.length, 1, "spawning puts one in the sector")
+  assert.equal(game.rivals[0].typeName, "alienFrigate")
+  assert.ok(game.rivals[0].arrived, "already here, rather than flying in from beyond the ring")
+
+  // What a hull carries is each row's own choice, so one can be spawned rolled against
+  // another spawned plain. Rolling at the sector the run is in gives almost nothing early
+  // on, which is the least useful of the three, so all three are offered.
+  const spawned = (name) => {
+    game.rivals = []
+    row(name).action(game)
+    return [...game.rivals[0].modules()].map((m) => m.typeName)
+  }
+  const scout = () => row("SCOUT")
+  const shown = () => {
+    const choice = scout().choices(game)
+    return choice.options[choice.at]
+  }
+  assert.equal(shown(), "NORMAL", "it starts on the design alone")
+  const bare = spawned("SCOUT")
+  const design = SHIP_TYPES.scout.loadout.map((entry) => entry.weapon).filter(Boolean)
+  assert.ok(
+    design.every((gun) => bare.includes(gun)),
+    "which is everything the design states",
+  )
+  assert.ok(
+    !bare.includes(SHIP_TYPES.scout.arms.gun.weapon),
+    "and nothing it only sometimes turns up with",
+  )
+  scout().adjust(game, 1)
+  assert.equal(shown(), "ROLLED")
+  scout().adjust(game, 1)
+  assert.equal(shown(), "ALL")
+  const loaded = spawned("SCOUT")
+  for (const arm of Object.values(SHIP_TYPES.scout.arms)) {
+    const carried = arm.weapon || arm.shield
+    assert.ok(loaded.includes(carried), `every arm should be aboard, missing ${carried}`)
+  }
+  scout().adjust(game, 1)
+  assert.equal(shown(), "NORMAL", "and the choice wraps")
+
+  // Which is each row's own: setting one leaves the others where they were.
+  scout().adjust(game, 1)
+  const seeker = game
+    .pauseMenu()
+    .find((entry) => entry.name === "SEEKER")
+    .choices(game)
+  assert.equal(seeker.options[seeker.at], "NORMAL", "a hull nobody has set is still plain")
+
+  // A rock of each kind, carrying what the kind is named for. The gun pool is cut to the
+  // sector, so an armed rock asked for in sector one must still turn up armed.
+  const rock = (name) => {
+    game.asteroids = []
+    row(name).action(game)
+    assert.equal(game.asteroids.length, 1, `${name} should put one rock in the sector`)
+    return game.asteroids[0]
+  }
+  assert.equal(game.level, 1, "and this is sector one, where a rock is normally bare")
+  const plain = rock("ASTEROID")
+  assert.equal(plain.explosive, false)
+  assert.equal(plain.hardpoints.length, 0, "a plain rock carries nothing")
+  assert.equal(rock("ASTEROID, EXPLOSIVE").explosive, true)
+  const armed = rock("ASTEROID, ARMED")
+  const guns = armed.hardpoints.filter((hp) => hp.module && hp.module.kind === "weapon")
+  assert.ok(guns.length > 0, "an armed rock turns up with guns on it")
+  const both = rock("ASTEROID, ARMED + SHIELDED")
+  assert.ok(
+    both.hardpoints.some((hp) => hp.module && hp.module.kind === "shield"),
+    "and a shielded one with a bubble",
+  )
 })
 
 test("dev spawns are set down clear of each other", () => {
@@ -1740,11 +1822,12 @@ test("dev spawns are set down clear of each other", () => {
   const row = (name) => game.pauseMenu().find((entry) => entry.name === name)
   row("TESTING ARENA").action(game)
   game.openDevMenu()
+  game.openPausePage("devSpawn")
   for (let i = 0; i < 6; i++) {
-    row("SPAWN ALIEN FRIGATE").action(game)
+    row("ALIEN FRIGATE").action(game)
   }
   for (let i = 0; i < 4; i++) {
-    row("SPAWN SEEKER").action(game)
+    row("SEEKER").action(game)
   }
   assert.equal(game.rivals.length, 10, "all ten arrived")
   let closest = Infinity

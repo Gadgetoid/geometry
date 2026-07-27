@@ -20,6 +20,11 @@ import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
 import { PALETTE } from "./palette.js"
 
+// The renderer's text is monospace, so how wide a run comes out is its length times the
+// advance, and a caller laying text out beside other text can work it out for itself.
+const GLYPH_ADVANCE = 0.62
+const textWidth = (str, size) => str.length * size * GLYPH_ADVANCE
+
 // Clip the infinite line (px,py)+s*(ux,uy) to the rect; returns the [s0,s1]
 // range inside it, or null. Used to bound the out-of-bounds hatch to the view.
 function clipLineToRect(px, py, ux, uy, x0, y0, x1, y1) {
@@ -1279,7 +1284,33 @@ export class GameView {
       bold: selected,
       color: asking ? PALETTE.ui.warn : selected ? PALETTE.text.bright : PALETTE.text.normal,
     })
-    const value = asking ? row.confirm : waiting || (row.value ? row.value(game) : "")
+    // A row offering a choice shows all of them with the one it is set to lit, so what
+    // pressing the row will do is readable without moving the cursor onto it. Laid out
+    // from the right, so the list ends where a plain row's value would.
+    const choices = !asking && !waiting && row.choices ? row.choices(game) : null
+    if (choices) {
+      const small = size - 2
+      let right = x1
+      for (let i = choices.options.length - 1; i >= 0; i--) {
+        const picked = i === choices.at
+        r.text(choices.options[i], right, y, {
+          size: small,
+          bold: picked,
+          color: picked ? PALETTE.fx.flash : PALETTE.text.muted,
+          align: "right",
+        })
+        right -= textWidth(choices.options[i], small)
+        if (i > 0) {
+          r.text(" / ", right, y, { size: small, color: PALETTE.text.muted, align: "right" })
+          right -= textWidth(" / ", small)
+        }
+      }
+    }
+    const value = choices
+      ? ""
+      : asking
+        ? row.confirm
+        : waiting || (row.value ? row.value(game) : "")
     if (value) {
       r.text(value, x1, y, {
         size: size - 1,
@@ -1382,7 +1413,8 @@ export class GameView {
     const paused = game.pauseMenu()
     const lastRowOffset = 62 + (paused.length - 1) * 38
     const menuTop = onControls ? 92 : Math.max(48, Math.round((VIEW_H - lastRowOffset) / 2))
-    const title = { controls: "CONTROLS", dev: "DEV TOOLS" }[game.pausePage] || "OPTIONS"
+    const title =
+      { controls: "CONTROLS", dev: "DEV TOOLS", devSpawn: "SPAWN" }[game.pausePage] || "OPTIONS"
     r.text(title, VIEW_W / 2, menuTop, {
       size: 34,
       bold: true,
@@ -1421,8 +1453,9 @@ export class GameView {
         y = top + i * rowHeight
       const selected = game.pauseSelection === i
       const asking = this.#menuRow(game, row, selected, leftX, rightX, y, 17)
-      // a scale gets arrows, so it is clear it is adjusted rather than pressed
-      if (selected && row.adjust && !asking) {
+      // a scale gets arrows, so it is clear it is adjusted rather than pressed. A row
+      // showing its choices already reads as one, and the arrows would sit over them.
+      if (selected && row.adjust && !asking && !row.choices) {
         r.text("<", leftX + 264, y, { size: 14, color: PALETTE.text.muted })
         r.text(">", rightX - 80, y, { size: 14, color: PALETTE.text.muted })
       }
