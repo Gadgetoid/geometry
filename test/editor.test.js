@@ -57,8 +57,9 @@ function element(tag = "div") {
   return el
 }
 
-function stubDom() {
+function stubDom(stored = null) {
   const previous = new Map()
+  const storage = { removed: [], written: [] }
   const set = (key, value) => {
     previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key))
     Object.defineProperty(globalThis, key, { value, configurable: true, writable: true })
@@ -83,7 +84,11 @@ function stubDom() {
   })
   set("navigator", { clipboard: { writeText: async () => {} }, userAgent: "node" })
   set("location", { search: "", protocol: "file:", hostname: "" })
-  set("localStorage", { getItem: () => null, setItem: noop, removeItem: noop })
+  set("localStorage", {
+    getItem: () => stored,
+    setItem: (_key, value) => storage.written.push(value),
+    removeItem: (key) => storage.removed.push(key),
+  })
   set(
     "ResizeObserver",
     class {
@@ -102,6 +107,7 @@ function stubDom() {
   set("cancelAnimationFrame", noop)
   return {
     framesRun: () => frames,
+    storage,
     restore() {
       for (const [key, descriptor] of previous) {
         if (descriptor) {
@@ -114,22 +120,50 @@ function stubDom() {
   }
 }
 
-test("the ship editor loads and draws against the registries it reads", async () => {
+// The module imports ./src/*.js, so it has to run from the same directory the page
+// does. Written beside it and removed again whatever happens. The query string
+// keeps each boot out of the module cache.
+async function boot(dom, tag) {
   const page = readFileSync(join(root, "ship-editor.html"), "utf8")
   const body = page.match(/<script type="module">([\s\S]*?)<\/script>/)
   assert.ok(body, "ship-editor.html must hold one module script")
-
-  // The module imports ./src/*.js, so it has to run from the same directory the
-  // page does. Written beside it and removed again whatever happens.
-  const scratch = join(root, ".editor-under-test.mjs")
+  const scratch = join(root, `.editor-under-test-${tag}.mjs`)
   writeFileSync(scratch, body[1])
-  const dom = stubDom()
   try {
-    await import(`${scratch}?t=${Date.now()}`)
+    await import(`${scratch}?t=${tag}`)
     await new Promise((resolve) => setTimeout(resolve, 50))
-    assert.ok(dom.framesRun() > 0, "the draw loop must have run at least one frame")
   } finally {
     dom.restore()
     unlinkSync(scratch)
   }
+}
+
+test("the ship editor loads and draws against the registries it reads", async () => {
+  const dom = stubDom()
+  await boot(dom, "fresh")
+  assert.ok(dom.framesRun() > 0, "the draw loop must have run at least one frame")
+})
+
+test("the editor throws away saved state from before the units changed", async () => {
+  // What a browser was left holding when outlines moved to world units: a hull a
+  // tenth of the size it should be, and a grid step no longer on offer, which
+  // together look exactly like the editor being broken.
+  const stale = JSON.stringify({
+    ship: {
+      outline: [
+        [1.4, 0],
+        [-0.8, -0.85],
+        [-0.4, 0],
+        [-0.8, 0.85],
+      ],
+      mass: 1,
+    },
+    options: { grid: 0.05 },
+  })
+  const dom = stubDom(stale)
+  await boot(dom, "stale")
+  assert.ok(
+    dom.storage.removed.includes("geometry-ship-editor"),
+    "a payload with no version must be cleared rather than loaded",
+  )
 })

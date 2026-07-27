@@ -920,9 +920,28 @@
 
       const STORAGE_KEY = "geometry-ship-editor"
 
+      // Bumped when what is stored stops meaning what it used to. Outlines moved
+      // from unit scale to world units and the grid steps moved with them, so a
+      // payload written before that holds a hull a tenth of the size it should be
+      // and a grid step that is no longer offered. Restoring it looks like the
+      // editor is broken, which is worse than starting clean.
+      const STORAGE_VERSION = 2
+
+      // What an option is allowed to be. A saved value outside the set is dropped
+      // and the default kept, so changing one of these lists cannot leave a stored
+      // setting the interface has no way to show or change.
+      const OPTION_CHOICES = {
+        grid: GRID_STEPS,
+        ghost: ["origin", "beside", "off"],
+        wheel: ["pan", "zoom"],
+      }
+
       function save() {
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ ship, options }))
+          localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({ version: STORAGE_VERSION, ship, options }),
+          )
         } catch {
           /* a private window without storage still edits fine */
         }
@@ -931,9 +950,18 @@
       function restore() {
         try {
           const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null")
+          if (saved && saved.version !== STORAGE_VERSION) {
+            localStorage.removeItem(STORAGE_KEY)
+            return false
+          }
           if (saved && saved.ship && Array.isArray(saved.ship.outline)) {
             ship = Object.assign(blankShip(), saved.ship)
-            Object.assign(options, saved.options || {})
+            for (const [key, value] of Object.entries(saved.options || {})) {
+              const allowed = OPTION_CHOICES[key]
+              if (!allowed || allowed.includes(value)) {
+                options[key] = value
+              }
+            }
             return true
           }
         } catch {
@@ -3047,6 +3075,9 @@
           option.value = name
           option.textContent = name.toUpperCase()
           ghostType.append(option)
+        }
+        if (!ghostHulls()[options.ghostType]) {
+          options.ghostType = "player"
         }
         ghostType.value = options.ghostType
         ghostType.addEventListener("change", () => {
