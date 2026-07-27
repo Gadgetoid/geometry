@@ -959,6 +959,8 @@ export class GameView {
     const leftX = menuCentre - 262,
       rightX = menuCentre + 262,
       top = blockTop + headerHeight
+    // Where every row names what it has fitted, which the specials boxes line up with.
+    const infoX = leftX + 226
     // The purchases and the specials row share one column, so the running y is what
     // places the group gap and everything below the list.
     let y = top,
@@ -975,7 +977,7 @@ export class GameView {
         slotsY = y
         // The specials row is the last of what the core carries, so it is inset with
         // the shield and the radar and the gap falls under the group.
-        this.#shopSlots(game, leftX + SHOP_LAYOUT.insetBy, rightX, y, selected)
+        this.#shopSlots(game, leftX + SHOP_LAYOUT.insetBy, infoX, y, selected)
         y += rowHeight + SHOP_LAYOUT.groupGap
         continue
       }
@@ -998,7 +1000,6 @@ export class GameView {
       // The row a pop-over was opened from wears the panel's own outline, and the
       // panel hangs directly off it, so the two read as one thing rather than as a
       // box that happens to be nearby.
-      const infoX = leftX + 226
       const openedHere =
         game.slotMenu &&
         ((item.equipment && item.equipment === game.slotMenu.equipment) ||
@@ -1103,17 +1104,18 @@ export class GameView {
     }
     // Last, so the pop-over sits over the rows it is opened from.
     if (game.slotMenu) {
-      this.#slotPopover(game, rightX, slotsY)
+      this.#slotPopover(game, rightX, infoX, slotsY)
     }
   }
 
   // Where a special slot sits on the shop's right-hand column. The row and the
   // pop-over that opens on one both place themselves from here, so they line up.
-  #slotBox(rightX, index) {
+  // The boxes run rightward from where every other row names what it has fitted, so the
+  // specials read as that column's entry rather than as something hung off the far edge.
+  #slotBox(startX, index) {
     const size = 26,
-      spacing = 6,
-      width = MAX_SLOTS * (size + spacing) - spacing
-    return { x: rightX - width + index * (size + spacing), size }
+      spacing = 6
+    return { x: startX + index * (size + spacing), size }
   }
 
   // The ship the shop is fitting, drawn beside the list with its mounts marked and the
@@ -1249,7 +1251,7 @@ export class GameView {
     })
   }
 
-  #shopSlots(game, leftX, rightX, y, selected) {
+  #shopSlots(game, leftX, infoX, y, selected) {
     const r = this.renderer
     // Titled exactly as the purchase rows above it are: same size, same weight, and the
     // same colour once there is nothing left to get. It is a row of that list, so it reads
@@ -1261,7 +1263,7 @@ export class GameView {
       color: full ? PALETTE.ui.good : selected ? PALETTE.text.bright : PALETTE.text.normal,
     })
     for (let index = 0; index < MAX_SLOTS; index++) {
-      const { x, size } = this.#slotBox(rightX, index),
+      const { x, size } = this.#slotBox(infoX, index),
         boxY = y - size + 7
       const owned = index < game.specialSlots(),
         spec = game.slotType(index),
@@ -1311,7 +1313,7 @@ export class GameView {
     return lines
   }
 
-  #slotPopover(game, rightX, slotsY) {
+  #slotPopover(game, rightX, infoX, slotsY) {
     const r = this.renderer,
       { slot, selection } = game.slotMenu,
       rows = game.slotMenuRows(slot)
@@ -1331,7 +1333,7 @@ export class GameView {
     // edge so the two outlines line up; one opened on a special slot hangs under its
     // box, as before.
     const tab = onRow ? this.menuAnchor : null
-    const anchorX = tab ? tab.x : this.#slotBox(rightX, slot).x - 6
+    const anchorX = tab ? tab.x : this.#slotBox(infoX, slot).x - 6
     const panelX = Math.min(anchorX, rightX - width),
       panelY = tab ? tab.y : slotsY + 15
     r.rect(panelX, panelY, width, height, { fill: "rgba(4,8,16,.95)" })

@@ -3746,6 +3746,36 @@ test("the specials row is titled like the rows it sits among", () => {
   assert.equal(rowFor(full, "SPECIALS").colour, PALETTE.ui.good, "nothing left to unlock")
 })
 
+test("the specials boxes start where the rows above name what they have fitted", () => {
+  // They are that column's entry for this row, so they begin on the same line down the
+  // page rather than being hung off the far edge of the list.
+  const game = liveGame()
+  game.enterShop()
+  const drawn = { text: [], rects: [] }
+  const renderer = new Proxy(
+    {
+      text: (text, x, y, opts) =>
+        drawn.text.push({ text: String(text).trim(), x, y, size: opts && opts.size }),
+      rect: (x, y, w, h) => drawn.rects.push({ x, y, w, h }),
+    },
+    { get: (target, key) => (key in target ? target[key] : () => {}) },
+  )
+  new GameView(renderer).render(game)
+
+  const fittedColumn = drawn.text.find((t) => t.text === "MINER DRIVE")
+  assert.ok(fittedColumn, "a row names what it has fitted")
+  const boxes = drawn.rects.filter((box) => box.w === 26 && box.h === 26).sort((a, b) => a.x - b.x)
+  assert.equal(boxes.length, MAX_SLOTS, "one box per slot the core could give")
+  assert.equal(
+    Math.round(boxes[0].x),
+    Math.round(fittedColumn.x),
+    "the first box starts where that column does",
+  )
+  // And they still stop short of the prices, which own the right-hand edge.
+  const price = drawn.text.find((t) => t.text === "60 ore")
+  assert.ok(boxes.at(-1).x + boxes.at(-1).w < price.x, "clear of the price column")
+})
+
 test("a shop row points at the mount it would change", () => {
   // The page is a list and the ship it is fitting, so what a row is about is shown on
   // the hull rather than left to be worked out from the name.
