@@ -2063,6 +2063,9 @@ export const PLAYER_TYPE = {
 //             desc  what it does, in a line, shown against the selected row
 //             cost  ore. Zero is what the hull came with, so it is owned from the
 //                   start and is what a swap falls back to.
+//             locked  not sold at all, and not owned until a run finds one. It is what
+//                   another hull carries, so the yard has nothing to say about it until
+//                   there is one to look at; once found it swaps like anything else.
 // ---------------------------------------------------------------------------
 export const EQUIPMENT = {
   // No mark costs nothing, so a run starts with the slot empty: a shield is bought,
@@ -2099,6 +2102,21 @@ export const EQUIPMENT = {
         name: "SHIELD MK IV",
         desc: "0.64 a point: the cell goes three times as far against fire as Mk I.",
         cost: 175,
+      },
+      // Found rather than sold: what another hull carries. See `locked`.
+      {
+        id: "bulwark",
+        name: "BULWARK",
+        desc: "A frigate's braced bubble. It shrugs off shot and hates beams.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "alienField",
+        name: "REPEL FIELD",
+        desc: "Alien. It pushes rocks and shot away instead of stopping them, and pays for it.",
+        cost: 0,
+        locked: true,
       },
     ],
   },
@@ -2138,6 +2156,21 @@ export const EQUIPMENT = {
         desc: "Adds specials, so nothing drifting past is missed.",
         cost: 160,
       },
+      // Found rather than sold: what another hull carries. See `locked`.
+      {
+        id: "prospectorArray",
+        name: "PROSPECTOR ARRAY",
+        desc: "It sees rock and ore a long way off, and ships poorly.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "huntingArray",
+        name: "HUNTING ARRAY",
+        desc: "It sees ships first and rock second, which is the point of it.",
+        cost: 0,
+        locked: true,
+      },
     ],
   },
   // What brings the ship about, in the core beside the cell that runs it. No ladder:
@@ -2161,6 +2194,21 @@ export const EQUIPMENT = {
         name: "VECTOR JETS",
         desc: "Fast but harder to master.",
         cost: 70,
+      },
+      // Found rather than sold: what another hull carries. See `locked`.
+      {
+        id: "attitudeJets",
+        name: "ATTITUDE JETS",
+        desc: "The least a hull can turn on, and it weighs almost nothing.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "siegeJets",
+        name: "SIEGE JETS",
+        desc: "Twice the turn and ten times the weight, for a slab.",
+        cost: 0,
+        locked: true,
       },
     ],
   },
@@ -2190,6 +2238,21 @@ export const EQUIPMENT = {
         name: "FLAK",
         desc: "A stream of light rounds, harder hitting but only out to 240.",
         cost: 85,
+      },
+      // Found rather than sold: what another hull carries. See `locked`.
+      {
+        id: "autocannon",
+        name: "AUTOCANNON",
+        desc: "The heavy rounds a rival's ring of guns throws.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "warpOrb",
+        name: "WARP ORB",
+        desc: "Alien. A slow ball of bent space that falls toward what it was thrown at.",
+        cost: 0,
+        locked: true,
       },
     ],
   },
@@ -2229,6 +2292,49 @@ export const EQUIPMENT = {
         desc: "Overdrive: hold past full charge to wind up a shot that shatters a rock.",
         cost: 180,
       },
+      // Found rather than sold: what another hull carries. See `locked`.
+      {
+        id: "minerLaser",
+        name: "PROSPECTOR CUTTER",
+        desc: "A rock cutter. It barely scratches a hull, and was never meant to.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "cannonLaser",
+        name: "SIEGE LANCE",
+        desc: "What a frigate leads with: one enormous hit, and a long wait for the next.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "seekerLaser",
+        name: "DART BEAM",
+        desc: "A light beam a dart fires on the move, made for passes rather than duels.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "warpCutter",
+        name: "WARP CUTTER",
+        desc: "Alien. It cuts by bending the space a hull is sitting in.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "warpNeedle",
+        name: "WARP NEEDLE",
+        desc: "Alien. A thin beam that distorts whatever is behind what it crosses.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "singularityGun",
+        name: "SINGULARITY GUN",
+        desc: "Alien. It winds up, draws in what is loose, and throws a well that eats it.",
+        cost: 0,
+        locked: true,
+      },
     ],
   },
   engine: {
@@ -2249,16 +2355,70 @@ export const EQUIPMENT = {
         desc: "Backs away under DOWN or S. Less thrust, so less speed and less push.",
         cost: 55,
       },
+      // Found rather than sold: what another hull carries. See `locked`.
+      {
+        id: "pulseDrive",
+        name: "PULSE DRIVE",
+        desc: "A scout's drive. Light, and pushes one way only.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "ionDrive",
+        name: "ION DRIVE",
+        desc: "A dart's drive: the lightest thing that will move a hull.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "siegeDrive",
+        name: "SIEGE DRIVE",
+        desc: "What it takes to move a frigate, and it weighs like it.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "swarmDrive",
+        name: "SWARM DRIVE",
+        desc: "Alien. A scout's drive, and it burns green.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "stalkerDrive",
+        name: "STALKER DRIVE",
+        desc: "Alien. Light and quiet, for a hull meant to arrive unnoticed.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "pincerDrive",
+        name: "PINCER DRIVE",
+        desc: "Alien. What moves a pincer, which is a great deal of hull.",
+        cost: 0,
+        locked: true,
+      },
     ],
   },
 }
 
 // What a run owns to begin with: everything that costs nothing.
+// What the yard actually offers for a slot: everything except what is only there to be
+// found on another hull. Two lists in one, so anything asking "what can be bought" says
+// so rather than walking the options and hoping.
+export function yardOptions(slot) {
+  return EQUIPMENT[slot].options.filter((option) => !option.locked)
+}
+
 export function freshEquipment() {
   const owned = {}
   const fitted = {}
   for (const [slot, spec] of Object.entries(EQUIPMENT)) {
-    owned[slot] = spec.options.filter((option) => !option.cost).map((option) => option.id)
+    // What the hull came with, which is everything free that is also on offer: a locked
+    // option costs nothing because it is not for sale, not because it is issued.
+    owned[slot] = yardOptions(slot)
+      .filter((option) => !option.cost)
+      .map((option) => option.id)
     // A per-mount slot holds one entry per mount, and starts saying nothing about any of
     // them: a hull that came with guns of its own keeps them until one is given something
     // else. Empty is not the same as untouched, which is why this is not a row of nulls.

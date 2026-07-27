@@ -40,6 +40,7 @@ import {
   MAX_SLOTS,
   PLAYER_TYPE,
   SPECIAL_IDS,
+  yardOptions,
   SPECIAL_TYPES,
   PROGRESSION,
   SHIELD_TYPES,
@@ -3921,6 +3922,127 @@ test("the preview shows the turret that would be on the mount, facing forward", 
   assert.equal(barrels().length, 0)
 })
 
+test("what the yard sells and what a run has found are two different lists", () => {
+  // A locked option belongs to another hull. The yard has nothing to say about it until
+  // there is one to look at, and everything it does sell is on offer from the start.
+  const game = liveGame()
+  for (const slot of Object.keys(EQUIPMENT)) {
+    const offered = game.equipmentRows(slot).map((row) => row.name)
+    for (const option of EQUIPMENT[slot].options) {
+      assert.equal(
+        offered.includes(option.name),
+        !option.locked,
+        `${slot}: ${option.name} is ${option.locked ? "not " : ""}on offer to a fresh run`,
+      )
+    }
+    // And nothing found is handed over with the hull.
+    for (const id of game.upgrades.owned[slot]) {
+      assert.ok(!game.equipmentOption(slot, id).locked, `${slot} starts owning nothing found`)
+    }
+  }
+})
+
+test("flying a hull is how its equipment is found", () => {
+  // Groundwork as much as a dev tool: an alien gun is an EQUIPMENT option like any
+  // other, so once a run has one it swaps against the yard's own.
+  const game = liveGame()
+  game.openDevMenu()
+  game.openPausePage("devShip")
+  game
+    .pauseMenu()
+    .find((row) => row.name === "ALIEN FRIGATE")
+    .action(game)
+  game.paused = false
+
+  const carried = [...game.player.modules()].map((m) => m.typeName)
+  assert.ok(carried.includes("singularityGun"), "it flies with its own gun")
+  assert.ok(carried.includes("alienField"), "and its own shield")
+  assert.equal(
+    carried.filter((id) => id === "warpOrb").length,
+    4,
+    "and a turret on every mount that takes one",
+  )
+
+  // All of it owned, so the shop offers it beside the yard's own.
+  for (const [slot, id] of [
+    ["laser", "singularityGun"],
+    ["turret", "warpOrb"],
+    ["shield", "alienField"],
+    ["engine", "pincerDrive"],
+  ]) {
+    assert.ok(game.ownsEquipment(slot, id), `${id} was found by flying the hull that carries it`)
+    assert.ok(
+      game.equipmentRows(slot).some((row) => row.name === game.equipmentOption(slot, id).name),
+      `${id} is on offer once found`,
+    )
+  }
+
+  // And swapping back to the yard's own is free, as it is for anything else owned.
+  game.enterShop()
+  game.openEquipmentMenu("laser")
+  const rows = game.slotMenuRows(0)
+  assert.equal(
+    rows[game.slotMenu.selection].name,
+    game.equipmentOption("laser", "singularityGun").name,
+    "the menu opens on what is fitted, not on a mark below it that is for sale",
+  )
+  rows[0].action(game, 0)
+  assert.equal(game.fittedEquipment("laser"), "playerLaserMk1", "and the yard's own goes back on")
+})
+
+test("the player can fire anything its nose will hold", () => {
+  // A found gun does not charge, and the charged path reads fields it does not have: a
+  // beam of NaN length was drawn as a white disc half the screen across.
+  for (const option of EQUIPMENT.laser.options) {
+    const game = liveGame()
+    beSolid(game.player)
+    game.upgrades.owned.laser.push(option.id)
+    game.fitEquipment("laser", option.id)
+    const gun = game.player.mainWeapon
+    gun.charge = WEAPON_TYPES[option.id].chargeMax ?? 0
+    gun.cooldown = 0
+    game.player.energyMax = 4000
+    game.player.energy = 4000
+    game.laserShots.length = 0
+    game.projectiles.length = 0
+    game.player.fireLaser(game)
+
+    const shot = game.laserShots[0]
+    const launched = game.projectiles[0]
+    assert.ok(shot || launched, `${option.id} fires something`)
+    if (!shot) {
+      continue // a well is a projectile rather than a beam, and carries no geometry here
+    }
+    for (const value of [shot.beams[0].b.x, shot.beams[0].b.y, shot.width, shot.glow]) {
+      assert.ok(Number.isFinite(value), `${option.id} draws a real beam, got ${value}`)
+    }
+    const reach = Math.hypot(
+      shot.beams[0].b.x - shot.beams[0].a.x,
+      shot.beams[0].b.y - shot.beams[0].a.y,
+    )
+    assert.ok(reach > 20, `${option.id} reaches somewhere, got ${reach.toFixed(0)}`)
+  }
+})
+
+test("a hull's rolled arms are found with it, not only what it always carries", () => {
+  // A dart's gun is an arm rather than part of its loadout, and it is as much the hull's
+  // own for that: flying one hands over everything it flies with.
+  const game = liveGame()
+  const arms = Object.values(SHIP_TYPES.alienSeeker.arms || {})
+  assert.ok(arms.length, "the hull for this test must roll something")
+  game.openDevMenu()
+  game.openPausePage("devShip")
+  game
+    .pauseMenu()
+    .find((row) => row.name === "ALIEN SEEKER")
+    .action(game)
+  for (const arm of arms) {
+    const id = arm.weapon || arm.shield
+    const slot = arm.weapon ? "turret" : "shield"
+    assert.ok(game.ownsEquipment(slot, id), `${id} comes with the hull that rolls it`)
+  }
+})
+
 test("a turret is fitted to a mount the hull actually has", () => {
   // The rows drawn as boxes share one cursor and do not have the same number of boxes.
   // A cursor left on the fourth special arrived at a turret row with one mount and
@@ -4270,7 +4392,7 @@ test("a purchase lands the cursor on the next thing worth buying", () => {
   game.enterShop()
   game.shopSelection = equipmentRowIndex(game, "laser")
   game.menuConfirm() // opens the laser's marks
-  const marks = EQUIPMENT.laser.options
+  const marks = yardOptions("laser")
   assert.equal(game.slotMenu.selection, 1, "the pop-over opens on the first mark worth buying")
 
   for (let mark = 1; mark < marks.length - 1; mark++) {
@@ -5839,7 +5961,7 @@ test("a pop-over is titled by whatever opened it, not by the first special slot"
     !said.includes(SPECIAL_TYPES.oreMagnet.label),
     "and not for whatever happens to be in the first special slot",
   )
-  for (const option of EQUIPMENT.engine.options) {
+  for (const option of yardOptions("engine")) {
     assert.ok(
       said.some((line) => line.includes(option.name)),
       `${option.name} should be offered`,

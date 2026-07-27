@@ -2320,7 +2320,20 @@ export class PlayerShip extends Ship {
 
   fireLaser(game) {
     const w = this.mainWeapon
-    if (!w || w.cooldown > 0 || w.charge < w.type.chargeMin) {
+    if (!w || w.cooldown > 0) {
+      return
+    }
+    // A gun that does not charge fires the way every other hull fires it: at its own
+    // reach, for its own energy, the moment the trigger goes. The charged path below
+    // reads fields such a gun does not have, and a beam of NaN length is drawn as a
+    // white disc over half the screen.
+    if (!w.type.chargeable) {
+      const mount = this.mountWorld(this.nose.local)
+      game.stats.shots++
+      w.fire(game, this, mount.x, mount.y, this.angle, w.rollLength())
+      return
+    }
+    if (w.charge < w.type.chargeMin) {
       return
     }
     const chargeFrac = clamp(w.charge / w.type.chargeMax, 0, 1)

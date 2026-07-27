@@ -42,6 +42,7 @@ import {
   freshBindings,
   freshUpgrades,
   freshEquipment,
+  yardOptions,
   PLAYER_TYPE,
 } from "./config.js"
 import {
@@ -406,13 +407,22 @@ export class Game {
 
   // The pop-over's rows for an equipment slot: everything it could hold, with what
   // it costs, or that it is already owned or already in.
+  // What the yard will show for a slot: everything it sells, and anything found on
+  // another hull once the run has one. Asked in one place, because a menu that indexed
+  // the whole list while its rows came from this one opened on the wrong option.
+  offeredEquipment(slot) {
+    return EQUIPMENT[slot].options.filter(
+      (option) => !option.locked || this.ownsEquipment(slot, option.id),
+    )
+  }
+
   equipmentRows(slot, at = 0) {
     const spec = EQUIPMENT[slot]
-    const rows = spec.options.map((option, index) => {
+    const offered = this.offeredEquipment(slot)
+    const rows = offered.map((option, index) => {
       // A ladder is climbed in order, so a mark is out of reach until the one below
       // it is owned. Everything else is a straight choice.
-      const locked =
-        spec.ladder && index > 0 && !this.ownsEquipment(slot, spec.options[index - 1].id)
+      const locked = spec.ladder && index > 0 && !this.ownsEquipment(slot, offered[index - 1].id)
       return {
         name: option.name,
         desc: option.desc,
@@ -1249,6 +1259,7 @@ export class Game {
     if (!type || !this.player) {
       return
     }
+    this.#unlockHullFitting(type)
     const was = this.player
     const ship = new PlayerShip(this, type)
     ship.x = was.x
@@ -1266,6 +1277,55 @@ export class Game {
     Sound.power()
   }
 
+  // What a hull carries becomes the run's, fitted where the hull has it: flying something
+  // is how its equipment is found, and once found it swaps against the yard's own like
+  // anything else. Everything it carries has an entry in EQUIPMENT, locked until here.
+  #unlockHullFitting(type) {
+    const turretMounts = []
+    type.hardpoints.forEach((hp, index) => {
+      if (EQUIPMENT.turret.roles.includes(hp.role)) {
+        turretMounts.push(index)
+      }
+    })
+    const found = (slot, id, at = 0) => {
+      if (!id || !this.equipmentOption(slot, id)) {
+        return
+      }
+      if (!this.upgrades.owned[slot].includes(id)) {
+        this.upgrades.owned[slot].push(id)
+      }
+      this.setFitted(slot, at, id)
+    }
+    // What it always carries and what it sometimes rolls: a hull's gun is as much its
+    // own for being an arm, and flying one is meant to hand over everything it flies with.
+    for (const entry of [...(type.loadout || []), ...Object.values(type.arms || {})]) {
+      const hp = type.hardpoints[entry.hp]
+      if (!hp) {
+        continue
+      }
+      if (entry.shield) {
+        found("shield", entry.shield)
+        continue
+      }
+      if (entry.core) {
+        for (const [slot, id] of Object.entries(entry.fitted || {})) {
+          found(slot, id)
+        }
+        continue
+      }
+      if (entry.engine) {
+        found("engine", entry.engine)
+      }
+      if (entry.weapon) {
+        if (hp.role === "nose") {
+          found("laser", entry.weapon)
+        } else {
+          found("turret", entry.weapon, turretMounts.indexOf(entry.hp))
+        }
+      }
+    }
+  }
+
   // The ship as a run starts it: every slot holding the option the hull came with, and
   // the cell unupgraded. What the shop has bought is the difference between this and the
   // ship in the hangar, which is what the page shows beside each number. Worked out once,
@@ -1275,10 +1335,10 @@ export class Game {
       const core = (PLAYER_TYPE.loadout || []).find((entry) => entry.core)
       const fitted = { ...(core.fitted || {}) }
       const loadout = (PLAYER_TYPE.loadout || []).filter((entry) => entry !== core)
-      for (const spec of Object.values(EQUIPMENT)) {
+      for (const [slot, spec] of Object.entries(EQUIPMENT)) {
         // Zero is what the hull came with. A slot whose cheapest option costs something
         // starts empty, which is how a shield is bought rather than issued.
-        const stock = spec.options.find((option) => option.cost === 0)
+        const stock = yardOptions(slot).find((option) => option.cost === 0)
         if (!stock) {
           continue
         }
@@ -1511,13 +1571,16 @@ export class Game {
   openEquipmentMenu(slot, at = 0) {
     const rows = this.equipmentRows(slot, at)
     const wanted = rows.findIndex((row) => row.buyable && row.buyable(this, at))
-    const fitted = EQUIPMENT[slot].options.findIndex(
+    const fitted = this.offeredEquipment(slot).findIndex(
       (option) => option.id === this.fittedEquipment(slot, at),
     )
     this.slotMenu = {
       slot: at,
       equipment: slot,
-      selection: wanted >= 0 ? wanted : Math.max(0, fitted),
+      // Whichever is further down the list: a ladder opens on the next mark worth
+      // buying, and a slot holding something found on another hull opens on that rather
+      // than on a mark below it that happens to be for sale.
+      selection: Math.max(Math.max(0, fitted), Math.max(0, wanted)),
     }
   }
 

@@ -246,8 +246,10 @@ test("the player's hardpoints are the shop's, and the editor leaves them to it",
 
   // Everything the shop fits is named against a hardpoint, and stating it here
   // instead would hand the player whatever the editor happened to be showing.
+  // Only what the yard offers for this hull: a locked option is another hull's own kit,
+  // and a design that carries one states it like any other module.
   for (const [slot, spec] of Object.entries(EQUIPMENT)) {
-    for (const option of spec.options) {
+    for (const option of spec.options.filter((entry) => !entry.locked)) {
       assert.doesNotMatch(out, new RegExp(option.id), `${slot}'s ${option.id} is the shop's to fit`)
     }
   }
