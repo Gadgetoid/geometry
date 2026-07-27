@@ -448,6 +448,7 @@ export const AST_SHAPE = {
 export const WEAPON_TYPES = {
   blaster: {
     kind: "projectile",
+    mass: 0.04,
     damage: CONFIG.DMG_AST_GUN,
     energy: 6,
     reload: 2.4,
@@ -457,6 +458,7 @@ export const WEAPON_TYPES = {
   },
   autocannon: {
     kind: "projectile",
+    mass: 0.08,
     damage: CONFIG.DMG_RIVAL_GUN,
     energy: 8,
     reload: [1.1, 1.9], // range so multiple turrets drift out of sync
@@ -466,6 +468,7 @@ export const WEAPON_TYPES = {
   },
   minerLaser: {
     kind: "beam",
+    mass: 0.02,
     damage: 30,
     energy: 16,
     reload: [1.4, 2.6],
@@ -477,6 +480,7 @@ export const WEAPON_TYPES = {
   },
   cannonLaser: {
     kind: "beam",
+    mass: 0.1,
     damage: CONFIG.DMG_FRIGATE_LASER,
     energy: 70,
     reload: [2.4, 3.8],
@@ -507,6 +511,7 @@ export const WEAPON_TYPES = {
   },
   seekerLaser: {
     kind: "beam",
+    mass: 0.04,
     // The cannon's opposite number: light, quick and barely telegraphed, for a
     // host that is already pointed at you because it is chasing you.
     damage: 45,
@@ -522,6 +527,7 @@ export const WEAPON_TYPES = {
   },
   defenseBlaster: {
     kind: "projectile",
+    mass: 0.08,
     // Point defence against rivals. A rock cannot be shot apart, only cut, so
     // this is aimed at the things that can be: it chips a hull and drains a
     // shield while the main laser is busy elsewhere. Faster than a rival's own
@@ -539,6 +545,7 @@ export const WEAPON_TYPES = {
   // Its rate needs three barrels to cycle, and it is drawn with them.
   defenseFlak: {
     kind: "projectile",
+    mass: 0.08,
     damage: 14,
     energy: 2,
     reload: 0.1,
@@ -570,6 +577,8 @@ export const WEAPON_TYPES = {
 function laserMarks(marks) {
   const base = {
     kind: "beam",
+    // Flat across the marks: a better beam is a better beam, not a bigger one.
+    mass: 0.03,
     chargeable: true,
     damage: 38,
     chargeDamageMult: [1, 1.8],
@@ -619,6 +628,7 @@ export function barrelCount(type) {
 // and recovers instantly, so its behaviour matches the old energy bar.
 export const SHIELD_TYPES = {
   standard: {
+    mass: 0.17,
     efficiency: 1,
     blocks: ["laser", "projectile"],
     sides: 6,
@@ -634,6 +644,7 @@ export const SHIELD_TYPES = {
   // something does overload it - six seconds without it is a death sentence for
   // a hull this thin.
   deflector: {
+    mass: 0.13,
     efficiency: 0.8,
     blocks: ["projectile"],
     sides: 6,
@@ -652,6 +663,7 @@ export const SHIELD_TYPES = {
   // one where the drawn shape parts company with the collided circle most; see
   // KNOWN_ISSUES.md.
   bulwark: {
+    mass: 0.5, // heavy even for a bubble, as one braced against shot should be
     efficiency: { projectile: 0.55, laser: 1.6 },
     blocks: ["laser", "projectile"],
     sides: 8,
@@ -674,6 +686,10 @@ export const SHIELD_TYPES = {
 // One mark of the player's bubble: the shared shield with its own efficiency.
 function playerShields(marks) {
   const base = {
+    // A bubble generator is the heaviest thing the shop sells, and the same weight at
+    // every mark: a better one is a better emitter, not a bigger installation. A
+    // shieldless run is a quarter lighter than a fitted one and handles like it.
+    mass: 0.17,
     blocks: ["laser", "projectile"],
     sides: 6,
     colour: PALETTE.shield.standard,
@@ -721,6 +737,7 @@ export const ENGINE_TYPES = {
   // One broad nozzle, thrown wide and slow: a dart that scoots.
   pulseDrive: {
     thrust: 100,
+    mass: 0.03,
     plume: { rate: 26, speed: 55, life: 0.4, spread: 20 },
     flame: { length: 6, flicker: 4, width: 6 },
     colour: PALETTE.rival.hull,
@@ -729,6 +746,7 @@ export const ENGINE_TYPES = {
   // driven rather than blown along.
   ionDrive: {
     thrust: 75,
+    mass: 0.02,
     plume: { rate: 40, speed: 30, life: 0.48, spread: 4 },
     flame: { length: 5, flicker: 3, width: 3 },
     colour: PALETTE.rival.hull,
@@ -737,6 +755,7 @@ export const ENGINE_TYPES = {
   // size of a frigate.
   siegeDrive: {
     thrust: 100,
+    mass: 0.16,
     plume: { rate: 44, speed: 150, life: 0.62, spread: 26, width: 9 },
     flame: { length: 16, flicker: 8 }, // as wide as the throat it comes out of
     colour: PALETTE.rival.hull,
@@ -745,6 +764,7 @@ export const ENGINE_TYPES = {
   // something better. It pushes one way, like every other engine here.
   minerDrive: {
     thrust: 270,
+    mass: 0.05,
     plume: { rate: 30, speed: 60, life: 0.4, spread: 18, width: 4 },
     // Broader than the throat and paler than the plume: a yard drive run hot.
     flame: { length: 13, flicker: 8, width: 8, colour: PALETTE.player.exhaustFlame },
@@ -755,6 +775,10 @@ export const ENGINE_TYPES = {
   // is the trade, and it is in the numbers rather than in a rule.
   vectoredDrive: {
     thrust: 225,
+    // The same mass as the drive it replaces: the plumbing that turns the thrust
+    // around is already paid for in thrust, and charging for it twice would make the
+    // vanes a straight downgrade.
+    mass: 0.05,
     reverseAmount: 0.6,
     plume: { rate: 30, speed: 60, life: 0.4, spread: 18, width: 4 },
     // Shorter than the miner drive's, since there is less thrust behind it, and
@@ -780,32 +804,27 @@ export const ENGINE_TYPES = {
 // ---------------------------------------------------------------------------
 export const THRUSTER_TYPES = {
   // Cold gas, cheap and adequate: what a working hull leaves the yard with.
-  attitudeJets: { torque: 100 },
+  attitudeJets: { torque: 100, mass: 0.01 },
   // Vanes on a ring, the set that pivots rather than sweeps. The player's, and what
   // the controls were tuned against.
-  gimbalRing: { torque: 150 },
+  gimbalRing: { torque: 150, mass: 0.02 },
   // The shop's other set. It is not simply better: on a keyboard a turn is held at
   // full deflection or not at all, so a fifth more torque is a fifth more overshoot
   // on a key held a beat too long. A stick gives everything in between and pays less
   // for it. The trade is in the control rather than in a number here.
-  vectorJets: { torque: 180 },
+  vectorJets: { torque: 180, mass: 0.02 },
   // Heavier nozzles for a heavier hull. More torque than either of the above and
   // nowhere near enough to make a slab handle: a frigate comes about in 18 seconds
   // with these, which is the point of a frigate.
-  siegeJets: { torque: 200 },
+  siegeJets: { torque: 200, mass: 0.1 },
 }
 
 // What a design's maneuvering thrusters add up to, which is what brings it about.
-// They sit in a core slot, so this walks what each core carries as well as anything
-// mounted on a hardpoint directly.
 export function torqueOf(type) {
   let total = 0
-  for (const entry of type.loadout || []) {
-    const names = [entry.thruster, (entry.fitted || {}).thruster]
-    for (const name of names) {
-      if (name) {
-        total += THRUSTER_TYPES[name].torque
-      }
+  for (const entry of loadoutModules(type)) {
+    if (entry.thruster) {
+      total += THRUSTER_TYPES[entry.thruster].torque
     }
   }
   return total
@@ -813,14 +832,16 @@ export function torqueOf(type) {
 
 // One mark of the player's survey set: everything it can pick out, at any range.
 function surveyMarks(marks) {
-  return Object.fromEntries(Object.entries(marks).map(([name, sees]) => [name, { sees }]))
+  return Object.fromEntries(
+    Object.entries(marks).map(([name, sees]) => [name, { mass: 0.01, sees }]),
+  )
 }
 
 // What a design's engines add up to, which is what pushes it. A hull with none
 // mounted does not move under its own power.
 export function thrustOf(type) {
   let total = 0
-  for (const entry of type.loadout || []) {
+  for (const entry of loadoutModules(type)) {
     if (entry.engine) {
       total += ENGINE_TYPES[entry.engine].thrust
     }
@@ -858,14 +879,25 @@ export function thrustOf(type) {
 // ---------------------------------------------------------------------------
 export const CORE_TYPES = {
   // A dart's: barely enough to run a mining laser, with nothing spare.
-  prospectorCore: { energy: 90, regen: 22, shield: 1, radar: 1, thruster: 1, special: 0 },
+  prospectorCore: {
+    mass: 0.03,
+    energy: 90,
+    regen: 22,
+    shield: 1,
+    radar: 1,
+    thruster: 1,
+    special: 0,
+  },
   // A hunter's: a deep cell, because a beam that snaps costs more than a gun.
-  seekerCore: { energy: 300, regen: 34, shield: 1, radar: 1, thruster: 1, special: 0 },
+  seekerCore: { mass: 0.08, energy: 300, regen: 34, shield: 1, radar: 1, thruster: 1, special: 0 },
   // A siege hull's: feeds four turrets and a cannon between them.
-  siegeCore: { energy: 260, regen: 30, shield: 1, radar: 1, thruster: 1, special: 0 },
+  siegeCore: { mass: 0.2, energy: 260, regen: 30, shield: 1, radar: 1, thruster: 1, special: 0 },
   // The player's, and the only one the shop can improve. Each level is a bigger
   // cell, a faster refill and another slot to spend it through.
   minerCore: {
+    // One mass for every level: a bigger cell is a denser one, not a larger plant, so
+    // buying the next mark is never a handling downgrade.
+    mass: 0.06,
     shield: 1,
     radar: 1,
     thruster: 1,
@@ -954,11 +986,13 @@ export const RADAR_TYPES = {
   // A hunter's: tuned for hulls and vague about the scenery. It loses the player
   // across the full width of the arena, which is 1720 corner to corner.
   huntingArray: {
+    mass: 0.01,
     sees: { ships: 1000, rocks: 600 },
   },
   // A miner's: finds rock and ore a long way off and notices a hull late, which is
   // why a scout is so often surprised.
   prospectorArray: {
+    mass: 0.01,
     sees: { rocks: 1200, ore: 900, ships: 600 },
   },
 }
@@ -1068,30 +1102,112 @@ function hullShape(type) {
   }
 }
 
+// Every module a design carries, whether mounted on a hardpoint or fitted inside the
+// core. One walk, so nothing adding up a loadout has to remember that a shield might
+// sit in a core rather than on the hull.
+export function* loadoutModules(type) {
+  for (const entry of type.loadout || []) {
+    yield entry
+    for (const [slot, name] of Object.entries(entry.fitted || {})) {
+      yield { [slot]: name }
+    }
+  }
+}
+
+// Which registry each kind of module lives in, so an entry can be looked up without
+// being asked what it is first.
+const MODULE_REGISTRIES = {
+  weapon: WEAPON_TYPES,
+  shield: SHIELD_TYPES,
+  engine: ENGINE_TYPES,
+  radar: RADAR_TYPES,
+  thruster: THRUSTER_TYPES,
+  core: CORE_TYPES,
+}
+
+// What one module weighs, whichever kind it is. Equipment that states no mass weighs
+// nothing, so a hull is never quietly heavier than its own numbers say.
+export function moduleMass(entry) {
+  let total = 0
+  for (const [kind, registry] of Object.entries(MODULE_REGISTRIES)) {
+    if (entry[kind]) {
+      total += registry[entry[kind]].mass ?? 0
+    }
+  }
+  return total
+}
+
+// What a design weighs with its loadout aboard: the bare hull plus everything on it.
+export function ladenMass(type) {
+  let total = type.mass
+  for (const entry of loadoutModules(type)) {
+    total += moduleMass(entry)
+  }
+  return total
+}
+
+// How a hull flies, from what it weighs and what is bolted to it. One place, so a
+// type worked out at boot and a ship refitted in the shop cannot come to different
+// answers about the same ship. `stated` is whatever the type wrote down itself,
+// which always wins.
+//
+// Everything here divides by mass, so this is where equipment is felt: a hull is its
+// own mass plus everything fitted, and fitting more costs acceleration, top speed,
+// turn and bite in that order.
+export function flightStats({ mass, reach, thrust, torque, handling = 1, stated = {} }) {
+  const k = SHIP_SCALARS
+  const given = (field, value) => (stated[field] !== undefined ? stated[field] : value)
+  const accel = given("accel", thrust / mass)
+  return {
+    accel,
+    maxSpeed: given("maxSpeed", accel * k.speedPerAccel),
+    turnRate: given("turnRate", (torque * k.turnPerReach * handling) / (mass * reach)),
+    drag: given("drag", clamp(1 - k.dragPerMass / mass, 0.05, 0.98)),
+  }
+}
+
+// The flight settings, which a design may stand in front of by stating one.
+const FLIGHT_FIELDS = ["accel", "maxSpeed", "turnRate", "drag"]
+
 // Fill in everything a type has not stated for itself.
 export function deriveShipStats(type) {
   const k = SHIP_SCALARS
   const stated = (field, value) => (type[field] !== undefined ? type[field] : value)
-  const thrust = thrustOf(type)
   const reach = outlineReach(type.outline)
   const hullArea = outlineArea(type.outline)
   const core = coreOf(type)
-  const accel = stated("accel", thrust / type.mass)
-  const maxSpeed = stated("maxSpeed", accel * k.speedPerAccel)
+  const laden = ladenMass(type)
+  const flight = flightStats({
+    mass: laden,
+    reach,
+    thrust: thrustOf(type),
+    torque: torqueOf(type),
+    handling: type.handling ?? 1,
+    stated: type,
+  })
+  const maxSpeed = flight.maxSpeed
   const hull = stated("hull", Math.round(type.armour * hullArea * k.hullPerArea))
   const shape = hullShape(type)
+  // Which of the flight settings this design wrote down for itself. Kept apart
+  // because a derived type and a design that stated the same value are otherwise
+  // indistinguishable, and a ship refitted mid-run has to know the difference: it
+  // recomputes what was derived and must leave what was stated alone.
+  const flightOverrides = {}
+  for (const field of FLIGHT_FIELDS) {
+    if (type[field] !== undefined) {
+      flightOverrides[field] = type[field]
+    }
+  }
   return {
     ...type,
-    accel,
-    maxSpeed,
+    ...flight,
+    flightOverrides,
+    // What the hull weighs with its loadout aboard, which is the mass everything
+    // else divides by. `mass` stays what the type stated: the bare hull.
+    laden,
     hull,
     energyMax: stated("energyMax", core ? core.energy : 0),
     regen: stated("regen", core ? core.regen : 0),
-    turnRate: stated(
-      "turnRate",
-      (torqueOf(type) * k.turnPerReach * (type.handling ?? 1)) / (type.mass * reach),
-    ),
-    drag: stated("drag", clamp(1 - k.dragPerMass / type.mass, 0.05, 0.98)),
     boundRadius: shape.boundRadius,
     bubbleRadius: stated("bubbleRadius", shape.bubbleRadius),
     hullWidth: stated("hullWidth", shape.hullWidth),
@@ -1186,7 +1302,7 @@ const SHIP_DESIGNS = {
       [0, 5],
     ],
     colour: PALETTE.ore.body,
-    mass: 0.8,
+    mass: 0.48, // the bare hull: its loadout adds 0.32 on top, see ladenMass
     armour: 1.2,
     lifeTime: [26, 36],
     hardpoints: [
@@ -1233,7 +1349,7 @@ const SHIP_DESIGNS = {
       [-11, 12],
     ],
     colour: PALETTE.rival.hull,
-    mass: 0.7, // a light dart
+    mass: 0.6, // a light dart, and 0.1 of kit on top of it
     armour: 1,
     lifeTime: [16, 26],
     hardpoints: [
@@ -1278,7 +1394,9 @@ const SHIP_DESIGNS = {
   frigate: {
     outline: FRIGATE_SHAPE,
     colour: PALETTE.rival.frigateHull,
-    mass: 6, // a slab: heavy, hard to turn, and thin-skinned for its size
+    // A slab: heavy, hard to turn, and thin-skinned for its size. A quarter of what it
+    // weighs is what it carries: two siege drives, a braced bubble and five guns.
+    mass: 4.45,
     armour: 0.6,
     lifeTime: [34, 50],
     hardpoints: [
@@ -1334,7 +1452,10 @@ const PLAYER_DESIGN = {
   ],
   colour: PALETTE.player.hull,
   faction: "player",
-  mass: 1, // the scale every other hull's mass is quoted against
+  // The bare hull. What the shop fits adds 0.17 at launch, which puts the ship at
+  // the 1 every other hull's mass is quoted against, and a fully fitted one a
+  // little over it.
+  mass: 0.83,
   // What the ship is confined by, which is less than the hull's own reach of 18.2:
   // see KNOWN_ISSUES.md, "A hull crosses the drawn arena ring".
   confineRadius: 13,

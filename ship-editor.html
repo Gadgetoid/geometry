@@ -677,7 +677,9 @@
         {
           title: "SHAPE AND THREE NUMBERS",
           fields: [
-            { path: "mass", label: "MASS", step: 0.1 },
+            // The bare hull. What is fitted adds to it, and the total is what the
+            // derived panel shows as LADEN MASS.
+            { path: "mass", label: "HULL MASS", step: 0.1 },
             { path: "handling", label: "HANDLING", step: 0.05, kinds: ["rival"] },
             { path: "armour", label: "ARMOUR", step: 0.1, kinds: ["rival"] },
             // Less than the hull reaches, so the ship stays inside the drawn ring.
@@ -724,6 +726,9 @@
       // The sanctioned trim is HANDLING, which is stated rather than derived and sits
       // with the numbers above.
       const DERIVED_FIELDS = [
+        // What the hull weighs with its loadout aboard, which is what everything below
+        // divides by: MASS above is the bare hull.
+        { path: "laden", label: "LADEN MASS", step: 0.01, kinds: ["rival"] },
         { path: "accel", label: "ACCEL", step: 1, kinds: ["rival"] },
         { path: "maxSpeed", label: "MAX SPEED", step: 1, kinds: ["rival"] },
         { path: "turnRate", label: "TURN RATE", step: 0.01, kinds: ["rival"] },

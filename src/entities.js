@@ -51,7 +51,7 @@ import {
   SPECIAL_TYPES,
   MAX_SLOTS,
   SHIELD_SPARK,
-  SHIP_SCALARS,
+  flightStats,
   barrelCount,
 } from "./config.js"
 import { Sound } from "./audio.js"
@@ -342,6 +342,7 @@ export class Entity {
     this.energyMax = 0
     this.regen = 0
     this.hardpoints = []
+    this.carried = 0 // mass of everything fitted, added to the hull's own
     this.fxCooldown = 0 // throttles repeated hit particles (e.g. asteroid grind)
   }
 
@@ -1210,9 +1211,42 @@ export class Ship extends Entity {
     return bubble > 0 ? bubble : supportDistance(this.worldOutline(), this, ux, uy)
   }
 
-  // Mass for collision response, in the same units as a rock's.
+  // Mass for collision response, in the same units as a rock's: the bare hull plus
+  // everything fitted to it, so a laden ship shoulders a rock aside the way its
+  // weight says it should.
   get mass() {
-    return this.type.mass ?? 1
+    return (this.type.mass ?? 1) + this.carried
+  }
+
+  // What is fitted, and what the hull does with it. One method for every ship, so a
+  // rival that turned up carrying an extra gun and a player who has just bought one
+  // are worked out the same way, through the relationships in flightStats. Called
+  // whenever what is aboard changes.
+  refreshFitting() {
+    let thrust = 0
+    let torque = 0
+    let carried = 0
+    for (const module of this.modules()) {
+      carried += module.type.mass ?? 0
+      if (module.kind === "engine") {
+        thrust += module.type.thrust
+      }
+      if (module.kind === "thruster") {
+        torque += module.type.torque
+      }
+    }
+    this.carried = carried // before the mass getter is asked, since it reads this
+    Object.assign(
+      this,
+      flightStats({
+        mass: this.mass,
+        reach: this.boundRadius,
+        thrust,
+        torque,
+        handling: this.type.handling ?? 1,
+        stated: this.type.flightOverrides ?? {},
+      }),
+    )
   }
 
   // What the fitted engines manage backwards, as a fraction of their thrust. The
@@ -1675,34 +1709,13 @@ export class PlayerShip extends Ship {
     if (nose) {
       this.mainWeapon = nose.module
     }
-    this.refreshDrive()
+    this.refreshFitting()
   }
 
   // Is a turret fitted? Asked of the mount rather than of an upgrade flag, so it is
   // true exactly when there is a gun there to aim and to draw.
   hasTurret() {
     return !!(this.aux && this.aux.module && this.aux.module.kind === "weapon")
-  }
-
-  // What is fitted, and what the hull does with it. Speed is the drive's and the turn
-  // is the maneuvering thrusters', both through the relationships every other hull
-  // answers to: fitting a lesser drive costs top speed as well as acceleration, and
-  // costs nothing off the turn.
-  refreshDrive() {
-    let thrust = 0
-    let torque = 0
-    for (const module of this.modules()) {
-      if (module.kind === "engine") {
-        thrust += module.type.thrust
-      }
-      if (module.kind === "thruster") {
-        torque += module.type.torque
-      }
-    }
-    const mass = this.type.mass ?? 1
-    this.accel = thrust / mass
-    this.maxSpeed = this.accel * SHIP_SCALARS.speedPerAccel
-    this.turnRate = (torque * SHIP_SCALARS.turnPerReach) / (mass * this.boundRadius)
   }
 
   fireLaser(game) {
@@ -2192,10 +2205,6 @@ export class RivalShip extends Ship {
     this.typeName = typeName
     this.setOutline(type.outline)
     this.colour = type.colour
-    this.accel = type.accel
-    this.maxSpeed = type.maxSpeed
-    this.turnRate = type.turnRate
-    this.drag = type.drag
     this.energyMax = type.energyMax
     this.energy = type.energyMax
     this.regen = type.regen
@@ -2210,6 +2219,10 @@ export class RivalShip extends Ship {
     this.wanderFor = 0
     this.buildHardpoints(type.hardpoints)
     this.applyLoadout(loadout || type.loadout || [])
+    // How it flies comes from what it turned up carrying rather than from the type,
+    // so a hull that rolled an extra gun is a little heavier and a little slower for
+    // it. With the design's own loadout the two answers are the same.
+    this.refreshFitting()
     this.hunts = !!type.hunts
   }
 

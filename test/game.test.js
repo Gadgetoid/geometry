@@ -53,6 +53,7 @@ import {
   EQUIPMENT,
   thrustOf,
   torqueOf,
+  ladenMass,
   barrelCount,
   deriveShipStats,
 } from "../src/config.js"
@@ -64,6 +65,13 @@ import {
   pointInPolygon,
   polygonArea,
 } from "../src/math.js"
+
+// A rival as the spawner would bring it in, carrying its design's own loadout and
+// none of the arms it might have rolled. Passing an empty loadout instead would be a
+// hull with no engine, no core and no thrusters, which cannot fly at all.
+function plainRival(x, y, typeName, loadout = SHIP_TYPES[typeName].loadout) {
+  return new RivalShip(x, y, typeName, loadout)
+}
 
 // A live sector with a solid, vulnerable ship and nothing else in it.
 function liveGame() {
@@ -501,7 +509,7 @@ const centroidOf = (vertices) => ({
 test("every hull takes the impulse its mass implies when it hits a rock", () => {
   for (const typeName of ["player", "scout", "frigate"]) {
     const game = liveGame()
-    const ship = typeName === "player" ? game.player : new RivalShip(0, 0, typeName, [])
+    const ship = typeName === "player" ? game.player : plainRival(0, 0, typeName)
     ship.x = 400
     ship.y = 320
     ship.angle = 0
@@ -566,7 +574,7 @@ test("a rival killed this frame takes no further turn", () => {
   player.angle = 0
   // a rock parked far away, so the sector does not count as cleared
   game.asteroids = [new Asteroid({ vertices: square(900, 900, 40) })]
-  const scout = new RivalShip(500, 320, "scout", [])
+  const scout = plainRival(500, 320, "scout")
   game.rivals = [scout]
   const beam = { a: { x: 200, y: 320 }, dir: { x: 1, y: 0 }, b: { x: 1100, y: 320 } }
   game.applyBeam(beam, player, playerWeapon, 300)
@@ -599,7 +607,7 @@ test("a rival with no player to hunt still steers somewhere", () => {
   // Nothing in a sector runs without a player, but the hunter controller guards
   // for one and this did not, so the two disagreed about whether it can happen.
   const game = liveGame()
-  const frigate = new RivalShip(400, 320, "frigate", [])
+  const frigate = plainRival(400, 320, "frigate")
   game.rivals = [frigate]
   game.player = null
   assert.doesNotThrow(() => frigate.update(1 / 60, game))
@@ -615,7 +623,7 @@ function rivalBeyondTheRing(typeName, beyond) {
   // a rock parked far away, so the sector does not count as cleared
   game.asteroids = [new Asteroid({ vertices: square(ARENA.cx + 3000, ARENA.cy + 3000, 40) })]
   const distance = ARENA.radius + beyond
-  const rival = new RivalShip(ARENA.cx + distance, ARENA.cy, typeName, [])
+  const rival = plainRival(ARENA.cx + distance, ARENA.cy, typeName)
   rival.angle = Math.PI
   rival.vx = 0
   rival.vy = 0
@@ -705,7 +713,7 @@ test("a departing rival still inside the arena is kept, however far off screen",
   const game = liveGame()
   game.asteroids = [new Asteroid({ vertices: square(ARENA.cx + 3000, ARENA.cy + 3000, 40) })]
   // deep in the field but on the far side of the arena from the camera
-  const rival = new RivalShip(ARENA.cx - 700, ARENA.cy, "scout", [])
+  const rival = plainRival(ARENA.cx - 700, ARENA.cy, "scout")
   rival.leaving = true
   rival.lifeTimer = -1
   game.rivals = [rival]
@@ -720,7 +728,7 @@ test("a departing rival still inside the arena is kept, however far off screen",
 test("whether a rival hunts is declared on its type", () => {
   // It used to be inferred from a loadout entry naming the "hunter" controller,
   // so a new aggressive controller would silently not chase.
-  assert.equal(new RivalShip(0, 0, "frigate", []).hunts, true, "with no loadout at all")
+  assert.equal(plainRival(0, 0, "frigate").hunts, true, "with no loadout at all")
   assert.equal(new RivalShip(0, 0, "frigate", SHIP_TYPES.frigate.loadout).hunts, true)
   assert.equal(new RivalShip(0, 0, "scout", SHIP_TYPES.scout.loadout).hunts, false)
   assert.equal(!!SHIP_TYPES.frigate.hunts, true, "and it is the type that says so")
@@ -729,8 +737,8 @@ test("whether a rival hunts is declared on its type", () => {
 test("two rivals cannot occupy the same space", () => {
   const game = liveGame()
   game.player.x = -5000 // keep the player out of it
-  const a = new RivalShip(600, 320, "frigate", [])
-  const b = new RivalShip(611, 325, "frigate", [])
+  const a = plainRival(600, 320, "frigate")
+  const b = plainRival(611, 325, "frigate")
   a.angle = 0
   b.angle = 0
   game.rivals = [a, b]
@@ -749,7 +757,7 @@ test("two rivals cannot occupy the same space", () => {
 
 test("the player cannot be flown through a frigate", () => {
   const game = liveGame()
-  const frigate = new RivalShip(600, 320, "frigate", [])
+  const frigate = plainRival(600, 320, "frigate")
   frigate.angle = 0
   frigate.lifeTimer = 1e9
   game.rivals = [frigate]
@@ -768,12 +776,12 @@ test("the player cannot be flown through a frigate", () => {
 test("a light ship bounces off a heavy one without shifting it much", () => {
   const game = liveGame()
   game.player.x = -5000
-  const frigate = new RivalShip(600, 320, "frigate", [])
+  const frigate = plainRival(600, 320, "frigate")
   frigate.angle = 0
   // nose just inside the frigate's tail face, closing along +x: a shallow
   // contact, as one caught on the frame it forms would be
   const tailX = Math.min(...frigate.worldOutline().map((p) => p.x))
-  const scout = new RivalShip(tailX - 12, 320, "scout", [])
+  const scout = plainRival(tailX - 12, 320, "scout")
   scout.angle = 0
   scout.vx = 200
   frigate.vx = 0
@@ -789,7 +797,9 @@ test("a light ship bounces off a heavy one without shifting it much", () => {
 
 // A frigate lying along the beam axis, so the cut line would run its length.
 function frigateOnAxis(game) {
-  const frigate = new RivalShip(600, 320, "frigate", [])
+  // Unshielded, because a raised bubble is what stops a beam: a hull is only ever cut
+  // when there is none, and cutting is what these tests are about.
+  const frigate = plainRival(600, 320, "frigate", withoutShield(SHIP_TYPES.frigate.loadout))
   frigate.angle = 0
   game.rivals = [frigate]
   const xs = frigate.worldOutline().map((p) => p.x)
@@ -881,7 +891,7 @@ function beamPastPlayer(offset, weaponType, { shielded }) {
   if (shielded) {
     withShield(game)
   }
-  const shooter = new RivalShip(400 + offset, 320 - 300, "scout", [])
+  const shooter = plainRival(400 + offset, 320 - 300, "scout")
   game.rivals = [shooter]
   const beam = {
     a: { x: 400 + offset, y: 320 - 300 },
@@ -924,7 +934,7 @@ test("a beam laid over a hull registers, rather than needing its centreline on i
   // but not under its centreline.
   const laser = WEAPON_TYPES.playerLaserMk1
   const game = liveGame()
-  const scout = new RivalShip(500, 320, "scout", []) // unarmed, unshielded
+  const scout = plainRival(500, 320, "scout") // unarmed, unshielded
   scout.angle = 0
   game.rivals = [scout]
   const nose = Math.max(...scout.worldOutline().map((p) => p.y))
@@ -995,7 +1005,7 @@ test("a sliver cut off a hull is worth what a rock fragment its size is worth", 
     const game = liveGame()
     game.player.x = -9000
     game.player.y = -9000
-    const scout = new RivalShip(500, 320, "scout", [])
+    const scout = plainRival(500, 320, "scout")
     scout.angle = 0
     game.rivals = [scout]
     // shave a strip off one side: too small to survive, and carrying no turret
@@ -1184,7 +1194,7 @@ test("a beam cuts every hull it passes through, as it cuts every rock", () => {
   game.player.y = -9000
   const line = []
   for (let i = 0; i < 4; i++) {
-    const scout = new RivalShip(400 + i * 90, 320, "scout", []) // unarmed, unshielded
+    const scout = plainRival(400 + i * 90, 320, "scout") // unarmed, unshielded
     scout.angle = 0
     line.push(scout)
   }
@@ -1396,7 +1406,7 @@ test("a raised shield still stops the beam, and shelters what is behind it", () 
   game.player.y = -9000
   const shielded = new RivalShip(500, 320, "scout", [{ hp: 2, shield: "standard" }])
   shielded.angle = 0
-  const behind = new RivalShip(700, 320, "scout", [])
+  const behind = plainRival(700, 320, "scout")
   behind.angle = 0
   game.rivals = [shielded, behind]
   const rock = new Asteroid({ vertices: square(860, 320, 60) })
@@ -1541,7 +1551,8 @@ test("the same graze on a frigate takes a piece off and leaves the rest", () => 
   player.angle = 0
   player.x = 100
   player.y = 320
-  const frigate = new RivalShip(500, 320, "frigate", [])
+  // Unshielded, since a bubble is what stops a beam reaching a hull to cut it.
+  const frigate = plainRival(500, 320, "frigate", withoutShield(SHIP_TYPES.frigate.loadout))
   frigate.angle = 0
   game.rivals = [frigate]
   // along the frigate's flank, inside its half-height so it passes through
@@ -1625,7 +1636,7 @@ test("the player's hull is never cut into wreckage", () => {
   player.x = 400
   player.y = 320
   player.energy = 0 // nothing to hide behind
-  const shooter = new RivalShip(100, 320, "scout", [])
+  const shooter = plainRival(100, 320, "scout")
   game.rivals = [shooter]
   const beam = { a: { x: 100, y: 320 }, dir: { x: 1, y: 0 }, b: { x: 900, y: 320 } }
   assert.ok(countBeamCrossings(beam, player.worldOutline()) >= 2, "the beam must pass through")
@@ -1811,7 +1822,7 @@ test("a body that is not in the sector neither stops a beam nor swallows a shot"
   const behind = () => new Asteroid({ vertices: square(700, 320, 60), vx: 0, vy: 0 })
   const beamPast = (pose) => {
     const game = liveGame()
-    const shooter = new RivalShip(150, 320, "scout", [])
+    const shooter = plainRival(150, 320, "scout")
     shooter.angle = 0
     game.rivals.push(shooter)
     game.asteroids = [behind()]
@@ -1863,7 +1874,7 @@ test("a rival outside the arena is passed through by a shot, as it is by a beam"
   const game = liveGame()
   // Just past the ring, where a rival flying in actually sits. A shot expires of
   // its own accord out here, so the impact effect is what tells the two apart.
-  const rival = new RivalShip(ARENA.cx + ARENA.radius + 20, ARENA.cy, "scout", [])
+  const rival = plainRival(ARENA.cx + ARENA.radius + 20, ARENA.cy, "scout")
   rival.angle = Math.PI
   game.rivals = [rival]
   assert.ok(!rival.inPlay(), "the rival must actually be outside the arena")
@@ -1923,11 +1934,14 @@ function ramARock(typeName) {
   game.player.y = -9000
   const rockFace = 440
   const full = SHIP_TYPES[typeName].hull
-  const ship = new RivalShip(
+  // Its own loadout without the shield: the ram has to reach the hull, and the ship
+  // needs its drive, since a hull with none has a top speed of nothing and the speed
+  // clamp would hold it still.
+  const ship = plainRival(
     rockFace - SHIP_TYPES[typeName].boundRadius * 2 - 40,
     320,
     typeName,
-    [],
+    withoutShield(SHIP_TYPES[typeName].loadout),
   )
   ship.angle = 0
   game.rivals = [ship]
@@ -2702,7 +2716,7 @@ test("a hunting rival steers for the player only while it can see one", () => {
     }
     const hunter = Object.keys(SHIP_TYPES).find((name) => SHIP_TYPES[name].hunts)
     assert.ok(hunter, "some ship should hunt the player")
-    const rival = new RivalShip(ARENA.cx + 620, ARENA.cy, hunter, [])
+    const rival = plainRival(ARENA.cx + 620, ARENA.cy, hunter)
     rival.angle = Math.PI // pointing at the centre, away from the player
     game.rivals = [rival]
     const before = Math.hypot(rival.x - player.x, rival.y - player.y)
@@ -2754,7 +2768,7 @@ test("the defense turret holds fire in stealth, but still answers the player's h
       game.pressedKeys.add(game.bindings.keys.turretFire[0])
       player.turretAim = 0
     }
-    game.rivals = [new RivalShip(560, 320, "scout", [])]
+    game.rivals = [plainRival(560, 320, "scout")]
     let fired = 0
     for (let frame = 0; frame < 240; frame++) {
       player.energy = player.energyMax
@@ -3118,8 +3132,8 @@ test("the exhaust wash shoves a boulder behind the ship, not only a pebble", () 
 test("a nearest scan takes the closest of what can be shot at", () => {
   const game = liveGame()
   const from = { x: ARENA.cx, y: ARENA.cy }
-  const near = new RivalShip(ARENA.cx + 120, ARENA.cy, "scout", [])
-  const far = new RivalShip(ARENA.cx + 300, ARENA.cy, "scout", [])
+  const near = plainRival(ARENA.cx + 120, ARENA.cy, "scout")
+  const far = plainRival(ARENA.cx + 300, ARENA.cy, "scout")
   game.rivals = [far, near] // out of order, so the scan is doing the choosing
 
   const found = game.nearestRival(from)
@@ -3240,7 +3254,7 @@ test("a type already at its limit is out of the running, and something always is
   game.level = 12
   const capped = Object.keys(SHIP_TYPES).find((name) => SHIP_TYPES[name].spawn.maxConcurrent === 1)
   assert.ok(game.spawnWeight(capped) > 0, "it must be in the running with the field empty")
-  game.rivals = [new RivalShip(ARENA.cx, ARENA.cy, capped, [])]
+  game.rivals = [plainRival(ARENA.cx, ARENA.cy, capped)]
   assert.equal(game.spawnWeight(capped), 0, "and out of it once one is already there")
   // The fallback type is gone, so what guarantees an arrival is that one type
   // states no limit at all. Without that a spawn could be silently lost.
@@ -3268,8 +3282,8 @@ function flyingFor(typeName, faction, body) {
 test("a hull takes aim at the sides its own faction is hostile to", () => {
   flyingFor("seeker", "alien", () => {
     const game = liveGame()
-    const rival = new RivalShip(ARENA.cx + 100, ARENA.cy, "scout", [])
-    const alien = new RivalShip(ARENA.cx + 160, ARENA.cy, "seeker", [])
+    const rival = plainRival(ARENA.cx + 100, ARENA.cy, "scout")
+    const alien = plainRival(ARENA.cx + 160, ARENA.cy, "seeker")
     game.rivals = [rival, alien]
     assert.equal(rival.faction, "rival", "a type says nothing and flies for the rivals")
     assert.equal(alien.faction, "alien")
@@ -3284,8 +3298,8 @@ test("a hull takes aim at the sides its own faction is hostile to", () => {
 test("a hidden player is no target, and the other side still is", () => {
   flyingFor("seeker", "alien", () => {
     const game = liveGame()
-    const rival = new RivalShip(ARENA.cx + 60, ARENA.cy, "scout", [])
-    const alien = new RivalShip(ARENA.cx + 300, ARENA.cy, "seeker", [])
+    const rival = plainRival(ARENA.cx + 60, ARENA.cy, "scout")
+    const alien = plainRival(ARENA.cx + 300, ARENA.cy, "seeker")
     game.rivals = [rival, alien]
     assert.equal(game.hostileTarget(rival).target, game.player, "in the open the player is nearest")
     hideThePlayer(game)
@@ -3296,7 +3310,7 @@ test("a hidden player is no target, and the other side still is", () => {
 test("a rock is a hazard: it fights the player and leaves the rivals to it", () => {
   const game = liveGame()
   const rock = new Asteroid({ x: ARENA.cx + 200, y: ARENA.cy, radius: 40, traits: {} })
-  const rival = new RivalShip(ARENA.cx + 210, ARENA.cy, "scout", [])
+  const rival = plainRival(ARENA.cx + 210, ARENA.cy, "scout")
   game.asteroids = [rock]
   game.rivals = [rival]
   assert.equal(rock.faction, "hazard")
@@ -3399,7 +3413,7 @@ test("a rival past a full turn still turns the short way", () => {
   player.x = ARENA.cx + Math.cos(goal) * 300
   player.y = ARENA.cy + Math.sin(goal) * 300
 
-  const rival = new RivalShip(ARENA.cx, ARENA.cy, hunter, [])
+  const rival = plainRival(ARENA.cx, ARENA.cy, hunter)
   rival.angle = 8 // past one full turn, which real play reaches
   rival.lifeTimer = 99 // so it is hunting rather than leaving
   game.rivals = [rival]
@@ -3434,7 +3448,7 @@ test("the grace period after arriving turns away every kind of damage", () => {
   assert.equal(shot.lives, CONFIG.START_LIVES, "a bullet must not cost a life")
 
   const beamed = arrived()
-  const shooter = new RivalShip(100, 320, "scout", [])
+  const shooter = plainRival(100, 320, "scout")
   beamed.rivals = [shooter]
   beamed.applyBeam(
     { a: { x: 100, y: 320 }, dir: { x: 1, y: 0 }, b: { x: 900, y: 320 } },
@@ -3601,7 +3615,7 @@ function spawnCampRun() {
   player.x = ARENA.cx
   player.y = ARENA.cy
   game.asteroids = [new Asteroid({ vertices: square(ARENA.cx, ARENA.cy - 900, 60) })]
-  const rival = new RivalShip(ARENA.cx + 700, ARENA.cy, hunter, [])
+  const rival = plainRival(ARENA.cx + 700, ARENA.cy, hunter)
   rival.angle = Math.PI // already pointed at the spawn point
   rival.lifeTimer = 99
   game.rivals = [rival]
@@ -3731,7 +3745,7 @@ test("a blast leaves alone what is already wreckage", () => {
   // its kill twice.
   const game = liveGame()
   const bomb = new Asteroid({ x: ARENA.cx, y: ARENA.cy, radius: 45, traits: EXPLOSIVE })
-  const rival = new RivalShip(ARENA.cx + 40, ARENA.cy, "scout", [])
+  const rival = plainRival(ARENA.cx + 40, ARENA.cy, "scout")
   rival.dead = true
   game.asteroids = [bomb]
   game.rivals = [rival]
@@ -4290,18 +4304,23 @@ test("every ship type states only its shape, its two stats and its loadout", () 
   }
 })
 
-test("the ship stats follow from the shape, the numbers and the engines", () => {
+test("the ship stats follow from the shape, the numbers and what is fitted", () => {
   const k = SHIP_SCALARS
   const reach = (outline) => Math.max(...outline.map(([x, y]) => Math.hypot(x, y)))
   for (const [name, t] of Object.entries(SHIP_TYPES)) {
     const thrust = thrustOf(t)
-    assert.ok(Math.abs(t.accel - thrust / t.mass) < 1e-9, `${name} accel`)
+    // Laden, not stated: `mass` is the bare hull and everything divides by what the
+    // hull actually weighs with its loadout aboard.
+    const laden = ladenMass(t)
+    assert.ok(laden > t.mass, `${name} must weigh more with its loadout on`)
+    assert.equal(t.laden, laden, `${name} reports what it weighs`)
+    assert.ok(Math.abs(t.accel - thrust / laden) < 1e-9, `${name} accel`)
     assert.ok(Math.abs(t.maxSpeed - t.accel * k.speedPerAccel) < 1e-9, `${name} maxSpeed`)
     assert.ok(
-      Math.abs(t.turnRate - (thrust * k.turnPerReach) / (t.mass * reach(t.outline))) < 1e-9,
+      Math.abs(t.turnRate - (torqueOf(t) * k.turnPerReach) / (laden * reach(t.outline))) < 1e-9,
       `${name} turnRate`,
     )
-    assert.ok(Math.abs(t.drag - (1 - k.dragPerMass / t.mass)) < 1e-9, `${name} drag`)
+    assert.ok(Math.abs(t.drag - (1 - k.dragPerMass / laden)) < 1e-9, `${name} drag`)
     assert.ok(
       Math.abs(t.bubbleRadius - reach(t.outline) * k.shieldClearance) < 1e-9,
       `${name} bubbleRadius`,
@@ -4347,7 +4366,7 @@ test("a new ship needs a shape, two numbers, an engine and a core, and nothing e
     const game = liveGame()
     game.player.x = -9000
     game.player.y = -9000
-    const ship = new RivalShip(300, 320, "corvette", [])
+    const ship = plainRival(300, 320, "corvette")
     game.rivals = [ship]
     for (const field of ["accel", "maxSpeed", "turnRate", "drag", "hull", "energyMax", "regen"]) {
       assert.ok(Number.isFinite(ship[field]), `corvette ${field} is ${ship[field]}`)
@@ -4373,7 +4392,12 @@ test("the player's speed is its drive's, through the same relationship as any hu
     return { accel: game.player.accel, top: game.player.maxSpeed }
   }
   const miner = speedOn("minerDrive")
-  assert.equal(miner.accel, ENGINE_TYPES.minerDrive.thrust / PLAYER_TYPE.mass, "thrust over mass")
+  assert.equal(
+    miner.accel,
+    ENGINE_TYPES.minerDrive.thrust / game.player.mass,
+    "thrust over what the ship weighs with everything aboard",
+  )
+  assert.ok(game.player.mass > PLAYER_TYPE.mass, "which is more than the bare hull")
   assert.ok(Math.abs(miner.top - miner.accel * scalar) < 1e-9, "and top speed follows from it")
 
   // The drive that can push backwards makes less thrust, so it costs top speed as
@@ -4460,6 +4484,77 @@ test("the thruster flame is the engine's, so any hull with one burns", () => {
   }
 })
 
+test("a laden ship handles worse than a bare one", () => {
+  // The reason mass is on the equipment at all: a ship fitted with everything the shop
+  // sells is carrying it, and carrying it costs acceleration, top speed and turn in
+  // the same proportion, since all three divide by mass.
+  const game = liveGame()
+  const bare = {
+    mass: game.player.mass,
+    accel: game.player.accel,
+    top: game.player.maxSpeed,
+    turn: game.player.turnRate,
+  }
+  assert.equal(bare.mass, 1, "the hull plus what it launches with is the unit of mass")
+
+  withEquipment(game, "shield", "playerShieldMk1")
+  assert.ok(game.player.mass > bare.mass, "a shield is something to carry")
+  assert.ok(game.player.accel < bare.accel, "so the ship accelerates less hard")
+  assert.ok(game.player.maxSpeed < bare.top, "tops out lower")
+  assert.ok(game.player.turnRate < bare.turn, "and comes about slower")
+  // The same fraction off each, because all three divide by the same mass.
+  const cost = 1 - game.player.accel / bare.accel
+  assert.ok(Math.abs(1 - game.player.maxSpeed / bare.top - cost) < 1e-9, "top speed pays the same")
+  assert.ok(Math.abs(1 - game.player.turnRate / bare.turn - cost) < 1e-9, "and so does the turn")
+
+  // A mark that is a better emitter rather than a bigger one weighs the same, so
+  // climbing a ladder is never a handling downgrade.
+  const laden = game.player.mass
+  withEquipment(game, "shield", "playerShieldMk4")
+  assert.equal(game.player.mass, laden, "a better mark of the same thing weighs the same")
+})
+
+test("the quicker thrusters more than pay for a full ship's worth of mass", () => {
+  // Which is what makes them worth buying rather than a curiosity: a heavy build is
+  // exactly the build that wants them.
+  const game = liveGame()
+  const bare = game.player.turnRate
+  for (const [slot, id] of [
+    ["shield", "playerShieldMk4"],
+    ["turret", "defenseFlak"],
+    ["radar", "surveyMk4"],
+    ["laser", "playerLaserMk5"],
+  ]) {
+    withEquipment(game, slot, id)
+  }
+  const laden = game.player.turnRate
+  assert.ok(laden < bare, "a full ship comes about slower than an empty one")
+  withEquipment(game, "thruster", "vectorJets")
+  const recovered = (game.player.turnRate - laden) / (bare - laden)
+  assert.ok(
+    recovered > 0.6,
+    `the quicker set should win back most of the turn a full kit costs, won back ${(recovered * 100).toFixed(0)}%`,
+  )
+  // And not all of it: an upgrade that erased the cost of carrying things would make
+  // the mass a formality for anyone who bought it.
+  assert.ok(recovered < 1, "without cancelling it outright")
+})
+
+test("a rival that rolled an extra gun carries the weight of it", () => {
+  // A rival works out how it flies from what it turned up with, not from its type, so
+  // the arms it rolled are aboard for the arithmetic as well as for the shooting.
+  const design = SHIP_TYPES.seeker
+  const plain = plainRival(500, 320, "seeker")
+  const armed = plainRival(500, 320, "seeker", [...design.loadout, design.arms.gun])
+  assert.ok(
+    Math.abs(plain.mass - design.laden) < 1e-9,
+    "an unrolled one weighs what its design says",
+  )
+  assert.ok(armed.mass > plain.mass, "and one carrying a gun weighs more")
+  assert.ok(armed.accel < plain.accel, "which costs it acceleration")
+  assert.ok(armed.turnRate < plain.turnRate, "and turn")
+})
+
 test("what brings a hull about is its thrusters, and never its drive", () => {
   // The whole point of the split: a nozzle pointed backwards pushes backwards. A
   // frigate has thrust to spare and no way to use it sideways, so a bigger drive must
@@ -4483,13 +4578,23 @@ test("what brings a hull about is its thrusters, and never its drive", () => {
     })
 
   const light = withParts("pulseDrive", "attitudeJets")
-  const heavy = withParts("minerDrive", "attitudeJets")
-  assert.ok(heavy.accel > light.accel, "the heavier drive accelerates harder")
-  assert.equal(heavy.turnRate, light.turnRate, "and turns the hull not one bit faster")
+
+  // A drive of the same weight and three times the thrust, so thrust is the only
+  // thing that differs: it buys acceleration and not one degree of turn. Fitting a
+  // *heavier* drive does slow the turn, but through its mass, which is the whole
+  // point of the mass and not a back door for thrust.
+  ENGINE_TYPES.testDrive = { ...ENGINE_TYPES.pulseDrive, thrust: 300 }
+  try {
+    const strong = withParts("testDrive", "attitudeJets")
+    assert.ok(strong.accel > light.accel * 2.9, "three times the thrust accelerates it harder")
+    assert.equal(strong.turnRate, light.turnRate, "and turns the hull not one bit faster")
+  } finally {
+    delete ENGINE_TYPES.testDrive
+  }
 
   const quick = withParts("pulseDrive", "gimbalRing")
   assert.ok(quick.turnRate > light.turnRate, "a better set of thrusters is what turns it faster")
-  assert.equal(quick.accel, light.accel, "and buys no speed doing it")
+  assert.ok(quick.accel < light.accel, "and pays for it in speed, because it weighs something")
 
   // A hull with none fitted cannot steer at all, which is what makes them equipment
   // rather than a number every hull happens to have.
@@ -4521,15 +4626,20 @@ test("the shop's other set of thrusters is quicker, and swaps back", () => {
 })
 
 test("stating a setting on a type keeps it, for tuning one ship", () => {
-  const design = { ...SHIP_TYPES.scout, mass: 0.7, armour: 1, drag: 0.123, hull: 99 }
+  const design = { ...SHIP_TYPES.scout, armour: 1, drag: 0.123, hull: 99 }
   delete design.accel
   const tuned = deriveShipStats(design)
   assert.equal(tuned.drag, 0.123, "a stated value wins")
   assert.equal(tuned.hull, 99)
   assert.ok(
-    Math.abs(tuned.accel - thrustOf(SHIP_TYPES.scout) / 0.7) < 1e-9,
+    Math.abs(tuned.accel - thrustOf(SHIP_TYPES.scout) / ladenMass(design)) < 1e-9,
     "the rest still derives",
   )
+  // And a stated one is remembered as stated, since a ship refitted in flight has to
+  // recompute what was derived and leave alone what was written down. The others are
+  // there too because this design was spread from an already-derived type: a derived
+  // field reads back as a stated one, which is what makes re-deriving safe.
+  assert.equal(tuned.flightOverrides.drag, 0.123)
 })
 
 test("sector plans follow PROGRESSION", () => {
@@ -4578,7 +4688,7 @@ test("the defense turret shoots at rivals and leaves rocks alone", () => {
   atRival.player.angle = 0
   withTurret(atRival)
   atRival.asteroids = [new Asteroid({ vertices: square(400, -600, 60) })] // keep the sector live
-  const rival = new RivalShip(600, 320, "scout", [])
+  const rival = plainRival(600, 320, "scout")
   atRival.rivals = [rival]
   let fired = false
   for (let i = 0; i < 240 && !fired; i++) {
@@ -4616,7 +4726,7 @@ test("a beam aimed at a target carries past it, so it can cut", () => {
     withTurret(game)
     game.asteroids = [new Asteroid({ vertices: square(300, -600, 60) })] // keep the sector live
     // a big unshielded hull, further across than the overshoot
-    const target = new RivalShip(560, 320, "frigate", [])
+    const target = plainRival(560, 320, "frigate")
     target.angle = 0
     game.rivals = [target]
     assert.ok(

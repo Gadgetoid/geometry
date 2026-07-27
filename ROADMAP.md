@@ -55,17 +55,18 @@ smoothed out, so the shape of the shield is the shape of the ship.
 A hull is an outline with things bolted to it, and how it flies should follow from
 what is bolted where. Engines are modules now. The rest follows:
 
-- Equipment carries its own mass, so fitting more costs handling. Nothing does
-  yet: a hull's mass is still one number on the type, so a fully fitted ship
-  handles exactly as a bare one does.
 - Maneuvering thrusters are drawn nowhere. A set that brings a hull about ought to
   puff where the turn comes from, the way an engine's flame sits at its nozzle.
+- A module's mass is not felt when it is lost. A rock's turret can be shot off;
+  when a hull's can be, what it was carrying should stop weighing.
 
-Done, and left here for the shape of it: engines and maneuvering thrusters are
-both modules, and speed and turn come from what is fitted rather than from numbers
-on the type. A drive decides acceleration and top speed; a set of thrusters
-decides the turn, and never the other way about, so a frigate with siege engines
-sweeps through a long arc it cannot shorten.
+Done, and left here for the shape of it: how a ship flies is worked out from what
+is bolted to it, by one method every ship runs. A drive decides acceleration and
+top speed, a set of maneuvering thrusters decides the turn and never the other way
+about, and everything divides by what the hull weighs with its loadout aboard, so
+fitting more costs handling. A frigate with siege engines sweeps through an arc it
+cannot shorten; a fully fitted player ship gives up 5.7% of its acceleration, top
+speed and turn, and the quicker thrusters are sold as the answer to that.
 
 The player's ship is most of the way to being an ordinary hull that is simply
 never spawned: its outline, cell, drive, thrusters, shield, radar and guns are all
