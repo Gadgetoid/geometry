@@ -3746,6 +3746,156 @@ test("the specials row is titled like the rows it sits among", () => {
   assert.equal(rowFor(full, "SPECIALS").colour, PALETTE.ui.good, "nothing left to unlock")
 })
 
+test("a shop row points at the mount it would change", () => {
+  // The page is a list and the ship it is fitting, so what a row is about is shown on
+  // the hull rather than left to be worked out from the name.
+  const game = liveGame()
+  game.enterShop()
+  const mountRole = (row) => game.mountsForShopRow(row).map((at) => game.player.hardpoints[at].role)
+  const rowNamed = (name) => {
+    for (let row = 0; row <= SHOP.length; row++) {
+      const item = game.shopItem(row)
+      if (item && item.name === name) {
+        return row
+      }
+    }
+    throw new Error(`no ${name} row`)
+  }
+  assert.deepEqual(mountRole(rowNamed("LASER")), ["nose"])
+  assert.deepEqual(mountRole(rowNamed("TURRET")), ["aux"])
+  assert.deepEqual(mountRole(rowNamed("ENGINE")), ["engine"])
+  // What the core carries points at the core, the specials among them: the cell is
+  // what runs them and what says how many there are.
+  for (const name of ["CORE", "SHIELD", "RADAR", "THRUSTERS"]) {
+    assert.deepEqual(mountRole(rowNamed(name)), ["core"], `${name} is fitted in the core`)
+  }
+  assert.deepEqual(mountRole(game.slotsRow), ["core"], "and so are the specials")
+  // A spare ship and the way out are not fitted to anything.
+  assert.deepEqual(mountRole(rowNamed("LIVES")), [])
+  assert.deepEqual(mountRole(game.launchRow), [])
+  assert.deepEqual(mountRole(game.optionsRow), [])
+})
+
+test("the shop draws the ship beside the list, not over it", () => {
+  const game = liveGame()
+  game.enterShop()
+  game.shopSelection = 0
+  const drawn = { text: [], polys: [] }
+  const renderer = new Proxy(
+    {
+      text: (text, x, y, opts) =>
+        drawn.text.push({ text: String(text).trim(), x, y, size: opts && opts.size }),
+      strokePoly: (points, opts) => drawn.polys.push({ points, opts: opts || {} }),
+    },
+    { get: (target, key) => (key in target ? target[key] : () => {}) },
+  )
+  new GameView(renderer).render(game)
+
+  // The hull is drawn from its own outline, so this is a picture of the ship rather
+  // than an illustration that has to be kept level with it.
+  // The sector is still drawn behind the page, so the hull is picked out by being the
+  // player's own outline in the player's own colour rather than by its point count.
+  // The sector is still drawn behind the page and the lives are drawn as little hulls,
+  // so the ship is the biggest thing matching the player's own outline and colour.
+  const spanOf = (poly) =>
+    Math.max(...poly.points.map((p) => p.x)) - Math.min(...poly.points.map((p) => p.x))
+  const found = drawn.polys
+    .filter(
+      (poly) =>
+        poly.opts.color === game.player.colour &&
+        poly.points.length === game.player.outlineLocal.length,
+    )
+    .sort((a, b) => spanOf(b) - spanOf(a))[0]
+  assert.ok(found, "the ship is drawn")
+  const hull = found.points
+  assert.ok(Math.min(...hull.map((p) => p.x)) > VIEW_W / 2, "in the right-hand half")
+  const spanX = Math.max(...hull.map((p) => p.x)) - Math.min(...hull.map((p) => p.x))
+  assert.ok(spanX > 60, `and at a size worth looking at, got ${spanX.toFixed(0)}px`)
+  assert.ok(Math.max(...hull.map((p) => p.x)) < VIEW_W, "inside the page")
+
+  // The list keeps its own column, clear of the ship.
+  const list = drawn.text.filter((t) => t.text === "LASER" || t.text === "SPECIALS")
+  assert.equal(list.length, 2)
+  const shipLeft = Math.min(...hull.map((p) => p.x))
+  for (const row of list) {
+    assert.ok(row.x < shipLeft, `${row.text} sits left of the ship`)
+  }
+
+  // The row's own description is in the panel with the ship, not centred under the list.
+  const hint = drawn.text.find((t) => t.text.startsWith("One more spare ship"))
+  assert.ok(hint, "the selected row says what it does")
+  assert.ok(hint.x > shipLeft - 120, "beside the ship rather than under the list")
+})
+
+test("the shop says what the ship is worth, and how much of it was bought", () => {
+  const readStats = (game) => {
+    const found = []
+    const renderer = new Proxy(
+      {
+        text: (text, x, y, opts) =>
+          found.push({ text: String(text).trim(), y, size: opts && opts.size }),
+      },
+      { get: (target, key) => (key in target ? target[key] : () => {}) },
+    )
+    new GameView(renderer).render(game)
+    const out = {}
+    for (const name of ["HULL", "MASS", "ENERGY", "SPEED"]) {
+      const label = found.find((t) => t.text === name && t.size === 11)
+      assert.ok(label, `${name} is on the page`)
+      out[name] = found
+        .filter((t) => t.size === 11 && Math.abs(t.y - label.y) < 1 && t.text !== name)
+        .map((t) => t.text)
+    }
+    return out
+  }
+
+  // Nothing bought yet, so the ship is a stock one and there is no difference to show.
+  const fresh = liveGame()
+  fresh.enterShop()
+  const stock = readStats(fresh)
+
+  // The block holds its place whatever the row above it says. The hint is reserved a
+  // fixed few lines, so running the cursor down the list does not walk the stats up and
+  // down the panel with it.
+  const yOf = (game) => {
+    const found = []
+    const renderer = new Proxy(
+      {
+        text: (text, x, y, opts) =>
+          found.push({ text: String(text).trim(), y, size: opts && opts.size }),
+      },
+      { get: (target, key) => (key in target ? target[key] : () => {}) },
+    )
+    new GameView(renderer).render(game)
+    return found.find((t) => t.text === "HULL" && t.size === 11).y
+  }
+  const first = yOf(fresh)
+  for (let row = 0; row <= SHOP.length + 2; row++) {
+    fresh.shopSelection = row
+    assert.equal(yOf(fresh), first, `the stats stay put on row ${row}`)
+  }
+  fresh.shopSelection = 0
+  for (const [name, cells] of Object.entries(stock)) {
+    assert.equal(cells.length, 1, `${name} has nothing to report against a stock ship`)
+  }
+
+  // Everything bought, and the page says which way each number went: a bigger cell is
+  // worth having, and the mass and the speed it costs are the price of it.
+  const kitted = liveGame()
+  kitted.devMode = true
+  kitted.devMaxOut()
+  kitted.enterShop()
+  const after = readStats(kitted)
+  assert.equal(after.HULL.length, 1, "nothing the shop sells adds hull")
+  assert.ok(after.ENERGY[1].startsWith("+"), `the cell grew, got ${after.ENERGY[1]}`)
+  assert.ok(after.MASS[1].startsWith("+"), `and it weighs more for it, got ${after.MASS[1]}`)
+  assert.ok(after.SPEED[1].startsWith("-"), `which costs speed, got ${after.SPEED[1]}`)
+  assert.ok(
+    Number(after.ENERGY[0]) > Number(stock.ENERGY[0]),
+    "and the figure itself moves, not just the difference",
+  )
+})
+
 test("the shop sits what the core carries under it, and the loadout below", () => {
   const game = liveGame()
   game.enterShop()

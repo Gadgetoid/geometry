@@ -26,6 +26,31 @@ import { PALETTE } from "./palette.js"
 const GLYPH_ADVANCE = 0.62
 const textWidth = (str, size) => str.length * size * GLYPH_ADVANCE
 
+// The ship panel down the shop's right-hand side: how wide it is, how much of that the
+// hull takes before the notes under it start, and the gap between it and the list.
+//
+// `leaderRoom` is kept clear under the hull for the label on whichever mount is lit, and
+// `hintLines` is reserved for the selected row's description whether it needs them or
+// not, so what is below does not move as the cursor runs down the list.
+const SHIP_PANEL = {
+  width: 300,
+  shipHeight: 280,
+  leaderRoom: 40,
+  hintLines: 3,
+  gap: 34,
+  margin: 24,
+}
+
+// What a mount is drawn in, by what is bolted to it. An empty one takes the same colour
+// as an empty special slot, being the same idea.
+const MOUNT_COLOURS = {
+  weapon: PALETTE.player.turret,
+  engine: PALETTE.player.exhaust,
+  core: PALETTE.ui.accent,
+  shield: PALETTE.shield.standard,
+  radar: PALETTE.ui.accent,
+}
+
 // Clip the infinite line (px,py)+s*(ux,uy) to the rect; returns the [s0,s1]
 // range inside it, or null. Used to bound the out-of-bounds hatch to the view.
 function clipLineToRect(px, py, ux, uy, x0, y0, x1, y1) {
@@ -898,6 +923,11 @@ export class GameView {
     const lastOffset = optionsOffset + (game.devMode ? 26 : 0)
     const blockTop = Math.max(24, Math.round((VIEW_H - titleOffset - lastOffset) / 2))
 
+    // Two columns under one header: the list, and the ship it is fitting. The list is
+    // set left by half the panel's width so the pair is centred as one page, while what
+    // the sector just paid stays centred over the page itself.
+    const menuCentre = Math.round((VIEW_W - SHIP_PANEL.width) / 2)
+
     // A sector walked out of was not cleared, and the screen should not say it was.
     r.text(`SECTOR ${d.level} ${d.bailed ? "ABANDONED" : "CLEARED"}`, VIEW_W / 2, blockTop + 26, {
       size: 34,
@@ -926,8 +956,8 @@ export class GameView {
       glow: 12,
     })
 
-    const leftX = VIEW_W / 2 - 262,
-      rightX = VIEW_W / 2 + 262,
+    const leftX = menuCentre - 262,
+      rightX = menuCentre + 262,
       top = blockTop + headerHeight
     // The purchases and the specials row share one column, so the running y is what
     // places the group gap and everything below the list.
@@ -1018,9 +1048,7 @@ export class GameView {
       : game.shopSelection === game.slotsRow
         ? "What you carry into the next sector. Fit a slot, or buy and sell what is in one."
         : null
-    if (hint) {
-      r.text(hint, VIEW_W / 2, y + 10, { size: 13, color: PALETTE.text.soft, align: "center" })
-    }
+    this.#shopShip(game, rightX + SHIP_PANEL.gap, VIEW_W - SHIP_PANEL.margin, top - 26, hint)
 
     // Two lines of their own under the list, both starting where the item names start, in
     // the order the cursor reaches them: what the page is for on top, and the way out of it
@@ -1068,7 +1096,7 @@ export class GameView {
           "DEV   LEFT / RIGHT choose sector (hold SHIFT for x10)   -   purchases are free",
           "DEV   DPAD LEFT / RIGHT choose sector   -   purchases are free",
         ),
-        VIEW_W / 2,
+        menuCentre,
         optionsY + 26,
         { size: 11, color: PALETTE.ui.accentAlt, align: "center" },
       )
@@ -1088,9 +1116,139 @@ export class GameView {
     return { x: rightX - width + index * (size + spacing), size }
   }
 
-  // The specials row: the heading under the item names, the slots under the costs.
-  // A slot the ship has not been fitted with is drawn faint but is still reachable,
-  // since selecting it is how the next one is bought.
+  // The ship the shop is fitting, drawn beside the list with its mounts marked and the
+  // ones the highlighted row would change picked out. What that row does is said here
+  // rather than under the list, so the words sit beside the part they are about.
+  //
+  // The hull is drawn from its own outline at whatever scale fits the panel, so this is
+  // a picture of the ship in the sector and not an illustration that has to be kept
+  // level with it.
+  #shopShip(game, x0, x1, top, hint) {
+    const r = this.renderer
+    const player = game.player
+    const notesY = top + SHIP_PANEL.shipHeight + 6
+    if (player) {
+      const hullHeight = SHIP_PANEL.shipHeight - SHIP_PANEL.leaderRoom
+      const cx = (x0 + x1) / 2,
+        cy = top + hullHeight / 2
+      // Fitted to the space by the outline's own box, and centred on that box rather
+      // than on the origin: a hull is rarely centred on its own mount point, and using
+      // its reach instead would size it by twice its longest half. Nose up, which is
+      // how the ship sits when a sector starts, so the box's width is across the panel.
+      const along = player.outlineLocal.map(([lx]) => lx)
+      const across = player.outlineLocal.map(([, ly]) => ly)
+      const box = {
+        x: [Math.min(...along), Math.max(...along)],
+        y: [Math.min(...across), Math.max(...across)],
+      }
+      const scale = Math.min(
+        ((x1 - x0) * 0.88) / Math.max(1, box.y[1] - box.y[0]),
+        (hullHeight * 0.88) / Math.max(1, box.x[1] - box.x[0]),
+      )
+      const mid = { x: (box.x[0] + box.x[1]) / 2, y: (box.y[0] + box.y[1]) / 2 }
+      const map = ([lx, ly]) => ({ x: cx + (ly - mid.y) * scale, y: cy - (lx - mid.x) * scale })
+      r.strokePoly(player.outlineLocal.map(map), {
+        color: player.colour,
+        width: 1.8,
+        glow: 12,
+      })
+
+      const lit = new Set(game.mountsForShopRow(game.shopSelection))
+      const pulse = 0.55 + 0.45 * Math.sin(game.gameTime * 4)
+      player.hardpoints.forEach((hp, index) => {
+        const at = map(hp.local)
+        const module = hp.module
+        const colour = module
+          ? MOUNT_COLOURS[module.kind] || PALETTE.ui.accent
+          : PALETTE.ui.slotEmpty
+        const on = lit.has(index)
+        const size = on ? 11 : 8
+        if (on) {
+          r.rect(at.x - size / 2 - 3, at.y - size / 2 - 3, size + 6, size + 6, {
+            fill: "rgba(255,207,92,.20)",
+          })
+        }
+        r.rect(at.x - size / 2, at.y - size / 2, size, size, {
+          stroke: on ? PALETTE.fx.flash : colour,
+          width: on ? 1.8 : 1.2,
+          alpha: on ? pulse : module ? 0.9 : 0.5,
+          glow: on ? 10 : 0,
+        })
+        if (!on) {
+          return
+        }
+        // Named on a leader line, the way a special in the sector names itself: out from
+        // the hull, a short run, and the label at the end of it.
+        // Out along the way the mount faces from the middle of the hull. A mount at
+        // the middle, which is where a core sits, has no such direction, so it takes
+        // one: down and to the right, clear of the hull either way.
+        const away = Math.hypot(at.x - cx, at.y - cy)
+        const outward =
+          away < 1 ? { x: 0.78, y: 0.62 } : { x: (at.x - cx) / away, y: (at.y - cy) / away }
+        const reach = away < 1 ? 46 : 24
+        const outX = at.x + outward.x * reach,
+          outY = at.y + outward.y * reach
+        const side = at.x >= cx ? 1 : -1
+        const runX = outX + 16 * side
+        r.line(at.x, at.y, outX, outY, { color: PALETTE.fx.flash, width: 1, alpha: 0.8 })
+        r.line(outX, outY, runX, outY, { color: PALETTE.fx.flash, width: 1, alpha: 0.8 })
+        r.text(`${hp.role.toUpperCase()}${module ? "" : "   EMPTY"}`, runX + 4 * side, outY + 3, {
+          size: 10,
+          color: PALETTE.fx.flash,
+          align: side > 0 ? "left" : "right",
+          glow: 6,
+        })
+      })
+    }
+    if (hint) {
+      // Left-aligned and wrapped in the panel, so a long line reads as a paragraph
+      // rather than running off toward the edge of the screen.
+      this.#wrap(hint, x1 - x0, 12)
+        .slice(0, SHIP_PANEL.hintLines)
+        .forEach((line, index) => {
+          r.text(line, x0, notesY + index * 15, { size: 12, color: PALETTE.text.soft })
+        })
+    }
+    if (player) {
+      this.#shopStats(game, x0, x1, notesY + SHIP_PANEL.hintLines * 15 + 10)
+    }
+  }
+
+  // What the ship is worth, and how much of that was bought. The second column is the
+  // ship as it is and the third what the shop has added to a stock one, so a purchase
+  // can be read as the thing it changed rather than as a number that was always there.
+  #shopStats(game, x0, x1, top) {
+    const r = this.renderer
+    const player = game.player,
+      stock = game.stockStats()
+    const rows = [
+      { name: "HULL", now: player.type.hull, was: stock.hull, dp: 0, up: true },
+      { name: "MASS", now: player.mass, was: stock.laden, dp: 2, up: false },
+      { name: "ENERGY", now: game.maxEnergy(), was: stock.energyMax, dp: 0, up: true },
+      { name: "SPEED", now: player.maxSpeed, was: stock.maxSpeed, dp: 0, up: true },
+    ]
+    rows.forEach((row, index) => {
+      const y = top + index * 16
+      const change = row.now - row.was
+      r.text(row.name, x0, y, { size: 11, color: PALETTE.text.faint })
+      r.text(row.now.toFixed(row.dp), x0 + 118, y, {
+        size: 11,
+        color: PALETTE.text.bright,
+        align: "right",
+      })
+      if (Math.abs(change) < 0.005) {
+        return
+      }
+      // Green for a change in the direction the stat is wanted, which is down for what
+      // the ship weighs and up for everything else.
+      r.text(`${change > 0 ? "+" : ""}${change.toFixed(row.dp)}`, x0 + 186, y, {
+        size: 11,
+        color: change > 0 === row.up ? PALETTE.ui.good : PALETTE.ui.warn,
+        align: "right",
+      })
+    })
+  }
+
   #shopSlots(game, leftX, rightX, y, selected) {
     const r = this.renderer
     // Titled exactly as the purchase rows above it are: same size, same weight, and the

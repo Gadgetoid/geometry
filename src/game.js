@@ -19,6 +19,8 @@ import {
   HAZARD_TRAITS,
   FACTIONS,
   coreAt,
+  CORE_TYPES,
+  deriveShipStats,
   weightAt,
   SHIP_TYPES,
   PAUSE_MENU,
@@ -1184,6 +1186,61 @@ export class Game {
       return null
     }
     return SHOP[row < this.slotsRow ? row : row - 1]
+  }
+
+  // The ship as a run starts it: every slot holding the option the hull came with, and
+  // the cell unupgraded. What the shop has bought is the difference between this and the
+  // ship in the hangar, which is what the page shows beside each number. Worked out once,
+  // since nothing about a stock ship changes.
+  stockStats() {
+    if (!this.stock) {
+      const core = (PLAYER_TYPE.loadout || []).find((entry) => entry.core)
+      const fitted = { ...(core.fitted || {}) }
+      const loadout = (PLAYER_TYPE.loadout || []).filter((entry) => entry !== core)
+      for (const spec of Object.values(EQUIPMENT)) {
+        // Zero is what the hull came with. A slot whose cheapest option costs something
+        // starts empty, which is how a shield is bought rather than issued.
+        const stock = spec.options.find((option) => option.cost === 0)
+        if (!stock) {
+          continue
+        }
+        if (spec.slot) {
+          fitted[spec.slot] = stock.id
+        } else {
+          loadout.push({ hp: spec.hp, [spec.mount]: stock.id })
+        }
+      }
+      loadout.push({ ...core, fitted })
+      const derived = deriveShipStats({ ...PLAYER_TYPE, loadout })
+      // The cell is the one number that is not the loadout's: a levelled core states
+      // nothing at the top level, so the bottom of its ladder is the stock figure.
+      this.stock = { ...derived, energyMax: coreAt(CORE_TYPES[core.core], 0).energy }
+    }
+    return this.stock
+  }
+
+  // Which of the ship's mounts a shop row is about, so the page can point at the part
+  // of the hull it would change. A row that fits nothing to the hull, a spare ship or
+  // the way out, points at none. What the core carries counts as the core, which is
+  // where the specials ride too: the cell is what runs them and what says how many
+  // there are.
+  mountsForShopRow(row) {
+    if (!this.player) {
+      return []
+    }
+    const core = () => {
+      const at = this.player.hardpoints.findIndex((hp) => hp.module && hp.module.kind === "core")
+      return at < 0 ? [] : [at]
+    }
+    const item = this.shopItem(row)
+    if (!item) {
+      return row === this.slotsRow ? core() : []
+    }
+    if (item.equipment) {
+      const spec = EQUIPMENT[item.equipment]
+      return this.player.hardpoints[spec.hp] ? [spec.hp] : []
+    }
+    return item.id === "core" ? core() : []
   }
 
   // What is held in a special slot, or null for an empty one.
