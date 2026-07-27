@@ -504,6 +504,10 @@
 
       const ring = (points) => points.map(([x, y]) => ({ x, y }))
 
+      // How far the outline spans on an axis, for reading a hull's real dimensions.
+      const extent = (outline, axis) =>
+        Math.max(...outline.map((p) => p[axis])) - Math.min(...outline.map((p) => p[axis]))
+
       function polygonArea(points) {
         let sum = 0
         for (let i = 0; i < points.length; i++) {
@@ -886,6 +890,17 @@
       const selectedVertices = () =>
         selection.filter((node) => node.type === "vertex").map((node) => node.index)
       let tool = "select"
+      // A reflection line drawn on the canvas, in world units, or null for none.
+      // Kept apart from the selection because it is not part of the design: it is
+      // an instruction about how to fold one.
+      let mirrorSeam = null
+      let pointer = [0, 0] // last cursor position in screen pixels
+      // A live scale: the points being resized, where they started, and what the
+      // cursor's distance from the centroid was when it began, which is the factor
+      // of 1. Moving out grows, moving in shrinks. Declared here with the rest of
+      // the state, since the draw loop and the toolbar both read it and neither
+      // waits for the pointer handlers further down.
+      let scaling = null
       const options = {
         snap: true,
         grid: 1,
@@ -1260,9 +1275,9 @@
           }
         })
 
-        if (seam) {
-          const a = localToScreen(seam.from)
-          const b = localToScreen(seam.to)
+        if (mirrorSeam) {
+          const a = localToScreen(mirrorSeam.from)
+          const b = localToScreen(mirrorSeam.to)
           ctx.save()
           ctx.strokeStyle = "#ff7fdc"
           ctx.lineWidth = 1.4
@@ -1644,15 +1659,6 @@
       }
 
       let drag = null
-      // A reflection line drawn on the canvas, in world units, or null for none.
-      // Kept apart from the selection because it is not part of the design: it is
-      // an instruction about how to fold one.
-      let seam = null
-      let pointer = [0, 0] // last cursor position in screen pixels
-      // A live scale: the points being resized, where they started, and what the
-      // cursor's distance from the centroid was when it began, which is the factor
-      // of 1. Moving out grows, moving in shrinks.
-      let scaling = null
 
       // Begin a drag of everything selected, keeping the offsets between them and
       // putting the node under the cursor on the grid.
@@ -1738,8 +1744,8 @@
           rebuild()
         } else if (tool === "seam") {
           pushUndo()
-          seam = { from: local, to: local }
-          drag = { seam: true }
+          mirrorSeam = { from: local, to: local }
+          drag = { seamDrag: true }
           rebuild()
         } else {
           // Empty space in SELECT drags a box around whatever it covers. Shift
@@ -1786,8 +1792,8 @@
         if (drag && drag.pan) {
           view.x = drag.from[0] - (sx - drag.sx) / view.scale
           view.y = drag.from[1] - (sy - drag.sy) / view.scale
-        } else if (drag && drag.seam) {
-          seam.to = snap(screenToLocal(sx, sy), event.shiftKey)
+        } else if (drag && drag.seamDrag) {
+          mirrorSeam.to = snap(screenToLocal(sx, sy), event.shiftKey)
           rebuild()
         } else if (drag && drag.marquee) {
           drag.marquee.x = sx
@@ -2040,7 +2046,7 @@
         }
         const picked = selectedVertices().length
         const onAxis = ship.outline.filter(([, y]) => Math.abs(y) <= 1e-6).length
-        if (seam) {
+        if (mirrorSeam) {
           button.textContent = "MIRROR: DRAWN SEAM"
         } else if (picked === 2) {
           button.textContent = "MIRROR: 2 PICKED"
@@ -2073,9 +2079,9 @@
       // them. `slicePolygon` is the same cut the game's laser uses.
       function mirrorAboutSeam() {
         const eps = 1e-6
-        const from = seam.from
-        const dx = seam.to[0] - from[0]
-        const dy = seam.to[1] - from[1]
+        const from = mirrorSeam.from
+        const dx = mirrorSeam.to[0] - from[0]
+        const dy = mirrorSeam.to[1] - from[1]
         if (Math.hypot(dx, dy) < eps) {
           setStatus("the seam has no length, so there is nothing to fold about", true)
           return
@@ -2119,13 +2125,13 @@
         pushUndo()
         ship.outline = half.concat(half.slice(1, -1).reverse().map(reflect))
         selection = []
-        seam = null
+        mirrorSeam = null
         rebuild()
         setStatus(`outline mirrored about the drawn seam, now ${ship.outline.length} points`)
       }
 
       function mirrorOutline() {
-        if (seam) {
+        if (mirrorSeam) {
           mirrorAboutSeam()
           return
         }
@@ -2653,10 +2659,6 @@
         sectors.push(Number(ship.spawn.fromSector))
         return Math.min(...sectors)
       }
-
-      // How far the outline spans on an axis, for reading a hull's real dimensions.
-      const extent = (outline, axis) =>
-        Math.max(...outline.map((p) => p[axis])) - Math.min(...outline.map((p) => p[axis]))
 
       function refreshFacts() {
         const facts = document.getElementById("facts")
