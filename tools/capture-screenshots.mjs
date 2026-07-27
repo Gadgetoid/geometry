@@ -124,10 +124,12 @@ const SHOTS = [
     build: `(game, art) => {
       art.sector(game, 7)
       art.hud(game, { score: 132600, ore: 218, rival: 40100 })
+      // A run part way through spending: a bigger cell, which is also what earns
+      // the special slots, and the second mark of the beam. What the run has found
+      // is what the shop will sell it.
       game.upgrades.core = 2
-      game.upgrades.laser = 1
-      game.upgrades.slots = 2
-      game.seenPowerups = new Set(["booster", "magnet", "refuel"])
+      art.own(game, "laser", "playerLaserMk2")
+      game.seenSpecials = new Set(["booster", "oreMagnet", "refuel"])
       // A sector actually finished, so the summary shows the bonuses it pays and
       // not the line about leaving one unfinished. The tally it reads is posed too,
       // since nothing was really shot at.
@@ -199,7 +201,7 @@ await new Promise((r) => setTimeout(r, 150))
 await page.evaluate(async () => {
   const { mulberry32 } = await import("./src/math.js")
   const { Asteroid, RivalShip } = await import("./src/entities.js")
-  const { ARENA, HAZARD_TRAITS } = await import("./src/config.js")
+  const { ARENA, HAZARD_TRAITS, yardOptions } = await import("./src/config.js")
 
   // What a hazard trait is, taken from the registry that spawns it, so a scene
   // asking for an armed rock gets whatever an armed rock currently is.
@@ -285,12 +287,29 @@ await page.evaluate(async () => {
       return rock
     },
 
+    // A rival carrying its design's own loadout. The loadout is left unstated
+    // rather than passed empty: an empty one is still a loadout, and a hull given
+    // it arrives with no guns, no drive and no core.
     rival(game, type, dx, dy, angle) {
-      const ship = new RivalShip(game.viewCenter.x + dx, game.viewCenter.y + dy, type, [])
+      const ship = new RivalShip(game.viewCenter.x + dx, game.viewCenter.y + dy, type, null)
       ship.angle = angle
       ship.lifeTimer = 1e9
       game.rivals.push(ship)
       return ship
+    },
+
+    // Own an equipment option the way a run that had bought it would, and fit it.
+    // A ladder is climbed in order, so every mark below the one asked for is owned
+    // too, which is what the shop draws.
+    own(game, slot, id) {
+      const options = yardOptions(slot)
+      const upTo = options.findIndex((option) => option.id === id)
+      for (const option of options.slice(0, upTo + 1)) {
+        if (!game.upgrades.owned[slot].includes(option.id)) {
+          game.upgrades.owned[slot].push(option.id)
+        }
+      }
+      game.fitEquipment(slot, id)
     },
 
     // Cut something and leave the beam on screen, the way the player's shot does.
@@ -322,16 +341,34 @@ await page.evaluate(async () => {
       }
     },
 
+    // Hold the ship whole. The rivals in these scenes are armed and aimed at a ship
+    // parked in front of them, and fifty frames is long enough for one to finish it;
+    // a plate of the player warping back in having lost a life is not the picture any
+    // of these scenes are of. Invincibility is not used for it, since an invincible
+    // ship blinks and may blink out of the frame the plate is taken on.
+    whole(game, lives) {
+      const player = game.player
+      if (player) {
+        player.hull = player.type.hull
+        player.warp = 1
+        player.warpTarget = 1
+        player.warpHold = 0
+      }
+      game.lives = lives
+    },
+
     // A scene with the shooting going on. Every gun is put back off cooldown a few
     // times a second, since one left to its own 1 to 2 second reload fires once and
     // the round is still on the muzzle when the shot is taken; this gives each
     // turret a spaced stream that reads as being fired at.
     volley(game, frames, { every = 9, keepLast = 30 } = {}) {
+      const lives = game.lives
       for (let i = 0; i < frames; i++) {
         if (i % every === 0) {
           this.arm(game)
         }
         game.advance(1 / 60)
+        this.whole(game, lives)
         if (i < frames - keepLast) {
           game.projectiles = []
         }
@@ -347,8 +384,10 @@ await page.evaluate(async () => {
     // otherwise fills with stray bullets, but the last few frames are kept: those
     // are the ones still near their muzzles, which is what reads as being fired at.
     settle(game, frames, keepLast = 10) {
+      const lives = game.lives
       for (let i = 0; i < frames; i++) {
         game.advance(1 / 60)
+        this.whole(game, lives)
         if (i < frames - keepLast) {
           game.projectiles = []
         }
