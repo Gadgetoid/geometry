@@ -1073,10 +1073,14 @@ export class GameView {
   // since selecting it is how the next one is bought.
   #shopSlots(game, leftX, rightX, y, selected) {
     const r = this.renderer
+    // Titled exactly as the purchase rows above it are: same size, same weight, and the
+    // same colour once there is nothing left to get. It is a row of that list, so it reads
+    // as one - it was two points smaller than its neighbours and never went green.
+    const full = game.specialSlots() >= MAX_SLOTS
     r.text(`${selected ? "> " : "  "}SPECIALS`, leftX, y, {
-      size: 15,
+      size: 17,
       bold: selected,
-      color: selected ? PALETTE.text.bright : PALETTE.text.normal,
+      color: full ? PALETTE.ui.good : selected ? PALETTE.text.bright : PALETTE.text.normal,
     })
     for (let index = 0; index < MAX_SLOTS; index++) {
       const { x, size } = this.#slotBox(rightX, index),

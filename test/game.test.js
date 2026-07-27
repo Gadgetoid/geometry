@@ -3368,6 +3368,46 @@ test("a saved run drops a special the registry no longer knows", () => {
   assert.deepEqual(carried(resumed), ["repel"])
 })
 
+test("the specials row is titled like the rows it sits among", () => {
+  // It is a row of that list and has to read as one: it was drawn two points smaller than
+  // its neighbours and never took the colour they take when there is nothing left to buy,
+  // so a fully upgraded shop had one white line in a column of green ones.
+  const titles = (game) => {
+    const found = []
+    const renderer = new Proxy(
+      {
+        text: (text, x, y, opts) =>
+          found.push({
+            text: String(text).trim(),
+            x: Math.round(x),
+            size: opts && opts.size,
+            colour: opts && opts.color,
+          }),
+      },
+      { get: (target, key) => (key in target ? target[key] : () => {}) },
+    )
+    new GameView(renderer).render(game)
+    return found
+  }
+  const rowFor = (game, name) => titles(game).find((row) => row.text === name)
+
+  const fresh = liveGame()
+  fresh.enterShop()
+  const laser = rowFor(fresh, "LASER")
+  const specials = rowFor(fresh, "SPECIALS")
+  assert.ok(laser && specials, "both rows are drawn")
+  assert.equal(specials.size, laser.size, "the same size as a purchase row")
+  assert.equal(specials.colour, laser.colour, "and the same colour")
+  const radar = rowFor(fresh, "RADAR")
+  assert.equal(specials.x, radar.x, "inset with the rest of what the core carries")
+
+  // And it goes green with them once the core gives every slot there is.
+  const full = liveGame()
+  withSlots(full, MAX_SLOTS)
+  full.enterShop()
+  assert.equal(rowFor(full, "SPECIALS").colour, PALETTE.ui.good, "nothing left to unlock")
+})
+
 test("the shop sits what the core carries under it, and the loadout below", () => {
   const game = liveGame()
   game.enterShop()
