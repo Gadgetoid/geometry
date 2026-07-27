@@ -314,6 +314,30 @@ export class GameView {
     lenses.sort((a, b) => b.strength * b.radius - a.strength * a.radius)
     r.setLenses(lenses)
 
+    // Being inside a well is the picture itself not holding up, everywhere rather than
+    // anywhere: a screen-wide tear at low strength, scaled by how far in the ship is. The
+    // shader still falls off from the centre, so the middle goes worst, which is what
+    // reads as instability rather than as a thing sitting on the screen.
+    const screenWide = (strength) => ({
+      x: 0.5,
+      y: 0.5,
+      // Past the corners in the shader's own metric, so the whole frame is inside it.
+      radius: 1.6,
+      strength,
+    })
+    let inside = 0
+    for (const shot of game.projectiles) {
+      const well = shot.type && shot.type.well
+      if (!well || !well.nearGlitch) {
+        continue
+      }
+      const reach = well.radius * (shot.grown ?? 1)
+      const away = Math.hypot(game.player.x - shot.x, game.player.y - shot.y)
+      if (away < reach) {
+        inside = Math.max(inside, well.nearGlitch * (1 - away / reach))
+      }
+    }
+
     const tears = game.glitches.map((g) => {
       // A tear bursts and then goes: full force the instant it happens and most of it gone
       // in the first third of its life. Fading it away evenly reads as an effect being
@@ -322,6 +346,9 @@ export class GameView {
       const left = clamp(g.life / g.maxLife, 0, 1)
       return source(g.x, g.y, g.radius, g.strength * left * left)
     })
+    if (inside > 0) {
+      tears.push(screenWide(inside))
+    }
     tears.sort((a, b) => b.strength - a.strength)
     r.setTears(tears)
   }

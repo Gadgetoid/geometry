@@ -658,6 +658,10 @@ export const WEAPON_TYPES = {
       core: 17,
       grow: 0.9,
       motes: 26, // struck off the rim and thrown inward, so the accretion can be seen
+      // How badly the whole picture holds up when the ship is inside one. Nothing at the
+      // edge of its reach and this at the middle: not enough to fight through, enough that
+      // being in there is unmistakable.
+      nearGlitch: 0.3,
     },
     // And the space around it does not merely bend, it rings: the strongest distortion in
     // the game, and the only one that puts waves through what is behind it. Tighter than

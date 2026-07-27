@@ -1777,6 +1777,41 @@ test("a tear bursts and falls away, rather than being switched off", () => {
   assert.deepEqual(distortion(game).tears, [], "and then it is gone")
 })
 
+test("being inside a well fails the whole picture, gently", () => {
+  const game = liveGame()
+  beSolid(game.player)
+  game.player.takeDamage = () => {}
+  game.asteroids = [new Asteroid({ vertices: square(-900, -900, 40), spin: 0 })]
+  const well = new Singularity(500, 320, 0, 0, 0, null, WEAPON_TYPES.singularityGun)
+  game.projectiles = [well]
+  for (let i = 0; i < 60; i++) {
+    well.x = 500
+    well.y = 320
+    well.vx = 0
+    well.vy = 0
+    game.advance(1 / 60)
+  }
+
+  // A tear over the whole frame rather than at a point, and only while the ship is in it.
+  const wide = () => distortion(game).tears.find((tear) => tear.radius > 1)
+  const reach = WEAPON_TYPES.singularityGun.well.radius
+  const at = (away) => {
+    game.player.x = 500 + away
+    game.player.y = 320
+    return wide()
+  }
+  assert.ok(!at(reach * 1.4), "outside its reach the picture is fine")
+  const edge = at(reach * 0.9)
+  const middle = at(0)
+  assert.ok(edge && middle, "inside it, the whole frame is torn")
+  assert.ok(middle.strength > edge.strength, "worse the further in the ship is")
+  assert.ok(
+    middle.strength <= WEAPON_TYPES.singularityGun.well.nearGlitch,
+    "and never worse than the well says",
+  )
+  assert.ok(middle.strength < 0.5, "which is gentle: something to notice, not to fight through")
+})
+
 test("an orb landing on the player tears the picture", () => {
   const game = liveGame()
   beSolid(game.player)
