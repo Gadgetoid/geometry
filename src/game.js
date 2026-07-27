@@ -1322,9 +1322,18 @@ export class Game {
   }
 
   // The colour a title is drawn in, which is a special's own and nothing else's.
+  // What an open menu is drawn in: the colour of the thing it is about, so the panel
+  // and the box it hangs off are plainly the same subject. Null where the subject has
+  // no colour of its own, which the page draws in its neutral one.
   slotMenuColour() {
     const menu = this.slotMenu
-    const spec = menu && !menu.equipment && !menu.levels ? this.slotType(menu.slot) : null
+    if (!menu) {
+      return null
+    }
+    if (menu.equipment === "turret") {
+      return PALETTE.player.turret
+    }
+    const spec = !menu.equipment && !menu.levels ? this.slotType(menu.slot) : null
     return spec ? spec.colour : null
   }
 

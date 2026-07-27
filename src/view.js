@@ -6,6 +6,7 @@
 // their own draw(renderer, game) methods.
 
 import {
+  EQUIPMENT,
   OVER_MENU,
   VIEW_W,
   VIEW_H,
@@ -40,6 +41,21 @@ const SHIP_PANEL = {
   gap: 34,
   margin: 24,
 }
+
+// What a turret is lettered with: the first letter of what the yard calls it, and of the
+// registry's own name for a gun the yard does not sell, which is what a hull that came
+// with its own carries.
+function turretLetter(typeName) {
+  const option = EQUIPMENT.turret.options.find((entry) => entry.id === typeName)
+  return String(option ? option.name : typeName)
+    .charAt(0)
+    .toUpperCase()
+}
+
+// A slot box and the space between two of them. The gap is also how far an open menu
+// hangs below the box it belongs to, so the panel clears the boxes either side of it
+// rather than starting level with their floor.
+const SLOT_BOX = { size: 26, gap: 6 }
 
 // What a mount is drawn in, by what is bolted to it. An empty one takes the same colour
 // as an empty special slot, being the same idea.
@@ -961,6 +977,10 @@ export class GameView {
       top = blockTop + headerHeight
     // Where every row names what it has fitted, which the specials boxes line up with.
     const infoX = leftX + 226
+    // Set by whatever the open menu belongs to, as it is drawn: a row's tab, a special
+    // slot, or a turret mount. Cleared first, so a menu opened on one thing cannot hang
+    // off where another was drawn last frame.
+    this.menuAnchor = null
     // The purchases and the specials row share one column, so the running y is what
     // places the group gap and everything below the list.
     let y = top,
@@ -1005,7 +1025,9 @@ export class GameView {
         ((item.equipment && item.equipment === game.slotMenu.equipment) ||
           (item.levels && item.id === game.slotMenu.levels))
       const fitted = item.info(game)
-      if (openedHere) {
+      // A row that draws boxes hangs its menu off the box the menu is about, which the
+      // boxes themselves set; only a row that names what it has fitted wears a tab.
+      if (openedHere && item.equipment !== "turret") {
         const tabW = Math.max(66, fitted.length * 12 * 0.62 + 16)
         this.menuAnchor = { x: infoX - 8, y: y + 8, w: tabW }
         r.rect(this.menuAnchor.x, y - 15, tabW, 23, { fill: "rgba(95,215,255,.14)" })
@@ -1015,10 +1037,16 @@ export class GameView {
           glow: 8,
         })
       }
-      r.text(fitted, infoX, y, {
-        size: 12,
-        color: openedHere ? PALETTE.text.bright : PALETTE.text.faint,
-      })
+      // A turret is drawn where it sits rather than named: a box per mount that takes
+      // one, lettered as a special is, so the guns and the specials read the same way.
+      if (item.equipment === "turret") {
+        this.#turretBoxes(game, infoX, y, selected)
+      } else {
+        r.text(fitted, infoX, y, {
+          size: 12,
+          color: openedHere ? PALETTE.text.bright : PALETTE.text.faint,
+        })
+      }
       const price = opens
         ? maxed
           ? "MAX"
@@ -1043,12 +1071,18 @@ export class GameView {
       y += rowHeight
     }
 
+    // What the cursor is on says what it does, and a slot with something in it speaks
+    // for that special rather than for the row, so a special reads like every other
+    // thing the page fits.
     const selectedItem = game.shopItem(game.shopSelection)
+    const inSlot = game.shopSelection === game.slotsRow ? game.slotItem(game.shopSlot) : null
     const hint = selectedItem
       ? selectedItem.desc
-      : game.shopSelection === game.slotsRow
-        ? "What you carry into the next sector. Fit a slot, or buy and sell what is in one."
-        : null
+      : inSlot
+        ? SPECIAL_TYPES[inSlot.id].desc
+        : game.shopSelection === game.slotsRow
+          ? "What you carry into the next sector. Fit a slot, or buy and sell what is in one."
+          : null
     this.#shopShip(game, rightX + SHIP_PANEL.gap, VIEW_W - SHIP_PANEL.margin, top - 26, hint)
 
     // Two lines of their own under the list, both starting where the item names start, in
@@ -1110,12 +1144,63 @@ export class GameView {
 
   // Where a special slot sits on the shop's right-hand column. The row and the
   // pop-over that opens on one both place themselves from here, so they line up.
+  // One box per mount on the hull that takes a turret, in the specials' own style: what
+  // is on the ship rather than what the slot was set to, so a hull carrying guns of its
+  // own shows them beside the one the shop fitted.
+  #turretBoxes(game, startX, y, selected) {
+    const r = this.renderer
+    const player = game.player
+    if (!player) {
+      return
+    }
+    // The mount the shop's turret goes on is the one its menu belongs to, so that box
+    // is what the menu hangs off.
+    const fittedAt = EQUIPMENT.turret.hp
+    const open = !!(game.slotMenu && game.slotMenu.equipment === "turret")
+    const mounts = []
+    player.hardpoints.forEach((hp, at) => {
+      if (hp.role === "aux" || hp.role === "gun") {
+        mounts.push({ hp, at })
+      }
+    })
+    mounts.forEach(({ hp, at }, index) => {
+      const { x, size } = this.#slotBox(startX, index),
+        boxY = y - size + 7
+      const gun = hp.module && hp.module.kind === "weapon" ? hp.module : null
+      const opened = open && at === fittedAt
+      if (opened) {
+        this.menuAnchor = { x, y: boxY + size, w: size }
+      }
+      // The cursor sits on the row rather than on a box, so it lights the mount the row
+      // would fit, which is the one its menu opens on.
+      if (selected && at === fittedAt && !opened) {
+        r.rect(x - 3, boxY - 3, size + 6, size + 6, { fill: "rgba(95,215,255,.28)" })
+      }
+      r.rect(x, boxY, size, size, {
+        stroke: opened
+          ? game.slotMenuColour() || PALETTE.ui.accent
+          : gun
+            ? PALETTE.player.turret
+            : PALETTE.ui.slotEmpty,
+        width: opened || (selected && at === fittedAt) ? 1.8 : 1.2,
+        glow: opened ? 8 : 0,
+        alpha: gun || opened ? 1 : 0.55,
+      })
+      if (gun) {
+        r.text(turretLetter(gun.typeName), x + size / 2, boxY + size / 2 + 5, {
+          size: 14,
+          bold: true,
+          color: PALETTE.player.turret,
+          align: "center",
+        })
+      }
+    })
+  }
+
   // The boxes run rightward from where every other row names what it has fitted, so the
   // specials read as that column's entry rather than as something hung off the far edge.
   #slotBox(startX, index) {
-    const size = 26,
-      spacing = 6
-    return { x: startX + index * (size + spacing), size }
+    return { x: startX + index * (SLOT_BOX.size + SLOT_BOX.gap), size: SLOT_BOX.size }
   }
 
   // The ship the shop is fitting, drawn beside the list with its mounts marked and the
@@ -1268,13 +1353,23 @@ export class GameView {
       const owned = index < game.specialSlots(),
         spec = game.slotType(index),
         onCursor = selected && game.shopSlot === index
-      if (onCursor) {
+      const menu = game.slotMenu
+      const opened = !!(menu && !menu.equipment && !menu.levels && menu.slot === index)
+      if (opened) {
+        this.menuAnchor = { x, y: boxY + size, w: size }
+      }
+      if (onCursor && !opened) {
         r.rect(x - 3, boxY - 3, size + 6, size + 6, { fill: "rgba(95,215,255,.28)" })
       }
       r.rect(x, boxY, size, size, {
-        stroke: spec ? spec.colour : PALETTE.ui.slotEmpty,
-        width: onCursor ? 1.8 : 1.2,
-        alpha: owned ? 1 : 0.55,
+        stroke: opened
+          ? game.slotMenuColour() || PALETTE.ui.accent
+          : spec
+            ? spec.colour
+            : PALETTE.ui.slotEmpty,
+        width: opened ? 1.6 : onCursor ? 1.8 : 1.2,
+        glow: opened ? 8 : 0,
+        alpha: owned || opened ? 1 : 0.55,
       })
       if (spec) {
         r.text(spec.icon, x + size / 2, boxY + size / 2 + 5, {
@@ -1327,21 +1422,32 @@ export class GameView {
     const titleHeight = 20
     const width = onRow ? 260 : 200,
       rowHeight = 20
-    const desc = chosen && chosen.desc ? this.#wrap(chosen.desc, width - 16, 10) : []
+    // A row's description may depend on the slot it was opened on, as selling does.
+    const said =
+      chosen && (typeof chosen.desc === "function" ? chosen.desc(game, slot) : chosen.desc)
+    const desc = said ? this.#wrap(said, width - 16, 10) : []
     const height = titleHeight + rows.length * rowHeight + 14 + desc.length * 12
-    // A menu opened from a row hangs off the tab drawn on that row, sharing its left
-    // edge so the two outlines line up; one opened on a special slot hangs under its
-    // box, as before.
-    const tab = onRow ? this.menuAnchor : null
+    // The menu hangs off whatever it is about, sharing its left edge so the two outlines
+    // line up: the tab on a row that names what it has fitted, or the box itself on a
+    // row that draws boxes. Both are one thing with a shoulder in it rather than a panel
+    // that happens to be nearby.
+    const tab = this.menuAnchor
     const anchorX = tab ? tab.x : this.#slotBox(infoX, slot).x - 6
     const panelX = Math.min(anchorX, rightX - width),
-      panelY = tab ? tab.y : slotsY + 15
+      panelY = tab ? tab.y + SLOT_BOX.gap : slotsY + 15
+    const outline = titleColour ?? PALETTE.ui.accent
     r.rect(panelX, panelY, width, height, { fill: "rgba(4,8,16,.95)" })
-    r.rect(panelX, panelY, width, height, { stroke: PALETTE.ui.accent, width: 1.2, glow: 8 })
+    r.rect(panelX, panelY, width, height, { stroke: outline, width: 1.2, glow: 8 })
     if (tab) {
-      // The join: the tab's floor and the panel's ceiling are the same line, so it is
-      // painted out and the pair becomes one outline with a shoulder in it.
-      r.rect(panelX + 1.6, panelY - 1.4, tab.w - 3.2, 3, { fill: "rgba(4,8,16,1)" })
+      // The neck. The tab's floor and the panel's ceiling are painted out between them
+      // and the sides carried down, so the pair is one outline with a shoulder in it
+      // while the panel still starts below the row of boxes rather than level with it.
+      r.rect(panelX + 1.6, tab.y - 1.4, tab.w - 3.2, SLOT_BOX.gap + 3, {
+        fill: "rgba(4,8,16,1)",
+      })
+      for (const edge of [panelX, panelX + tab.w]) {
+        r.line(edge, tab.y - 1, edge, panelY + 1, { color: outline, width: 1.2, glow: 8 })
+      }
     }
     r.text(game.slotMenuTitle(), panelX + width / 2, panelY + 15, {
       size: 12,

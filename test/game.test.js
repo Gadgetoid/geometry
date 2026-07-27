@@ -3764,16 +3764,162 @@ test("the specials boxes start where the rows above name what they have fitted",
 
   const fittedColumn = drawn.text.find((t) => t.text === "MINER DRIVE")
   assert.ok(fittedColumn, "a row names what it has fitted")
-  const boxes = drawn.rects.filter((box) => box.w === 26 && box.h === 26).sort((a, b) => a.x - b.x)
-  assert.equal(boxes.length, MAX_SLOTS, "one box per slot the core could give")
-  assert.equal(
-    Math.round(boxes[0].x),
-    Math.round(fittedColumn.x),
-    "the first box starts where that column does",
+  const boxes = drawn.rects
+    .filter((box) => box.w === 26 && box.h === 26)
+    .sort((a, b) => a.y - b.y || a.x - b.x)
+  // Two rows draw boxes rather than a name: the specials, and the turret mounts.
+  const rows = [...new Set(boxes.map((box) => box.y))].map((y) =>
+    boxes.filter((box) => box.y === y),
   )
+  const turretMounts = game.player.hardpoints.filter(
+    (hp) => hp.role === "aux" || hp.role === "gun",
+  ).length
+  assert.equal(rows.length, 2, "the specials row and the turret row")
+  assert.deepEqual(
+    rows.map((row) => row.length).sort((a, b) => a - b),
+    [turretMounts, MAX_SLOTS].sort((a, b) => a - b),
+    "one box per special slot, and one per mount that takes a turret",
+  )
+  for (const row of rows) {
+    assert.equal(
+      Math.round(row[0].x),
+      Math.round(fittedColumn.x),
+      "both start where that column does",
+    )
+  }
   // And they still stop short of the prices, which own the right-hand edge.
   const price = drawn.text.find((t) => t.text === "60 ore")
-  assert.ok(boxes.at(-1).x + boxes.at(-1).w < price.x, "clear of the price column")
+  const widest = rows.map((row) => row.at(-1)).sort((a, b) => b.x - a.x)[0]
+  assert.ok(widest.x + widest.w < price.x, "clear of the price column")
+})
+
+test("an open menu meets the box it belongs to, in that item's colour", () => {
+  // A panel that merely sits near the thing it is about reads as a separate box. It
+  // shares the left edge and the line between them, so the pair is one outline with a
+  // shoulder in it, and it takes the colour of whatever it is fitting.
+  const opened = (game) => {
+    const rects = []
+    const renderer = new Proxy(
+      { rect: (x, y, w, h, opts) => rects.push({ x, y, w, h, stroke: opts && opts.stroke }) },
+      { get: (target, key) => (key in target ? target[key] : () => {}) },
+    )
+    new GameView(renderer).render(game)
+    const panel = rects.filter((box) => box.stroke && box.w > 150).at(-1)
+    const boxes = rects.filter((box) => box.w === 26 && box.h === 26 && box.stroke)
+    return { panel, boxes }
+  }
+
+  // A special slot, which the run starts carrying one of.
+  const game = liveGame()
+  game.enterShop()
+  game.shopSelection = game.slotsRow
+  game.openSlotMenu(0)
+  const magnet = SPECIAL_TYPES[game.slotItem(0).id]
+  const special = opened(game)
+  const litSpecial = special.boxes.find((box) => box.stroke === magnet.colour)
+  assert.ok(litSpecial, "the box is drawn in its special's colour")
+  assert.equal(special.panel.stroke, magnet.colour, "and so is the panel")
+  assert.equal(special.panel.x, litSpecial.x, "sharing its left edge")
+  assert.ok(
+    special.panel.y > litSpecial.y + litSpecial.h &&
+      special.panel.y <= litSpecial.y + litSpecial.h + 8,
+    "hanging just below its floor, clear of the boxes either side",
+  )
+
+  // And a turret, whose menu belongs to the mount the shop fits rather than to a row.
+  const armed = liveGame()
+  armed.upgrades.owned.turret = ["defenseFlak"]
+  armed.upgrades.fitted.turret = "defenseFlak"
+  armed.player.fitEquipment(armed)
+  armed.enterShop()
+  for (let row = 0; row <= SHOP.length; row++) {
+    const item = armed.shopItem(row)
+    if (item && item.equipment === "turret") {
+      armed.shopSelection = row
+    }
+  }
+  armed.doShopAction()
+  assert.equal(armed.slotMenu.equipment, "turret", "the turret menu is open")
+  const turret = opened(armed)
+  assert.equal(turret.panel.stroke, PALETTE.player.turret)
+  const litTurret = turret.boxes.filter((box) => box.stroke === PALETTE.player.turret).at(-1)
+  assert.ok(litTurret, "the mount is drawn in the turret's colour")
+  assert.equal(turret.panel.x, litTurret.x)
+  assert.ok(
+    turret.panel.y > litTurret.y + litTurret.h && turret.panel.y <= litTurret.y + litTurret.h + 8,
+  )
+})
+
+test("a special says what it does, wherever it is being looked at", () => {
+  // Every other thing the shop fits describes itself, so a special does too: on the
+  // page beside the ship when the cursor is on its box, and in the menu that sells it.
+  for (const id of SPECIAL_IDS) {
+    assert.ok(SPECIAL_TYPES[id].desc, `${id} says what it does`)
+  }
+  const game = liveGame()
+  game.enterShop()
+  game.shopSelection = game.slotsRow
+  const panelText = () => {
+    const found = []
+    const renderer = new Proxy(
+      {
+        text: (text, x, y, opts) =>
+          found.push({ text: String(text).trim(), x, size: opts && opts.size }),
+      },
+      { get: (target, key) => (key in target ? target[key] : () => {}) },
+    )
+    new GameView(renderer).render(game)
+    return found
+      .filter((t) => t.size === 12 && t.x > VIEW_W / 2)
+      .map((t) => t.text)
+      .join(" ")
+  }
+
+  // The magnet is what the hull leaves the yard carrying, so slot 0 holds one.
+  game.shopSlot = 0
+  const carried = game.slotItem(0)
+  assert.ok(carried, "the first slot has something in it")
+  assert.ok(
+    panelText().includes(SPECIAL_TYPES[carried.id].desc.slice(0, 24)),
+    "the panel speaks for what is in the slot",
+  )
+
+  // An empty slot has nothing to speak for, so the row speaks instead.
+  game.shopSlot = 1
+  assert.equal(game.slotItem(1), null)
+  assert.ok(panelText().includes("What you carry into the next sector"))
+
+  // And the menu that sells one says the same thing about it.
+  game.shopSlot = 0
+  game.openSlotMenu(0)
+  const sell = game.slotMenuRows(0).find((row) => row.name === "SELL")
+  assert.equal(sell.desc(game, 0), SPECIAL_TYPES[carried.id].desc)
+})
+
+test("a turret is drawn on its mount, lettered as a special is", () => {
+  const game = liveGame()
+  game.upgrades.owned.turret = ["defenseFlak"]
+  game.upgrades.fitted.turret = "defenseFlak"
+  game.player.fitEquipment(game)
+  game.enterShop()
+  const drawn = []
+  const renderer = new Proxy(
+    {
+      text: (text, x, y, opts) =>
+        drawn.push({ text: String(text).trim(), x, y, size: opts && opts.size }),
+    },
+    { get: (target, key) => (key in target ? target[key] : () => {}) },
+  )
+  new GameView(renderer).render(game)
+  // FLAK, so F, in a box rather than spelled out along the row.
+  assert.ok(
+    drawn.some((t) => t.text === "F" && t.size === 14),
+    "the mount carries the turret's letter",
+  )
+  assert.ok(
+    !drawn.some((t) => t.text === "FLAK" && t.size === 12),
+    "and the row does not also name it",
+  )
 })
 
 test("a shop row points at the mount it would change", () => {

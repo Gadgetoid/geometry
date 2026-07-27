@@ -2047,6 +2047,8 @@ export const PLAYER_TYPE = {
 //
 //   label   what the shop calls the slot
 //   hp      the hardpoint it mounts on, in PLAYER_DESIGN's list
+//   everyMount  a hardpoint role to fill every mount of, rather than the one `hp` names,
+//              which is what makes a drive the ship's rather than one nozzle's
 //   slot    for equipment the core carries, the core slot it goes in
 //   removable  whether the slot may be left empty. A shield, a radar and a turret
 //              are additions, so a run can be flown without them and some players
@@ -2228,6 +2230,9 @@ export const EQUIPMENT = {
     desc: "What pushes the ship, and whether it can push backwards.",
     hp: 3,
     mount: "engine",
+    // Every mount with this role, not just the one named above: a drive is the ship's,
+    // and a hull with a pair of nozzles flies on two of the same.
+    everyMount: "engine",
     options: [
       {
         id: "minerDrive",
@@ -2310,6 +2315,7 @@ export const SPECIAL_TYPES = {
   repel: {
     fromSector: 5,
     label: "REPEL",
+    desc: "A shove that throws rocks and shot clear of the ship. A way out of a squeeze, not a way to sweep a sector.",
     icon: "R",
     colour: PALETTE.special.repel,
     cost: 90,
@@ -2351,6 +2357,7 @@ export const SPECIAL_TYPES = {
   refuel: {
     fromSector: 8,
     label: "REFUEL",
+    desc: "Fills the cell in one go, and is gone with it.",
     icon: "F",
     colour: PALETTE.special.refuel,
     cost: 70,
@@ -2365,6 +2372,7 @@ export const SPECIAL_TYPES = {
   booster: {
     fromSector: 15,
     label: "BOOSTER",
+    desc: "Charged shots reach further and cost nothing, and rocks are shouldered aside unharmed.",
     short: "BOOST",
     icon: "B",
     colour: PALETTE.special.booster,
@@ -2385,6 +2393,7 @@ export const SPECIAL_TYPES = {
   multi: {
     fromSector: 19,
     label: "MULTI-LASER",
+    desc: "Three beams instead of one, thrown either side of the nose.",
     short: "MULTI",
     icon: "L",
     colour: PALETTE.special.multi,
@@ -2402,6 +2411,7 @@ export const SPECIAL_TYPES = {
   oreMagnet: {
     fromSector: 11,
     label: "ORE MAGNET",
+    desc: "Draws loose ore in from across the ship, without being switched on.",
     short: "MAGNET",
     icon: "M",
     colour: PALETTE.special.magnet,
@@ -2416,6 +2426,7 @@ export const SPECIAL_TYPES = {
   stealth: {
     fromSector: 25,
     label: "STEALTH",
+    desc: "Nothing hunting the ship can see it. It runs on the cell, and firing gives the position away.",
     icon: "S",
     colour: PALETTE.special.stealth,
     cost: 160,
@@ -2688,6 +2699,8 @@ export const SHOP_LAYOUT = { slotsRow: 5, groupGap: 14, insetBy: 18 }
 // for unlocking one: slots come with the power core, since a slot without the cell
 // to run it is not worth selling. Fields:
 //   name      the label
+//   desc      optional line about what the row does, shown under the menu. A string, or
+//             (game, slot) => text where it depends on what the slot holds
 //   value     optional (game, slot) => text shown on the right
 //   available optional (game, slot) => whether the row belongs on this slot
 //   action    (game, slot) => run on ENTER / A
@@ -2699,6 +2712,10 @@ export const SHOP_LAYOUT = { slotsRow: 5, groupGap: 14, insetBy: 18 }
 export const SLOT_MENU = [
   {
     name: "SELL",
+    desc: (g, slot) => {
+      const item = g.slotItem(slot)
+      return item ? SPECIAL_TYPES[item.id].desc : ""
+    },
     value: (g, slot) => `+${g.slotSellValue(slot)} ore`,
     available: (g, slot) => g.slotItem(slot) !== null,
     action: (g, slot) => g.sellSlot(slot),
@@ -2712,6 +2729,7 @@ export const SLOT_MENU = [
         ? []
         : game.buyableSpecials().map((id) => ({
             name: SPECIAL_TYPES[id].label,
+            desc: SPECIAL_TYPES[id].desc,
             value: (g) => (g.devMode ? "FREE" : `${SPECIAL_TYPES[id].cost} ore`),
             action: (g, at) => g.buySpecial(at, id),
           })),

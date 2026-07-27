@@ -2231,36 +2231,52 @@ export class PlayerShip extends Ship {
   // run does not reset a weapon mid-reload.
   // Mount whatever the run has fitted in each equipment slot, replacing what was
   // there. The drive decides how hard the ship accelerates, so that follows.
+  // Which mounts a shop slot fills. Most fill the one they name; a slot naming a role in
+  // `everyMount` fills every mount that has it, which is what a drive is: the shop sells
+  // the ship's engine, not one nozzle's, so a hull with two of them flies on a matched
+  // pair rather than on a bought drive and whatever was left in the other.
+  mountsForSlot(spec) {
+    if (spec.everyMount) {
+      const found = []
+      this.hardpoints.forEach((hp, index) => {
+        if (hp.role === spec.everyMount) {
+          found.push(index)
+        }
+      })
+      return found
+    }
+    return this.hardpoints[spec.hp] ? [spec.hp] : []
+  }
+
   fitEquipment(game) {
     for (const [slot, spec] of Object.entries(EQUIPMENT)) {
       const id = game.fittedEquipment(slot)
-      const hp = this.hardpoints[spec.hp]
-      if (!hp) {
-        continue
-      }
-      // Nothing fitted means the slot is empty on purpose, so whatever it put there
-      // comes off. Each slot owns its mount outright, so there is nothing else on it
-      // to lose.
-      if (!id) {
+      for (const at of this.mountsForSlot(spec)) {
+        const hp = this.hardpoints[at]
+        // Nothing fitted means the slot is empty on purpose, so whatever it put there
+        // comes off. Each slot owns its mounts outright, so there is nothing else on
+        // them to lose.
+        if (!id) {
+          if (spec.slot) {
+            if (hp.module && hp.module.kind === "core") {
+              hp.module.remove(spec.slot)
+            }
+          } else if (hp.module) {
+            hp.module = null
+          }
+          continue
+        }
+        const entry = { hp: at, [spec.mount]: id }
+        if (spec.controller) {
+          entry.controller = spec.controller
+        }
         if (spec.slot) {
           if (hp.module && hp.module.kind === "core") {
-            hp.module.remove(spec.slot)
+            hp.module.equip(spec.slot, entry)
           }
-        } else if (hp.module) {
-          hp.module = null
+        } else if (!hp.module || hp.module.typeName !== id) {
+          this.applyLoadout([entry])
         }
-        continue
-      }
-      const entry = { hp: spec.hp, [spec.mount]: id }
-      if (spec.controller) {
-        entry.controller = spec.controller
-      }
-      if (spec.slot) {
-        if (hp.module && hp.module.kind === "core") {
-          hp.module.equip(spec.slot, entry)
-        }
-      } else if (!hp.module || hp.module.typeName !== id) {
-        this.applyLoadout([entry])
       }
     }
     // The main laser is whatever ended up on the nose, so swapping a mark in has to
