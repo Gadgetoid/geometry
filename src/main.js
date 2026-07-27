@@ -127,7 +127,7 @@ if (!DEV_VISIBLE) {
   }
 }
 devButton.addEventListener("click", (e) => {
-  game.enterDevShop()
+  game.openDevMenu()
   e.currentTarget.setAttribute("aria-pressed", "true")
   e.currentTarget.blur()
 })

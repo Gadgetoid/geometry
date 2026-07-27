@@ -4,6 +4,7 @@
 // read / mutate its public fields; nothing here reaches for module globals.
 
 import {
+  DEV_MENU,
   VIEW_W,
   VIEW_H,
   ARENA,
@@ -176,6 +177,8 @@ export class Game {
     this.canExit = false
     this.toast = null
     this.devMode = false
+    // A sector that never counts as cleared, so a dev arena stays put. See enterSandbox.
+    this.sandbox = false
     this.paused = false
     this.gameTime = 0
     this.screenShake = 0
@@ -1077,6 +1080,7 @@ export class Game {
   // is paid, and the launch offers the same sector again, so the trip to the shop
   // buys a better loadout for another attempt rather than skipping it.
   enterShop(cleared = true) {
+    this.sandbox = false // whatever the dev arena was for, it is over once the shop opens
     this.oreVacuum = false
     if (cleared) {
       const remaining = this.oreChunks.length
@@ -1781,7 +1785,7 @@ export class Game {
       if (!this.player.warping) {
         this.phase = "play"
       }
-    } else if (this.phase === "play" && this.asteroids.length === 0) {
+    } else if (this.phase === "play" && this.asteroids.length === 0 && !this.sandbox) {
       this.phase = "clearing"
       this.clearTimer = CONFIG.CLEAR_DELAY
       this.oreVacuum = true
@@ -2318,7 +2322,118 @@ export class Game {
     if (this.pausePage === "controls") {
       return this.controlRows()
     }
+    if (this.pausePage === "dev") {
+      return this.devRows()
+    }
     return PAUSE_MENU.filter((row) => !row.available || row.available(this))
+  }
+
+  // The dev page. An entry with `rows` stands for a group generated from a registry, so
+  // the list grows with the game rather than having to be kept level with it.
+  devRows() {
+    const rows = []
+    for (const entry of DEV_MENU) {
+      if (entry.rows) {
+        rows.push(...entry.rows(this))
+      } else if (!entry.available || entry.available(this)) {
+        rows.push(entry)
+      }
+    }
+    return rows
+  }
+
+  // Every hull the spawner could send in, which is what the dev page offers one row each
+  // of. The player's own type is not among them: it is never spawned.
+  spawnableTypes() {
+    return SHIP_TYPES
+  }
+
+  // Put one in the sector, in front of the ship rather than out beyond the boundary: the
+  // point of asking for it is to look at it.
+  devSpawn(name) {
+    if (!this.player) {
+      return
+    }
+    const type = SHIP_TYPES[name]
+    const ahead = this.player.angle
+    const away = 260 + type.boundRadius
+    const ship = new RivalShip(
+      this.player.x + Math.cos(ahead) * away,
+      this.player.y + Math.sin(ahead) * away,
+      name,
+      this.rollLoadout(type),
+    )
+    ship.angle = ahead + Math.PI
+    ship.arrived = true // it is already here; nothing to fly in from
+    this.rivals.push(ship)
+    Sound.power()
+  }
+
+  // End the sector the way clearing it would, which is what the dev button used to do on
+  // its own.
+  clearSectorNow() {
+    this.paused = false
+    this.enterShop()
+  }
+
+  // Own one of everything, at no cost: every option in every slot and every special the
+  // shop will sell, so anything can be tried without a run to pay for it.
+  devOwnEverything() {
+    for (const [slot, spec] of Object.entries(EQUIPMENT)) {
+      this.upgrades.owned[slot] = spec.options.map((option) => option.id)
+    }
+    for (const id of SPECIAL_IDS) {
+      this.findSpecial(id)
+    }
+    this.oreBalance += 5000
+    this.rememberRun()
+    Sound.power()
+  }
+
+  // And fit the best of it: the top of every ladder, the last core, a full set of
+  // specials and a spare ship or two.
+  devMaxOut() {
+    this.devOwnEverything()
+    for (const [slot, spec] of Object.entries(EQUIPMENT)) {
+      // The top of a ladder is the best of it. A slot that is a choice rather than a climb
+      // has no best, so it takes the one the yard fits: the alternatives are trades, and
+      // picking the last of them by position would just mean the slowest drive.
+      const wanted = spec.ladder ? spec.options[spec.options.length - 1] : spec.options[0]
+      this.fitEquipment(slot, wanted.id)
+    }
+    for (const row of SHOP) {
+      if (row.levels) {
+        this.upgrades[row.id] = row.levels.length - 1
+        if (row.levelApply) {
+          row.levelApply(this)
+        }
+      }
+    }
+    this.lives = CONFIG.MAX_LIVES
+    if (this.player) {
+      this.player.hull = PLAYER_TYPE.hull
+      this.player.hullShown = PLAYER_TYPE.hull
+      // A slot each for the specials that are worth having in front of you.
+      const wanted = SPECIAL_IDS.filter((id) => SPECIAL_TYPES[id].buyable)
+      for (let slot = 0; slot < this.specialSlots(); slot++) {
+        this.player.equip(slot, wanted[slot % wanted.length])
+      }
+    }
+    this.rememberRun()
+  }
+
+  // An arena with nothing in it and no way to win: the sector never counts as cleared, so
+  // whatever is spawned here can be watched for as long as it is wanted.
+  enterSandbox() {
+    this.sandbox = true
+    this.devMode = true
+    this.paused = false
+    this.pausePage = "root"
+    this.startLevel(Math.max(1, this.level))
+    this.asteroids = []
+    this.rivals = []
+    this.projectiles = []
+    Sound.power()
   }
 
   // Move between pages of the pause menu, landing the cursor at the top.
@@ -2745,12 +2860,16 @@ export class Game {
     }
   }
 
-  enterDevShop() {
+  // What the DEV button asks for: the dev page, over whatever is happening. It used to
+  // end the sector and open the shop, which is one of the things the page now offers
+  // rather than the only thing the button could do.
+  openDevMenu() {
     if (!this.player || this.phase === "title" || this.phase === "over") {
       this.startNewGame()
     }
     this.devMode = true
-    this.enterShop()
+    this.paused = true
+    this.openPausePage("dev")
   }
 
   // Advance the simulation one step. Rendering is the view's job; main.js

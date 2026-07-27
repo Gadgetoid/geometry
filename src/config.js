@@ -2315,6 +2315,37 @@ export const UI_SCALES = [1, 1.5, 2]
 // Everything goes through a method on Game, so this file stays free of the audio
 // and renderer plumbing and a row cannot reach past the game's own API.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// DEV MENU - a page of the pause menu, offered only on a build where DEV_VISIBLE is
+// true. Everything here exists to get at a part of the game without playing up to it:
+// spawn the hull that is being worked on, own the equipment that would take a run to
+// afford, or drop into an arena with nothing in it and no way to win.
+//
+// Rows are the pause menu's own shape, so the cursor, the confirms and the drawing are
+// all the ones already there. `rows` generates a group from a registry, which is how
+// "spawn any of them" stays true as hulls are added.
+// ---------------------------------------------------------------------------
+export const DEV_MENU = [
+  {
+    name: "TESTING ARENA",
+    value: (g) => (g.sandbox ? "IN ONE" : ">"),
+    action: (g) => g.enterSandbox(),
+  },
+  { name: "CLEAR SECTOR", action: (g) => g.clearSectorNow() },
+  { name: "OWN EVERYTHING", value: () => ">", action: (g) => g.devOwnEverything() },
+  { name: "FULLY UPGRADE", value: () => ">", action: (g) => g.devMaxOut() },
+  {
+    rows: (g) =>
+      Object.keys(g.spawnableTypes()).map((name) => ({
+        name: `SPAWN ${name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase()}`,
+        // How many of that hull are in the sector, so holding the row down reads back.
+        value: (game) => String(game.rivals.filter((r) => r.typeName === name).length),
+        action: (game) => game.devSpawn(name),
+      })),
+  },
+  { name: "BACK", action: (g) => g.openPausePage("root") },
+]
+
 export const PAUSE_MENU = [
   // Only offered while the sector is still being fought, and asked twice like the
   // other rows that throw something away.
@@ -2354,6 +2385,13 @@ export const PAUSE_MENU = [
     adjust: (g, step) => g.setHelp(step > 0),
   },
   { name: "CONTROLS", value: () => ">", action: (g) => g.openPausePage("controls") },
+  // Only where the dev buttons show at all, so a published build has no way in.
+  {
+    name: "DEV TOOLS",
+    value: () => ">",
+    available: () => DEV_VISIBLE,
+    action: (g) => g.openPausePage("dev"),
+  },
   {
     name: "RESET PROGRESS",
     value: (g) => (g.savedRun ? `SECTOR ${g.resumeSector()}` : "-"),

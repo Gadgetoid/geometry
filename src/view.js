@@ -1331,7 +1331,8 @@ export class GameView {
     const paused = game.pauseMenu()
     const lastRowOffset = 62 + (paused.length - 1) * 38
     const menuTop = onControls ? 92 : Math.max(48, Math.round((VIEW_H - lastRowOffset) / 2))
-    r.text(onControls ? "CONTROLS" : "OPTIONS", VIEW_W / 2, menuTop, {
+    const title = { controls: "CONTROLS", dev: "DEV TOOLS" }[game.pausePage] || "OPTIONS"
+    r.text(title, VIEW_W / 2, menuTop, {
       size: 34,
       bold: true,
       color: PALETTE.text.bright,

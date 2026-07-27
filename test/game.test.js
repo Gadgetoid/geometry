@@ -1521,6 +1521,74 @@ test("a pincer cut while its well is up is finished by its own singularity", () 
   )
 })
 
+test("the dev page reaches every part of the game without playing up to it", () => {
+  const game = liveGame()
+  beSolid(game.player)
+  game.openDevMenu()
+  assert.equal(game.paused, true, "it opens over whatever was happening")
+  assert.equal(game.pausePage, "dev")
+  const row = (name) => {
+    const found = game.pauseMenu().find((entry) => entry.name === name)
+    assert.ok(found, `the dev page should offer ${name}`)
+    return found
+  }
+
+  // One spawn row per hull the spawner could send, generated from the registry so the
+  // list grows with the game rather than being kept level with it by hand.
+  for (const name of Object.keys(SHIP_TYPES)) {
+    const label = `SPAWN ${name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase()}`
+    row(label)
+  }
+  row("SPAWN ALIEN FRIGATE").action(game)
+  assert.equal(game.rivals.length, 1, "and spawning puts one in the sector")
+  assert.equal(game.rivals[0].typeName, "alienFrigate")
+  assert.ok(game.rivals[0].arrived, "already here, rather than flying in from beyond the ring")
+  assert.equal(row("SPAWN ALIEN FRIGATE").value(game), "1", "and the row counts them")
+
+  // Owning everything is every option in every slot, at no cost.
+  row("OWN EVERYTHING").action(game)
+  for (const [slot, spec] of Object.entries(EQUIPMENT)) {
+    assert.equal(
+      game.upgrades.owned[slot].length,
+      spec.options.length,
+      `every ${slot} should be owned`,
+    )
+  }
+
+  // Fully upgrading fits the top of every ladder and the last core.
+  row("FULLY UPGRADE").action(game)
+  assert.equal(game.fittedEquipment("laser"), EQUIPMENT.laser.options.at(-1).id)
+  assert.equal(game.upgrades.core, shopRow(game, "core").levels.length - 1)
+  // A slot that is a choice rather than a climb takes what the yard fits: the last by
+  // position would just mean the slowest drive.
+  assert.equal(game.fittedEquipment("engine"), EQUIPMENT.engine.options[0].id)
+})
+
+test("a testing arena never clears itself", () => {
+  const game = liveGame()
+  beSolid(game.player)
+  game.openDevMenu()
+  game
+    .pauseMenu()
+    .find((row) => row.name === "TESTING ARENA")
+    .action(game)
+  assert.equal(game.sandbox, true)
+  assert.equal(game.asteroids.length, 0, "nothing in it")
+  for (let i = 0; i < 60 * 8; i++) {
+    game.advance(1 / 60)
+  }
+  assert.equal(game.phase, "play", "an empty sector would ordinarily count as cleared")
+
+  // And leaving by any ordinary route puts the game back to normal.
+  game.enterShop()
+  assert.equal(game.sandbox, false)
+})
+
+// The shop row for a levelled upgrade, by id.
+function shopRow(game, id) {
+  return SHOP.find((row) => row.id === id)
+}
+
 test("what bends space says so, and the view finds it", () => {
   const game = liveGame()
   beSolid(game.player)
