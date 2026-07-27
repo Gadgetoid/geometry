@@ -95,6 +95,21 @@ function carried(game) {
   return game.player.items.slice(0, game.upgrades.slots).map((item) => (item ? item.id : null))
 }
 
+// A loadout with the shield taken off, wherever it is fitted: on a hardpoint of
+// its own, or in the core alongside the radar.
+function withoutShield(loadout) {
+  return loadout
+    .filter((entry) => !entry.shield)
+    .map((entry) => {
+      if (!entry.fitted || !entry.fitted.shield) {
+        return entry
+      }
+      const fitted = { ...entry.fitted }
+      delete fitted.shield
+      return { ...entry, fitted }
+    })
+}
+
 // A shield is bought, not issued: a run starts without one. A test about a
 // shield fits it the way the shop does.
 function withShield(game, level = 1) {
@@ -1004,7 +1019,7 @@ test("a hull cannot be flown inside a shield bubble it can see", () => {
 
 test("an unshielded hull is still touched on its outline", () => {
   const game = sectorWithARock()
-  const bare = SHIP_TYPES.frigate.loadout.filter((entry) => !entry.shield)
+  const bare = withoutShield(SHIP_TYPES.frigate.loadout)
   const frigate = new RivalShip(600, 320, "frigate", bare)
   frigate.angle = 0
   game.rivals = [frigate]

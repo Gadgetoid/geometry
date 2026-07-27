@@ -41,6 +41,7 @@ import {
   SHIELD_TYPES,
   ENGINE_TYPES,
   RADAR_TYPES,
+  CORE_TYPES,
   SHIP_TYPES,
   PLAYER_TYPE,
   AST_SHAPE,
@@ -383,10 +384,25 @@ export class Entity {
     return 1
   } // player shield plating overrides this
 
-  shieldModule() {
+  // Every module on the body, including whatever is fitted inside a core. One
+  // walk, so nothing has to remember that a shield might be in a core rather than
+  // on a hardpoint of its own.
+  *modules() {
     for (const hp of this.hardpoints) {
-      if (hp.module && hp.module.kind === "shield") {
-        return hp.module
+      if (!hp.module) {
+        continue
+      }
+      yield hp.module
+      if (hp.module.fitted) {
+        yield* hp.module.fitted
+      }
+    }
+  }
+
+  shieldModule() {
+    for (const module of this.modules()) {
+      if (module.kind === "shield") {
+        return module
       }
     }
     return null
@@ -415,9 +431,9 @@ export class Entity {
   // hull with nothing fitted is not blind, it is just short-sighted.
   sensorRange(what) {
     let reach = CONFIG.SENSOR_FLOOR
-    for (const hp of this.hardpoints) {
-      if (hp.module && hp.module.kind === "radar") {
-        reach = Math.max(reach, hp.module.reach(what))
+    for (const module of this.modules()) {
+      if (module.kind === "radar") {
+        reach = Math.max(reach, module.reach(what))
       }
     }
     return reach
@@ -756,6 +772,72 @@ export const WEAPON_CONTROLLERS = {
   },
 }
 
+// One module from a loadout entry, whichever kind it names. Shared so a hardpoint
+// and a core build the same thing from the same description.
+export function moduleFor(entry) {
+  if (entry.weapon) {
+    return new Weapon(entry.weapon, entry.controller)
+  }
+  if (entry.shield) {
+    return new Shield(entry.shield)
+  }
+  if (entry.engine) {
+    return new Engine(entry.engine)
+  }
+  if (entry.radar) {
+    return new Radar(entry.radar)
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// Core module: the cell the hull runs on, and the room it has for what runs off
+// it. Energy is the core's own rather than one of its slots, so a hull that has a
+// core can always power itself.
+//
+// `fitted` is a slot name to the equipment in it. A slot the core has no room for
+// is refused rather than silently overfilled.
+// ---------------------------------------------------------------------------
+export class Core {
+  constructor(typeName, fitted = {}) {
+    this.kind = "core"
+    this.typeName = typeName
+    this.type = CORE_TYPES[typeName]
+    this.fitted = []
+    for (const [slot, name] of Object.entries(fitted)) {
+      this.equip(slot, { [slot]: name })
+    }
+  }
+
+  // How many of `slot` are already in, against how many the core will take.
+  #countIn(slot) {
+    return this.fitted.filter((module) => module.slot === slot).length
+  }
+
+  // Fit `entry` into `slot`, replacing what is there when the core has no room for
+  // a second. Returns whether anything changed, so a repeat purchase is a no-op.
+  equip(slot, entry) {
+    const room = this.type[slot] ?? 0
+    if (room <= 0) {
+      return false
+    }
+    const module = moduleFor(entry)
+    if (!module) {
+      return false
+    }
+    module.slot = slot
+    const already = this.fitted.find((m) => m.slot === slot && m.typeName === module.typeName)
+    if (already) {
+      return false
+    }
+    if (this.#countIn(slot) >= room) {
+      this.fitted = this.fitted.filter((m) => m.slot !== slot)
+    }
+    this.fitted.push(module)
+    return true
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Radar module: what its host knows about, and how far off. It does nothing on
 // its own; everything that looks for something asks the host, and the host asks
@@ -1069,9 +1151,9 @@ export class Ship extends Entity {
   // best of them answers, so refitting one nozzle is enough to back a hull up.
   driveReverse() {
     let most = 0
-    for (const hp of this.hardpoints) {
-      if (hp.module && hp.module.kind === "engine") {
-        most = Math.max(most, hp.module.type.reverseAmount ?? 0)
+    for (const module of this.modules()) {
+      if (module.kind === "engine") {
+        most = Math.max(most, module.type.reverseAmount ?? 0)
       }
     }
     return most
@@ -1110,14 +1192,16 @@ export class Ship extends Entity {
       if (!hp) {
         continue
       }
-      if (entry.weapon) {
-        hp.module = new Weapon(entry.weapon, entry.controller)
-      } else if (entry.shield) {
-        hp.module = new Shield(entry.shield)
-      } else if (entry.engine) {
-        hp.module = new Engine(entry.engine)
-      } else if (entry.radar) {
-        hp.module = new Radar(entry.radar)
+      if (entry.core) {
+        hp.module = new Core(entry.core, entry.fitted)
+      } else if (entry.slot) {
+        // Equipment bound for a core rather than for the hardpoint itself.
+        const core = hp.module
+        if (core && core.kind === "core") {
+          core.equip(entry.slot, entry)
+        }
+      } else {
+        hp.module = moduleFor(entry) ?? hp.module
       }
     }
   }
@@ -1472,7 +1556,11 @@ export class PlayerShip extends Ship {
     if (!hp) {
       return
     }
-    const wanted = entry.weapon || entry.shield || entry.engine
+    if (entry.slot) {
+      this.applyLoadout([entry]) // the core refuses a repeat of what it already has
+      return
+    }
+    const wanted = entry.weapon || entry.shield || entry.engine || entry.radar
     if (hp.module && hp.module.typeName === wanted) {
       return
     }

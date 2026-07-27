@@ -699,6 +699,46 @@ export function thrustOf(type) {
 }
 
 // ---------------------------------------------------------------------------
+// CORE TYPES - the power plant a hull is built around, and the room it has for
+// the equipment that runs off it.
+//
+//   energy   the cell's capacity
+//   regen    how fast it refills
+//   shield   how many shields it will carry, normally one
+//   radar    how many radar sets, normally one
+//   special  room for passive utilities: the ore magnet, and the maneuvering
+//            thrusters that will let a hull pivot rather than only arc
+//
+// Energy is not one of the slots. A hull without a cell is not a hull with an
+// empty slot, it is a hull that does not work, so the core supplies it by being
+// fitted at all and no design can fail to power itself. What is optional sits in
+// the named slots, which is also what tells the editor which lists to offer.
+//
+// One core carries the lot, so a shield, a radar and a magnet need no hardpoints
+// scattered over the hull to sit on.
+// ---------------------------------------------------------------------------
+export const CORE_TYPES = {
+  // A dart's: barely enough to run a mining laser, with nothing spare.
+  prospectorCore: { energy: 90, regen: 22, shield: 1, radar: 1, special: 0 },
+  // A hunter's: a deep cell, because a beam that snaps costs more than a gun.
+  seekerCore: { energy: 300, regen: 34, shield: 1, radar: 1, special: 0 },
+  // A siege hull's: feeds four turrets and a cannon between them.
+  siegeCore: { energy: 260, regen: 30, shield: 1, radar: 1, special: 0 },
+  // The player's, with room for the utilities a run buys.
+  minerCore: { energy: 320, regen: 32, shield: 1, radar: 1, special: 2 },
+}
+
+// The core a design is built around, which is where its energy comes from.
+export function coreOf(type) {
+  for (const entry of type.loadout || []) {
+    if (entry.core) {
+      return CORE_TYPES[entry.core]
+    }
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // RADAR TYPES - core equipment, and what a hull knows about the sector it is in.
 // `sees` is an effective range per kind of thing: `ships`, `rocks`, `ore` and
 // `powerups`. A kind left out is one this set cannot pick up at all, beyond the
@@ -834,6 +874,7 @@ export function deriveShipStats(type) {
   const thrust = thrustOf(type)
   const reach = outlineReach(type.outline)
   const hullArea = outlineArea(type.outline)
+  const core = coreOf(type)
   const accel = stated("accel", thrust / type.mass)
   const maxSpeed = stated("maxSpeed", accel * k.speedPerAccel)
   const hull = stated("hull", Math.round(type.armour * hullArea * k.hullPerArea))
@@ -843,6 +884,8 @@ export function deriveShipStats(type) {
     accel,
     maxSpeed,
     hull,
+    energyMax: stated("energyMax", core ? core.energy : 0),
+    regen: stated("regen", core ? core.regen : 0),
     turnRate: stated(
       "turnRate",
       (thrust * k.turnPerReach * (type.handling ?? 1)) / (type.mass * reach),
@@ -947,23 +990,19 @@ const SHIP_DESIGNS = {
     mass: 0.8,
     armour: 1.2,
     lifeTime: [26, 36],
-    energyMax: 300,
-    regen: 34,
     hardpoints: [
       { local: [18, 0], role: "nose" },
       { local: [-5, 0], role: "gun" },
       { local: [-1, 0], role: "core" },
       { local: [-11, 6.5], role: "engine" },
       { local: [-11, -6.5], role: "engine" },
-      { local: [-3, 0], role: "core" },
     ],
     loadout: [
       // `hunter` is the behaviour, not the ship: line up, wind up briefly, fire.
       { hp: 0, weapon: "seekerLaser", controller: "hunter" },
-      { hp: 2, shield: "deflector" },
       { hp: 3, engine: "ionDrive" },
       { hp: 4, engine: "ionDrive" },
-      { hp: 5, radar: "huntingArray" },
+      { hp: 2, core: "seekerCore", fitted: { shield: "deflector", radar: "huntingArray" } },
     ],
     arms: {
       gun: {
@@ -993,19 +1032,16 @@ const SHIP_DESIGNS = {
     mass: 0.7, // a light dart
     armour: 1,
     lifeTime: [16, 26],
-    energyMax: 90,
-    regen: 22,
     hardpoints: [
       { local: [17, 0], role: "nose" },
       { local: [2, 0], role: "gun" },
       { local: [0, 0], role: "core" },
       { local: [-14, 0], role: "engine" },
-      { local: [-3, 0], role: "core" },
     ],
     loadout: [
       { hp: 0, weapon: "minerLaser", controller: "miner" }, // always has a mining laser
       { hp: 3, engine: "pulseDrive" },
-      { hp: 4, radar: "prospectorArray" },
+      { hp: 2, core: "prospectorCore", fitted: { radar: "prospectorArray" } },
     ],
     arms: {
       gun: {
@@ -1015,7 +1051,13 @@ const SHIP_DESIGNS = {
         chancePerSector: 0.15,
         chanceCap: 0.85,
       },
-      shield: { hp: 2, shield: "standard", chancePerSector: 0.12, chanceCap: 0.8 },
+      shield: {
+        hp: 2,
+        slot: "shield",
+        shield: "standard",
+        chancePerSector: 0.12,
+        chanceCap: 0.8,
+      },
     },
     spawn: { fromSector: 4, weight: 6 }, // the common one, and the one always available
     debrisMaterial: SHIP_PLATING,
@@ -1030,8 +1072,6 @@ const SHIP_DESIGNS = {
     mass: 6, // a slab: heavy, hard to turn, and thin-skinned for its size
     armour: 0.6,
     lifeTime: [34, 50],
-    energyMax: 260,
-    regen: 30,
     hardpoints: [
       { local: [68, 0], role: "nose" },
       { local: [45, -21], role: "gun" },
@@ -1043,7 +1083,6 @@ const SHIP_DESIGNS = {
       // than pivoting it
       { local: [-71, -14], role: "engine" },
       { local: [-71, 14], role: "engine" },
-      { local: [-12, 0], role: "core" },
     ],
     loadout: [
       { hp: 0, weapon: "cannonLaser", controller: "hunter" },
@@ -1051,10 +1090,9 @@ const SHIP_DESIGNS = {
       { hp: 2, weapon: "autocannon", controller: "turret" },
       { hp: 3, weapon: "autocannon", controller: "turret" },
       { hp: 4, weapon: "autocannon", controller: "turret" },
-      { hp: 5, shield: "standard" },
       { hp: 6, engine: "siegeDrive" },
       { hp: 7, engine: "siegeDrive" },
-      { hp: 8, radar: "huntingArray" },
+      { hp: 5, core: "siegeCore", fitted: { shield: "standard", radar: "huntingArray" } },
     ],
     spawn: { fromSector: 6, weight: 2, maxConcurrent: 1 },
     hunts: true, // steers for the player rather than for ore and rocks
@@ -1087,23 +1125,17 @@ const PLAYER_DESIGN = {
   // What the ship is confined by, which is less than the hull's own reach of 18.2:
   // see KNOWN_ISSUES.md, "A hull crosses the drawn arena ring".
   confineRadius: 13,
-  // The core is not one contested slot but several, so the shield, the generator,
-  // the radar and the ore magnet each have somewhere to sit rather than competing
-  // for one mount. They are internal, so where they are drawn matters less than
-  // that there are enough of them.
+  // One core, carrying the cell and the room for what runs off it: see CORE_TYPES.
   hardpoints: [
     { local: [18, 0], role: "nose" },
-    { local: [0, 0], role: "core" }, // shield
-    { local: [-2, 0], role: "core" }, // generator
-    { local: [-4, 0], role: "core" }, // radar
-    { local: [-6, 0], role: "core" }, // ore magnet
+    { local: [0, 0], role: "core" },
     { local: [3, 0], role: "aux" }, // filled by a fitting, see below
     { local: [-10, 0], role: "engine" },
   ],
   loadout: [
     { hp: 0, weapon: "playerLaser", controller: "manual" },
-    { hp: 3, radar: "surveyArray" },
-    { hp: 6, engine: "minerDrive" },
+    { hp: 1, core: "minerCore", fitted: { radar: "surveyArray" } },
+    { hp: 3, engine: "minerDrive" },
   ],
   // Modules the shop bolts on after the fact, keyed by the upgrade that pays for
   // them. Each entry is an ordinary loadout entry, mounted the same way a spawn
@@ -1111,9 +1143,9 @@ const PLAYER_DESIGN = {
   // SHOP needs no `apply` of its own to reach this. A levelled upgrade reaches it
   // from its own `apply`, and mounts at level 1.
   fittings: {
-    shield: { hp: 1, shield: "player" },
-    turret: { hp: 5, weapon: "defenseBlaster", controller: "defense" },
-    reverse: { hp: 6, engine: "vectoredDrive" },
+    shield: { hp: 1, slot: "shield", shield: "player" },
+    turret: { hp: 2, weapon: "defenseBlaster", controller: "defense" },
+    reverse: { hp: 3, engine: "vectoredDrive" },
   },
 }
 
