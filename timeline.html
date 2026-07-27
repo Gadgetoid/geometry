@@ -17,6 +17,9 @@
         --text: #bcd0ee;
         --dim: #7fa0c8;
         --muted: #5f79a6;
+        /* The alien faction's own colour, set from PALETTE.alien.hull once the
+           modules are in, so retheming the aliens retints this page with them. */
+        --alien: #5cff9a;
       }
       * {
         box-sizing: border-box;
@@ -121,6 +124,15 @@
         color: var(--amber);
         margin: 18px 0 6px;
       }
+      /* The aliens get their own colour throughout, headings included, so a reader
+         scrolling past knows whose numbers they are before reading a label. */
+      section.alien h2,
+      section.alien h3 {
+        color: var(--alien);
+      }
+      section.alien h2 {
+        border-bottom-color: #1f4433;
+      }
       .note {
         color: var(--muted);
         margin: 6px 0 14px;
@@ -150,6 +162,10 @@
         font-weight: 400;
         letter-spacing: 0.1em;
         font-size: 10px;
+      }
+      th.alien,
+      td.alien {
+        color: var(--alien);
       }
       /* Only the long table needs its header to follow; on a short one a sticky
          row detaches and lands in the middle of its own body. */
@@ -201,6 +217,9 @@
       #tip .k {
         color: var(--muted);
       }
+      #tip .a {
+        color: var(--alien);
+      }
       .banner {
         border: 1px solid var(--red);
         border-radius: 6px;
@@ -230,7 +249,7 @@
           <label for="from">SECTORS</label>
           <input type="number" id="from" min="0" max="100" value="0" />
           <label for="to">TO</label>
-          <input type="number" id="to" min="0" max="100" value="100" />
+          <input type="number" id="to" min="0" max="100" value="50" />
           <button data-range="0,100">ALL</button>
           <button data-range="0,20">EARLY</button>
           <button data-range="1,12">FIRST RUN</button>
@@ -251,15 +270,21 @@
       //
       // A throwaway Game and Backdrop are built to be asked; neither is stepped,
       // drawn or saved, and nothing in src/ is modified.
+      //
+      // Hulls arrive for one faction or another, and the two run to different
+      // schedules: the rivals from early on, the aliens late and then heavily. So
+      // faction is carried by hue - the aliens' own green against the page's blue -
+      // and magnitude by lightness within each hue. Every grid that mixes the two
+      // shows a scale per hue, and identity is still on the label beside the row.
 
       const page = document.getElementById("page")
       const status = document.getElementById("status")
 
-      let config, entities, Game, Backdrop, SKY, WORLD_NAMES
+      let config, palette, Game, Backdrop, SKY, WORLD_NAMES
       try {
-        const [c, e, g, b, source] = await Promise.all([
+        const [c, p, g, b, source] = await Promise.all([
           import("./src/config.js"),
-          import("./src/entities.js"),
+          import("./src/palette.js"),
           import("./src/game.js"),
           import("./src/background.js"),
           // background.js keeps its world-type names to itself, and a planet only
@@ -272,7 +297,7 @@
             .catch(() => ""),
         ])
         config = c
-        entities = e
+        palette = p
         Game = g.Game
         Backdrop = b.Backdrop
         SKY = b.SKY
@@ -294,6 +319,7 @@
         throw err
       }
       const CONFIG = config.CONFIG
+      const PALETTE = palette.PALETTE
       document.getElementById("source").textContent = "measured from src/game.js"
 
       const probe = new Game()
@@ -337,16 +363,37 @@
         return node
       }
 
+      // A section whose subject is the alien faction, so it takes their colour
+      // throughout instead of having it applied swatch by swatch.
+      function alienSection(...args) {
+        const node = section(...args)
+        node.classList.add("alien")
+        return node
+      }
+
       const pct = (p) => `${(p * 100).toFixed(p > 0 && p < 0.01 ? 1 : 0)}%`
       const round = (n) => Number(n.toFixed(4))
 
-      // ---- the sequential ramp ----------------------------------------------
+      // ---- factions ----------------------------------------------------------
 
-      // One hue, stepped in perceptual lightness so the scale is monotonic by
-      // construction, converted to sRGB here rather than trusted to a gradient.
-      // Magnitude is the only thing colour encodes on this page; identity always
-      // comes from the row label beside the strip.
-      const RAMP_HUE = 232
+      // Who a hull flies for, defaulting the way the simulation does, so a type that
+      // states no faction is a rival here as it is there.
+      const factionOf = (name) => config.SHIP_TYPES[name].faction ?? "rival"
+      const HULL_NAMES = Object.keys(config.SHIP_TYPES)
+      // The factions that actually field a hull, in the order FACTIONS lists them, so
+      // the player's side is not offered a row and a new side needs no edit here.
+      const HULL_FACTIONS = Object.keys(config.FACTIONS).filter((faction) =>
+        HULL_NAMES.some((name) => factionOf(name) === faction),
+      )
+      const hullsFor = (faction) => HULL_NAMES.filter((name) => factionOf(name) === faction)
+
+      // ---- the sequential ramps ----------------------------------------------
+
+      // One hue per faction, stepped in perceptual lightness so each scale is
+      // monotonic by construction, converted to sRGB here rather than trusted to a
+      // gradient. Hue carries which side a row belongs to and lightness carries the
+      // magnitude; the lightness schedule is shared, so a green cell and a blue cell
+      // of the same value are equally light.
       const RAMP_STEPS = 7
 
       function oklch(L, C, hueDeg) {
@@ -365,7 +412,9 @@
           -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
         ]
         return `#${linear
-          .map((c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055))
+          .map((c) =>
+            c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(Math.max(c, 0), 1 / 2.4) - 0.055,
+          )
           .map((c) =>
             Math.round(Math.max(0, Math.min(1, c)) * 255)
               .toString(16)
@@ -374,25 +423,68 @@
           .join("")}`
       }
 
-      const RAMP = Array.from({ length: RAMP_STEPS }, (_, i) => {
-        const t = i / (RAMP_STEPS - 1)
-        return oklch(0.38 + t * 0.47, 0.06 + t * 0.09, RAMP_HUE)
-      })
+      // The hue of a palette colour, so a faction's ramp is built from the colour the
+      // game actually draws it in: retinting PALETTE.alien.hull moves this with it.
+      // The inverse of the transform above, as far as the hue angle.
+      function hueOf(hex) {
+        const [r, g, b] = [1, 3, 5]
+          .map((at) => parseInt(hex.slice(at, at + 2), 16) / 255)
+          .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+        const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+        const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+        const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+        const A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s
+        const B = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s
+        return ((Math.atan2(B, A) * 180) / Math.PI + 360) % 360
+      }
+
+      const makeRamp = (hue) =>
+        Array.from({ length: RAMP_STEPS }, (_, i) => {
+          const t = i / (RAMP_STEPS - 1)
+          return oklch(0.38 + t * 0.47, 0.06 + t * 0.09, hue)
+        })
+
+      // The page's own blue for everything that is not a faction's, and one ramp per
+      // faction that fields a hull, taken from the colour it is drawn in. A faction
+      // whose colour is not in the palette falls back to the page's blue, so adding
+      // one is a palette entry rather than an edit here.
+      const BASE_HUE = 232
+      const FACTION_INK = {
+        rival: PALETTE.rival.hull,
+        alien: PALETTE.alien.hull,
+        player: PALETTE.player.hull,
+        hazard: PALETTE.rock.cut,
+      }
+      const RAMPS = { base: makeRamp(BASE_HUE) }
+      for (const faction of HULL_FACTIONS) {
+        // Only the aliens are given a hue of their own. The rivals are what the page
+        // has always shown and keep the blue it was built around: two hues separate
+        // the sides, and a third would only compete with them.
+        RAMPS[faction] = faction === "alien" ? makeRamp(hueOf(FACTION_INK.alien)) : RAMPS.base
+      }
+      document.documentElement.style.setProperty("--alien", FACTION_INK.alien)
+
+      // The ink a row's label is written in, which is the faction's own where it has
+      // one and the page's ordinary dim otherwise.
+      const inkFor = (ramp) =>
+        ramp && ramp !== "base" && RAMPS[ramp] !== RAMPS.base ? FACTION_INK[ramp] : null
 
       // Nothing is the surface itself, so an empty sector reads as empty rather than
       // as the bottom of a scale.
       const EMPTY = "#0a1220"
-      const rampColour = (t) =>
-        t <= 0 ? EMPTY : RAMP[Math.min(RAMP_STEPS - 1, Math.floor(t * RAMP_STEPS))]
+      const rampColour = (t, ramp = "base") =>
+        t <= 0
+          ? EMPTY
+          : (RAMPS[ramp] || RAMPS.base)[Math.min(RAMP_STEPS - 1, Math.floor(t * RAMP_STEPS))]
 
-      function rampLegend(label, top, format = pct) {
+      function rampLegend(label, top, format = pct, steps = RAMPS.base, ink = null) {
         return el(
           "div",
           { className: "legend" },
-          el("span", { textContent: label }),
+          el("span", { textContent: label, style: ink ? `color:${ink}` : "" }),
           el("span", { className: "ramp" }, [
             el("i", { style: `background:${EMPTY}`, title: "none" }),
-            ...RAMP.map((colour, i) =>
+            ...steps.map((colour, i) =>
               el("i", {
                 style: `background:${colour}`,
                 title: format(((i + 0.5) / RAMP_STEPS) * top),
@@ -403,14 +495,40 @@
         )
       }
 
+      // The scales a set of rows puts in play, each with whose rows use it. Factions
+      // sharing a scale share one legend, so a grid shows exactly as many as there
+      // are hues in it and each is named when there is more than one.
+      function scalesFor(rows) {
+        const groups = new Map()
+        for (const row of rows) {
+          const key = row.ramp || "base"
+          const steps = RAMPS[key] || RAMPS.base
+          if (!groups.has(steps)) {
+            groups.set(steps, { steps, names: [], ink: null })
+          }
+          const group = groups.get(steps)
+          if (key !== "base" && !group.names.includes(key)) {
+            group.names.push(key)
+            group.ink = group.ink || inkFor(key)
+          }
+        }
+        return [...groups.values()]
+      }
+
       // ---- measuring ---------------------------------------------------------
 
       const LAST = 100
       const PLAN_SAMPLES = 800 // plans per sector, for what a plan rolls
       const ARM_SAMPLES = 800 // loadout rolls per type per sector
+      const SPECIAL_SAMPLES = 200 // drops per sector, for which kind arrives
 
-      const HAZARD_KINDS = ["explosive", "shield", "gun", "gun + shield"]
-      const RIVAL_NAMES = Object.keys(config.SHIP_TYPES)
+      // The trait combinations a rock can carry, taken from the registry so a new
+      // hazard appears in every chart without being named here.
+      const HAZARD_KINDS = [
+        ...new Set(
+          config.HAZARD_TRAITS.map((hazard) => Object.keys(hazard.traits).sort().join(" + ")),
+        ),
+      ]
 
       // Rock guns are a pool inside the gun hazard; the trait carrying it, and the
       // sector it joins at, are found rather than assumed.
@@ -422,19 +540,29 @@
         ? [...new Set(GUN_HAZARDS.flatMap((h) => h.traits.gun.guns.map((entry) => entry.weapon)))]
         : []
 
+      const SPECIAL_IDS = config.SPECIAL_IDS
+
       // Which specials a sector can drop, measured by asking for some: the picker is
-      // the game's, so a weighting added to it would show up here.
-      function measureSpecialKinds() {
+      // the game's, and it weighs the pool by sector like every other roll, so a
+      // special given a `fromSector` would show up here as a row that starts late.
+      function measureSpecialKinds(sector) {
         const counts = new Map()
         const before = probe.specialPickups.length
-        for (let i = 0; i < 400; i++) {
+        const level = probe.level
+        probe.level = sector
+        for (let i = 0; i < SPECIAL_SAMPLES; i++) {
           probe.spawnSpecial()
-          const kind = probe.specialPickups[probe.specialPickups.length - 1].type
-          counts.set(kind, (counts.get(kind) || 0) + 1)
+          const last = probe.specialPickups[probe.specialPickups.length - 1]
+          if (last) {
+            counts.set(last.type, (counts.get(last.type) || 0) + 1)
+          }
         }
+        probe.level = level
         probe.specialPickups.length = before
         const total = [...counts.values()].reduce((a, b) => a + b, 0)
-        return [...counts.entries()].map(([kind, n]) => [kind, n / total])
+        return Object.fromEntries(
+          SPECIAL_IDS.map((id) => [id, total ? (counts.get(id) || 0) / total : 0]),
+        )
       }
 
       function surveySector(sector) {
@@ -457,7 +585,7 @@
           }
         }
 
-        // which rival arrives. Arrivals are weighed, so a share is one weight over
+        // which hull arrives. Arrivals are weighed, so a share is one weight over
         // the total of what is eligible: arithmetic, not a sample. The field is
         // empty, which is what the maxConcurrent test sees on a first arrival.
         const arrivals = new Map()
@@ -465,7 +593,7 @@
           const level = probe.level
           probe.level = sector
           probe.rivals.length = 0
-          const weights = RIVAL_NAMES.map((name) => [name, probe.spawnWeight(name)])
+          const weights = HULL_NAMES.map((name) => [name, probe.spawnWeight(name)])
           const total = weights.reduce((sum, [, weight]) => sum + weight, 0)
           for (const [name, weight] of weights) {
             if (weight > 0) {
@@ -477,7 +605,7 @@
 
         // and what one turns up carrying, from the same roll the spawner uses
         const arms = {}
-        for (const name of RIVAL_NAMES) {
+        for (const name of HULL_NAMES) {
           const type = config.SHIP_TYPES[name]
           const counts = new Map()
           if (sector >= type.spawn.fromSector) {
@@ -511,6 +639,13 @@
           glows: planet.emit !== "#000000",
         }))
 
+        const factionShare = Object.fromEntries(
+          HULL_FACTIONS.map((faction) => [
+            faction,
+            hullsFor(faction).reduce((sum, name) => sum + (arrivals.get(name) || 0), 0),
+          ]),
+        )
+
         return {
           sector,
           rocks: plan.spawns.length,
@@ -526,10 +661,11 @@
             HAZARD_KINDS.map((kind) => [kind, rocks ? (mix.get(kind) || 0) / rocks : 0]),
           ),
           arrivals: Object.fromEntries(
-            RIVAL_NAMES.map((name) => [name, plan.rivals > 0 ? arrivals.get(name) || 0 : 0]),
+            HULL_NAMES.map((name) => [name, plan.rivals > 0 ? arrivals.get(name) || 0 : 0]),
           ),
+          factionShare,
           arms: Object.fromEntries(
-            RIVAL_NAMES.map((name) => [
+            HULL_NAMES.map((name) => [
               name,
               Object.fromEntries(
                 Object.keys(config.SHIP_TYPES[name].arms || {}).map((armName) => [
@@ -546,6 +682,7 @@
                 probe.gunsForSector(h.traits.gun, sector).some((entry) => entry.weapon === weapon),
               ),
           ),
+          specialKinds: plan.specials ? measureSpecialKinds(sector) : null,
           nebula,
           planets,
         }
@@ -557,7 +694,6 @@
       for (let sector = 0; sector <= LAST; sector++) {
         SURVEY.push(surveySector(sector))
       }
-      const SPECIAL_KINDS = measureSpecialKinds()
       const elapsed = Math.round(performance.now() - started)
 
       // ---- the shared hover layer -------------------------------------------
@@ -565,8 +701,10 @@
       const tip = document.getElementById("tip")
       function showTip(event, rows) {
         tip.innerHTML = rows
-          .map(([key, value]) =>
-            key === null ? `<b>${value}</b>` : `<span class="k">${key}</span> ${value}`,
+          .map(([key, value, ink]) =>
+            key === null
+              ? `<b>${value}</b>`
+              : `<span class="k${ink ? " a" : ""}">${key}</span> ${value}`,
           )
           .join("<br />")
         tip.style.display = "block"
@@ -648,6 +786,10 @@
             entry.arrivalGap,
             entry.specials,
             entry.guns.join(" "),
+            // Which hulls are eligible is a plan-level gate too: the aliens joining
+            // is the last thing that changes about a run, and a plateau found without
+            // it would be declared before they arrive.
+            HULL_NAMES.map((name) => (entry.arrivals[name] > 0 ? name : "")).join(" "),
           ].join("|")
         const last = signature(SURVEY[SURVEY.length - 1])
         let first = SURVEY.length - 1
@@ -726,8 +868,9 @@
         }
       }
 
-      // A grid of rows, each a magnitude over the sectors. Colour is the only thing
-      // carrying the value, so a scale legend and the table view come with it.
+      // A grid of rows, each a magnitude over the sectors. Colour carries the value,
+      // so a scale legend and the table view come with it; a row may name a faction's
+      // ramp, in which case its hue says whose it is and a legend is shown per hue.
       function heatGrid(sectors, rows, { format = pct, valueOf, legend } = {}) {
         const top = Math.max(
           ...SURVEY.flatMap((entry) => rows.map((row) => valueOf(row, entry))),
@@ -749,7 +892,7 @@
                 x: LABEL_W - 10,
                 y: r * ROW_H + 11,
                 "text-anchor": "end",
-                fill: row.emphasis ? "#bcd0ee" : "#7fa0c8",
+                fill: inkFor(row.ramp) || (row.emphasis ? "#bcd0ee" : "#7fa0c8"),
                 "font-size": 10,
                 "font-family": "monospace",
               },
@@ -766,7 +909,7 @@
                 width: CELL - 2,
                 height: ROW_H - 3,
                 rx: 2,
-                fill: rampColour(value / top),
+                fill: rampColour(value / top, row.ramp),
               }),
             )
           })
@@ -775,12 +918,28 @@
         sectorAxis(svg, sectors, LABEL_W, rows.length * ROW_H)
         trackable(svg, { width, left: LABEL_W, cell: CELL, sectors }, (entry) => [
           [null, `SECTOR ${entry.sector}`],
-          ...rows.map((row) => [row.label, format(valueOf(row, entry))]),
+          ...rows.map((row) => [row.label, format(valueOf(row, entry)), inkFor(row.ramp)]),
         ])
+        // One legend per hue in play, named so a green scale is not read as a blue
+        // one at a different value. Both share `top`, so a green cell and a blue cell
+        // of the same lightness are the same number.
+        const scales = scalesFor(rows)
         return el(
           "div",
           {},
-          legend ? rampLegend(legend, top, format) : null,
+          legend
+            ? scales.map((scale) =>
+                rampLegend(
+                  scales.length > 1 && scale.names.length
+                    ? `${legend}, ${scale.names.join(" and ")}`
+                    : legend,
+                  top,
+                  format,
+                  scale.steps,
+                  scale.ink,
+                ),
+              )
+            : null,
           el("div", { className: "scroll" }, svg),
         )
       }
@@ -790,7 +949,7 @@
       function columns(
         sectors,
         valueOf,
-        { height = 92, colour = RAMP[4], format = String, label = false } = {},
+        { height = 92, colour = RAMPS.base[4], format = String, label = false } = {},
       ) {
         const width = LABEL_W + sectors.length * CELL + 12
         const top = 8
@@ -850,6 +1009,9 @@
         const nebulaH = 26
         const planetH = 34
         const height = nebulaH + planetH + 24
+        // The largest world the generator will make, so the dots keep their relative
+        // sizes whatever SKY offers.
+        const biggest = Math.max(...SKY.sizes.map((size) => size.r[1]))
         const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, width, height, role: "img" })
         const label = (text, y) =>
           svg.append(
@@ -897,8 +1059,7 @@
               svgEl("circle", {
                 cx: x + (CELL - 2) / 2,
                 cy,
-                // radius runs 50 to 120 in world units; kept to a few pixels here
-                r: 1.6 + (planet.r / 120) * 2.2,
+                r: 1.6 + (planet.r / biggest) * 2.2,
                 fill: planet.atmo,
                 stroke: planet.glows ? planet.emit : "none",
                 "stroke-width": planet.glows ? 1 : 0,
@@ -921,6 +1082,101 @@
       const swatchText = (colour) =>
         `<span class="swatch" style="background:${colour}"></span>${colour}`
 
+      // A plain table, with the cells of a named class tinted by it.
+      function table(headers, rows, classOf = () => "") {
+        return el(
+          "div",
+          { className: "scroll" },
+          el(
+            "table",
+            {},
+            el(
+              "thead",
+              {},
+              el(
+                "tr",
+                {},
+                headers.map((head, i) => el("th", { textContent: head, className: classOf(i) })),
+              ),
+            ),
+            el(
+              "tbody",
+              {},
+              rows.map((row) =>
+                el(
+                  "tr",
+                  {},
+                  row.map((cell, i) =>
+                    cell && cell.nodeType
+                      ? el("td", { className: classOf(i) }, cell)
+                      : el("td", { textContent: String(cell ?? "-"), className: classOf(i) }),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        )
+      }
+
+      // ---- what the aliens bring --------------------------------------------
+
+      // Every module on a hull, whichever hardpoint or core slot it sits in, and
+      // whether it always has it or rolls for it.
+      function modulesOn(name) {
+        const type = config.SHIP_TYPES[name]
+        const found = []
+        for (const entry of config.loadoutModules(type)) {
+          found.push({ entry, rolled: false })
+        }
+        for (const entry of Object.values(type.arms || {})) {
+          found.push({ entry, rolled: true })
+        }
+        return found
+      }
+
+      const namesOf = (name, kind) => [
+        ...new Set(
+          modulesOn(name)
+            .filter((module) => module.entry[kind])
+            .map((module) => `${module.entry[kind]}${module.rolled ? " (rolled)" : ""}`),
+        ),
+      ]
+
+      // What a hull warps around it, and what its guns do. `warp` is the faction's
+      // one mechanic: a field that bends what is drawn through it, on the hull and on
+      // the shot alike, so it is worth reading in one place.
+      function warpRows(faction) {
+        const rows = []
+        for (const name of hullsFor(faction)) {
+          const type = config.SHIP_TYPES[name]
+          if (type.warp) {
+            rows.push([
+              name,
+              "hull",
+              type.warp.radius,
+              type.warp.strength,
+              type.warp.wave ?? "-",
+              `arrives at ${type.spawn.fromSector}`,
+            ])
+          }
+          for (const weapon of namesOf(name, "weapon")) {
+            const bare = weapon.replace(" (rolled)", "")
+            const warp = config.WEAPON_TYPES[bare].warp
+            if (warp) {
+              rows.push([
+                name,
+                weapon,
+                warp.radius,
+                warp.strength,
+                warp.wave ?? "-",
+                config.WEAPON_TYPES[bare].kind,
+              ])
+            }
+          }
+        }
+        return rows
+      }
+
       // ---- sections ----------------------------------------------------------
 
       // Rebuilt on a filter change: one row of controls scopes every chart, so they
@@ -934,9 +1190,9 @@
 
         // -- milestones
         const firsts = []
-        const firstWhere = (label, test) => {
+        const firstWhere = (label, test, ramp) => {
           const found = SURVEY.find(test)
-          firsts.push([label, found ? found.sector : null])
+          firsts.push([label, found ? found.sector : null, ramp])
         }
         firstWhere("rocks carry a hazard", (e) => e.hazardChance > 0)
         for (const kind of HAZARD_KINDS) {
@@ -945,16 +1201,27 @@
         for (const weapon of GUN_KINDS) {
           firstWhere(`rock gun: ${weapon}`, (e) => e.guns.includes(weapon))
         }
-        firstWhere("a rival arrives", (e) => e.rivalsAtOnce > 0)
-        for (const name of RIVAL_NAMES) {
-          firstWhere(`rival: ${name}`, (e) => e.arrivals[name] > 0)
-          for (const armName of Object.keys(config.SHIP_TYPES[name].arms || {})) {
-            firstWhere(`${name} may carry ${armName}`, (e) => (e.arms[name][armName] || 0) > 0)
+        firstWhere("a hull arrives", (e) => e.rivalsAtOnce > 0)
+        for (const faction of HULL_FACTIONS) {
+          for (const name of hullsFor(faction)) {
+            firstWhere(`${faction}: ${name}`, (e) => e.arrivals[name] > 0, faction)
+            for (const armName of Object.keys(config.SHIP_TYPES[name].arms || {})) {
+              firstWhere(
+                `${name} may carry ${armName}`,
+                (e) => (e.arms[name][armName] || 0) > 0,
+                faction,
+              )
+            }
           }
         }
-        firstWhere("specials drop", (e) => e.specials)
-        firstWhere("a second rival at once", (e) => e.rivalsAtOnce > 1)
-        firstWhere("a third rival at once", (e) => e.rivalsAtOnce > 2)
+        for (const id of SPECIAL_IDS) {
+          firstWhere(
+            `special drops: ${config.SPECIAL_TYPES[id].label}`,
+            (e) => e.specialKinds && e.specialKinds[id] > 0,
+          )
+        }
+        firstWhere("a second hull at once", (e) => e.rivalsAtOnce > 1)
+        firstWhere("a third hull at once", (e) => e.rivalsAtOnce > 2)
         firstWhere("the rock count caps", (e) => e.rocks >= config.PROGRESSION.rocks.max)
         firstWhere(
           "the hazard chance caps",
@@ -967,7 +1234,8 @@
           "WHEN THINGS FIRST APPEAR",
           "The first sector each thing can happen in, taken from the measured survey rather than " +
             "from the sector each registry names, so a gate that is reached through two conditions " +
-            "is reported where it actually opens.",
+            "is reported where it actually opens. Anything belonging to a faction is written in " +
+            "its colour.",
           el(
             "div",
             { className: "scroll" },
@@ -977,17 +1245,21 @@
               el(
                 "tbody",
                 {},
-                firsts.map(([label, sector]) =>
-                  el(
+                firsts.map(([label, sector, ramp]) => {
+                  const ink = inkFor(ramp)
+                  return el(
                     "tr",
                     {},
-                    el("td", { textContent: label, style: "min-width:280px" }),
+                    el("td", {
+                      textContent: label,
+                      style: `min-width:280px${ink ? `;color:${ink}` : ""}`,
+                    }),
                     el("td", {
                       textContent: sector === null ? "never" : `sector ${sector}`,
-                      style: `color:${sector === null ? "#5f79a6" : "#bcd0ee"}`,
+                      style: `color:${sector === null ? "#5f79a6" : ink || "#bcd0ee"}`,
                     }),
-                  ),
-                ),
+                  )
+                }),
               ),
             ),
           ),
@@ -1010,14 +1282,15 @@
           "counts",
           "HOW MUCH IS OUT THERE",
           "What a sector's plan states outright. Two measures on two charts rather than two scales " +
-            "on one.",
+            "on one. The hull count is every faction's together: what arrives is one roll over " +
+            "everything eligible, so a late sector's three may be any mix of rival and alien.",
           el("h3", { textContent: "ROCKS IN THE FIELD" }),
           el(
             "div",
             { className: "scroll" },
             columns(sectors, (e) => e.rocks, { label: true }),
           ),
-          el("h3", { textContent: "RIVALS ALIVE AT ONCE" }),
+          el("h3", { textContent: "HULLS ALIVE AT ONCE" }),
           el(
             "div",
             { className: "scroll" },
@@ -1027,7 +1300,10 @@
           el(
             "div",
             { className: "scroll" },
-            columns(sectors, (e) => e.arrivalGap, { colour: RAMP[3], format: (n) => `${n}s` }),
+            columns(sectors, (e) => e.arrivalGap, {
+              colour: RAMPS.base[3],
+              format: (n) => `${n}s`,
+            }),
           ),
         )
 
@@ -1041,7 +1317,7 @@
           "WHAT A ROCK IS CARRYING",
           `The chance any one rock in the sector carries each trait. A plan rolls these, so they ` +
             `are measured over ${PLAN_SAMPLES} plans a sector; the top row is the chance of a ` +
-            `hazard at all and the rest are that chance split between the kinds, so the four sum ` +
+            `hazard at all and the rest are that chance split between the kinds, so they sum ` +
             `to it. A trait's weight can grow per sector, which is why armed rocks come to crowd ` +
             `the others out.`,
           heatGrid(sectors, hazardRows, {
@@ -1052,14 +1328,33 @@
         )
 
         section(
-          "rivals",
-          "WHICH RIVAL ARRIVES",
+          "arrivals",
+          "WHICH HULL ARRIVES",
           `Asked of the spawner itself, with the field empty and the run set to that sector. ` +
             `Arrivals are weighed, so a type's share is its own weight over the total of ` +
-            `whatever else is eligible there, and this is worked out rather than sampled.`,
+            `whatever else is eligible there, and this is worked out rather than sampled. ` +
+            `The aliens are in their own green, and take most of the sector's arrivals once ` +
+            `they are in it.`,
+          el("h3", { textContent: "BY FACTION" }),
           heatGrid(
             sectors,
-            RIVAL_NAMES.map((name) => ({ label: name, key: name })),
+            HULL_FACTIONS.map((faction) => ({
+              label: faction,
+              faction,
+              ramp: faction,
+              emphasis: true,
+            })),
+            {
+              legend: "share of arrivals",
+              valueOf: (row, entry) => entry.factionShare[row.faction],
+            },
+          ),
+          el("h3", { textContent: "BY HULL" }),
+          heatGrid(
+            sectors,
+            HULL_FACTIONS.flatMap((faction) =>
+              hullsFor(faction).map((name) => ({ label: name, key: name, ramp: faction })),
+            ),
             { legend: "share of arrivals", valueOf: (row, entry) => entry.arrivals[row.key] },
           ),
           el("h3", { textContent: "AND WHAT IT TURNS UP CARRYING" }),
@@ -1067,16 +1362,19 @@
             className: "note",
             textContent:
               "Each optional module is rolled on its own as the ship spawns, from the same call the" +
-              " spawner makes, so a rival can carry any combination of them.",
+              " spawner makes, so a hull can carry any combination of them.",
           }),
           heatGrid(
             sectors,
-            RIVAL_NAMES.flatMap((name) =>
-              Object.keys(config.SHIP_TYPES[name].arms || {}).map((armName) => ({
-                label: `${name}: ${armName}`,
-                name,
-                armName,
-              })),
+            HULL_FACTIONS.flatMap((faction) =>
+              hullsFor(faction).flatMap((name) =>
+                Object.keys(config.SHIP_TYPES[name].arms || {}).map((armName) => ({
+                  label: `${name}: ${armName}`,
+                  name,
+                  armName,
+                  ramp: faction,
+                })),
+              ),
             ),
             {
               legend: "chance it arrives carrying it",
@@ -1085,104 +1383,125 @@
           ),
         )
 
+        // -- the aliens, on their own
+        const alienNames = hullsFor("alien")
+        const atPlateau = SURVEY.find((entry) => entry.sector === PLATEAU)
+        alienSection(
+          "aliens",
+          "THE ALIENS",
+          "A second hostile faction, held back until late and then taking most of what arrives. " +
+            "They are hostile to the rivals as well as to the player, so a late sector is a " +
+            "three-way fight rather than a harder version of an early one. Everything of theirs " +
+            "on this page is in their own green.",
+          el("h3", { textContent: "WHAT EACH ONE IS" }),
+          table(
+            [
+              "hull",
+              "arrives at",
+              `share at ${PLATEAU}`,
+              "at most at once",
+              "hunts the player",
+              "shield",
+              "guns",
+              "drive",
+            ],
+            alienNames.map((name) => {
+              const type = config.SHIP_TYPES[name]
+              return [
+                name,
+                type.spawn.fromSector,
+                pct(atPlateau ? atPlateau.arrivals[name] : 0),
+                type.spawn.maxConcurrent ?? "no limit",
+                type.hunts ? "yes" : "no",
+                namesOf(name, "shield").join(", ") || "-",
+                namesOf(name, "weapon").join(", ") || "-",
+                namesOf(name, "engine").join(", ") || "-",
+              ]
+            }),
+            () => "alien",
+          ),
+          el("h3", { textContent: "WHAT BENDS SPACE" }),
+          el("p", {
+            className: "note",
+            textContent:
+              "The faction's one mechanic, and the reason a sector with them in it does not look " +
+              "like one without: a warp field on the hull, and another on much of what it fires. " +
+              "`radius` is how far it reaches, `strength` how hard it pulls what is drawn through " +
+              "it, and `wave` how much that ripples.",
+          }),
+          table(
+            ["hull", "what warps", "radius", "strength", "wave", "notes"],
+            warpRows("alien"),
+            () => "alien",
+          ),
+          el("h3", { textContent: "HOW THE SECTOR CHANGES WHEN THEY ARRIVE" }),
+          heatGrid(
+            sectors,
+            [
+              { label: "rival share", faction: "rival", ramp: "rival", emphasis: true },
+              { label: "alien share", faction: "alien", ramp: "alien", emphasis: true },
+            ],
+            {
+              legend: "share of arrivals",
+              valueOf: (row, entry) => entry.factionShare[row.faction],
+            },
+          ),
+        )
+
         section(
           "specials",
           "SPECIALS",
-          "Whether a sector drops them at all, and which. The kind is picked by the game's own " +
-            "picker, measured over 400 drops, and it does not depend on the sector: what changes " +
-            "with the sector is only whether they come at all.",
+          `Whether a sector drops them at all, and which. The kind is picked by the game's own ` +
+            `picker with the run set to that sector, measured over ${SPECIAL_SAMPLES} drops a ` +
+            `sector, so a special given a sector to start from would show up here as a row that ` +
+            `begins late. At most ${config.PROGRESSION.specials.maxOnField} are on the field at ` +
+            `once.`,
           heatGrid(sectors, [{ label: "specials drop", key: "specials", emphasis: true }], {
             valueOf: (row, entry) => (entry.specials ? 1 : 0),
             format: (v) => (v ? "yes" : "no"),
           }),
           el("h3", { textContent: "WHICH KIND, WHEN ONE DROPS" }),
-          el(
-            "div",
-            { className: "scroll" },
-            el(
-              "table",
-              {},
-              el(
-                "thead",
-                {},
-                el(
-                  "tr",
-                  {},
-                  el("th", { textContent: "special" }),
-                  el("th", { textContent: "share of drops" }),
-                  el("th", { textContent: "at most on the field" }),
-                ),
-              ),
-              el(
-                "tbody",
-                {},
-                SPECIAL_KINDS.map(([kind, share]) =>
-                  el(
-                    "tr",
-                    {},
-                    el(
-                      "td",
-                      {},
-                      el("span", {
-                        className: "swatch",
-                        style: `background:${config.SPECIAL_TYPES[kind].colour}`,
-                      }),
-                      document.createTextNode(config.SPECIAL_TYPES[kind].label),
-                    ),
-                    el("td", { textContent: pct(share) }),
-                    el("td", { textContent: String(config.PROGRESSION.specials.maxOnField) }),
-                  ),
-                ),
-              ),
-            ),
+          heatGrid(
+            sectors,
+            SPECIAL_IDS.map((id) => ({
+              label: config.SPECIAL_TYPES[id].label,
+              key: id,
+            })),
+            {
+              legend: "share of drops",
+              valueOf: (row, entry) => (entry.specialKinds ? entry.specialKinds[row.key] : 0),
+            },
           ),
         )
 
         // -- the table view
         const columnsSpec = [
-          ["sector", (e) => e.sector],
-          ["rocks", (e) => e.rocks],
-          ["hazard", (e) => pct(e.hazardChance)],
-          ...HAZARD_KINDS.map((kind) => [kind, (e) => pct(e.hazardPerRock[kind])]),
-          ["rock guns", (e) => e.guns.join(" ") || "-"],
-          ["rivals", (e) => e.rivalsAtOnce],
-          ["gap", (e) => (e.arrivalGap ? `${round(e.arrivalGap)}s` : "-")],
-          ...RIVAL_NAMES.map((name) => [name, (e) => pct(e.arrivals[name])]),
-          ["specials", (e) => (e.specials ? "yes" : "no")],
-          ["worlds", (e) => e.planets.map((p) => p.kind).join(" ")],
-          ["nebula", (e) => e.nebula.colorA],
+          ["sector", (e) => e.sector, ""],
+          ["rocks", (e) => e.rocks, ""],
+          ["hazard", (e) => pct(e.hazardChance), ""],
+          ...HAZARD_KINDS.map((kind) => [kind, (e) => pct(e.hazardPerRock[kind]), ""]),
+          ["rock guns", (e) => e.guns.join(" ") || "-", ""],
+          ["hulls", (e) => e.rivalsAtOnce, ""],
+          ["gap", (e) => (e.arrivalGap ? `${round(e.arrivalGap)}s` : "-"), ""],
+          ...HULL_FACTIONS.flatMap((faction) =>
+            hullsFor(faction).map((name) => [
+              name,
+              (e) => pct(e.arrivals[name]),
+              inkFor(faction) ? "alien" : "",
+            ]),
+          ),
+          ["specials", (e) => (e.specials ? "yes" : "no"), ""],
+          ["worlds", (e) => e.planets.map((p) => p.kind).join(" "), ""],
+          ["nebula", (e) => e.nebula.colorA, ""],
         ]
         section(
           "table",
           "EVERY NUMBER",
           "The same figures as the strips above, for reading exactly rather than at a glance.",
-          el(
-            "div",
-            { className: "scroll" },
-            el(
-              "table",
-              {},
-              el(
-                "thead",
-                {},
-                el(
-                  "tr",
-                  {},
-                  columnsSpec.map(([name]) => el("th", { textContent: name })),
-                ),
-              ),
-              el(
-                "tbody",
-                {},
-                sectors.map((entry) =>
-                  el(
-                    "tr",
-                    {},
-                    columnsSpec.map(([, read]) => el("td", { textContent: String(read(entry)) })),
-                  ),
-                ),
-              ),
-            ),
+          table(
+            columnsSpec.map(([name]) => name),
+            sectors.map((entry) => columnsSpec.map(([, read]) => String(read(entry)))),
+            (i) => columnsSpec[i][2],
           ),
         )
 
