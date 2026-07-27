@@ -27,6 +27,7 @@ import {
   perpendicular,
   slicePolygon,
   segmentCircleEntry,
+  distanceToPolygon,
   convexContact,
   supportDistance,
   bearingTo,
@@ -1521,9 +1522,26 @@ export class Ship extends Entity {
   // grazed slab is lighter, quicker to come about, and closer to being finished. Anything
   // that was mounted on the part that came off goes with it: a gun on a severed corner is
   // on the corner.
-  reshape(worldPart) {
+  reshape(worldPart, removedParts = []) {
     const areaOf = (outline) => polygonArea(outline.map(([x, y]) => ({ x, y })))
     const before = areaOf(this.outlineLocal)
+    // Mounts are placed against the hull, and some sit a little outside it on purpose: a
+    // frigate's nozzles hang off the tail so the pair sweeps it round. So what a mount goes
+    // with is the piece it is nearest to, not the piece that happens to contain it, which
+    // took a hull's engines off it wherever the cut landed.
+    const going = []
+    for (const hp of this.hardpoints) {
+      if (!hp.module) {
+        continue
+      }
+      const at = this.mountWorld(hp.local)
+      const keptGap = distanceToPolygon(at, worldPart)
+      const lost = removedParts.some((part) => distanceToPolygon(at, part) < keptGap)
+      if (lost) {
+        going.push(hp)
+      }
+    }
+
     const cos = Math.cos(-this.angle),
       sin = Math.sin(-this.angle)
     const local = worldPart.map((p) => {
@@ -1535,11 +1553,8 @@ export class Ship extends Entity {
     const kept = before > 0 ? clamp(areaOf(local) / before, 0.05, 1) : 1
     this.hull = Math.max(1, Math.round(this.hull * kept))
     this.massScale *= kept
-    const ring = local.map(([x, y]) => ({ x, y }))
-    for (const hp of this.hardpoints) {
-      if (hp.module && !pointInPolygon({ x: hp.local[0], y: hp.local[1] }, ring)) {
-        hp.module = null
-      }
+    for (const hp of going) {
+      hp.module = null
     }
     this.refreshFitting()
     return kept

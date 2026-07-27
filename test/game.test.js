@@ -2299,6 +2299,43 @@ test("a graze takes a corner off a big hull and leaves it flying", () => {
   assert.equal(deep.dead, true, "a cut through the body is still a cut through the body")
 })
 
+test("a cut takes the mounts that were on the part it took, and no others", () => {
+  // Some mounts sit a little outside the outline on purpose: a frigate's nozzles hang off
+  // the tail so the pair sweeps it round, and the pincer's main gun is on the tip of its
+  // spike. A containment test called those "not on the hull" and took them off wherever
+  // the cut landed, which left a frigate steering about with no thrusters drawn.
+  const noseOff = (name, at) => {
+    const game = liveGame()
+    game.player.x = 500
+    game.player.y = -200
+    game.player.angle = Math.PI / 2
+    const ship = plainRival(500, 320, name, withoutShield(SHIP_TYPES[name].loadout))
+    ship.angle = 0
+    game.rivals = [ship]
+    // Across the hull rather than along it, close to the nose: the corner it takes is the
+    // front of the ship.
+    const beam = { a: { x: 500 + at, y: 0 }, dir: { x: 0, y: 1 }, b: { x: 500 + at, y: 700 } }
+    game.applyBeam(beam, game.player, playerWeapon)
+    return ship
+  }
+
+  const frigate = noseOff("frigate", 52)
+  assert.equal(frigate.dead, false, "it survives losing its nose")
+  const engines = [...frigate.modules()].filter((m) => m.kind === "engine")
+  assert.equal(engines.length, 2, "and keeps both nozzles, which sit off the tail")
+  assert.ok(frigate.accel > 0, "so it still has something to push it")
+  assert.ok(frigate.turnRate > 0, "and something to turn it")
+  const nose = frigate.hardpoints.find((hp) => hp.role === "nose")
+  assert.equal(nose.module, null, "what it lost is the gun that was on the part that went")
+
+  // And the pincer keeps the gun on its spike, which is also outside the outline.
+  const pincer = noseOff("alienFrigate", 62)
+  assert.equal(pincer.dead, false)
+  const main = pincer.hardpoints.find((hp) => hp.role === "nose")
+  assert.ok(main.module, "its main gun is on the piece it kept")
+  assert.equal([...pincer.modules()].filter((m) => m.kind === "engine").length, 2)
+})
+
 test("a small hull is finished by any cut at all, however light", () => {
   // The other half of the rule, and what keeps the existing behaviour: the whole of a
   // scout is a fraction of the smallest piece its plating holds together in, so there is

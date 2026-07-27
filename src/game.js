@@ -938,7 +938,10 @@ export class Game {
     if (survives) {
       // Still flying, with a flat edge where the corner used to be. Nothing is paid for a
       // graze: the ship is still there to be shot at.
-      ship.reshape(biggest)
+      ship.reshape(
+        biggest,
+        parts.filter((part) => part !== biggest),
+      )
       return true
     }
     if (fromPlayer) {

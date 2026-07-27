@@ -156,6 +156,27 @@ export function pointInPolygon(point, vertices) {
 }
 
 // Intersection point of segment a->b with segment c->d, or null.
+// How far a point lies from a polygon: zero when it is inside, and the distance to the
+// nearest edge when it is not. Wanted wherever something has to be assigned to the shape
+// it belongs to rather than the shape that happens to contain it - a nozzle mounted just
+// off the tail of a hull is on that hull, and a containment test says otherwise.
+export function distanceToPolygon(point, vertices) {
+  if (pointInPolygon(point, vertices)) {
+    return 0
+  }
+  let best = Infinity
+  for (let i = 0; i < vertices.length; i++) {
+    const a = vertices[i],
+      b = vertices[(i + 1) % vertices.length]
+    const vx = b.x - a.x,
+      vy = b.y - a.y
+    const len2 = vx * vx + vy * vy
+    const t = len2 > 0 ? clamp(((point.x - a.x) * vx + (point.y - a.y) * vy) / len2, 0, 1) : 0
+    best = Math.min(best, Math.hypot(point.x - (a.x + vx * t), point.y - (a.y + vy * t)))
+  }
+  return best
+}
+
 export function segmentIntersection(a, b, c, d) {
   const r = subtract(b, a)
   const s = subtract(d, c)
