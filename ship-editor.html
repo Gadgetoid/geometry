@@ -641,22 +641,14 @@
           // How the spawner reaches a type, written where its settings are, since
           // the two ways in are exclusive and only one design can take the second.
           note:
-            "A rolled type is offered once FROM SECTOR is reached, at CHANCE each time a rival is " +
-            "due, up to MAX AT ONCE alive. Exactly one design is the fallback, flown in when no " +
-            "roll lands; its chance and max are never read.",
+            "A type joins the roll once FROM SECTOR is reached and takes a share of arrivals equal " +
+            "to its WEIGHT over the total of whatever else is eligible. MAX AT ONCE weighs it out " +
+            "of the running while that many are already alive; leave it at 0 for no limit, which " +
+            "is what guarantees something is always available to arrive.",
           fields: [
             { path: "spawn.fromSector", label: "FROM SECTOR", step: 1 },
-            {
-              path: "spawn.fallback",
-              label: "REACHED BY",
-              type: "choice",
-              options: [
-                [false, "A ROLL"],
-                [true, "BEING THE FALLBACK"],
-              ],
-            },
-            { path: "spawn.chance", label: "CHANCE", step: 0.05, rolledOnly: true },
-            { path: "spawn.maxConcurrent", label: "MAX AT ONCE", step: 1, rolledOnly: true },
+            { path: "spawn.weight", label: "WEIGHT", step: 1 },
+            { path: "spawn.maxConcurrent", label: "MAX AT ONCE", step: 1 },
             { path: "lifeTime.0", label: "LIFETIME MIN", step: 1 },
             { path: "lifeTime.1", label: "LIFETIME MAX", step: 1 },
             { path: "hunts", label: "HUNTS PLAYER", type: "bool" },
@@ -713,7 +705,7 @@
           energyMax: 90,
           regen: 22,
           lifeTime: [16, 26],
-          spawn: { fromSector: 4, chance: 0.3, maxConcurrent: 1, fallback: false },
+          spawn: { fromSector: 4, weight: 2, maxConcurrent: 1 },
           hunts: false,
           killScore: 400,
           blastScore: 200,
@@ -743,6 +735,11 @@
         const out = {
           outline: state.outline.map((p) => p.slice()),
           mass: Number(state.mass),
+          // The loadout goes in because thrust is the sum of the engines on it.
+          // Leaving it out made every hull derive an acceleration of zero, which
+          // then differed from what the registry stated and froze the lot as
+          // overrides the moment a preset was loaded.
+          loadout: mountedEntries(state).map(({ entry }) => entry),
         }
         if (state.kind === "rival") {
           out.armour = Number(state.armour)
@@ -753,6 +750,27 @@
           }
         }
         return out
+      }
+
+      // What each hardpoint carries, as the loadout entries config.js would hold.
+      // One reader for the snippet, the derived stats and the warnings, so they
+      // cannot disagree about what is fitted.
+      function mountedEntries(state = ship) {
+        return state.hardpoints
+          .map((hp, index) => ({ hp, index }))
+          .filter(({ hp }) => hp.mount.module !== "none")
+          .map(({ hp, index }) => {
+            const entry = { hp: index }
+            if (hp.mount.module === "weapon") {
+              entry.weapon = hp.mount.weapon
+              entry.controller = hp.mount.controller
+            } else if (hp.mount.module === "shield") {
+              entry.shield = hp.mount.shield
+            } else if (hp.mount.module === "engine") {
+              entry.engine = hp.mount.engine
+            }
+            return { entry, rolled: hp.mount.rolled }
+          })
       }
 
       // Every derived field for the design as it stands. The shape fields are
@@ -2335,10 +2353,6 @@
           input.id = id
           input.step = field.step ?? 1
           input.value = getPath(ship, field.path) ?? 0
-          if (field.rolledOnly && ship.spawn.fallback) {
-            input.disabled = true
-            input.title = "the fallback is flown in when no roll lands, so this is never read"
-          }
           input.addEventListener("input", () => {
             setPath(ship, field.path, Number(input.value))
             buildDerived() // mass, power and armour all move the derived settings
@@ -2676,12 +2690,11 @@
         }
       }
 
-      // Which designs already in config.js claim the fallback slot, in table order.
-      // The spawner keeps the last one it walks past and never rolls a fallback
-      // type, so a second claim silently costs one of the two every spawn.
-      function fallbackClaims() {
+      // Designs with no concurrency limit. At least one is needed, or every type can
+      // weigh out of the running at once and an arrival is silently dropped.
+      function unlimitedClaims() {
         return Object.entries(SHIP_TYPES)
-          .filter(([, type]) => type.spawn && type.spawn.fallback)
+          .filter(([, type]) => type.spawn && !(type.spawn.maxConcurrent >= 1))
           .map(([name]) => name)
       }
 
@@ -2728,8 +2741,8 @@
           const first = rivalsFromSector()
           const mine = Number(ship.spawn.fromSector) <= first
           rows.push(["RIVALS FROM", `sector ${first}${mine ? " (this design sets it)" : ""}`])
-          const claims = fallbackClaims()
-          rows.push(["FALLBACK IS", claims.length ? claims.join(", ") : "nothing in config.js yet"])
+          const open = unlimitedClaims()
+          rows.push(["ALWAYS AVAILABLE", open.length ? open.join(", ") : "none, which is a fault"])
         }
         facts.innerHTML = rows
           .map(([name, value]) => `<b>${name}</b><span>${value}</span>`)
@@ -2760,18 +2773,14 @@
           warnings.push("no engine fitted, so nothing pushes the hull along")
         }
         if (ship.kind === "rival") {
-          const rivals = fallbackClaims().filter((name) => name !== ship.key)
-          if (ship.spawn.fallback && rivals.length) {
+          if (!(Number(ship.spawn.weight) > 0)) {
+            warnings.push("a weight of zero never arrives")
+          }
+          if (!unlimitedClaims().length) {
             warnings.push(
-              `${rivals.join(" and ")} already claims the fallback slot, and only the last ` +
-                "claim in the table is used: one of them will never spawn",
+              "every design limits how many may be alive, so a sector can run out of types it " +
+                "is allowed to spawn: one of them should leave MAX AT ONCE at 0",
             )
-          }
-          if (!ship.spawn.fallback && !(Number(ship.spawn.chance) > 0)) {
-            warnings.push("a rolled type with no chance is never picked")
-          }
-          if (!ship.spawn.fallback && !(Number(ship.spawn.maxConcurrent) >= 1)) {
-            warnings.push("max at once below 1 leaves no room for the roll to land")
           }
         }
         const roles = ship.hardpoints.map((hp) => hp.role)
@@ -2898,10 +2907,8 @@
 
         if (ship.kind === "rival") {
           const spawn = [`fromSector: ${round(ship.spawn.fromSector)}`]
-          if (ship.spawn.fallback) {
-            spawn.push("fallback: true")
-          } else {
-            spawn.push(`chance: ${round(ship.spawn.chance)}`)
+          spawn.push(`weight: ${round(ship.spawn.weight)}`)
+          if (Number(ship.spawn.maxConcurrent) >= 1) {
             spawn.push(`maxConcurrent: ${round(ship.spawn.maxConcurrent)}`)
           }
           push(`spawn: ${braces(spawn, indent, "spawn: ")},`)
