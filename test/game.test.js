@@ -1379,6 +1379,123 @@ test("the alien field is not a wall: it is passed through by what pushes hard en
   assert.equal(alien.blockingRadius("projectile"), 0, "and shot is not blocked, but repelled")
 })
 
+// Every lens and tear the view hands the renderer for a frame.
+function distortion(game) {
+  const lenses = []
+  const tears = []
+  const renderer = new Proxy(
+    {
+      setLenses: (list) => lenses.push(...list),
+      setTears: (list) => tears.push(...list),
+      text: () => {},
+    },
+    { get: (target, key) => (key in target ? target[key] : () => {}) },
+  )
+  new GameView(renderer).render(game)
+  return { lenses, tears }
+}
+
+test("what bends space says so, and the view finds it", () => {
+  const game = liveGame()
+  beSolid(game.player)
+  game.asteroids = [new Asteroid({ vertices: square(-600, -600, 40), spin: 0 })]
+  assert.deepEqual(distortion(game).lenses, [], "an ordinary sector bends nothing")
+
+  // A hull that states a warp bends the space it occupies.
+  const alien = plainRival(500, 320, "alienFrigate")
+  game.rivals = [alien]
+  const withAlien = distortion(game).lenses
+  assert.equal(withAlien.length, 1, "the pincer is one source")
+  assert.ok(withAlien[0].strength > 0 && withAlien[0].radius > 0, "with a strength and a size")
+  assert.ok(
+    withAlien[0].x > 0 && withAlien[0].x < 1 && withAlien[0].y > 0 && withAlien[0].y < 1,
+    "placed on screen, in the units the shader wants",
+  )
+
+  // So do its shots, in flight.
+  game.projectiles = [
+    new Projectile(600, 320, -10, 0, 10, alien, WEAPON_TYPES.warpOrb),
+    new Projectile(650, 320, -10, 0, 10, alien, WEAPON_TYPES.autocannon),
+  ]
+  const withShots = distortion(game).lenses
+  assert.equal(withShots.length, 2, "the orb bends space and the ordinary round does not")
+
+  // A rival hull states none, so nothing about it distorts.
+  game.rivals = [plainRival(500, 320, "frigate")]
+  game.projectiles = []
+  assert.deepEqual(distortion(game).lenses, [], "a rival frigate bends nothing")
+})
+
+test("a tear fades out of the picture rather than being switched off", () => {
+  const game = liveGame()
+  beSolid(game.player)
+  game.asteroids = [new Asteroid({ vertices: square(-600, -600, 40), spin: 0 })]
+  assert.deepEqual(distortion(game).tears, [], "nothing torn to begin with")
+
+  game.glitchAt(game.player.x, game.player.y, 1, 200, 0.3)
+  const fresh = distortion(game).tears
+  assert.equal(fresh.length, 1)
+  assert.ok(Math.abs(fresh[0].strength - 1) < 1e-6, "a fresh tear is at full strength")
+
+  game.advance(0.15)
+  const half = distortion(game).tears[0]
+  assert.ok(half.strength < 0.6 && half.strength > 0.4, `half way through it is ${half.strength}`)
+
+  game.advance(0.2)
+  assert.deepEqual(distortion(game).tears, [], "and then it is gone")
+})
+
+test("an orb landing on the player tears the picture", () => {
+  const game = liveGame()
+  beSolid(game.player)
+  withEquipment(game, "shield", "playerShieldMk4")
+  game.asteroids = [new Asteroid({ vertices: square(-600, -600, 40), spin: 0 })]
+  game.player.x = 500
+  game.player.y = 320
+  const orb = new Projectile(
+    560,
+    320,
+    -WEAPON_TYPES.warpOrb.speed,
+    0,
+    10,
+    null,
+    WEAPON_TYPES.warpOrb,
+  )
+  game.projectiles = [orb]
+  for (let i = 0; i < 60 && !orb.dead; i++) {
+    game.player.x = 500
+    game.player.y = 320
+    game.advance(1 / 60)
+  }
+  assert.ok(orb.dead, "the orb landed")
+  assert.ok(game.glitches.length > 0, "and tore the picture where it did")
+
+  // A round that says nothing about tearing does not.
+  const quiet = liveGame()
+  beSolid(quiet.player)
+  quiet.asteroids = [new Asteroid({ vertices: square(-600, -600, 40), spin: 0 })]
+  withEquipment(quiet, "shield", "playerShieldMk4")
+  quiet.player.x = 500
+  quiet.player.y = 320
+  const round = new Projectile(
+    560,
+    320,
+    -WEAPON_TYPES.autocannon.speed,
+    0,
+    10,
+    null,
+    WEAPON_TYPES.autocannon,
+  )
+  quiet.projectiles = [round]
+  for (let i = 0; i < 60 && !round.dead; i++) {
+    quiet.player.x = 500
+    quiet.player.y = 320
+    quiet.advance(1 / 60)
+  }
+  assert.ok(round.dead, "the round landed")
+  assert.equal(quiet.glitches.length, 0, "and left the picture alone")
+})
+
 test("an alien plant is deep enough to run a field through a crossfire", () => {
   // A bubble only costs energy when something hits it; a field pays for everything it
   // holds off, and an alien arrives into a sector already thick with other people's

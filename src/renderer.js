@@ -20,6 +20,8 @@ export class Renderer {
   // Optional: a backend without post-processing simply has no distortion, and
   // the expanding rings the ship draws carry the effect on their own.
   setWarp(_uvX, _uvY, _strength) {}
+  setLenses(_list) {}
+  setTears(_list) {}
   // False while the backend cannot draw (e.g. a lost GPU context), so the loop
   // can skip the frame instead of issuing calls that would be discarded.
   get ready() {

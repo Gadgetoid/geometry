@@ -134,6 +134,7 @@ export class Game {
     this.rivals = []
     this.particles = []
     this.laserShots = []
+    this.glitches = [] // short-lived tears in the picture, see glitchAt
     this.player = null
 
     this.score = 0
@@ -992,6 +993,7 @@ export class Game {
     this.specialPickups = []
     this.rivals = []
     this.laserShots = []
+    this.glitches = []
     this.particles = []
     this.stats = this.blankStats()
     this.summaryData = null
@@ -1762,6 +1764,12 @@ export class Game {
     this.resolveShipCollisions()
     this.rivals = this.rivals.filter((r) => !r.dead)
     this.updateParticles(dt)
+    for (let i = this.glitches.length - 1; i >= 0; i--) {
+      this.glitches[i].life -= dt
+      if (this.glitches[i].life <= 0) {
+        this.glitches.splice(i, 1)
+      }
+    }
     for (let i = this.laserShots.length - 1; i >= 0; i--) {
       this.laserShots[i].age += dt
       if (this.laserShots[i].age > (this.laserShots[i].life || 0.4)) {
@@ -1839,6 +1847,14 @@ export class Game {
         return
       }
     }
+  }
+
+  // Tear the picture at a world point: a short-lived, local failure of the screen
+  // itself, for a hit that should feel like it reached out of the game. The view turns
+  // these into the sources the composite pass reads; nothing in the simulation depends
+  // on them, so a renderer that cannot show them simply does not.
+  glitchAt(x, y, strength = 1, radius = 150, seconds = 0.28) {
+    this.glitches.push({ x, y, strength, radius, life: seconds, maxLife: seconds })
   }
 
   // A piece hit harder than it holds together comes apart where it was struck, rather
@@ -2136,6 +2152,7 @@ export class Game {
     this.rivals = []
     this.particles = []
     this.laserShots = []
+    this.glitches = []
     this.summaryData = { level: run.level, bailed: !!run.bailed, resumed: true }
     this.shopSelection = 0
     this.shopSlot = 0

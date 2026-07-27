@@ -21,6 +21,10 @@ import { VIEW_W, VIEW_H } from "./config.js"
 import { clamp } from "./math.js"
 
 const SCENE_W = 2048 // fixed internal scene resolution (16:10, matches 1024x640)
+// How many distortion sources the composite pass holds. Matched to the LENSES and TEARS
+// constants in COMPOSITE_FS, since a loop over a fixed array is what a shader can do.
+const LENS_LIMIT = 8
+const TEAR_LIMIT = 6
 const SCENE_H = 1280
 const CAMERA_D = 900 // camera distance to the gameplay plane
 const HALF_W = VIEW_W / 2
@@ -358,10 +362,73 @@ const COMPOSITE_FS = `#version 300 es
   uniform float uTime;
   uniform vec3 uWarp;         // xy = ripple centre in uv, z = strength (0 = off)
   uniform float uAspect;
+  // Space bent around a thing, and space torn where one has been hit. Lists, because a
+  // sector holds more than one alien: xy is the centre in uv, z the strength, w the
+  // radius in uv. A count of zero costs one comparison.
+  const int LENSES = 8;
+  const int TEARS = 6;
+  uniform vec4 uLens[LENSES];
+  uniform int uLensCount;
+  uniform vec4 uTear[TEARS];
+  uniform int uTearCount;
   vec3 sceneSample(vec2 uv) {
     vec3 s = texture(uScene, uv).rgb;
     vec3 b = texture(uBloom, uv).rgb;
     return s + b * uBloom0;
+  }
+  float hash(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
+  // What an alien does to the space it occupies: samples are drawn inward toward the
+  // centre, hardest in the middle and nothing at the edge, so what is behind it swells
+  // and slides as it passes. Aspect-corrected, so the region stays round.
+  vec2 lens(vec2 uv) {
+    for (int i = 0; i < LENSES; i++) {
+      if (i >= uLensCount) { break; }
+      vec4 l = uLens[i];
+      vec2 d = uv - l.xy;
+      d.x *= uAspect;
+      float dist = length(d);
+      if (dist >= l.w) { continue; }
+      float fall = 1.0 - dist / l.w;
+      d.x /= uAspect;
+      uv -= d * (l.z * fall * fall);
+    }
+    return uv;
+  }
+  // How badly the picture is failing here, over every tear on screen.
+  float tearAt(vec2 uv) {
+    float worst = 0.0;
+    for (int i = 0; i < TEARS; i++) {
+      if (i >= uTearCount) { break; }
+      vec4 t = uTear[i];
+      vec2 d = uv - t.xy;
+      d.x *= uAspect;
+      float dist = length(d);
+      if (dist >= t.w) { continue; }
+      worst = max(worst, t.z * (1.0 - dist / t.w));
+    }
+    return worst;
+  }
+  // How far one scanline of one colour channel is thrown. Most lines sit still and a few
+  // go a long way, which is what tearing looks like: displacing all of them evenly reads
+  // as motion blur. The seed is the channel, so the three come apart independently.
+  float lineOffset(float line, float seed, float strength) {
+    float roll = hash(line * 1.7 + seed + floor(uTime * 34.0) * 3.1);
+    float thrown = step(1.0 - strength * 0.7, roll);
+    float amount = (hash(line * 3.3 + seed + 11.0) - 0.5) * 2.0;
+    return thrown * amount * strength * 0.085;
+  }
+  // The picture coming apart: fine horizontal lines, each thrown by its own amount, each
+  // channel thrown separately, and quantised along the line so what has moved reads as
+  // data rather than as a smear.
+  vec3 torn(vec2 uv, float strength) {
+    float line = floor(uv.y * 190.0);
+    float blocky = floor(uv.x * 260.0) / 260.0;
+    float x = mix(uv.x, blocky, strength);
+    return vec3(
+      sceneSample(vec2(x + lineOffset(line, 0.0, strength), uv.y)).r,
+      sceneSample(vec2(x + lineOffset(line, 7.0, strength), uv.y)).g,
+      sceneSample(vec2(x + lineOffset(line, 19.0, strength), uv.y)).b
+    );
   }
   // Concentric waves running out from the warp point, strongest at its centre
   // and dying away with distance: the surface of the sector rippling like water.
@@ -388,20 +455,27 @@ const COMPOSITE_FS = `#version 300 es
         frag = vec4(0.0, 0.0, 0.0, 1.0);
         return;
       }
-      uv = ripple(uv);
-      // chromatic aberration grows toward the edges
-      float ca = 0.0006 + 0.0020 * r2;
-      vec2 off = normalize(c + 1e-5) * ca;
+      uv = lens(ripple(uv));
+      float rip = tearAt(uv);
       vec3 col;
-      col.r = sceneSample(uv + off).r;
-      col.g = sceneSample(uv).g;
-      col.b = sceneSample(uv - off).b;
+      if (rip > 0.001) {
+        col = torn(uv, rip);
+      } else {
+        // chromatic aberration grows toward the edges
+        float ca = 0.0006 + 0.0020 * r2;
+        vec2 off = normalize(c + 1e-5) * ca;
+        col.r = sceneSample(uv + off).r;
+        col.g = sceneSample(uv).g;
+        col.b = sceneSample(uv - off).b;
+      }
       // scanlines + gentle vignette (keeps the curved screen edges visible)
       float scan = 0.93 + 0.07 * sin(uv.y * 1400.0);
       float vig = mix(1.0, smoothstep(2.7, 0.7, r2), 0.45);
       frag = vec4(col * scan * vig, 1.0);
     } else {
-      frag = vec4(sceneSample(ripple(uv)), 1.0);
+      uv = lens(ripple(uv));
+      float rip = tearAt(uv);
+      frag = vec4(rip > 0.001 ? torn(uv, rip) : sceneSample(uv), 1.0);
     }
   }`
 
@@ -468,6 +542,11 @@ export class WebGLRenderer extends Renderer {
     this.crtEnabled = true
     this.time = 0
     this.warp = [0, 0, 0] // ripple centre in uv plus strength
+    // Space bent and space torn, packed as vec4s for the composite pass.
+    this.lensData = new Float32Array(LENS_LIMIT * 4)
+    this.lensCount = 0
+    this.tearData = new Float32Array(TEAR_LIMIT * 4)
+    this.tearCount = 0
     this.eye = [HALF_W, HALF_H]
     this.passZ = 0
     this.contextLost = false
@@ -1212,6 +1291,14 @@ export class WebGLRenderer extends Renderer {
     gl.uniform1f(this.#uniform(prog, "uTime"), this.time)
     gl.uniform3f(this.#uniform(prog, "uWarp"), this.warp[0], this.warp[1], this.warp[2])
     gl.uniform1f(this.#uniform(prog, "uAspect"), SCENE_W / SCENE_H)
+    gl.uniform1i(this.#uniform(prog, "uLensCount"), this.lensCount)
+    if (this.lensCount > 0) {
+      gl.uniform4fv(this.#uniform(prog, "uLens"), this.lensData)
+    }
+    gl.uniform1i(this.#uniform(prog, "uTearCount"), this.tearCount)
+    if (this.tearCount > 0) {
+      gl.uniform4fv(this.#uniform(prog, "uTear"), this.tearData)
+    }
     gl.bindVertexArray(this.emptyVao)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
     gl.enable(gl.BLEND)
@@ -1230,6 +1317,30 @@ export class WebGLRenderer extends Renderer {
     this.warp[0] = uvX
     this.warp[1] = uvY
     this.warp[2] = strength
+  }
+
+  // Where space is bent this frame, and where it is torn. A source is {x, y} in uv with
+  // a strength and a radius, also in uv; the view rebuilds both lists every frame from
+  // whatever is on screen. More than the shader holds is dropped, and which to keep is
+  // the view's business rather than this one's.
+  setLenses(list) {
+    this.lensCount = this.#packSources(list, this.lensData, LENS_LIMIT)
+  }
+
+  setTears(list) {
+    this.tearCount = this.#packSources(list, this.tearData, TEAR_LIMIT)
+  }
+
+  #packSources(list, into, limit) {
+    const count = Math.min(list.length, limit)
+    for (let i = 0; i < count; i++) {
+      const source = list[i]
+      into[i * 4] = source.x
+      into[i * 4 + 1] = source.y
+      into[i * 4 + 2] = source.strength
+      into[i * 4 + 3] = source.radius
+    }
+    return count
   }
 
   setContentRect(xCss, yCss, wCss, hCss, dpr) {

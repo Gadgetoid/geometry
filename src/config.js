@@ -592,6 +592,9 @@ export const WEAPON_TYPES = {
     // takes four seconds to come about, and it does not live that long.
     homing: { turn: 0.8, reach: 700 },
     shot: { radius: 5.5, streak: 0, pulse: 9 },
+    // What it does to the space it is travelling through, which is how it does its
+    // damage: `radius` in world units, `strength` how hard the picture is drawn inward.
+    warp: { radius: 46, strength: 0.32 },
     // It lands like something with weight behind it: a shower of green off the point of
     // contact, a ring going out with it and a good shove of the screen. A round that
     // reaches nothing still comes apart, rather than winking out of existence.
@@ -601,6 +604,9 @@ export const WEAPON_TYPES = {
       speed: [70, 280],
       ring: { count: 14, speed: 210 },
       shake: 13,
+      // And it tears the picture where it landed, briefly: the one thing in the game
+      // that breaks the screen rather than something in the sector.
+      glitch: { strength: 1, radius: 210 },
     },
     colour: PALETTE.alien.shot,
     survivesDebris: true,
@@ -1639,6 +1645,8 @@ const SHIP_DESIGNS = {
     ],
     colour: PALETTE.alien.hull,
     faction: "alien",
+    // The biggest of them bends the most, and reaches past its own jaws.
+    warp: { radius: 190, strength: 0.42 },
     // Twice the material of a frigate for the same laden 6, which is what a hull this
     // wide and this hollow comes to, and 728 of hull because armour times area is
     // what decides that. Bare here: its plant, field, drives and five guns make up the
@@ -1705,6 +1713,9 @@ const SHIP_DESIGNS = {
     ],
     colour: PALETTE.alien.hull,
     faction: "alien",
+    // Space bends around it. Read by the view, which turns it into a lens over whatever
+    // is behind the hull, so a sector with one in it looks wrong before a shot is fired.
+    warp: { radius: 70, strength: 0.3 },
     mass: 0.58, // bare hull; its loadout brings it to the 0.7 of the scout it answers
     armour: 1,
     lifeTime: [16, 26],
@@ -1767,6 +1778,7 @@ const SHIP_DESIGNS = {
     ],
     colour: PALETTE.alien.hull,
     faction: "alien",
+    warp: { radius: 66, strength: 0.28 },
     mass: 0.47, // bare hull; laden it matches the seeker at 0.8
     armour: 1.2,
     lifeTime: [26, 36],

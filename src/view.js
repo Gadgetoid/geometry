@@ -242,6 +242,7 @@ export class GameView {
     }
     r.popView()
     this.#warp(game, c)
+    this.#distortion(game, c)
     r.endFrame()
   }
 
@@ -262,6 +263,57 @@ export class GameView {
     const screenX = VIEW_W / 2 + (p.x - centre.x)
     const screenY = VIEW_H / 2 + (p.y - centre.y)
     this.renderer.setWarp(screenX / VIEW_W, 1 - screenY / VIEW_H, 1 - p.warp)
+  }
+
+  // Everything bending or breaking the picture this frame, in the screen-space units the
+  // composite pass wants. Two lists: alien hulls and their shots bend space around
+  // themselves continuously, and a hit that should feel like it reached out of the game
+  // tears it briefly.
+  //
+  // Rebuilt every frame from what is on screen rather than kept anywhere, so nothing has
+  // to remember to take a source away when the thing that owned it dies. Sorted by how
+  // strong each is, because the shader holds a fixed few and the strongest are the ones
+  // worth keeping.
+  #distortion(game, centre) {
+    const r = this.renderer
+    if (!r.setLenses) {
+      return
+    }
+    if (game.phase === "title" || !game.inSector() || game.paused) {
+      r.setLenses([])
+      r.setTears([])
+      return
+    }
+    // World to uv, with the same vertical flip the ripple uses: the scene target has its
+    // origin at the bottom.
+    const source = (x, y, radius, strength) => ({
+      x: (VIEW_W / 2 + (x - centre.x)) / VIEW_W,
+      y: 1 - (VIEW_H / 2 + (y - centre.y)) / VIEW_H,
+      radius: radius / VIEW_W,
+      strength,
+    })
+    const lenses = []
+    for (const rival of game.rivals) {
+      const warp = rival.type.warp
+      if (warp && rival.inPlay()) {
+        lenses.push(source(rival.x, rival.y, warp.radius, warp.strength))
+      }
+    }
+    for (const shot of game.projectiles) {
+      const warp = shot.type && shot.type.warp
+      if (warp) {
+        lenses.push(source(shot.x, shot.y, warp.radius, warp.strength))
+      }
+    }
+    lenses.sort((a, b) => b.strength * b.radius - a.strength * a.radius)
+    r.setLenses(lenses)
+
+    const tears = game.glitches.map((g) =>
+      // A tear closes by fading, so its strength is what is left of its life.
+      source(g.x, g.y, g.radius, g.strength * clamp(g.life / g.maxLife, 0, 1)),
+    )
+    tears.sort((a, b) => b.strength - a.strength)
+    r.setTears(tears)
   }
 
   #planets(game) {

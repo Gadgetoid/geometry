@@ -1217,6 +1217,11 @@ export class Projectile extends Entity {
       if (hitPlayer && impact.shake) {
         game.screenShake = Math.max(game.screenShake, impact.shake)
       }
+      // A hit that should feel like it reached out of the game tears the picture where
+      // it landed. Only on the player: nothing else has a screen to break.
+      if (hitPlayer && impact.glitch) {
+        game.glitchAt(at.x, at.y, impact.glitch.strength, impact.glitch.radius)
+      }
     } else {
       game.burst(at.x, at.y, sparks, colour, 40, 140, 0.4)
       if (hitPlayer) {
