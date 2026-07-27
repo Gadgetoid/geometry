@@ -1433,6 +1433,100 @@ const SHIP_DESIGNS = {
     blastScore: 500,
     oreDrop: 9,
   },
+  // The first of the aliens: a pincer, the same length as a frigate and three times
+  // as wide, with its mouth facing forward and a spike down the middle of it. Nothing
+  // about the shape is decoration - it is the collision outline, the thing a beam
+  // crosses and the thing a cut divides, so the mouth is a real void a rock can sit
+  // in without touching anything.
+  //
+  // The jaw guns are held to the front: a mount states how far off the hull's facing
+  // it can be brought to bear, and one buried in a jaw covers what is ahead and
+  // nothing behind. The pair at the back traverse freely and mind whatever comes at
+  // it, which is what makes them the defensive ones.
+  //
+  // Still to come, see ROADMAP.md: the singularity it should hold in the jaws, the
+  // green burn where it is cut, the glitch pass over it, and a spawn budget of its
+  // own. Until that last one it shares the rivals' budget, so an alien arriving is a
+  // rival that did not.
+  alienFrigate: {
+    outline: [
+      [-20, 25],
+      [-15, 35],
+      [0, 45],
+      [20, 45],
+      [35, 35],
+      [75, 35],
+      [80, 45],
+      [30, 70],
+      [0, 75],
+      [-25, 70],
+      [-50, 50],
+      [-70, 25],
+      [-70, 15],
+      [-65, 10],
+      [-65, -10],
+      [-70, -15],
+      [-70, -25],
+      [-50, -50],
+      [-25, -70],
+      [0, -75],
+      [30, -70],
+      [80, -45],
+      [75, -35],
+      [35, -35],
+      [20, -45],
+      [0, -45],
+      [-15, -35],
+      [-20, -25],
+      [-15, -10],
+      [15, -5],
+      [15, 5],
+      [-15, 10],
+    ],
+    colour: PALETTE.alien.hull,
+    faction: "alien",
+    // Twice the material of a frigate for the same mass, which is what a hull this
+    // wide and this hollow comes to, and 728 of hull because armour times area is
+    // what decides that.
+    mass: 4.45,
+    armour: 0.6,
+    lifeTime: [34, 50],
+    hardpoints: [
+      // On the tip of the spike, which is where the singularity goes when there is
+      // one: for now it is a cannon, and a beam draws its muzzle here.
+      { local: [15, 0], role: "nose" },
+      { local: [70, -40], role: "gun" }, // in the jaws, facing forward
+      { local: [70, 40], role: "gun" },
+      { local: [-50, -40], role: "gun" }, // at the back, traversing freely
+      { local: [-50, 40], role: "gun" },
+      { local: [-40, 0], role: "core" },
+      { local: [-70, -20], role: "engine" },
+      { local: [-70, 20], role: "engine" },
+    ],
+    loadout: [
+      { hp: 0, weapon: "cannonLaser", controller: "hunter" },
+      // Just under a right angle either side, so a jaw gun covers the mouth and the
+      // approach to it and cannot answer anything astern.
+      { hp: 1, weapon: "autocannon", controller: "turret", arc: 1.5 },
+      { hp: 2, weapon: "autocannon", controller: "turret", arc: 1.5 },
+      { hp: 3, weapon: "autocannon", controller: "turret" },
+      { hp: 4, weapon: "autocannon", controller: "turret" },
+      { hp: 6, engine: "siegeDrive" },
+      { hp: 7, engine: "siegeDrive" },
+      {
+        hp: 5,
+        core: "siegeCore",
+        fitted: { shield: "bulwark", radar: "huntingArray", thruster: "siegeJets" },
+      },
+    ],
+    spawn: { fromSector: 6, weight: 2, maxConcurrent: 1 },
+    hunts: true,
+    debrisMaterial: SHIP_PLATING,
+    debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
+    killScore: 900,
+    blastScore: 500,
+    oreDrop: 9,
+  },
 }
 
 export const SHIP_TYPES = Object.fromEntries(

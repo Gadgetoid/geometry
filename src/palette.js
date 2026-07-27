@@ -78,6 +78,13 @@ export const PALETTE = {
     seekerBeam: "#ff6ad5",
   },
 
+  // alien ships. Green, and nothing else on screen is: the sector reads at a glance
+  // as having something in it that is not playing the same game. The burn colour and
+  // the glitch pass over them are still to come, see ROADMAP.md.
+  alien: {
+    hull: "#5cff9a",
+  },
+
   // asteroids. Plain rock is a size ramp between `sizeCool` and `sizeWarm`;
   // the others mark what a rock is carrying.
   rock: {

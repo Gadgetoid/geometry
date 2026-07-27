@@ -1989,6 +1989,16 @@ test("a mount only fires where it can bear", () => {
   assert.equal(cannon.arc, WEAPON_TYPES.cannonLaser.arc)
 })
 
+test("the pincer's jaw guns face forward and its rear pair do not", () => {
+  const design = SHIP_TYPES.alienFrigate
+  const arcs = design.loadout
+    .filter((entry) => entry.weapon === "autocannon")
+    .map((entry) => entry.arc ?? Infinity)
+  assert.equal(arcs.length, 4, "four turrets")
+  assert.equal(arcs.filter((arc) => arc < Math.PI / 2).length, 2, "two held to the front")
+  assert.equal(arcs.filter((arc) => arc === Infinity).length, 2, "two that traverse freely")
+})
+
 test("a rock costs a rival hull, as it costs the player energy", () => {
   for (const typeName of Object.keys(SHIP_TYPES)) {
     assert.ok(ramARock(typeName) > 0, `a ${typeName} driving into a rock must be worn down by it`)
