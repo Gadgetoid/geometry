@@ -3850,6 +3850,46 @@ test("an open menu meets the box it belongs to, in that item's colour", () => {
   )
 })
 
+test("the preview shows the turret that would be on the mount, facing forward", () => {
+  // A turret is bought from a list of names, and a name says nothing about the size of
+  // the thing that turns up on the ship. The mount the cursor is on shows it.
+  const game = liveGame()
+  game.upgrades.owned.turret = ["defenseFlak"]
+  game.setFitted("turret", 0, "defenseFlak")
+  game.player.fitEquipment(game)
+  game.enterShop()
+  const barrels = () => {
+    const lines = []
+    const renderer = new Proxy(
+      {
+        line: (ax, ay, bx, by, opts) =>
+          lines.push({ ax, ay, bx, by, alpha: opts && opts.alpha, colour: opts && opts.color }),
+      },
+      { get: (target, key) => (key in target ? target[key] : () => {}) },
+    )
+    new GameView(renderer).render(game)
+    return lines.filter((l) => l.colour === PALETTE.player.turret && l.ax > VIEW_W / 2)
+  }
+
+  for (let row = 0; row <= SHOP.length; row++) {
+    const item = game.shopItem(row)
+    if (item && item.equipment === "turret") {
+      game.shopSelection = row
+    }
+  }
+  const shown = barrels()
+  const gun = game.player.hardpointByRole("aux").module
+  assert.equal(shown.length, gun.barrels, "one barrel drawn per barrel it has")
+  for (const line of shown) {
+    assert.ok(line.by < line.ay, "pointing the way the hull does, which is up here")
+    assert.ok(line.alpha < 1, "faintly: it is a preview, not the ship's own gun")
+  }
+
+  // And only while the turret is what is being looked at.
+  game.shopSelection = 0
+  assert.equal(barrels().length, 0)
+})
+
 test("a special says what it does, wherever it is being looked at", () => {
   // Every other thing the shop fits describes itself, so a special does too: on the
   // page beside the ship when the cursor is on its box, and in the menu that sells it.

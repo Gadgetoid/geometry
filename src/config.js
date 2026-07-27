@@ -1556,28 +1556,6 @@ export const ALIEN_PLATING = {
   },
 }
 // ---------------------------------------------------------------------------
-export const FRIGATE_SHAPE = [
-  [62, 16],
-  [60, 24],
-  [22, 24],
-  [18, 16],
-  [-18, 16],
-  [-22, 24],
-  [-68, 24],
-  [-68, 10],
-  [-64, 6],
-  [-64, -8],
-  [-68, -12],
-  [-68, -24],
-  [-22, -24],
-  [-18, -16],
-  [18, -16],
-  [22, -24],
-  [60, -24],
-  [62, -16],
-  [70, -14],
-  [70, 14],
-]
 
 const SHIP_DESIGNS = {
   seeker: {
@@ -1694,7 +1672,28 @@ const SHIP_DESIGNS = {
     oreDrop: 5,
   },
   frigate: {
-    outline: FRIGATE_SHAPE,
+    outline: [
+      [62, 16],
+      [60, 24],
+      [22, 24],
+      [18, 16],
+      [-18, 16],
+      [-22, 24],
+      [-68, 24],
+      [-68, 10],
+      [-64, 6],
+      [-64, -8],
+      [-68, -12],
+      [-68, -24],
+      [-22, -24],
+      [-18, -16],
+      [18, -16],
+      [22, -24],
+      [60, -24],
+      [62, -16],
+      [70, -14],
+      [70, 14],
+    ],
     colour: PALETTE.rival.frigateHull,
     // A slab: heavy, hard to turn, and thick with it. A quarter of what it weighs is what
     // it carries: two siege drives, a braced bubble and five guns.

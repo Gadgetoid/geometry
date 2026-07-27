@@ -17,6 +17,7 @@ import {
   MAX_SLOTS,
   SPECIAL_TYPES,
 } from "./config.js"
+import { drawTurret } from "./entities.js"
 import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
 import { PALETTE } from "./palette.js"
@@ -1261,6 +1262,13 @@ export class GameView {
         })
         if (!on) {
           return
+        }
+        // What would be on this mount, pointing where the hull does: a turret is bought
+        // and swapped from a list of names, and a name says nothing about the size of
+        // the thing that turns up on the ship.
+        const gun = module && module.kind === "weapon" ? module : null
+        if (gun && hp.role !== "nose") {
+          drawTurret(r, at.x, at.y, -Math.PI / 2, gun.barrels, PALETTE.player.turret, 18, 0.45)
         }
         // Named on a leader line, the way a special in the sector names itself: out from
         // the hull, a short run, and the label at the end of it.
