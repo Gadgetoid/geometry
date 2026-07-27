@@ -1167,12 +1167,91 @@ export class Game {
   // The pop-over's rows for one slot: what can be done with what is in it, then
   // what could be put in it. An entry that declares `rows` stands in for a list
   // that is not known until the run has found something.
+  // What the pop-over is titled, asked of the game rather than worked out by the
+  // view: only here knows whether it was opened on a slot, on a piece of equipment
+  // or on a ladder of levels.
+  slotMenuTitle() {
+    const menu = this.slotMenu
+    if (!menu) {
+      return ""
+    }
+    if (menu.equipment) {
+      return EQUIPMENT[menu.equipment].label
+    }
+    if (menu.levels) {
+      return this.shopRowById(menu.levels).name
+    }
+    const spec = this.slotType(menu.slot)
+    if (spec) {
+      return spec.label
+    }
+    return menu.slot < this.specialSlots() ? "EMPTY" : "LOCKED"
+  }
+
+  // The colour a title is drawn in, which is a special's own and nothing else's.
+  slotMenuColour() {
+    const menu = this.slotMenu
+    const spec = menu && !menu.equipment && !menu.levels ? this.slotType(menu.slot) : null
+    return spec ? spec.colour : null
+  }
+
+  shopRowById(id) {
+    return SHOP.find((entry) => entry.id === id)
+  }
+
+  // One step of a levelled upgrade per row, each saying what it buys. Only the next
+  // one along has a price: a ladder is climbed in order.
+  levelRows(id) {
+    const row = this.shopRowById(id)
+    const at = this.upgrades[id]
+    return row.levels.map((step, level) => ({
+      name: step.name,
+      desc: step.desc,
+      value: (g) => {
+        if (level === g.upgrades[id]) {
+          return "FITTED"
+        }
+        if (level < g.upgrades[id]) {
+          return "-"
+        }
+        return level === g.upgrades[id] + 1
+          ? g.devMode
+            ? "FREE"
+            : `${row.levelCost(at)} ore`
+          : "-"
+      },
+      action: (g) => {
+        if (level !== g.upgrades[id] + 1) {
+          return
+        }
+        const cost = row.levelCost(g.upgrades[id])
+        if (!g.devMode) {
+          if (g.oreBalance < cost) {
+            Sound.hit()
+            return
+          }
+          g.oreBalance -= cost
+        }
+        g.upgrades[id]++
+        if (row.levelApply) {
+          row.levelApply(g)
+        }
+        g.rememberRun()
+        Sound.power()
+      },
+    }))
+  }
+
   // The rows the pop-over shows. A shop row naming an equipment slot lists that
-  // slot's options; the specials row lists what a special slot can do.
+  // slot's options, one naming a levelled upgrade lists its steps, and the specials
+  // row lists what a special slot can do.
   slotMenuRows(slot) {
-    const equipment = this.slotMenu && this.slotMenu.equipment
-    if (equipment) {
-      return this.equipmentRows(equipment)
+    const menu = this.slotMenu
+    if (menu && menu.equipment) {
+      return this.equipmentRows(menu.equipment)
+    }
+    if (menu && menu.levels) {
+      return this.levelRows(menu.levels)
     }
     const rows = []
     for (const entry of SLOT_MENU) {
@@ -1195,6 +1274,14 @@ export class Game {
   // Open the pop-over on an equipment slot rather than on a special slot.
   openEquipmentMenu(slot) {
     this.slotMenu = { slot: 0, equipment: slot, selection: 0 }
+  }
+
+  // Or on the ladder of a levelled upgrade, starting on the next step rather than on
+  // the one already fitted: that is the row there is anything to do with.
+  openLevelMenu(id) {
+    const row = this.shopRowById(id)
+    const next = Math.min(this.upgrades[id] + 1, row.levels.length - 1)
+    this.slotMenu = { slot: 0, levels: id, selection: next }
   }
 
   closeSlotMenu() {
@@ -1232,6 +1319,10 @@ export class Game {
     // could hold, and the buying and swapping happen in there.
     if (item.equipment) {
       this.openEquipmentMenu(item.equipment)
+      return
+    }
+    if (item.levels) {
+      this.openLevelMenu(item.id)
       return
     }
     if (item.maxed(this)) {

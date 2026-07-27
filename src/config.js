@@ -755,10 +755,34 @@ export const CORE_TYPES = {
     // One level per slot, so every purchase earns room as well as cell. A fifth
     // level would be energy alone, which is the shape this replaced.
     levels: [
-      { energy: 320, regen: 32, special: 1 },
-      { energy: 630, regen: 60, special: 2 },
-      { energy: 950, regen: 88, special: 3 },
-      { energy: 1260, regen: 116, special: 4 },
+      {
+        energy: 320,
+        regen: 32,
+        special: 1,
+        name: "CORE MK I",
+        desc: "The yard's cell. One special slot, and enough charge for a few shots.",
+      },
+      {
+        energy: 630,
+        regen: 60,
+        special: 2,
+        name: "CORE MK II",
+        desc: "630 charge, refilling at 60 a second, and a second special slot.",
+      },
+      {
+        energy: 950,
+        regen: 88,
+        special: 3,
+        name: "CORE MK III",
+        desc: "950 charge at 88 a second, and a third slot to spend it through.",
+      },
+      {
+        energy: 1260,
+        regen: 116,
+        special: 4,
+        name: "CORE MK IV",
+        desc: "1260 charge at 116 a second, and the fourth slot: everything the hull will take.",
+      },
     ],
   },
 }
@@ -1591,24 +1615,20 @@ export const PAUSE_MENU = [
 // A levelled upgrade takes its cap from the effect table it indexes, so adding
 // a level means extending that array and nothing else.
 // ---------------------------------------------------------------------------
-// `fitted` marks an upgrade whose first level is what the ship already has rather
-// than something not yet bought, so it reads from 1 instead of 0. The power core
-// is the one: a hull without a cell does not fly, so there is no level 0 of it,
-// while a shield genuinely starts absent.
-const levelled = (id, name, desc, max, cost, apply, fitted = false) => ({
+// A levelled upgrade that reads like a slot: the row reports the level it is at and
+// opens a pop-over of the ladder, each step saying what it buys. The steps are
+// bought in order, so only the next one along has a price.
+const levelRow = (id, name, desc, spec) => ({
   id,
   name,
   desc,
-  max,
-  cost: (g) => cost(g.upgrades[id]),
-  info: (g) => `LV ${g.upgrades[id] + (fitted ? 1 : 0)} / ${max + (fitted ? 1 : 0)}`,
-  maxed: (g) => g.upgrades[id] >= max,
-  apply: (g) => {
-    g.upgrades[id]++
-    if (apply) {
-      apply(g)
-    }
-  },
+  levels: spec.levels,
+  levelCost: spec.cost,
+  levelApply: spec.apply,
+  max: spec.levels.length - 1,
+  cost: (g) => spec.cost(g.upgrades[id]),
+  info: (g) => spec.levels[g.upgrades[id]].name,
+  maxed: (g) => g.upgrades[id] >= spec.levels.length - 1,
 })
 
 // A slot whose options are owned rather than levelled: the row reports what is
@@ -1657,28 +1677,24 @@ export const SHOP = [
       g.lives++
     },
   },
-  levelled(
+  levelRow(
     "core",
-    "POWER CORE",
-    "A bigger cell, a faster refill, and another special slot to spend it through.",
-    CORE_TYPES.minerCore.levels.length - 1,
-    (level) => 45 + level * 55,
-    (g) => {
-      if (g.player) {
-        g.player.energyMax = g.maxEnergy()
-        g.player.energy = g.player.energyMax
-      }
+    "CORE",
+    "The cell every system draws on. A bigger one holds more and refills faster.",
+    {
+      levels: CORE_TYPES.minerCore.levels,
+      cost: (level) => 45 + level * 55,
+      apply: (g) => {
+        if (g.player) {
+          g.player.energyMax = g.maxEnergy()
+          g.player.energy = g.player.energyMax
+        }
+      },
     },
-    true, // the hull comes with one, so it reads from LV 1
   ),
   equipmentRow("shield"),
   equipmentRow("laser"),
-  fitting(
-    "turret",
-    "DEFENSE TURRET",
-    "A nose blaster that auto-fires on rivals that come close.",
-    85,
-  ),
+  fitting("turret", "TURRET", "Auto-fires on rivals that come close, while the laser is busy.", 85),
   equipmentRow("engine"),
 ]
 

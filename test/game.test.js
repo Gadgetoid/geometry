@@ -127,6 +127,15 @@ function laserMarkThat(field) {
   return { with: options[at].id, without: options[at - 1].id }
 }
 
+// Buy the next level of a levelled upgrade, through the pop-over its row opens.
+function buyNextLevel(game, id) {
+  const at = game.upgrades[id]
+  game.openLevelMenu(id)
+  game.slotMenu.selection = at + 1
+  game.levelRows(id)[at + 1].action(game)
+  game.slotMenu = null
+}
+
 // Slots come with the power core, so a test wanting room buys its way to it.
 function withSlots(game, wanted) {
   const level = CORE_TYPES.minerCore.levels.findIndex((step) => step.special >= wanted)
@@ -2421,11 +2430,9 @@ test("a slot comes with the power core, along with the cell to run it", () => {
   assert.equal(game.maxEnergy(), core[0].energy)
 
   game.oreBalance = 1000
-  const item = SHOP.find((entry) => entry.id === "core")
   const ore = game.oreBalance
-  const cost = item.cost(game)
-  item.apply(game)
-  game.oreBalance -= cost
+  const cost = SHOP.find((entry) => entry.id === "core").cost(game)
+  buyNextLevel(game, "core")
 
   assert.equal(game.upgrades.core, 1)
   assert.equal(game.specialSlots(), core[1].special, "another slot")
@@ -2453,7 +2460,7 @@ test("a slot the core does not provide is inert, and the next level opens it", (
   assert.equal(game.slotMenu, null, "nothing to offer for a slot the ship has not got")
 
   // buying the core reaches it, and then it stocks like any other
-  SHOP.find((entry) => entry.id === "core").apply(game)
+  buyNextLevel(game, "core")
   assert.ok(game.specialSlots() > beyond, "the level pays for that slot")
   game.menuConfirm()
   assert.ok(game.slotMenu, "so the pop-over opens on it")

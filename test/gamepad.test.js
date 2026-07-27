@@ -251,8 +251,14 @@ test("A confirms as well as start, in every menu", () => {
   buying.oreBalance = 500
   buying.shopSelection = SHOP.findIndex((item) => item.id === "core") + 1 // past the slots row
   const coreLevel = buying.upgrades.core
-  new GamepadInput(buying).apply(readPad(pad({ buttons: { [B.confirmAlt]: 1 } })))
-  assert.equal(buying.upgrades.core, coreLevel + 1, "A bought the highlighted upgrade")
+  const input = new GamepadInput(buying)
+  // The core opens on its ladder, at the step there is something to do with, so A
+  // opens and A buys. Two presses, with the button released between them.
+  input.apply(readPad(pad({ buttons: { [B.confirmAlt]: 1 } })))
+  assert.ok(buying.slotMenu, "A opened the core's steps")
+  input.apply(readPad(pad()))
+  input.apply(readPad(pad({ buttons: { [B.confirmAlt]: 1 } })))
+  assert.equal(buying.upgrades.core, coreLevel + 1, "and A bought the step it opened on")
 
   const launching = liveGame()
   launching.enterShop()

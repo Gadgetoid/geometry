@@ -12,7 +12,6 @@ import {
   ARENA,
   SHOP,
   SHOP_LAYOUT,
-  EQUIPMENT,
   MAX_SLOTS,
   SPECIAL_TYPES,
 } from "./config.js"
@@ -811,20 +810,34 @@ export class GameView {
       const maxed = item.maxed(game),
         cost = item.cost(game),
         affordable = game.oreBalance >= cost && !maxed
+      // A row that opens a pop-over has no price of its own: what it costs depends on
+      // which option is chosen in there, so the column marks it as a way in instead.
+      const opens = !!(item.equipment || item.levels)
       r.text(`${selected ? "> " : "  "}${item.name}`, leftX, y, {
         size: 15,
         bold: selected,
         color: maxed ? PALETTE.ui.good : selected ? PALETTE.text.bright : PALETTE.text.normal,
       })
       r.text(item.info(game), leftX + 206, y, { size: 11, color: PALETTE.text.faint })
-      r.text(maxed ? "MAX" : game.devMode ? "FREE" : `${cost} ore`, rightX, y, {
+      const price = opens
+        ? maxed
+          ? "MAX"
+          : ">"
+        : maxed
+          ? "MAX"
+          : game.devMode
+            ? "FREE"
+            : `${cost} ore`
+      r.text(price, rightX, y, {
         size: 14,
         color:
-          maxed || game.devMode
+          maxed || (game.devMode && !opens)
             ? PALETTE.ui.good
-            : affordable
-              ? PALETTE.fx.flash
-              : PALETTE.text.disabled,
+            : opens
+              ? PALETTE.text.faint
+              : affordable
+                ? PALETTE.fx.flash
+                : PALETTE.text.disabled,
         align: "right",
       })
       y += rowHeight
@@ -967,35 +980,29 @@ export class GameView {
 
   #slotPopover(game, rightX, slotsY, selectedRowY) {
     const r = this.renderer,
-      { slot, selection, equipment } = game.slotMenu,
+      { slot, selection } = game.slotMenu,
       rows = game.slotMenuRows(slot)
-    // An equipment menu belongs to the shop row it was opened from and is titled
-    // for the slot it fills; a specials menu belongs to one of the slot boxes and is
-    // titled for whatever is in it. Reading the special in slot 0 for both is what
-    // put ORE MAGNET at the top of the ENGINE menu.
-    const spec = equipment ? null : game.slotType(slot)
+    // A menu opened from a shop row belongs under that row; one opened on a special
+    // slot belongs under its box. What it is called is the game's to say, since only
+    // it knows which registry the rows came from - reading the special in slot 0 for
+    // all of them is what put ORE MAGNET at the top of the ENGINE menu.
+    const onRow = !!(game.slotMenu.equipment || game.slotMenu.levels)
+    const titleColour = game.slotMenuColour()
     const chosen = rows[selection]
     const titleHeight = 20
-    const width = equipment ? 260 : 200,
+    const width = onRow ? 260 : 200,
       rowHeight = 20
     const desc = chosen && chosen.desc ? this.#wrap(chosen.desc, width - 16, 10) : []
     const height = titleHeight + rows.length * rowHeight + 28 + desc.length * 12
-    const anchorX = equipment ? rightX - width : this.#slotBox(rightX, slot).x - 6
+    const anchorX = onRow ? rightX - width : this.#slotBox(rightX, slot).x - 6
     const panelX = Math.min(anchorX, rightX - width),
-      panelY = (equipment ? selectedRowY : slotsY) + 15
+      panelY = (onRow ? selectedRowY : slotsY) + 15
     r.rect(panelX, panelY, width, height, { fill: "rgba(4,8,16,.95)" })
     r.rect(panelX, panelY, width, height, { stroke: PALETTE.ui.accent, width: 1.2, glow: 8 })
-    const title = equipment
-      ? EQUIPMENT[equipment].label
-      : spec
-        ? spec.label
-        : slot < game.specialSlots()
-          ? "EMPTY"
-          : "LOCKED"
-    r.text(title, panelX + width / 2, panelY + 15, {
+    r.text(game.slotMenuTitle(), panelX + width / 2, panelY + 15, {
       size: 12,
       bold: true,
-      color: spec ? spec.colour : PALETTE.text.bright,
+      color: titleColour ?? PALETTE.text.bright,
       align: "center",
     })
     r.line(panelX + 6, panelY + titleHeight + 1, panelX + width - 6, panelY + titleHeight + 1, {
