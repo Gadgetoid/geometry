@@ -15,7 +15,6 @@ import {
   SHOP,
   SHOP_LAYOUT,
   MAX_SLOTS,
-  PLAYER_TYPE,
   SPECIAL_TYPES,
 } from "./config.js"
 import { randRange, clamp, lerp } from "./math.js"
@@ -692,8 +691,9 @@ export class GameView {
     if (game.player) {
       const hullH = 5 * ui
       const hullY = barY + barH + 3 * ui
-      const left = clamp(game.player.hull / PLAYER_TYPE.hull, 0, 1)
-      const was = clamp((game.player.hullShown ?? game.player.hull) / PLAYER_TYPE.hull, 0, 1)
+      const full = game.player.type.hull
+      const left = clamp(game.player.hull / full, 0, 1)
+      const was = clamp((game.player.hullShown ?? game.player.hull) / full, 0, 1)
       const hurt = left < 0.35
       r.rect(barX, hullY, barW, hullH, { stroke: PALETTE.ui.edge, width: 1 * ui })
       // What was just lost, between where the bar is going and where it was, in red and
@@ -1006,7 +1006,9 @@ export class GameView {
         affordable = game.oreBalance >= cost && !maxed
       // A row that opens a pop-over has no price of its own: what it costs depends on
       // which option is chosen in there, so the column marks it as a way in instead.
-      const opens = !!(item.equipment || item.levels)
+      // A row drawn as boxes has its way in on the boxes themselves, so it is not also
+      // marked as one in the price column.
+      const opens = !!((item.equipment || item.levels) && !game.boxesOnRow(row))
       r.text(
         `${selected ? "> " : "  "}${item.name}`,
         leftX + (item.inset ? SHOP_LAYOUT.insetBy : 0),
@@ -1153,27 +1155,23 @@ export class GameView {
     if (!player) {
       return
     }
-    // The mount the shop's turret goes on is the one its menu belongs to, so that box
-    // is what the menu hangs off.
-    const fittedAt = EQUIPMENT.turret.hp
-    const open = !!(game.slotMenu && game.slotMenu.equipment === "turret")
-    const mounts = []
-    player.hardpoints.forEach((hp, at) => {
-      if (hp.role === "aux" || hp.role === "gun") {
-        mounts.push({ hp, at })
-      }
-    })
-    mounts.forEach(({ hp, at }, index) => {
+    // Each mount holds its own turret, so the cursor runs along them and the menu
+    // belongs to whichever it was opened on.
+    const menu = game.slotMenu
+    const open = !!(menu && menu.equipment === "turret")
+    const onCursor = selected ? game.shopSlot : -1
+    const mounts = player
+      .mountsForSlot(EQUIPMENT.turret)
+      .map((at) => ({ hp: player.hardpoints[at], at }))
+    mounts.forEach(({ hp }, index) => {
       const { x, size } = this.#slotBox(startX, index),
         boxY = y - size + 7
       const gun = hp.module && hp.module.kind === "weapon" ? hp.module : null
-      const opened = open && at === fittedAt
+      const opened = open && menu.slot === index
       if (opened) {
         this.menuAnchor = { x, y: boxY + size, w: size }
       }
-      // The cursor sits on the row rather than on a box, so it lights the mount the row
-      // would fit, which is the one its menu opens on.
-      if (selected && at === fittedAt && !opened) {
+      if (index === onCursor && !opened) {
         r.rect(x - 3, boxY - 3, size + 6, size + 6, { fill: "rgba(95,215,255,.28)" })
       }
       r.rect(x, boxY, size, size, {
@@ -1182,7 +1180,7 @@ export class GameView {
           : gun
             ? PALETTE.player.turret
             : PALETTE.ui.slotEmpty,
-        width: opened || (selected && at === fittedAt) ? 1.8 : 1.2,
+        width: opened || index === onCursor ? 1.8 : 1.2,
         glow: opened ? 8 : 0,
         alpha: gun || opened ? 1 : 0.55,
       })
@@ -1706,7 +1704,9 @@ export class GameView {
     const lastRowOffset = 62 + (paused.length - 1) * 38
     const menuTop = onControls ? 92 : Math.max(48, Math.round((VIEW_H - lastRowOffset) / 2))
     const title =
-      { controls: "CONTROLS", dev: "DEV TOOLS", devSpawn: "SPAWN" }[game.pausePage] || "OPTIONS"
+      { controls: "CONTROLS", dev: "DEV TOOLS", devSpawn: "SPAWN", devShip: "SHIP" }[
+        game.pausePage
+      ] || "OPTIONS"
     r.text(title, VIEW_W / 2, menuTop, {
       size: 34,
       bold: true,

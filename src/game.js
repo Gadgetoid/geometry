@@ -7,6 +7,7 @@ import {
   DEV_ARMS,
   SHIP_SCALARS,
   DEV_MENU,
+  DEV_SHIP_MENU,
   DEV_SPAWN_MENU,
   OVER_MENU,
   VIEW_W,
@@ -296,8 +297,43 @@ export class Game {
   equipmentOption(slot, id) {
     return EQUIPMENT[slot].options.find((option) => option.id === id) ?? null
   }
-  fittedEquipment(slot) {
-    return this.upgrades.fitted[slot] ?? null
+  // What is fitted in a slot. A per-mount slot holds one entry per mount, so `at` says
+  // which; undefined is a mount nothing has been said about, which is not the same as
+  // one deliberately left empty. Every other slot answers the same whatever is asked.
+  fittedEquipment(slot, at = 0) {
+    const held = this.upgrades.fitted[slot]
+    if (Array.isArray(held)) {
+      return held[at]
+    }
+    // A per-mount slot holding a single id was set before it had mounts of its own, or
+    // by hand: it belongs to the first of them and says nothing about the rest.
+    if (EQUIPMENT[slot] && EQUIPMENT[slot].perMount) {
+      return at === 0 ? held : undefined
+    }
+    return held ?? null
+  }
+
+  // Record what a slot holds, copying a per-mount slot's row rather than writing through
+  // it: a saved run keeps a reference to the one it was snapshotted with.
+  setFitted(slot, at, id) {
+    if (!EQUIPMENT[slot].perMount) {
+      this.upgrades.fitted[slot] = id
+      return
+    }
+    const held = Array.isArray(this.upgrades.fitted[slot]) ? this.upgrades.fitted[slot].slice() : []
+    held[at] = id
+    this.upgrades.fitted[slot] = held
+  }
+
+  // How many boxes a shop row is drawn as, which is also how far its cursor runs. Zero
+  // for a row that names what it has fitted instead.
+  boxesOnRow(row) {
+    if (row === this.slotsRow) {
+      return MAX_SLOTS
+    }
+    const item = this.shopItem(row)
+    const spec = item && item.equipment ? EQUIPMENT[item.equipment] : null
+    return spec && spec.perMount && this.player ? this.player.mountsForSlot(spec).length : 0
   }
   equipmentName(slot) {
     const option = this.equipmentOption(slot, this.fittedEquipment(slot))
@@ -311,11 +347,11 @@ export class Game {
   }
 
   // Fit something the run already owns. Free, and it re-mounts the module.
-  fitEquipment(slot, id) {
-    if (!this.ownsEquipment(slot, id) || this.fittedEquipment(slot) === id) {
+  fitEquipment(slot, id, at = 0) {
+    if (!this.ownsEquipment(slot, id) || this.fittedEquipment(slot, at) === id) {
       return
     }
-    this.upgrades.fitted[slot] = id
+    this.setFitted(slot, at, id)
     if (this.player) {
       this.player.fitEquipment(this)
     }
@@ -326,11 +362,11 @@ export class Game {
   // Take what is fitted off, for a slot that will go without. Nothing is sold: it
   // stays owned and goes back on whenever it is wanted, so this is a choice about how
   // to fly rather than a refund.
-  removeEquipment(slot) {
-    if (!EQUIPMENT[slot].removable || !this.fittedEquipment(slot)) {
+  removeEquipment(slot, at = 0) {
+    if (!EQUIPMENT[slot].removable || !this.fittedEquipment(slot, at)) {
       return
     }
-    this.upgrades.fitted[slot] = null
+    this.setFitted(slot, at, null)
     if (this.player) {
       this.player.fitEquipment(this)
     }
@@ -339,7 +375,7 @@ export class Game {
   }
 
   // Buy one, which also fits it: nobody buys a drive to leave in the hold.
-  buyEquipment(slot, id) {
+  buyEquipment(slot, id, at = 0) {
     const option = this.equipmentOption(slot, id)
     if (!option || this.ownsEquipment(slot, id)) {
       return
@@ -352,7 +388,7 @@ export class Game {
       this.oreBalance -= option.cost
     }
     this.upgrades.owned[slot].push(id)
-    this.upgrades.fitted[slot] = id
+    this.setFitted(slot, at, id)
     if (this.player) {
       this.player.fitEquipment(this)
     }
@@ -362,7 +398,7 @@ export class Game {
 
   // The pop-over's rows for an equipment slot: everything it could hold, with what
   // it costs, or that it is already owned or already in.
-  equipmentRows(slot) {
+  equipmentRows(slot, at = 0) {
     const spec = EQUIPMENT[slot]
     const rows = spec.options.map((option, index) => {
       // A ladder is climbed in order, so a mark is out of reach until the one below
@@ -373,7 +409,7 @@ export class Game {
         name: option.name,
         desc: option.desc,
         value: (g) => {
-          if (g.fittedEquipment(slot) === option.id) {
+          if (g.fittedEquipment(slot, at) === option.id) {
             return "FITTED"
           }
           if (g.ownsEquipment(slot, option.id)) {
@@ -387,11 +423,11 @@ export class Game {
         // Something to spend on, as opposed to something already owned or still out of
         // reach up a ladder.
         buyable: (g) => !locked && !g.ownsEquipment(slot, option.id),
-        action: (g) => {
+        action: (g, mount = at) => {
           if (g.ownsEquipment(slot, option.id)) {
-            g.fitEquipment(slot, option.id)
+            g.fitEquipment(slot, option.id, mount)
           } else if (!locked) {
-            g.buyEquipment(slot, option.id)
+            g.buyEquipment(slot, option.id, mount)
           }
         },
       }
@@ -402,8 +438,8 @@ export class Game {
       rows.push({
         name: "NONE",
         desc: "Fly without one. It stays bought, and goes back on whenever you like.",
-        value: (g) => (g.fittedEquipment(slot) ? "REMOVE" : "FITTED"),
-        action: (g) => g.removeEquipment(slot),
+        value: (g) => (g.fittedEquipment(slot, at) ? "REMOVE" : "FITTED"),
+        action: (g, mount = at) => g.removeEquipment(slot, mount),
       })
     }
     return rows
@@ -1188,6 +1224,40 @@ export class Game {
     return SHOP[row < this.slotsRow ? row : row - 1]
   }
 
+  // What hull is being flown, by the name the dev page lists it under.
+  playerTypeName() {
+    if (!this.player || this.player.type === PLAYER_TYPE) {
+      return "PLAYER"
+    }
+    const found = Object.entries(SHIP_TYPES).find(([, type]) => type === this.player.type)
+    return found ? found[0].replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase() : "PLAYER"
+  }
+
+  // Fly another hull. The shop finds its mounts by role, so anything with a nose, a core
+  // and a nozzle can be flown and fitted; nothing about the rest of the game is balanced
+  // around it, which is why this is a dev tool and not a choice.
+  devFlyShip(name) {
+    const type = name === "player" ? PLAYER_TYPE : SHIP_TYPES[name]
+    if (!type || !this.player) {
+      return
+    }
+    const was = this.player
+    const ship = new PlayerShip(this, type)
+    ship.x = was.x
+    ship.y = was.y
+    ship.angle = was.angle
+    ship.warp = was.warp
+    ship.warpTarget = was.warpTarget
+    // Carried over, since what is being looked at is the hull rather than the loadout.
+    was.items.forEach((item, slot) => {
+      if (item && !ship.items[slot]) {
+        ship.equip(slot, item.id)
+      }
+    })
+    this.player = ship
+    Sound.power()
+  }
+
   // The ship as a run starts it: every slot holding the option the hull came with, and
   // the cell unupgraded. What the shop has bought is the difference between this and the
   // ship in the hangar, which is what the page shows beside each number. Worked out once,
@@ -1207,7 +1277,12 @@ export class Game {
         if (spec.slot) {
           fitted[spec.slot] = stock.id
         } else {
-          loadout.push({ hp: spec.hp, [spec.mount]: stock.id })
+          // Every mount the slot fills, as the ship itself fits them.
+          PLAYER_TYPE.hardpoints.forEach((hp, at) => {
+            if (spec.roles.includes(hp.role)) {
+              loadout.push({ hp: at, [spec.mount]: stock.id })
+            }
+          })
         }
       }
       loadout.push({ ...core, fitted })
@@ -1238,7 +1313,14 @@ export class Game {
     }
     if (item.equipment) {
       const spec = EQUIPMENT[item.equipment]
-      return this.player.hardpoints[spec.hp] ? [spec.hp] : []
+      const mounts = this.player.mountsForSlot(spec)
+      // A row that fits each mount separately points at the one the cursor is on; one
+      // that fits them all together points at all of them.
+      if (!spec.perMount) {
+        return mounts
+      }
+      const at = mounts[Math.min(this.shopSlot, mounts.length - 1)]
+      return at === undefined ? [] : [at]
     }
     return item.id === "core" ? core() : []
   }
@@ -1392,7 +1474,7 @@ export class Game {
   slotMenuRows(slot) {
     const menu = this.slotMenu
     if (menu && menu.equipment) {
-      return this.equipmentRows(menu.equipment)
+      return this.equipmentRows(menu.equipment, menu.slot)
     }
     if (menu && menu.levels) {
       return this.levelRows(menu.levels)
@@ -1418,14 +1500,14 @@ export class Game {
   // Open the pop-over on an equipment slot rather than on a special slot, on the row
   // there is anything to do with: the first thing worth buying, or what is fitted when
   // the slot is already full up. Same as a levelled row, which opens on its next step.
-  openEquipmentMenu(slot) {
-    const rows = this.equipmentRows(slot)
-    const wanted = rows.findIndex((row) => row.buyable && row.buyable(this, 0))
+  openEquipmentMenu(slot, at = 0) {
+    const rows = this.equipmentRows(slot, at)
+    const wanted = rows.findIndex((row) => row.buyable && row.buyable(this, at))
     const fitted = EQUIPMENT[slot].options.findIndex(
-      (option) => option.id === this.fittedEquipment(slot),
+      (option) => option.id === this.fittedEquipment(slot, at),
     )
     this.slotMenu = {
-      slot: 0,
+      slot: at,
       equipment: slot,
       selection: wanted >= 0 ? wanted : Math.max(0, fitted),
     }
@@ -1510,7 +1592,7 @@ export class Game {
     // An equipment row has nothing to buy of its own: it opens on what its slot
     // could hold, and the buying and swapping happen in there.
     if (item.equipment) {
-      this.openEquipmentMenu(item.equipment)
+      this.openEquipmentMenu(item.equipment, this.shopSlot)
       return
     }
     if (item.levels) {
@@ -1610,7 +1692,7 @@ export class Game {
     p.vx = 0
     p.vy = 0
     p.energy = this.maxEnergy() * 0.6
-    p.hull = PLAYER_TYPE.hull // a fresh ship, as the lives count says
+    p.hull = p.type.hull // a fresh ship, as the lives count says
     p.invincible = CONFIG.INVIN_TIME
     p.mainWeapon.release()
     p.beginWarpIn(CONFIG.RESPAWN_PAUSE)
@@ -2226,7 +2308,14 @@ export class Game {
         owned: Object.fromEntries(
           Object.entries(this.upgrades.owned).map(([slot, ids]) => [slot, ids.slice()]),
         ),
-        fitted: { ...this.upgrades.fitted },
+        // Copied a row at a time: a per-mount slot holds an array, and a shallow spread
+        // would leave the snapshot pointing at the live one.
+        fitted: Object.fromEntries(
+          Object.entries(this.upgrades.fitted).map(([slot, held]) => [
+            slot,
+            Array.isArray(held) ? held.slice() : held,
+          ]),
+        ),
       },
       // Carried specials are part of the loadout the shop sends you out with, so
       // they survive a session the way the upgrades do. So does the record of
@@ -2274,10 +2363,27 @@ export class Game {
       // with whatever came free with the hull.
       const stated = saved.fitted && slot in saved.fitted
       const wanted = stated ? saved.fitted[slot] : undefined
-      if (wanted === null && EQUIPMENT[slot].removable) {
-        fresh.fitted[slot] = null
-      } else if (known(wanted) && fresh.owned[slot].includes(wanted)) {
-        fresh.fitted[slot] = wanted
+      const restore = (value) => {
+        if (value === null && EQUIPMENT[slot].removable) {
+          return null
+        }
+        return known(value) && fresh.owned[slot].includes(value) ? value : undefined
+      }
+      // A per-mount slot is restored a mount at a time, and a mount whose saved id is
+      // not owned is left as it was rather than taking the whole row down with it.
+      if (EQUIPMENT[slot].perMount) {
+        if (Array.isArray(wanted)) {
+          fresh.fitted[slot] = wanted.map(restore)
+        } else if (stated) {
+          // Saved before the slot held one entry per mount: what it named is the first
+          // mount's, which is where a run that only had one put it.
+          fresh.fitted[slot] = [restore(wanted)]
+        }
+        continue
+      }
+      const value = restore(wanted)
+      if (value !== undefined) {
+        fresh.fitted[slot] = value
       }
     }
     return fresh
@@ -2467,6 +2573,9 @@ export class Game {
     if (this.pausePage === "devSpawn") {
       return this.menuPage(DEV_SPAWN_MENU)
     }
+    if (this.pausePage === "devShip") {
+      return this.menuPage(DEV_SHIP_MENU)
+    }
     return PAUSE_MENU.filter((row) => !row.available || row.available(this))
   }
 
@@ -2653,8 +2762,8 @@ export class Game {
     }
     this.lives = CONFIG.MAX_LIVES
     if (this.player) {
-      this.player.hull = PLAYER_TYPE.hull
-      this.player.hullShown = PLAYER_TYPE.hull
+      this.player.hull = this.player.type.hull
+      this.player.hullShown = this.player.type.hull
       // A slot each for the specials that are worth having in front of you.
       const wanted = SPECIAL_IDS.filter((id) => SPECIAL_TYPES[id].buyable)
       for (let slot = 0; slot < this.specialSlots(); slot++) {
@@ -2839,12 +2948,13 @@ export class Game {
   // The special slots sit side by side on one row, so left and right walk along
   // them. It stops at each end: the row is a row of boxes, not a loop.
   #slotStep(step) {
-    if (this.phase !== "shop" || this.shopSelection !== this.slotsRow) {
+    const boxes = this.phase === "shop" ? this.boxesOnRow(this.shopSelection) : 0
+    if (!boxes) {
       return false
     }
     // Every box is reachable, fitted or not: an empty one is where the next slot
     // is bought, so the cursor has to be able to land on it.
-    this.shopSlot = clamp(this.shopSlot + Math.sign(step), 0, MAX_SLOTS - 1)
+    this.shopSlot = clamp(this.shopSlot + Math.sign(step), 0, boxes - 1)
     return true
   }
 

@@ -1948,19 +1948,22 @@ export class Ship extends Entity {
 // how much energy each hit drains.
 // ---------------------------------------------------------------------------
 export class PlayerShip extends Ship {
-  constructor(game) {
+  // `type` is the hull being flown, which is the player's own unless a dev build says
+  // otherwise. Everything below reads it rather than the design directly, so any hull
+  // the shop can find mounts on can be flown.
+  constructor(game, type = PLAYER_TYPE) {
     super(VIEW_W / 2, VIEW_H / 2)
     this.game = game
     this.angle = -Math.PI / 2
-    this.type = PLAYER_TYPE
-    this.radius = PLAYER_TYPE.confineRadius
-    this.setOutline(PLAYER_TYPE.outline)
-    this.colour = PLAYER_TYPE.colour
-    this.buildHardpoints(PLAYER_TYPE.hardpoints)
-    this.applyLoadout(PLAYER_TYPE.loadout)
+    this.type = type
+    this.radius = type.confineRadius ?? type.boundRadius
+    this.setOutline(type.outline)
+    this.colour = type.colour
+    this.buildHardpoints(type.hardpoints)
+    this.applyLoadout(type.loadout)
     // Before the equipment goes on, because what a rock costs is priced off the hull it
     // has to get through.
-    this.hull = PLAYER_TYPE.hull
+    this.hull = type.hull
     // What the hull bar was reading a moment ago, which recedes toward the truth: the
     // gap between the two is drawn as the part just lost.
     this.hullShown = this.hull
@@ -1978,7 +1981,7 @@ export class PlayerShip extends Ship {
     // identity: buying into the third slot puts it in the third box.
     this.items = new Array(MAX_SLOTS).fill(null)
     // What the hull leaves the yard carrying, before anything is bought.
-    for (const [slot, id] of (PLAYER_TYPE.startingSpecials || []).entries()) {
+    for (const [slot, id] of (type.startingSpecials || []).entries()) {
       this.equip(slot, id)
     }
     this.buffs = new Map() // special id -> seconds of effect remaining
@@ -2231,28 +2234,31 @@ export class PlayerShip extends Ship {
   // run does not reset a weapon mid-reload.
   // Mount whatever the run has fitted in each equipment slot, replacing what was
   // there. The drive decides how hard the ship accelerates, so that follows.
-  // Which mounts a shop slot fills. Most fill the one they name; a slot naming a role in
-  // `everyMount` fills every mount that has it, which is what a drive is: the shop sells
-  // the ship's engine, not one nozzle's, so a hull with two of them flies on a matched
-  // pair rather than on a bought drive and whatever was left in the other.
+  // Which of this hull's mounts a shop slot fills, in the hull's own terms: every mount
+  // whose role the slot names. A drive is the ship's rather than one nozzle's, so a hull
+  // with a pair of them takes a matched pair; a turret is each mount's own, which is what
+  // `perMount` decides once they are found.
   mountsForSlot(spec) {
-    if (spec.everyMount) {
-      const found = []
-      this.hardpoints.forEach((hp, index) => {
-        if (hp.role === spec.everyMount) {
-          found.push(index)
-        }
-      })
-      return found
-    }
-    return this.hardpoints[spec.hp] ? [spec.hp] : []
+    const found = []
+    this.hardpoints.forEach((hp, index) => {
+      if (spec.roles.includes(hp.role)) {
+        found.push(index)
+      }
+    })
+    return found
   }
 
   fitEquipment(game) {
     for (const [slot, spec] of Object.entries(EQUIPMENT)) {
-      const id = game.fittedEquipment(slot)
-      for (const at of this.mountsForSlot(spec)) {
+      this.mountsForSlot(spec).forEach((at, ordinal) => {
+        const id = game.fittedEquipment(slot, ordinal)
         const hp = this.hardpoints[at]
+        // Nothing said about this mount, which only a per-mount slot can mean: it keeps
+        // whatever the hull came with rather than being stripped by a slot nobody has
+        // touched.
+        if (id === undefined) {
+          return
+        }
         // Nothing fitted means the slot is empty on purpose, so whatever it put there
         // comes off. Each slot owns its mounts outright, so there is nothing else on
         // them to lose.
@@ -2264,7 +2270,7 @@ export class PlayerShip extends Ship {
           } else if (hp.module) {
             hp.module = null
           }
-          continue
+          return
         }
         const entry = { hp: at, [spec.mount]: id }
         if (spec.controller) {
@@ -2277,7 +2283,7 @@ export class PlayerShip extends Ship {
         } else if (!hp.module || hp.module.typeName !== id) {
           this.applyLoadout([entry])
         }
-      }
+      })
     }
     // The main laser is whatever ended up on the nose, so swapping a mark in has to
     // be followed by looking again.

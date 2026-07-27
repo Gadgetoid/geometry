@@ -2046,9 +2046,12 @@ export const PLAYER_TYPE = {
 // level below the one you bought stops existing.
 //
 //   label   what the shop calls the slot
-//   hp      the hardpoint it mounts on, in PLAYER_DESIGN's list
-//   everyMount  a hardpoint role to fill every mount of, rather than the one `hp` names,
-//              which is what makes a drive the ship's rather than one nozzle's
+//   roles   the hardpoint roles it fills, in the hull's own terms rather than by index,
+//           so the same slot finds its mounts on any hull. Every mount with one of
+//           these roles is filled, which is what makes a drive the ship's rather than
+//           one nozzle's
+//   perMount  each of those mounts holds its own choice, and a mount nothing has been
+//             said about keeps whatever the hull came with
 //   slot    for equipment the core carries, the core slot it goes in
 //   removable  whether the slot may be left empty. A shield, a radar and a turret
 //              are additions, so a run can be flown without them and some players
@@ -2069,7 +2072,7 @@ export const EQUIPMENT = {
     label: "SHIELD",
     desc: "An energy bubble. Damage drains the cell instead of the hull, until it runs out.",
     removable: true,
-    hp: 1,
+    roles: ["core"],
     mount: "shield",
     slot: "shield",
     ladder: true,
@@ -2107,7 +2110,7 @@ export const EQUIPMENT = {
     label: "RADAR",
     desc: "What the ship picks out beyond the screen. Everything close by shows regardless.",
     removable: true,
-    hp: 1,
+    roles: ["core"],
     mount: "radar",
     slot: "radar",
     ladder: true,
@@ -2144,7 +2147,7 @@ export const EQUIPMENT = {
   thruster: {
     label: "THRUSTERS",
     desc: "The nozzles that turn the ship. How fast it comes about, and how finely.",
-    hp: 1,
+    roles: ["core"],
     mount: "thruster",
     slot: "thruster",
     options: [
@@ -2169,7 +2172,11 @@ export const EQUIPMENT = {
     label: "TURRET",
     desc: "A gun that minds the ship on its own while the laser is busy elsewhere.",
     removable: true,
-    hp: 2,
+    // Every mount that takes one, each holding its own: a hull with four of them can
+    // be armed four different ways, and one with a gun of its own keeps it until a
+    // mount is given something else.
+    roles: ["aux", "gun"],
+    perMount: true,
     mount: "weapon",
     controller: "defense",
     options: [
@@ -2190,7 +2197,7 @@ export const EQUIPMENT = {
   laser: {
     label: "LASER",
     desc: "The cutting beam. Hold to charge: reach is what charge buys, damage follows gently.",
-    hp: 0,
+    roles: ["nose"],
     mount: "weapon",
     controller: "manual",
     // A ladder: each mark is the one below it and more, so they are bought in order
@@ -2228,11 +2235,8 @@ export const EQUIPMENT = {
   engine: {
     label: "ENGINE",
     desc: "What pushes the ship, and whether it can push backwards.",
-    hp: 3,
+    roles: ["engine"],
     mount: "engine",
-    // Every mount with this role, not just the one named above: a drive is the ship's,
-    // and a hull with a pair of nozzles flies on two of the same.
-    everyMount: "engine",
     options: [
       {
         id: "minerDrive",
@@ -2256,7 +2260,10 @@ export function freshEquipment() {
   const fitted = {}
   for (const [slot, spec] of Object.entries(EQUIPMENT)) {
     owned[slot] = spec.options.filter((option) => !option.cost).map((option) => option.id)
-    fitted[slot] = owned[slot][0] ?? null
+    // A per-mount slot holds one entry per mount, and starts saying nothing about any of
+    // them: a hull that came with guns of its own keeps them until one is given something
+    // else. Empty is not the same as untouched, which is why this is not a row of nulls.
+    fitted[slot] = spec.perMount ? [] : (owned[slot][0] ?? null)
   }
   return { owned, fitted }
 }
@@ -2492,9 +2499,34 @@ export const DEV_MENU = [
   { name: "OWN EVERYTHING", action: (g) => g.devOwnEverything() },
   { name: "FULLY UPGRADE", action: (g) => g.devMaxOut() },
   { name: "SPAWN", value: () => ">", action: (g) => g.openPausePage("devSpawn") },
+  {
+    name: "SHIP",
+    value: (g) => (g.player ? g.playerTypeName() : ">"),
+    action: (g) => g.openPausePage("devShip"),
+  },
   // Not "back": in a testing arena this page is what ESCAPE opens, so there is nothing
   // behind it. The options are a row of it, the way it is a row of them.
   { name: "OPTIONS", value: () => ">", action: (g) => g.openPausePage("root") },
+]
+
+// The ship page: fly any hull in the game. The shop finds its mounts by role, so a hull
+// it can fit is a hull that can be flown; what that feels like is the point of the page.
+export const DEV_SHIP_MENU = [
+  {
+    rows: (g) =>
+      [
+        { name: "PLAYER", key: "player" },
+        ...Object.keys(g.spawnableTypes()).map((name) => ({
+          name: name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase(),
+          key: name,
+        })),
+      ].map((entry) => ({
+        name: entry.name,
+        value: (game) => (game.playerTypeName() === entry.name ? "FLYING" : ""),
+        action: (game) => game.devFlyShip(entry.key),
+      })),
+  },
+  { name: "BACK", action: (g) => g.openPausePage("dev") },
 ]
 
 // The spawn page: a row per hull, a row per kind of rock, and both lists generated, so
