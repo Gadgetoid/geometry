@@ -423,6 +423,34 @@ export class Game {
     this.stats.mined++
   }
 
+  // Everything a blast, a repel pulse or a gravity well does to what is around
+  // it: walk the bodies in reach and hand each one to `visit` with which way it
+  // lies and how strongly it was caught. What to do about it stays the caller's
+  // business, so a pulse that only shoves and a blast that also damages share the
+  // traversal without having to share an effect.
+  //
+  // `include` names the collections to walk. `toSurface` measures range to a
+  // body's near surface instead of its centre, which is what a rock wants: a
+  // boulder with its face against the centre is next to it however far off its own
+  // middle sits. `skip` leaves one body alone, for whatever set the effect off.
+  applyRadialForce({ centre, radius, include, visit, toSurface = false, skip = null }) {
+    for (const name of include) {
+      const bodies = name === "player" ? (this.player ? [this.player] : []) : this[name]
+      for (const body of bodies) {
+        if (body === skip || body.dead) {
+          continue
+        }
+        const offset = subtract(body, centre)
+        const away = Math.hypot(offset.x, offset.y)
+        const distance = Math.max(0, away - (toSurface ? body.boundRadius : 0))
+        if (distance > radius) {
+          continue
+        }
+        visit(body, { dir: normalize(offset), distance, falloff: 1 - distance / radius })
+      }
+    }
+  }
+
   // ---- beam resolution -------------------------------------------------
   // A single beam from `attacker` (via `weapon`), carrying `damage` for this
   // shot (the player's charged laser scales it, everything else passes its

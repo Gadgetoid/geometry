@@ -3363,6 +3363,21 @@ test("a shielded rock takes a blast on its shield and survives it", () => {
   assert.equal(bare.neighbour.dead, true, "with the shield down it goes")
 })
 
+test("a blast leaves alone what is already wreckage", () => {
+  // Every other traversal skips a body that died earlier in the frame, and the
+  // blast now does too. Hitting one again destroys it a second time, which pays
+  // its kill twice.
+  const game = liveGame()
+  const bomb = new Asteroid({ x: ARENA.cx, y: ARENA.cy, radius: 45, traits: EXPLOSIVE })
+  const rival = new RivalShip(ARENA.cx + 40, ARENA.cy, "scout", [])
+  rival.dead = true
+  game.asteroids = [bomb]
+  game.rivals = [rival]
+  const before = game.score
+  bomb.detonate(game)
+  assert.equal(game.score, before, "a hull already gone must not be killed again")
+})
+
 // ---- control bindings -----------------------------------------------------
 
 test("the default bindings are the controls the game shipped with", () => {

@@ -16,7 +16,6 @@ import {
   lerp,
   subtract,
   normalize,
-  magnitude,
   dot,
   pointInPolygon,
   convexHull,
@@ -2508,77 +2507,68 @@ export class Asteroid extends Entity {
     }
 
     const killRadius = CONFIG.BLAST_R * 0.66
-    for (const other of game.asteroids) {
-      if (other === this || other.dead) {
-        continue
-      }
-      const offset = subtract(other.center, this.center)
-      // Range is measured to the rock's near surface, not to its middle. A boulder
-      // with its face against the blast is next to it however far off its centre
-      // sits, and measuring to the centre let a big neighbour that was actually
-      // overlapping take nothing but a shove.
-      const dir = normalize(offset)
-      const dist = Math.max(0, magnitude(offset) - other.boundRadius)
-      if (dist > CONFIG.BLAST_R) {
-        continue
-      }
-      if (other.explosive) {
-        if (other.fuse == null) {
-          other.fuse = randRange(0.05, 0.18)
+    const blast = { centre: this.center, radius: CONFIG.BLAST_R }
+    // Range to a rock is measured to its near surface, not to its middle, so a
+    // boulder with its face against the blast is next to it however far off its
+    // centre sits.
+    game.applyRadialForce({
+      ...blast,
+      include: ["asteroids"],
+      toSurface: true,
+      skip: this,
+      visit: (other, { dir, distance, falloff }) => {
+        if (other.explosive) {
+          if (other.fuse == null) {
+            other.fuse = randRange(0.05, 0.18)
+          }
+          return
         }
-        continue
-      }
-      const falloff = 1 - dist / CONFIG.BLAST_R
-      // Whether a shield was there to meet the blast, asked before the blast drains
-      // it: a shield that soaks this hit has earned the rock this hit, even if the
-      // drain overloads it and leaves it bare for the next one.
-      const wasShielded = other.shieldUp()
-      // A rock takes blast damage as a ship does, so a shield drains and an armed
-      // rock is worn down instead of the blast passing through it. A bare rock has
-      // no hull to lose, which is what the shatter below is for.
-      other.takeDamage(CONFIG.BLAST_DAMAGE * falloff, game, "projectile")
-      // Close in, anything the blast reached unshielded is broken up outright.
-      if (dist < killRadius && !wasShielded) {
-        game.shatterToOre(other)
-        other.dead = true
-        continue
-      }
-      other.vx += dir.x * CONFIG.BLAST_IMPULSE * falloff
-      other.vy += dir.y * CONFIG.BLAST_IMPULSE * falloff
-      other.spin += randRange(-2, 2) * falloff
-    }
-
-    const player = game.player,
-      playerDist = Math.hypot(player.x - this.center.x, player.y - this.center.y)
-    if (playerDist < CONFIG.BLAST_R) {
-      const falloff = 1 - playerDist / CONFIG.BLAST_R,
-        dir = normalize(subtract(player, this.center))
-      player.vx += dir.x * CONFIG.BLAST_KNOCK_PLAYER * falloff
-      player.vy += dir.y * CONFIG.BLAST_KNOCK_PLAYER * falloff
-      player.takeDamage(CONFIG.BLAST_DAMAGE * falloff, game, "projectile")
-    }
-    for (let i = game.rivals.length - 1; i >= 0; i--) {
-      const rival = game.rivals[i],
-        dist = Math.hypot(rival.x - this.center.x, rival.y - this.center.y)
-      if (dist >= CONFIG.BLAST_R) {
-        continue
-      }
-      const falloff = 1 - dist / CONFIG.BLAST_R,
-        dir = normalize(subtract(rival, this.center))
-      rival.vx += dir.x * CONFIG.BLAST_KNOCK_RIVAL * falloff
-      rival.vy += dir.y * CONFIG.BLAST_KNOCK_RIVAL * falloff
-      rival.takeDamage(CONFIG.BLAST_DAMAGE * falloff, game, "projectile", rival.type.blastScore)
-    }
-    for (const bullet of game.projectiles) {
-      const dx = bullet.x - this.center.x,
-        dy = bullet.y - this.center.y,
-        dist = Math.hypot(dx, dy) || 1
-      if (dist < CONFIG.BLAST_R) {
-        const s = Math.max(CONFIG.BULLET_SPEED, Math.hypot(bullet.vx, bullet.vy))
-        bullet.vx = (dx / dist) * s
-        bullet.vy = (dy / dist) * s
-      }
-    }
+        // Whether a shield was there to meet the blast, asked before the blast
+        // drains it: a shield that soaks this hit has earned the rock this hit,
+        // even if the drain overloads it and leaves it bare for the next one.
+        const wasShielded = other.shieldUp()
+        // A rock takes blast damage as a ship does, so a shield drains and an armed
+        // rock is worn down instead of the blast passing through it. A bare rock has
+        // no hull to lose, which is what the shatter below is for.
+        other.takeDamage(CONFIG.BLAST_DAMAGE * falloff, game, "projectile")
+        // Close in, anything the blast reached unshielded is broken up outright.
+        if (distance < killRadius && !wasShielded) {
+          game.shatterToOre(other)
+          other.dead = true
+          return
+        }
+        other.vx += dir.x * CONFIG.BLAST_IMPULSE * falloff
+        other.vy += dir.y * CONFIG.BLAST_IMPULSE * falloff
+        other.spin += randRange(-2, 2) * falloff
+      },
+    })
+    game.applyRadialForce({
+      ...blast,
+      include: ["player"],
+      visit: (player, { dir, falloff }) => {
+        player.vx += dir.x * CONFIG.BLAST_KNOCK_PLAYER * falloff
+        player.vy += dir.y * CONFIG.BLAST_KNOCK_PLAYER * falloff
+        player.takeDamage(CONFIG.BLAST_DAMAGE * falloff, game, "projectile")
+      },
+    })
+    game.applyRadialForce({
+      ...blast,
+      include: ["rivals"],
+      visit: (rival, { dir, falloff }) => {
+        rival.vx += dir.x * CONFIG.BLAST_KNOCK_RIVAL * falloff
+        rival.vy += dir.y * CONFIG.BLAST_KNOCK_RIVAL * falloff
+        rival.takeDamage(CONFIG.BLAST_DAMAGE * falloff, game, "projectile", rival.type.blastScore)
+      },
+    })
+    game.applyRadialForce({
+      ...blast,
+      include: ["projectiles"],
+      visit: (bullet, { dir }) => {
+        const speed = Math.max(CONFIG.BULLET_SPEED, Math.hypot(bullet.vx, bullet.vy))
+        bullet.vx = dir.x * speed
+        bullet.vy = dir.y * speed
+      },
+    })
   }
 
   hasGun() {

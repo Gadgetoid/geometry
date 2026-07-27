@@ -10,7 +10,7 @@
 // A registry entry may carry an `apply` function; it drives the effect through
 // the public Game API so the whole definition stays in one place.
 
-import { clamp, normalize, randRange, subtract } from "./math.js"
+import { clamp, randRange } from "./math.js"
 import { PALETTE } from "./palette.js"
 
 export const VIEW_W = 1024
@@ -1002,27 +1002,28 @@ export const POWERUP_TYPES = {
     range: 240,
     impulse: 300,
     apply: (game, player, type) => {
-      for (const asteroid of game.asteroids) {
-        if (
-          Math.hypot(asteroid.center.x - player.x, asteroid.center.y - player.y) >
-          type.range + asteroid.boundRadius
-        ) {
-          continue
-        }
-        const d = normalize(subtract(asteroid.center, player))
-        asteroid.vx += d.x * type.impulse
-        asteroid.vy += d.y * type.impulse
-        asteroid.spin += randRange(-3, 3)
-      }
-      for (const bullet of game.projectiles) {
-        if (Math.hypot(bullet.x - player.x, bullet.y - player.y) > type.range) {
-          continue
-        }
-        const d = normalize(subtract(bullet, player))
-        const speed = Math.max(CONFIG.BULLET_SPEED, Math.hypot(bullet.vx, bullet.vy))
-        bullet.vx = d.x * speed
-        bullet.vy = d.y * speed
-      }
+      // A rock counts as in range when its surface is; a shot when its centre is.
+      game.applyRadialForce({
+        centre: player,
+        radius: type.range,
+        include: ["asteroids"],
+        toSurface: true,
+        visit: (asteroid, { dir }) => {
+          asteroid.vx += dir.x * type.impulse
+          asteroid.vy += dir.y * type.impulse
+          asteroid.spin += randRange(-3, 3)
+        },
+      })
+      game.applyRadialForce({
+        centre: player,
+        radius: type.range,
+        include: ["projectiles"],
+        visit: (bullet, { dir }) => {
+          const speed = Math.max(CONFIG.BULLET_SPEED, Math.hypot(bullet.vx, bullet.vy))
+          bullet.vx = dir.x * speed
+          bullet.vy = dir.y * speed
+        },
+      })
       game.ring(player.x, player.y, 40, type.colour, type.range, 0.7)
       game.screenShake = 9
     },
