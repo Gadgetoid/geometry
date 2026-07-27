@@ -1119,7 +1119,8 @@ const SHIP_DESIGNS = {
     outline: [
       [17, 0],
       [-11, -12],
-      [-6, 0],
+      [-6, -3],
+      [-6, 3],
       [-11, 12],
     ],
     colour: PALETTE.rival.hull,
@@ -1130,7 +1131,8 @@ const SHIP_DESIGNS = {
       { local: [17, 0], role: "nose" },
       { local: [2, 0], role: "gun" },
       { local: [0, 0], role: "core" },
-      { local: [-14, 0], role: "engine" },
+      // in the notch cut out of the tail, so the plume leaves through it
+      { local: [-6, 0], role: "engine" },
     ],
     loadout: [
       { hp: 0, weapon: "minerLaser", controller: "miner" }, // always has a mining laser
