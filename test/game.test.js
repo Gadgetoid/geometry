@@ -1937,8 +1937,13 @@ function ramARock(typeName) {
   // Its own loadout without the shield: the ram has to reach the hull, and the ship
   // needs its drive, since a hull with none has a top speed of nothing and the speed
   // clamp would hold it still.
+  //
+  // Placed so the hull's leading edge starts 60 units short of the rock, whatever the
+  // hull is: measured from the centre instead, a wide slow one spent the whole run
+  // closing and only reached the rock at all if its own spin happened to swing a
+  // corner into the way.
   const ship = plainRival(
-    rockFace - SHIP_TYPES[typeName].boundRadius * 2 - 40,
+    rockFace - SHIP_TYPES[typeName].boundRadius - 60,
     320,
     typeName,
     withoutShield(SHIP_TYPES[typeName].loadout),
@@ -1946,7 +1951,7 @@ function ramARock(typeName) {
   ship.angle = 0
   game.rivals = [ship]
   game.asteroids = [new Asteroid({ vertices: square(rockFace + 80, 320, 80), vx: 0, vy: 0 })]
-  for (let i = 0; i < 240; i++) {
+  for (let i = 0; i < 400; i++) {
     ship.vx = SHIP_TYPES[typeName].maxSpeed
     ship.vy = 0
     game.advance(1 / 60)
@@ -1959,6 +1964,30 @@ function ramARock(typeName) {
   }
   return 0
 }
+
+test("a mount only fires where it can bear", () => {
+  // A gun buried in the jaw of a pincer covers what is in front of the ship and
+  // nothing behind it, which is a property of the mount rather than of the gun: the
+  // same autocannon on a ring traverses freely.
+  const game = liveGame()
+  const target = plainRival(500, 320, "scout")
+  game.rivals = [target]
+  const held = new Weapon("autocannon", "turret", 0.5)
+  const free = new Weapon("autocannon", "turret")
+  assert.equal(free.arc, Infinity, "a mount that states no arc has none")
+
+  const host = { angle: 0, x: 400, y: 320 }
+  assert.ok(held.bearsOn(host, 0), "dead ahead is inside a forward mount's arc")
+  assert.ok(held.bearsOn(host, 0.4), "and so is a bearing just inside it")
+  assert.ok(!held.bearsOn(host, 1), "a bearing outside it is not")
+  assert.ok(!held.bearsOn(host, Math.PI), "least of all one astern")
+  assert.ok(free.bearsOn(host, Math.PI), "which the free mount answers regardless")
+
+  // The gun's own arc still applies when the mount states none, which is what the
+  // heavy cannon has always used to decide whether it is lined up.
+  const cannon = new Weapon("cannonLaser", "hunter")
+  assert.equal(cannon.arc, WEAPON_TYPES.cannonLaser.arc)
+})
 
 test("a rock costs a rival hull, as it costs the player energy", () => {
   for (const typeName of Object.keys(SHIP_TYPES)) {

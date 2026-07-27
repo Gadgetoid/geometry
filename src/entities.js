@@ -586,11 +586,16 @@ const CUT_OVERSHOOT = 20
 // Weapon module. `kind` projectile or beam; `controller` decides firing.
 // ---------------------------------------------------------------------------
 export class Weapon {
-  constructor(typeName, controller) {
+  constructor(typeName, controller, arc) {
     this.kind = "weapon"
     this.typeName = typeName
     this.type = WEAPON_TYPES[typeName]
     this.controller = controller
+    // How far off the hull's facing this gun can be brought to bear, in radians
+    // either side. The mount's own limit if the loadout states one, otherwise the
+    // gun's, otherwise none: a turret on a ring traverses freely, one buried in the
+    // jaw of a pincer only covers what is in front of the ship.
+    this.arc = arc ?? this.type.arc ?? Infinity
     this.barrels = barrelCount(this.type)
     this.cooldown = this.rollReload() * randRange(0.15, 1) // random phase so turrets don't fire in unison
     this.charge = 0
@@ -611,6 +616,13 @@ export class Weapon {
   // and flies on its own speed, so this only shapes a beam.
   cutReach(target, toCentre) {
     return toCentre + target.boundRadius + (this.type.overshoot ?? CUT_OVERSHOOT)
+  }
+
+  // Can this gun be brought to bear on a world bearing, given where its host is
+  // pointed? Asked by every controller that picks its own target, so a mount's arc is
+  // one rule rather than one rule per behaviour.
+  bearsOn(host, bearing) {
+    return Math.abs(shortestTurn(host.angle, bearing)) <= this.arc
   }
 
   rollReload() {
@@ -715,8 +727,12 @@ export const WEAPON_CONTROLLERS = {
     if (!found || !game.onScreen(host.x, host.y, CONFIG.OFFSCREEN_FIRE_MARGIN)) {
       return
     }
+    const aim = bearingTo(world, found.target)
+    if (!weapon.bearsOn(host, aim)) {
+      return // outside what this mount covers, so the hull has to come round
+    }
     const reach = weapon.cutReach(found.target, found.distance)
-    weapon.fire(game, host, world.x, world.y, bearingTo(world, found.target), reach)
+    weapon.fire(game, host, world.x, world.y, aim, reach)
   },
 
   // cuts rocks for ore, firing along the host's facing when one is near
@@ -742,9 +758,8 @@ export const WEAPON_CONTROLLERS = {
       }
       return
     }
-    const arc = shortestTurn(host.angle, bearingTo(host, found.target))
     if (
-      Math.abs(arc) < weapon.type.arc &&
+      weapon.bearsOn(host, bearingTo(host, found.target)) &&
       found.distance < weapon.type.length &&
       game.onScreen(host.x, host.y, CONFIG.OFFSCREEN_FIRE_MARGIN)
     ) {
@@ -772,7 +787,7 @@ export const WEAPON_CONTROLLERS = {
       return
     }
     const found = game.hostileTarget(host, world, weapon.type.range)
-    if (found) {
+    if (found && weapon.bearsOn(host, bearingTo(world, found.target))) {
       host.turretAim = bearingTo(world, found.target)
       const reach = weapon.cutReach(found.target, found.distance)
       weapon.fire(game, host, world.x, world.y, host.turretAim, reach)
@@ -784,7 +799,7 @@ export const WEAPON_CONTROLLERS = {
 // and a core build the same thing from the same description.
 export function moduleFor(entry) {
   if (entry.weapon) {
-    return new Weapon(entry.weapon, entry.controller)
+    return new Weapon(entry.weapon, entry.controller, entry.arc)
   }
   if (entry.shield) {
     return new Shield(entry.shield)
