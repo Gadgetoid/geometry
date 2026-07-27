@@ -37,6 +37,7 @@ function element(tag = "div") {
     height: 600,
     append: (...kids) => el.children.push(...kids),
     appendChild: (kid) => (el.children.push(kid), kid),
+    prepend: (...kids) => el.children.unshift(...kids),
     addEventListener: noop,
     removeEventListener: noop,
     setAttribute: noop,
@@ -123,15 +124,23 @@ function stubDom(stored = null) {
 // The module imports ./src/*.js, so it has to run from the same directory the page
 // does. Written beside it and removed again whatever happens. The query string
 // keeps each boot out of the module cache.
-async function boot(dom, tag) {
+//
+// `expose` is a list of the module's own bindings to hand back, which is how a test
+// can drive the editor rather than only watch it start. The page has nothing in it
+// for the sake of being tested: the line that reaches in is written here.
+async function boot(dom, tag, expose = []) {
   const page = readFileSync(join(root, "ship-editor.html"), "utf8")
   const body = page.match(/<script type="module">([\s\S]*?)<\/script>/)
   assert.ok(body, "ship-editor.html must hold one module script")
+  const probe = expose.length
+    ? `\nglobalThis.__editor = { ${expose.join(", ")}, setShip: (s) => { ship = s } }\n`
+    : ""
   const scratch = join(root, `.editor-under-test-${tag}.mjs`)
-  writeFileSync(scratch, body[1])
+  writeFileSync(scratch, body[1] + probe)
   try {
     await import(`${scratch}?t=${tag}`)
     await new Promise((resolve) => setTimeout(resolve, 50))
+    return globalThis.__editor
   } finally {
     dom.restore()
     unlinkSync(scratch)
@@ -166,4 +175,79 @@ test("the editor throws away saved state from before the units changed", async (
     dom.storage.removed.includes("geometry-ship-editor"),
     "a payload with no version must be cleared rather than loaded",
   )
+})
+
+// The editor is what writes config.js, so a model change that does not reach it is
+// a change that quietly cannot be authored: every ship design has been through here
+// and out the other side wrong at least once. Loading each design and reading the
+// snippet back is the check that catches it.
+test("every design in config.js survives a trip through the editor", async () => {
+  const dom = stubDom()
+  const editor = await boot(dom, "roundtrip", ["fromType", "snippet", "derived", "SHIP_TYPES"])
+  const { fromType, snippet, derived, setShip, SHIP_TYPES } = editor
+
+  for (const [key, type] of Object.entries(SHIP_TYPES)) {
+    setShip(fromType(type, "rival", key))
+    const out = snippet()
+
+    // The core, and whatever the design fits inside it. The editor knew nothing of
+    // cores when they landed, so it wrote the core hardpoint out as empty.
+    const core = (type.loadout || []).find((entry) => entry.core)
+    assert.match(out, new RegExp(`core: "${core.core}"`), `${key} states its core`)
+    for (const [slot, id] of Object.entries(core.fitted || {})) {
+      assert.match(out, new RegExp(`${slot}: "${id}"`), `${key} keeps ${id} in its ${slot} slot`)
+    }
+
+    // An arm is a chance, so losing the chance changes how often the hull turns up
+    // carrying the thing.
+    for (const [name, arm] of Object.entries(type.arms || {})) {
+      assert.match(out, new RegExp(`${name}: \\{`), `${key} keeps its ${name} arm`)
+      assert.match(
+        out,
+        new RegExp(`chancePerSector: ${arm.chancePerSector}`),
+        `${key}'s ${name} arm keeps its per-sector chance`,
+      )
+    }
+
+    // Stating a derived field freezes it, so the editor writes none of them.
+    for (const field of ["accel", "maxSpeed", "turnRate", "drag", "energyMax", "regen", "hull:"]) {
+      assert.doesNotMatch(out, new RegExp(`\\b${field}`), `${key} does not state ${field}`)
+    }
+    // A spawn block that says nothing about how many may be alive means no limit.
+    assert.equal(
+      /maxConcurrent/.test(out),
+      type.spawn.maxConcurrent !== undefined,
+      `${key} keeps whether it limits how many are alive at once`,
+    )
+
+    // And what it flies like is still what config.js says it flies like.
+    const stats = derived()
+    for (const field of ["accel", "maxSpeed", "turnRate", "energyMax", "regen", "hull"]) {
+      assert.equal(stats[field], type[field], `${key} derives the same ${field}`)
+    }
+  }
+})
+
+test("the player's hardpoints are the shop's, and the editor leaves them to it", async () => {
+  const dom = stubDom()
+  const { fromType, snippet, setShip, PLAYER_TYPE, EQUIPMENT } = await boot(dom, "player", [
+    "fromType",
+    "snippet",
+    "PLAYER_TYPE",
+    "EQUIPMENT",
+  ])
+  setShip(fromType(PLAYER_TYPE, "player", "player"))
+  const out = snippet()
+
+  // Everything the shop fits is named against a hardpoint, and stating it here
+  // instead would hand the player whatever the editor happened to be showing.
+  for (const [slot, spec] of Object.entries(EQUIPMENT)) {
+    for (const option of spec.options) {
+      assert.doesNotMatch(out, new RegExp(option.id), `${slot}'s ${option.id} is the shop's to fit`)
+    }
+  }
+  assert.match(out, /faction: "player"/, "the player's hull says which faction it is")
+  assert.match(out, /confineRadius: 13/, "and how far the arena lets it reach")
+  assert.match(out, /startingSpecials: \["oreMagnet"\]/, "and what it launches carrying")
+  assert.match(out, /core: "minerCore"/, "the core is the hull's own, so it is stated")
 })

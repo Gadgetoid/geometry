@@ -284,6 +284,10 @@
             <input id="key" type="text" spellcheck="false" />
           </div>
           <div>
+            <label for="faction">FACTION</label>
+            <select id="faction"></select>
+          </div>
+          <div>
             <label for="colour">COLOUR</label>
             <select id="colour"></select>
           </div>
@@ -359,8 +363,10 @@
           <button id="load">LOAD FROM SNIPPET</button>
         </div>
         <p class="note">
-          The design only, as config.js states it: the derived settings are left out unless they
-          have been overridden above. LOAD reads a pasted <code>SHIP_DESIGNS</code> entry or
+          The design only, as config.js states it: what the shape and the numbers imply is left for
+          the game to work out. What the shop fits to the player is the run's, so it is named
+          against the hardpoint it goes on and not written here; <code>startingSpecials</code> is
+          carried through as it was read. LOAD reads a pasted <code>SHIP_DESIGNS</code> entry or
           <code>PLAYER_DESIGN</code> back in, so a ship already in config.js can be edited by
           pasting it over the text above.
         </p>
@@ -414,7 +420,14 @@
           ionDrive: { plume: { rate: 40, speed: 30, life: 0.48, spread: 4 } },
           siegeDrive: { plume: { rate: 44, speed: 150, life: 0.62, spread: 26, width: 9 } },
         },
+        cores: {
+          prospectorCore: { energy: 90, regen: 22, shield: 1, radar: 1, special: 0 },
+          seekerCore: { energy: 300, regen: 34, shield: 1, radar: 1, special: 0 },
+          siegeCore: { energy: 260, regen: 30, shield: 1, radar: 1, special: 0 },
+        },
+        radars: { huntingArray: {}, prospectorArray: {}, surveyMk1: {} },
         controllers: ["manual", "turret", "miner", "hunter", "defense"],
+        factions: { player: [], rival: [], alien: [], hazard: [] },
         palette: {
           player: { hull: "#5fd7ff" },
           rival: { hull: "#ff9a3c", frigateHull: "#ff8a3c" },
@@ -422,24 +435,28 @@
         shipTypes: {},
         playerType: {
           outline: [
-            [18.2, 0],
-            [-10.4, -11.05],
-            [-5.2, 0],
-            [-10.4, 11.05],
+            [18, 0],
+            [-10, -11],
+            [-5, 0],
+            [-10, 11],
           ],
           mass: 1,
-          boundRadius: 18.2,
-          bubbleRadius: 24.206,
+          boundRadius: 18,
+          bubbleRadius: 23.94,
           hardpoints: [
-            { local: [18.2, 0], role: "nose" },
+            { local: [18, 0], role: "nose" },
             { local: [0, 0], role: "core" },
-            { local: [2.6, 0], role: "aux" },
+            { local: [3, 0], role: "aux" },
+            { local: [-10, 0], role: "engine" },
           ],
-          loadout: [
-            { hp: 0, weapon: "playerLaser", controller: "manual" },
-            { hp: 1, shield: "player" },
-          ],
-          fittings: { turret: { hp: 2, weapon: "defenseLaser", controller: "defense" } },
+          loadout: [{ hp: 1, core: "minerCore" }],
+        },
+        equipment: {
+          laser: { label: "LASER", hp: 0 },
+          turret: { label: "TURRET", hp: 2 },
+          engine: { label: "ENGINE", hp: 3 },
+          shield: { label: "SHIELD", hp: 1, slot: "shield" },
+          radar: { label: "RADAR", hp: 1, slot: "radar" },
         },
         debrisMinArea: 1650,
       }
@@ -448,6 +465,10 @@
       let WEAPON_TYPES = SNAPSHOT.weapons
       let SHIELD_TYPES = SNAPSHOT.shields
       let ENGINE_TYPES = SNAPSHOT.engines
+      let CORE_TYPES = SNAPSHOT.cores
+      let RADAR_TYPES = SNAPSHOT.radars
+      let EQUIPMENT = SNAPSHOT.equipment
+      let FACTIONS = SNAPSHOT.factions
       let CONTROLLERS = SNAPSHOT.controllers
       let PALETTE = SNAPSHOT.palette
       let SHIP_TYPES = SNAPSHOT.shipTypes
@@ -459,6 +480,9 @@
       let deriveShipStats = null
       let SHIP_SCALARS = null
       let slicePolygon = null
+      // A levelled core states its whole plant per level, so what it supplies is read
+      // at the level a hull starts on rather than off the entry itself.
+      let coreAt = (type) => type
       const SHARED_SHAPES = []
 
       try {
@@ -471,6 +495,11 @@
         WEAPON_TYPES = config.WEAPON_TYPES
         SHIELD_TYPES = config.SHIELD_TYPES
         ENGINE_TYPES = config.ENGINE_TYPES
+        CORE_TYPES = config.CORE_TYPES
+        RADAR_TYPES = config.RADAR_TYPES
+        EQUIPMENT = config.EQUIPMENT
+        FACTIONS = config.FACTIONS
+        coreAt = config.coreAt
         SHIP_TYPES = config.SHIP_TYPES
         PLAYER_TYPE = config.PLAYER_TYPE
         DEBRIS_MIN_AREA = config.CONFIG.SHIP_DEBRIS_MIN_AREA
@@ -608,7 +637,24 @@
 
       // ---- state -----------------------------------------------------------
 
-      const ROLES = ["nose", "gun", "core", "aux"]
+      // A hardpoint's role is what it carries. Picking the role picks the kind of
+      // module, so there is one field to set instead of two that can disagree with
+      // each other. Two of the names are read by the game: `nose` is where a beam
+      // draws its muzzle stub, and `aux` is the mount the shop fits a turret to.
+      const ROLES = {
+        nose: { module: "weapon", note: "the ship's own gun, and where a beam draws its muzzle" },
+        gun: { module: "weapon", note: "a turret, aimed by its controller" },
+        aux: { module: "weapon", note: "the mount the shop fits the player's turret to" },
+        core: { module: "core", note: "the cell, and the equipment that runs off it" },
+        engine: { module: "engine", note: "a nozzle: every one of them pushes and draws a plume" },
+      }
+
+      // The kind of module a hardpoint carries, from its role.
+      const moduleOf = (hp) => (ROLES[hp.role] || {}).module || "none"
+
+      // Core slots the editor can fill, and the registry each offers. `special` is
+      // room the run fills for itself, so it is reported and not offered.
+      const CORE_SLOT_TYPES = { shield: () => SHIELD_TYPES, radar: () => RADAR_TYPES }
       // World units, spanning the scales a hull is worked at: 10 and 5 to rough out
       // something a couple of hundred across, 1 to place a vertex, 0.25 to nudge
       // one. Nothing here is a size a hull has to fit; the grid follows the work.
@@ -626,14 +672,8 @@
             { path: "mass", label: "MASS", step: 0.1 },
             { path: "handling", label: "HANDLING", step: 0.05, kinds: ["rival"] },
             { path: "armour", label: "ARMOUR", step: 0.1, kinds: ["rival"] },
-          ],
-        },
-        {
-          title: "ENERGY",
-          kinds: ["rival"],
-          fields: [
-            { path: "energyMax", label: "ENERGY MAX", step: 10 },
-            { path: "regen", label: "REGEN", step: 1 },
+            // Less than the hull reaches, so the ship stays inside the drawn ring.
+            { path: "confineRadius", label: "CONFINE RADIUS", step: 1, kinds: ["player"] },
           ],
         },
         {
@@ -681,6 +721,9 @@
         { path: "turnRate", label: "TURN RATE", step: 0.01, kinds: ["rival"] },
         { path: "drag", label: "DRAG", step: 0.01, kinds: ["rival"] },
         { path: "hull", label: "HULL HP", step: 10, kinds: ["rival"] },
+        // The core's, so fitting a bigger plant is what moves them.
+        { path: "energyMax", label: "ENERGY", step: 10, kinds: ["rival"] },
+        { path: "regen", label: "REGEN", step: 1, kinds: ["rival"] },
         { path: "rockContact", label: "ROCK CONTACT", step: 0.05, kinds: ["rival"] },
         { path: "bubbleRadius", label: "SHIELD RADIUS", step: 0.5 },
         { path: "hullWidth", label: "HULL WIDTH", step: 0.1 },
@@ -690,7 +733,12 @@
         return {
           kind: "rival",
           key: "newship",
+          faction: "rival",
           colour: "rival.hull",
+          // The player's, and read straight off PLAYER_TYPE: how far the arena lets
+          // the ship reach, and what it launches carrying.
+          confineRadius: 13,
+          startingSpecials: [],
           outline: [
             [18.2, 0],
             [-11.2, -12.6],
@@ -700,13 +748,11 @@
           hardpoints: [
             { local: [18.2, 0], role: "nose", mount: freshMount() },
             { local: [0, 0], role: "core", mount: freshMount() },
-            { local: [-15.4, 0], role: "engine", mount: freshMount("engine") },
+            { local: [-15.4, 0], role: "engine", mount: freshMount() },
           ],
           mass: 1,
           armour: 1,
           handling: 1,
-          energyMax: 90,
-          regen: 22,
           lifeTime: [16, 26],
           spawn: { fromSector: 4, weight: 2, maxConcurrent: 1 },
           hunts: false,
@@ -717,18 +763,57 @@
         }
       }
 
-      function freshMount(module = "none") {
+      // What a hardpoint has fitted, one entry per kind so switching role keeps the
+      // pick the previous one had. Which of these is read follows from the role.
+      function freshMount() {
         return {
-          module,
           engine: Object.keys(ENGINE_TYPES)[0],
           weapon: Object.keys(WEAPON_TYPES)[0],
           controller: CONTROLLERS.includes("turret") ? "turret" : CONTROLLERS[0],
-          shield: Object.keys(SHIELD_TYPES)[0],
+          core: Object.keys(CORE_TYPES)[0],
+          slots: {}, // core slot name -> what is in it, see freshSlot
           rolled: false,
           rollKey: "",
           chancePerSector: 0.15,
           chanceCap: 0.85,
         }
+      }
+
+      // One named slot of a core. A slot is rolled on its own rather than with the
+      // core, since a hull always has its cell and may or may not turn up with a
+      // shield in it.
+      function freshSlot() {
+        return { id: "none", rolled: false, chancePerSector: 0.12, chanceCap: 0.8 }
+      }
+
+      function slotState(mount, slot) {
+        if (!mount.slots) {
+          mount.slots = {}
+        }
+        if (!mount.slots[slot]) {
+          mount.slots[slot] = freshSlot()
+        }
+        return mount.slots[slot]
+      }
+
+      // For the player, some hardpoints belong to the shop: EQUIPMENT names the
+      // hardpoint each of its slots mounts on, and for the shield and the radar the
+      // core slot as well. What is in one is the run's to choose, so the design does
+      // not state it and the editor does not offer to.
+      function shopFitting(state, index, slot = null) {
+        if (state.kind !== "player") {
+          return null
+        }
+        const spec = Object.values(EQUIPMENT || {}).find(
+          (entry) => entry.hp === index && (entry.slot ?? null) === slot,
+        )
+        return spec ? spec.label : null
+      }
+
+      // The slots the core on this hardpoint has room for and the editor can fill.
+      function coreSlots(hp) {
+        const type = coreAt(CORE_TYPES[hp.mount.core]) || {}
+        return Object.keys(CORE_SLOT_TYPES).filter((slot) => (type[slot] ?? 0) > 0)
       }
 
       // The design as config.js states it: the shape, the three numbers, and any
@@ -738,9 +823,13 @@
         const out = {
           outline: state.outline.map((p) => p.slice()),
           mass: Number(state.mass),
-          // The loadout goes in because thrust is the sum of the engines on it, and
-          // without it every hull derives an acceleration of zero.
-          loadout: mountedEntries(state).map(({ entry }) => entry),
+          // The loadout goes in because thrust is the sum of the engines on it and
+          // energy is the core's, so without it a hull derives no acceleration and no
+          // cell. Arms are left out: they are what a hull may turn up with, not what
+          // it is.
+          loadout: mountedEntries(state)
+            .filter(({ rolled }) => !rolled)
+            .map(({ entry }) => entry),
         }
         if (state.kind === "rival") {
           out.armour = Number(state.armour)
@@ -749,25 +838,58 @@
         return out
       }
 
-      // What each hardpoint carries, as the loadout entries config.js would hold.
-      // One reader for the snippet, the derived stats and the warnings, so they
-      // cannot disagree about what is fitted.
+      // What each hardpoint carries, as the entries config.js would hold. One reader
+      // for the snippet, the derived stats and the warnings, so they cannot disagree
+      // about what is fitted. A rolled entry is an arm rather than part of the
+      // loadout, and carries the key it is filed under.
       function mountedEntries(state = ship) {
-        return state.hardpoints
-          .map((hp, index) => ({ hp, index }))
-          .filter(({ hp }) => hp.mount.module !== "none")
-          .map(({ hp, index }) => {
-            const entry = { hp: index }
-            if (hp.mount.module === "weapon") {
-              entry.weapon = hp.mount.weapon
-              entry.controller = hp.mount.controller
-            } else if (hp.mount.module === "shield") {
-              entry.shield = hp.mount.shield
-            } else if (hp.mount.module === "engine") {
-              entry.engine = hp.mount.engine
+        const out = []
+        state.hardpoints.forEach((hp, index) => {
+          const mount = hp.mount
+          if (shopFitting(state, index)) {
+            return
+          }
+          if (moduleOf(hp) === "weapon") {
+            const entry = { hp: index, weapon: mount.weapon, controller: mount.controller }
+            if (mount.rolled) {
+              entry.chancePerSector = mount.chancePerSector
+              entry.chanceCap = mount.chanceCap
             }
-            return { entry, rolled: hp.mount.rolled }
-          })
+            out.push({ entry, rolled: mount.rolled, key: mount.rollKey || hp.role })
+          } else if (moduleOf(hp) === "engine") {
+            out.push({ entry: { hp: index, engine: mount.engine }, rolled: false })
+          } else if (moduleOf(hp) === "core") {
+            const fitted = {}
+            for (const slot of coreSlots(hp)) {
+              const inSlot = slotState(mount, slot)
+              if (inSlot.id === "none" || shopFitting(state, index, slot)) {
+                continue
+              }
+              if (inSlot.rolled) {
+                // Filed under the slot it goes in, which is how config.js names it.
+                out.push({
+                  entry: {
+                    hp: index,
+                    slot,
+                    [slot]: inSlot.id,
+                    chancePerSector: inSlot.chancePerSector,
+                    chanceCap: inSlot.chanceCap,
+                  },
+                  rolled: true,
+                  key: slot,
+                })
+              } else {
+                fitted[slot] = inSlot.id
+              }
+            }
+            const entry = { hp: index, core: mount.core }
+            if (Object.keys(fitted).length) {
+              entry.fitted = fitted
+            }
+            out.push({ entry, rolled: false })
+          }
+        })
+        return out
       }
 
       // Every derived field for the design as it stands. The shape fields are
@@ -789,10 +911,9 @@
         return deriveShipStats(spec)
       }
 
-      // Read an existing type back into editable state, folding its loadout,
-      // `arms` and `fittings` onto the hardpoints they mount to. A type carries
-      // its derived stats as ordinary fields, so a field is taken as an override
-      // only where it differs from what the shape and the three numbers give.
+      // Read an existing type back into editable state, folding its loadout and
+      // `arms` onto the hardpoints they mount to. A type carries its derived stats as
+      // ordinary fields, so only the stated ones are read back.
       function fromType(type, kind, key) {
         const ship = Object.assign(blankShip(), { kind, key })
         ship.outline = type.outline.map((p) => p.slice())
@@ -806,6 +927,14 @@
           }
         }
         ship.handling = type.handling ?? 1
+        ship.faction = type.faction ?? (kind === "player" ? "player" : "rival")
+        // A spawn block that states no limit means no limit, so the blank design's
+        // one has to go rather than being left to stand in for what was not said.
+        ship.spawn.maxConcurrent = (type.spawn || {}).maxConcurrent ?? 0
+        if (kind === "player") {
+          ship.confineRadius = type.confineRadius ?? ship.confineRadius
+          ship.startingSpecials = (type.startingSpecials || []).slice()
+        }
         ship.hardpoints = (type.hardpoints || []).map((hp) => ({
           local: hp.local.slice(),
           role: hp.role || "",
@@ -816,22 +945,30 @@
           if (!hp) {
             return
           }
-          hp.mount.module = entry.weapon
-            ? "weapon"
-            : entry.shield
-              ? "shield"
-              : entry.engine
-                ? "engine"
-                : "none"
+          // An entry naming a core slot goes into the core on this hardpoint, not
+          // onto the hardpoint itself.
+          if (entry.slot) {
+            const state = slotState(hp.mount, entry.slot)
+            state.id = entry[entry.slot] ?? state.id
+            if (rollKey !== undefined) {
+              state.rolled = true
+              state.chancePerSector = entry.chancePerSector ?? state.chancePerSector
+              state.chanceCap = entry.chanceCap ?? state.chanceCap
+            }
+            return
+          }
           if (entry.weapon) {
             hp.mount.weapon = entry.weapon
             hp.mount.controller = entry.controller || hp.mount.controller
           }
-          if (entry.shield) {
-            hp.mount.shield = entry.shield
-          }
           if (entry.engine) {
             hp.mount.engine = entry.engine
+          }
+          if (entry.core) {
+            hp.mount.core = entry.core
+            for (const [slot, id] of Object.entries(entry.fitted || {})) {
+              slotState(hp.mount, slot).id = id
+            }
           }
           if (rollKey !== undefined) {
             hp.mount.rolled = true
@@ -843,7 +980,7 @@
         for (const entry of type.loadout || []) {
           mountEntry(entry)
         }
-        for (const [name, entry] of Object.entries(type.arms || type.fittings || {})) {
+        for (const [name, entry] of Object.entries(type.arms || {})) {
           mountEntry(entry, name)
         }
         return ship
@@ -934,7 +1071,10 @@
       // payload written before that holds a hull a tenth of the size it should be
       // and a grid step that is no longer offered. Restoring it looks like the
       // editor is broken, which is worse than starting clean.
-      const STORAGE_VERSION = 2
+      //
+      // Version 3: a hardpoint's role now says what it carries, so a mount naming its
+      // own module means nothing, and a core keeps its slots.
+      const STORAGE_VERSION = 3
 
       // What an option is allowed to be. A saved value outside the set is dropped
       // and the default kept, so changing one of these lists cannot leave a stored
@@ -1214,7 +1354,7 @@
       let plumeBacklog = 0
 
       function updatePlume(dt) {
-        const engines = ship.hardpoints.filter((hp) => hp.mount.module === "engine")
+        const engines = ship.hardpoints.filter((hp) => moduleOf(hp) === "engine")
         if (!options.plume || !engines.length) {
           plume.length = 0
           return
@@ -1364,7 +1504,7 @@
           circle(x, y, 5, { stroke: colour, width: 1.4, glow: 8 })
           circle(x, y, 1.4, { fill: colour })
           const mount = hp.mount
-          if (mount.module === "weapon") {
+          if (moduleOf(hp) === "weapon") {
             const weapon = WEAPON_TYPES[mount.weapon] || {}
             const weaponColour = weapon.colour || "#ffb14b"
             if (weapon.kind === "projectile") {
@@ -1381,9 +1521,18 @@
               ctx.stroke()
               ctx.restore()
             }
-          } else if (mount.module === "shield") {
-            circle(x, y, 9, { stroke: "#9fe8ff", width: 1, glow: 6, dash: [1, 3] })
-          } else if (mount.module === "engine") {
+          } else if (moduleOf(hp) === "core") {
+            // the cell, ringed once for each slot the core has something in
+            circle(x, y, 7, { stroke: "#c9a7ff", width: 1.2, glow: 6 })
+            const filled = coreSlots(hp).filter((slot) => slotState(mount, slot).id !== "none")
+            filled.forEach((slot, ring) => {
+              circle(x, y, 10 + ring * 3, {
+                stroke: slot === "shield" ? "#9fe8ff" : "#9ff5c8",
+                width: 1,
+                dash: [1, 3],
+              })
+            })
+          } else if (moduleOf(hp) === "engine") {
             // a nozzle, pointing back the way the plume goes
             const throat = ((ENGINE_TYPES[mount.engine] || {}).plume || {}).width || 0
             const half = Math.max(4, (throat / 2) * view.scale)
@@ -2420,17 +2569,17 @@
         host.append(row)
       }
 
-      function coordInput(name, target, axis) {
+      function numberInput(name, target, key, step) {
         const wrap = document.createElement("div")
         const text = document.createElement("label")
         text.textContent = name
         const input = document.createElement("input")
         input.type = "number"
-        input.step = options.grid
-        input.value = target[axis]
+        input.step = step
+        input.value = target[key]
         input.addEventListener("focus", pushUndo)
         input.addEventListener("input", () => {
-          target[axis] = Number(input.value)
+          target[key] = Number(input.value)
           refreshFacts()
           refreshOutput()
           save()
@@ -2439,11 +2588,17 @@
         return wrap
       }
 
-      function selectField(name, values, current, onChange) {
+      // A hardpoint's own position, which moves on the grid the hull is worked at.
+      function coordInput(name, target, axis) {
+        return numberInput(name, target, axis, options.grid)
+      }
+
+      function selectField(name, values, current, onChange, title = "") {
         const wrap = document.createElement("div")
         const text = document.createElement("label")
         text.textContent = name
         const select = document.createElement("select")
+        select.title = title
         for (const value of values) {
           const option = document.createElement("option")
           option.value = value
@@ -2457,6 +2612,99 @@
         })
         wrap.append(text, select)
         return wrap
+      }
+
+      function shopNote(text) {
+        const note = document.createElement("p")
+        note.className = "note"
+        note.textContent = text
+        return note
+      }
+
+      // What a core carries: the plant itself, then one row per named slot it has
+      // room for. Energy is the core's own and not one of the slots, so it is
+      // reported here rather than offered.
+      function buildCore(node, hp, index) {
+        const row = document.createElement("div")
+        row.className = "row one"
+        row.append(
+          selectField("CORE", Object.keys(CORE_TYPES), hp.mount.core, (value) => {
+            hp.mount.core = value
+            rebuild()
+          }),
+        )
+        node.append(row)
+
+        const type = coreAt(CORE_TYPES[hp.mount.core]) || {}
+        const room = type.special ?? 0
+        node.append(
+          shopNote(
+            `${round(type.energy ?? 0)} energy, ${round(type.regen ?? 0)} a second, ` +
+              (room ? `room for ${room} special${room === 1 ? "" : "s"}` : "no room for specials"),
+          ),
+        )
+
+        for (const slot of coreSlots(hp)) {
+          const name = slot.toUpperCase()
+          const shop = shopFitting(ship, index, slot)
+          if (shop) {
+            node.append(shopNote(`${name}: ${shop}, fitted from the shop`))
+            continue
+          }
+          const inSlot = slotState(hp.mount, slot)
+          const slotRow = document.createElement("div")
+          slotRow.className = "row one"
+          slotRow.append(
+            selectField(
+              name,
+              ["none", ...Object.keys(CORE_SLOT_TYPES[slot]())],
+              inSlot.id,
+              (id) => {
+                inSlot.id = id
+                rebuild()
+              },
+            ),
+          )
+          node.append(slotRow)
+          if (inSlot.id !== "none" && ship.kind === "rival") {
+            buildRolled(node, inSlot, `rolled-${index}-${slot}`, `ROLL THE ${name}`)
+          }
+        }
+      }
+
+      // The switch that turns something fitted into something the spawner rolls for,
+      // and the chances it rolls at. A hardpoint's mount and one core slot carry the
+      // same three fields, so both come through here. `extra` adds to the row of
+      // numbers, which is where an arm's key goes.
+      function buildRolled(node, state, id, label, lead = null) {
+        const optional = document.createElement("div")
+        optional.className = "inline"
+        optional.style.marginTop = "6px"
+        const check = document.createElement("input")
+        check.type = "checkbox"
+        check.id = id
+        check.checked = state.rolled
+        check.addEventListener("change", () => {
+          pushUndo()
+          state.rolled = check.checked
+          rebuild()
+        })
+        const text = document.createElement("label")
+        text.htmlFor = check.id
+        text.textContent = label
+        optional.append(check, text)
+        node.append(optional)
+        if (!state.rolled) {
+          return
+        }
+        const row = document.createElement("div")
+        row.className = lead ? "row three" : "row"
+        const fields = [
+          numberInput("PER SECTOR", state, "chancePerSector", 0.01),
+          numberInput("CAP", state, "chanceCap", 0.05),
+        ]
+        row.append(...(lead ? [lead(), ...fields] : fields))
+        node.append(row)
       }
 
       function buildHardpoints() {
@@ -2483,37 +2731,28 @@
           coords.append(coordInput("X", hp.local, 0), coordInput("Y", hp.local, 1))
           node.append(coords)
 
+          // The role is the only thing to pick: what it carries follows from it, and
+          // the rows below are that module's own settings.
           const roleRow = document.createElement("div")
-          roleRow.className = "row"
-          const roleWrap = document.createElement("div")
-          const roleLabel = document.createElement("label")
-          roleLabel.textContent = "ROLE"
-          const roleInput = document.createElement("input")
-          roleInput.type = "text"
-          roleInput.setAttribute("list", "roles")
-          roleInput.value = hp.role
-          roleInput.addEventListener("focus", pushUndo)
-          roleInput.addEventListener("input", () => {
-            hp.role = roleInput.value.trim()
-            refreshOutput()
-            save()
-          })
-          roleWrap.append(roleLabel, roleInput)
+          roleRow.className = "row one"
           roleRow.append(
-            roleWrap,
             selectField(
-              "MODULE",
-              ["none", "weapon", "shield", "engine"],
-              hp.mount.module,
+              "ROLE",
+              Object.keys(ROLES),
+              hp.role,
               (value) => {
-                hp.mount.module = value
+                hp.role = value
                 rebuild()
               },
+              (ROLES[hp.role] || {}).note || "",
             ),
           )
           node.append(roleRow)
 
-          if (hp.mount.module === "weapon") {
+          const shop = shopFitting(ship, index)
+          if (shop) {
+            node.append(shopNote(`${shop}, fitted from the shop`))
+          } else if (moduleOf(hp) === "weapon") {
             const row = document.createElement("div")
             row.className = "row"
             row.append(
@@ -2527,17 +2766,7 @@
               }),
             )
             node.append(row)
-          } else if (hp.mount.module === "shield") {
-            const row = document.createElement("div")
-            row.className = "row one"
-            row.append(
-              selectField("SHIELD", Object.keys(SHIELD_TYPES), hp.mount.shield, (value) => {
-                hp.mount.shield = value
-                rebuild()
-              }),
-            )
-            node.append(row)
-          } else if (hp.mount.module === "engine") {
+          } else if (moduleOf(hp) === "engine") {
             const row = document.createElement("div")
             row.className = "row one"
             row.append(
@@ -2547,80 +2776,29 @@
               }),
             )
             node.append(row)
+          } else if (moduleOf(hp) === "core") {
+            buildCore(node, hp, index)
           }
 
-          if (hp.mount.module !== "none") {
-            const optional = document.createElement("div")
-            optional.className = "inline"
-            optional.style.marginTop = "6px"
-            const check = document.createElement("input")
-            check.type = "checkbox"
-            check.id = `rolled-${index}`
-            check.checked = hp.mount.rolled
-            check.addEventListener("change", () => {
-              pushUndo()
-              hp.mount.rolled = check.checked
-              if (check.checked && !hp.mount.rollKey) {
-                hp.mount.rollKey = hp.mount.module === "shield" ? "shield" : hp.role || "gun"
-              }
-              rebuild()
-            })
-            const text = document.createElement("label")
-            text.htmlFor = check.id
-            text.textContent = ship.kind === "player" ? "SHOP FITTING" : "ROLLED AS AN ARM"
-            optional.append(check, text)
-            node.append(optional)
-
-            if (hp.mount.rolled) {
-              const row = document.createElement("div")
-              row.className = ship.kind === "player" ? "row one" : "row three"
-              const keyWrap = document.createElement("div")
-              const keyLabel = document.createElement("label")
-              keyLabel.textContent = ship.kind === "player" ? "UPGRADE ID" : "ARM KEY"
-              const keyInput = document.createElement("input")
-              keyInput.type = "text"
-              keyInput.value = hp.mount.rollKey
-              keyInput.addEventListener("focus", pushUndo)
-              keyInput.addEventListener("input", () => {
-                hp.mount.rollKey = keyInput.value.trim()
+          if (moduleOf(hp) === "weapon" && ship.kind === "rival") {
+            // The key config.js files the arm under, which is a name rather than a
+            // number: two rolled guns on one hull need two of them.
+            buildRolled(node, hp.mount, `rolled-${index}`, "ROLLED AS AN ARM", () => {
+              const wrap = document.createElement("div")
+              const label = document.createElement("label")
+              label.textContent = "ARM KEY"
+              const input = document.createElement("input")
+              input.type = "text"
+              input.value = hp.mount.rollKey || hp.role
+              input.addEventListener("focus", pushUndo)
+              input.addEventListener("input", () => {
+                hp.mount.rollKey = input.value.trim()
                 refreshOutput()
                 save()
               })
-              keyWrap.append(keyLabel, keyInput)
-              row.append(keyWrap)
-              if (ship.kind !== "player") {
-                const chanceWrap = document.createElement("div")
-                const chanceLabel = document.createElement("label")
-                chanceLabel.textContent = "PER SECTOR"
-                const chance = document.createElement("input")
-                chance.type = "number"
-                chance.step = 0.01
-                chance.value = hp.mount.chancePerSector
-                chance.addEventListener("focus", pushUndo)
-                chance.addEventListener("input", () => {
-                  hp.mount.chancePerSector = Number(chance.value)
-                  refreshOutput()
-                  save()
-                })
-                chanceWrap.append(chanceLabel, chance)
-                const capWrap = document.createElement("div")
-                const capLabel = document.createElement("label")
-                capLabel.textContent = "CAP"
-                const cap = document.createElement("input")
-                cap.type = "number"
-                cap.step = 0.05
-                cap.value = hp.mount.chanceCap
-                cap.addEventListener("focus", pushUndo)
-                cap.addEventListener("input", () => {
-                  hp.mount.chanceCap = Number(cap.value)
-                  refreshOutput()
-                  save()
-                })
-                capWrap.append(capLabel, cap)
-                row.append(chanceWrap, capWrap)
-              }
-              node.append(row)
-            }
+              wrap.append(label, input)
+              return wrap
+            })
           }
 
           node.addEventListener("click", (event) => {
@@ -2729,8 +2907,11 @@
         if (Math.hypot(cx, cy) > reach * 0.2) {
           warnings.push("centroid is well off the origin, so the hull pivots about its edge")
         }
-        if (!ship.hardpoints.some((hp) => hp.mount.module === "engine")) {
+        if (!ship.hardpoints.some((hp) => moduleOf(hp) === "engine")) {
           warnings.push("no engine fitted, so nothing pushes the hull along")
+        }
+        if (!ship.hardpoints.some((hp) => moduleOf(hp) === "core")) {
+          warnings.push("no core, so the hull has no cell and nothing that runs off one")
         }
         if (ship.kind === "rival") {
           if (!(Number(ship.spawn.weight) > 0)) {
@@ -2786,21 +2967,19 @@
         )
       }
 
-      function mountPairs(hp, index, rolled) {
-        const pairs = [`hp: ${index}`]
-        if (hp.mount.module === "weapon") {
-          pairs.push(`weapon: "${hp.mount.weapon}"`)
-          if (hp.mount.controller) {
-            pairs.push(`controller: "${hp.mount.controller}"`)
+      // One mounted entry as the pairs config.js states it, in that order. The reader
+      // built it, so the snippet only has to spell it out.
+      function entryPairs(entry, indent) {
+        const pairs = []
+        for (const [key, value] of Object.entries(entry)) {
+          if (typeof value === "number") {
+            pairs.push(`${key}: ${round(value)}`)
+          } else if (key === "fitted") {
+            const fitted = Object.entries(value).map(([slot, id]) => `${slot}: "${id}"`)
+            pairs.push(`fitted: ${braces(fitted, indent, "fitted: ")}`)
+          } else {
+            pairs.push(`${key}: "${value}"`)
           }
-        } else if (hp.mount.module === "engine") {
-          pairs.push(`engine: "${hp.mount.engine}"`)
-        } else {
-          pairs.push(`shield: "${hp.mount.shield}"`)
-        }
-        if (rolled && ship.kind !== "player") {
-          pairs.push(`chancePerSector: ${round(hp.mount.chancePerSector)}`)
-          pairs.push(`chanceCap: ${round(hp.mount.chanceCap)}`)
         }
         return pairs
       }
@@ -2824,7 +3003,14 @@
         const shared = sharedShapeName(ship.outline)
         push(`outline: ${shared || pointList(ship.outline, indent)},`)
         push(`colour: ${colourExpression()},`)
+        // Only when it says something: a hull nobody states a faction for is a rival.
+        if (ship.faction !== "rival") {
+          push(`faction: "${ship.faction}",`)
+        }
         push(`mass: ${round(ship.mass)},`)
+        if (ship.kind === "player") {
+          push(`confineRadius: ${round(ship.confineRadius)},`)
+        }
         if (ship.kind === "rival") {
           push(`armour: ${round(ship.armour)},`)
           // Only when it says something: a handling of 1 is what the shape implies.
@@ -2832,8 +3018,6 @@
             push(`handling: ${round(ship.handling)},`)
           }
           push(`lifeTime: [${round(ship.lifeTime[0])}, ${round(ship.lifeTime[1])}],`)
-          push(`energyMax: ${round(ship.energyMax)},`)
-          push(`regen: ${round(ship.regen)},`)
         }
 
         const hardpoints = ship.hardpoints.map(
@@ -2841,24 +3025,23 @@
         )
         push(`hardpoints: ${composite(hardpoints, indent)},`)
 
-        const loadout = ship.hardpoints
-          .map((hp, index) => ({ hp, index }))
-          .filter(({ hp }) => hp.mount.module !== "none" && !hp.mount.rolled)
-          .map(({ hp, index }) => braces(mountPairs(hp, index, false), indent + 2))
+        const mounted = mountedEntries()
+        const loadout = mounted
+          .filter(({ rolled }) => !rolled)
+          .map(({ entry }) => braces(entryPairs(entry, indent + 2), indent + 2))
         if (loadout.length) {
           push(`loadout: ${composite(loadout, indent)},`)
         }
 
-        const rolled = ship.hardpoints
-          .map((hp, index) => ({ hp, index }))
-          .filter(({ hp }) => hp.mount.module !== "none" && hp.mount.rolled)
+        const rolled = mounted.filter((mount) => mount.rolled)
         if (rolled.length) {
-          push(`${ship.kind === "player" ? "fittings" : "arms"}: {`)
-          for (const { hp, index } of rolled) {
-            const key = hp.mount.rollKey || `mount${index}`
-            const entry = braces(mountPairs(hp, index, true), indent + 2, `${key}: `)
-            lines.push(`${pad}  ${key}: ${entry},`)
-          }
+          push(`arms: {`)
+          rolled.forEach(({ entry, key }, i) => {
+            const name = key || `mount${i}`
+            lines.push(
+              `${pad}  ${name}: ${braces(entryPairs(entry, indent + 2), indent + 2, `${name}: `)},`,
+            )
+          })
           push(`},`)
         }
 
@@ -2883,6 +3066,9 @@
           push(`killScore: ${round(ship.killScore)},`)
           push(`blastScore: ${round(ship.blastScore)},`)
           push(`oreDrop: ${round(ship.oreDrop)},`)
+        }
+        if (ship.kind === "player" && ship.startingSpecials.length) {
+          push(`startingSpecials: [${ship.startingSpecials.map((id) => `"${id}"`).join(", ")}],`)
         }
         return lines.join("\n")
       }
@@ -3067,6 +3253,20 @@
           ship.kind = kind.value
           rebuild()
         })
+        // Who the hull is hostile to, which FACTIONS states. Rock turrets are the
+        // hazard faction and are not ships, so that one is not on offer.
+        const faction = document.getElementById("faction")
+        for (const name of Object.keys(FACTIONS).filter((name) => name !== "hazard")) {
+          const option = document.createElement("option")
+          option.value = name
+          option.textContent = name.toUpperCase()
+          faction.append(option)
+        }
+        faction.addEventListener("change", () => {
+          pushUndo()
+          ship.faction = faction.value
+          rebuild()
+        })
         const key = document.getElementById("key")
         key.addEventListener("focus", pushUndo)
         key.addEventListener("input", () => {
@@ -3099,6 +3299,7 @@
       function rebuild() {
         document.getElementById("kind").value = ship.kind
         document.getElementById("key").value = ship.key
+        document.getElementById("faction").value = ship.faction
         document.getElementById("colour").value = PALETTE_NAMES.includes(ship.colour)
           ? ship.colour
           : PALETTE_NAMES[0]
@@ -3111,15 +3312,6 @@
         refreshSidebarSelection()
         save()
       }
-
-      const roles = document.createElement("datalist")
-      roles.id = "roles"
-      for (const role of ROLES) {
-        const option = document.createElement("option")
-        option.value = role
-        roles.append(option)
-      }
-      document.body.append(roles)
 
       // Whatever was saved is read back before the controls are built, since each
       // of them is filled in from the options as it is made.
