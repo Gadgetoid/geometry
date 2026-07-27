@@ -308,10 +308,14 @@ export class GameView {
     lenses.sort((a, b) => b.strength * b.radius - a.strength * a.radius)
     r.setLenses(lenses)
 
-    const tears = game.glitches.map((g) =>
-      // A tear closes by fading, so its strength is what is left of its life.
-      source(g.x, g.y, g.radius, g.strength * clamp(g.life / g.maxLife, 0, 1)),
-    )
+    const tears = game.glitches.map((g) => {
+      // A tear bursts and then goes: full force the instant it happens and most of it gone
+      // in the first third of its life. Fading it away evenly reads as an effect being
+      // switched off, where this is supposed to read as the game itself failing for a
+      // moment and recovering.
+      const left = clamp(g.life / g.maxLife, 0, 1)
+      return source(g.x, g.y, g.radius, g.strength * left * left)
+    })
     tears.sort((a, b) => b.strength - a.strength)
     r.setTears(tears)
   }

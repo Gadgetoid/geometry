@@ -26,6 +26,7 @@ import {
   shapeContact,
   resolveHullRockContact,
   rockMass,
+  Singularity,
 } from "../src/entities.js"
 import {
   ARENA,
@@ -1395,6 +1396,131 @@ function distortion(game) {
   return { lenses, tears }
 }
 
+// The pincer, its wind-up finished, with a well in flight from its muzzle.
+function withSingularity(game, at = { x: 500, y: 320 }) {
+  const alien = plainRival(at.x, at.y, "alienFrigate")
+  alien.angle = 0
+  game.rivals = [alien]
+  const gun = alien.hardpoints.find((hp) => hp.module && hp.module.typeName === "singularityGun")
+  assert.ok(gun, "the pincer should carry the singularity gun")
+  const muzzle = alien.mountWorld(gun.local)
+  gun.module.launchWell(game, alien, muzzle.x, muzzle.y, 0)
+  const well = game.projectiles.find((p) => p instanceof Singularity)
+  assert.ok(well, "which should have let go of a well")
+  // Its guns come off once the well is away: a pincer left armed shoots whatever else is
+  // in the sector, and its orbs landing on the thing being measured is not the well.
+  for (const hp of alien.hardpoints) {
+    if (hp.module && hp.module.kind === "weapon") {
+      hp.module = null
+    }
+  }
+  return { alien, gun: gun.module, well }
+}
+
+test("the pincer's wind-up drags in what is loose, and never the rocks", () => {
+  const game = liveGame()
+  game.player.x = -9000
+  game.player.y = -9000
+  const alien = plainRival(500, 320, "alienFrigate")
+  alien.angle = 0
+  game.rivals = [alien]
+  const gun = alien.hardpoints.find(
+    (hp) => hp.module && hp.module.typeName === "singularityGun",
+  ).module
+  const muzzle = { x: 600, y: 320 }
+
+  // A rock sitting in the jaws, a drifting particle and someone else's shot.
+  const rock = new Asteroid({ vertices: square(660, 320, 30), vx: 0, vy: 0, spin: 0 })
+  game.asteroids = [rock]
+  game.emit(700, 320, 0, 0, 5, PALETTE.alien.beam)
+  const mote = game.particles[game.particles.length - 1]
+  const round = new Projectile(700, 360, 0, 0, 10, null, WEAPON_TYPES.autocannon)
+  game.projectiles = [round]
+
+  gun.charging = gun.type.chargeTime
+  gun.chargeDuration = gun.type.chargeTime
+  const rockAt = rock.center.x
+  for (let i = 0; i < 30; i++) {
+    gun.generate(1 / 60, game, alien, muzzle)
+  }
+  assert.ok(mote.vx < -1, "a loose particle falls toward the muzzle")
+  assert.ok(round.vx < -1, "and so does a loose shot")
+  assert.equal(rock.center.x, rockAt, "the rock does not move: a sector heaving would be mayhem")
+})
+
+test("a singularity pulls, bites through a shield, and spares whoever fired it", () => {
+  const game = liveGame()
+  game.player.x = -9000
+  game.player.y = -9000
+  game.asteroids = [new Asteroid({ vertices: square(-600, -600, 40), spin: 0 })]
+  const { alien, well } = withSingularity(game)
+  assert.ok(Math.hypot(well.vx, well.vy) > 0, "it travels")
+
+  // A shielded rival sat inside it loses hull anyway: the channel is one no shield lists,
+  // so a bubble is no help against the space it is sitting in.
+  // Its core and bubble only: a hull spends from the same cell every time one of its own
+  // guns goes off, and what is being measured is whether the well touched the cell.
+  const caught = plainRival(
+    well.x + 40,
+    well.y,
+    "frigate",
+    SHIP_TYPES.frigate.loadout.filter((entry) => entry.core),
+  )
+  game.rivals = [alien, caught]
+  assert.ok(caught.shieldUp(), "it has a bubble up")
+  const hull = caught.hull
+  const cell = caught.energy
+  for (let i = 0; i < 30; i++) {
+    well.x = caught.x - 40
+    well.y = caught.y
+    game.advance(1 / 60)
+  }
+  assert.ok(caught.hull < hull, "and is pulled apart inside the well")
+  assert.equal(caught.energy, cell, "with the bubble neither helping nor draining")
+
+  // What fired it is spared while it lives.
+  const own = alien.hull
+  for (let i = 0; i < 30; i++) {
+    well.x = alien.x
+    well.y = alien.y
+    game.advance(1 / 60)
+  }
+  assert.equal(alien.hull, own, "its own hull is spared")
+})
+
+test("a pincer cut while its well is up is finished by its own singularity", () => {
+  // The emergent claim the shape was drawn for: a well spares its owner while the owner
+  // lives, and stops the moment it does not. Nothing about this case is written down.
+  const game = liveGame()
+  game.player.x = -9000
+  game.player.y = -9000
+  game.asteroids = [new Asteroid({ vertices: square(-600, -600, 40), spin: 0 })]
+  const { alien, well } = withSingularity(game)
+
+  // Wreckage of the ship that fired it, standing in for the halves a cut leaves.
+  alien.dead = true
+  const remains = new Asteroid({
+    vertices: square(well.x + 30, well.y, 40),
+    vx: 0,
+    vy: 0,
+    spin: 0,
+    material: SHIP_PLATING,
+  })
+  game.asteroids = [remains]
+  const before = remains.area
+  for (let i = 0; i < 60 && !remains.dead; i++) {
+    well.x = remains.center.x - 30
+    well.y = remains.center.y
+    game.advance(1 / 60)
+  }
+  // A rock has no hull to lose, so what the well does to it is measured by it being gone.
+  assert.ok(before > 0)
+  assert.ok(
+    remains.dead || game.oreChunks.length > 0,
+    "the wreckage of the ship that fired it is not spared",
+  )
+})
+
 test("what bends space says so, and the view finds it", () => {
   const game = liveGame()
   beSolid(game.player)
@@ -1426,7 +1552,7 @@ test("what bends space says so, and the view finds it", () => {
   assert.deepEqual(distortion(game).lenses, [], "a rival frigate bends nothing")
 })
 
-test("a tear fades out of the picture rather than being switched off", () => {
+test("a tear bursts and falls away, rather than being switched off", () => {
   const game = liveGame()
   beSolid(game.player)
   game.asteroids = [new Asteroid({ vertices: square(-600, -600, 40), spin: 0 })]
@@ -1437,9 +1563,12 @@ test("a tear fades out of the picture rather than being switched off", () => {
   assert.equal(fresh.length, 1)
   assert.ok(Math.abs(fresh[0].strength - 1) < 1e-6, "a fresh tear is at full strength")
 
+  // Half its life gone, most of its force is gone: it bursts and falls away rather than
+  // dimming evenly, which is what makes it read as a failure and not as an effect.
   game.advance(0.15)
   const half = distortion(game).tears[0]
-  assert.ok(half.strength < 0.6 && half.strength > 0.4, `half way through it is ${half.strength}`)
+  assert.ok(half.strength < 0.35, `half way through it should be well down, was ${half.strength}`)
+  assert.ok(half.strength > 0, "but not yet gone")
 
   game.advance(0.2)
   assert.deepEqual(distortion(game).tears, [], "and then it is gone")

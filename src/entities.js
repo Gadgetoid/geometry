@@ -702,8 +702,74 @@ export class Weapon {
   fire(game, host, x, y, aim, reach) {
     if (this.type.kind === "beam") {
       this.emitBeam(game, host, x, y, aim, reach)
+    } else if (this.type.kind === "well") {
+      this.launchWell(game, host, x, y, aim)
     } else {
       this.fireProjectile(game, x, y, aim, host)
+    }
+  }
+
+  // Let go of a singularity. It carries the gun that made it, so how deep it reaches and
+  // what it does there is the gun's business, and it remembers who fired it: a well
+  // spares its owner while the owner lives.
+  launchWell(game, host, x, y, aim) {
+    if (!host.spendEnergy(this.type.energy)) {
+      this.cooldown = 0.4
+      return
+    }
+    game.projectiles.push(
+      new Singularity(
+        x,
+        y,
+        Math.cos(aim) * this.type.speed,
+        Math.sin(aim) * this.type.speed,
+        this.type.damage,
+        host,
+        this.type,
+      ),
+    )
+    game.burst(x, y, 20, PALETTE.alien.beam, 30, 160, 0.7)
+    game.ring(x, y, 16, PALETTE.alien.shotCore, 240, 0.5)
+    game.screenShake = Math.max(game.screenShake, 8)
+    Sound.explode()
+    this.cooldown = this.rollReload()
+  }
+
+  // Winding one up: while the charge runs, the muzzle draws in what is loose around it.
+  // Particles and other people's shots, never rock, because a sector heaving toward a
+  // point is mayhem and the contact solver would not survive it. Vanity particles are
+  // spawned out at the edge so there is always something falling in.
+  generate(dt, game, host, world) {
+    const spec = this.type.generate
+    if (!spec) {
+      return
+    }
+    const progress = this.chargeDuration > 0 ? 1 - this.charging / this.chargeDuration : 1
+    const pull = spec.pull * (0.3 + 0.7 * progress)
+    game.drawInParticles(world, spec.radius, pull, dt)
+    game.applyRadialForce({
+      centre: world,
+      radius: spec.radius,
+      include: ["projectiles"],
+      visit: (shot, { dir, falloff }) => {
+        shot.vx -= dir.x * pull * falloff * dt
+        shot.vy -= dir.y * pull * falloff * dt
+      },
+    })
+    // Something to watch: motes appearing at the edge and falling toward the muzzle.
+    this.spinBacklog = (this.spinBacklog ?? 0) + spec.motes * dt
+    while (this.spinBacklog >= 1) {
+      this.spinBacklog -= 1
+      const angle = Math.random() * TAU
+      const away = spec.radius * randRange(0.55, 1)
+      game.emit(
+        world.x + Math.cos(angle) * away,
+        world.y + Math.sin(angle) * away,
+        -Math.cos(angle) * pull * 0.35,
+        -Math.sin(angle) * pull * 0.35,
+        0.5,
+        PALETTE.alien.beam,
+      )
     }
   }
 
@@ -765,9 +831,12 @@ export const WEAPON_CONTROLLERS = {
     }
     if (weapon.charging > 0) {
       weapon.charging -= dt
+      // A gun that generates rather than charges spends the wind-up drawing things in,
+      // which is the telegraph: the same clock, doing something visible with it.
+      weapon.generate(dt, game, host, world)
       if (weapon.charging <= 0) {
         weapon.charging = 0
-        weapon.emitBeam(game, host, world.x, world.y, host.angle, weapon.type.length)
+        weapon.fire(game, host, world.x, world.y, host.angle, weapon.type.length)
       }
       return
     }
@@ -1220,7 +1289,8 @@ export class Projectile extends Entity {
       // A hit that should feel like it reached out of the game tears the picture where
       // it landed. Only on the player: nothing else has a screen to break.
       if (hitPlayer && impact.glitch) {
-        game.glitchAt(at.x, at.y, impact.glitch.strength, impact.glitch.radius)
+        const tear = impact.glitch
+        game.glitchAt(at.x, at.y, tear.strength, tear.radius, tear.seconds)
       }
     } else {
       game.burst(at.x, at.y, sparks, colour, 40, 140, 0.4)
@@ -3287,6 +3357,117 @@ export class Asteroid extends Entity {
       }
       const aim = trackedAim(seen, hp, hp, 0)
       drawTurret(renderer, hp.x, hp.y, aim, hp.module.barrels, PALETTE.weapon.gun)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Singularity: what an alien heavy gun lets go of. A slow-travelling well that drags
+// in what is loose around it, damages what is caught inside it on a channel no shield
+// lists, and collapses when its time is up.
+//
+// It is a Projectile so that everything already true of a shot stays true: it is in the
+// same list, it is drawn with the rest, it ages out. What it overrides is what it does
+// while it lives and what happens when it stops, which is where a well differs from a
+// round: nothing stops it by being hit, because it does not hit anything.
+//
+// It spares whoever fired it while that ship lives, and stops sparing them the moment it
+// does not. That is the whole of the pincer being killed by its own singularity: cut the
+// hull while the well is up and the halves are wreckage inside a field that no longer
+// knows them. Nothing about that case is written down.
+// ---------------------------------------------------------------------------
+export class Singularity extends Projectile {
+  update(dt, game) {
+    this.life -= dt
+    this.age += dt
+    this.integrate(dt)
+    const well = this.type.well
+    // Everything loose nearby falls toward it, and other people's shots with it.
+    game.drawInParticles(this, well.radius, well.pull, dt)
+    game.applyRadialForce({
+      centre: this,
+      radius: well.radius,
+      include: ["projectiles"],
+      skip: this,
+      visit: (shot, { dir, falloff }) => {
+        shot.vx -= dir.x * well.pull * falloff * dt
+        shot.vy -= dir.y * well.pull * falloff * dt
+      },
+    })
+    // And whatever is caught inside it is being pulled apart. A gravity channel, which no
+    // shield blocks: a bubble is no help against the space it is sitting in.
+    const owner = this.owner
+    const spares = owner && !owner.dead ? owner : null
+    game.applyRadialForce({
+      centre: this,
+      radius: well.bite,
+      include: ["asteroids", "rivals", "player"],
+      toSurface: true,
+      skip: spares,
+      visit: (body, { falloff }) => {
+        // A rock has no hull to lose, so what a well does to one is what any hard impact
+        // does: it comes apart if it cannot hold against what is pulling on it. The
+        // measure is the speed the pull would give it in a second, against the material's
+        // own limit, so wreckage is torn apart further out than rock is and both go at
+        // the middle. One rule, and the same one that governs a piece hitting anything.
+        if (body.shatterAt !== undefined) {
+          game.impactShatter(body, well.pull * falloff)
+          return
+        }
+        body.takeDamage(well.damage * falloff * dt, game, "gravity", 0, { x: this.x, y: this.y })
+      },
+    })
+    if (this.life <= 0) {
+      this.collapse(game)
+    }
+  }
+
+  // The well going out: a hard shove on everything close, and a tear in the picture, since
+  // this is the one thing in the game that is not made of the game.
+  collapse(game) {
+    this.dead = true
+    const well = this.type.well
+    game.applyRadialForce({
+      centre: this,
+      radius: well.radius,
+      include: ["asteroids", "rivals", "player", "oreChunks"],
+      toSurface: true,
+      visit: (body, { dir, falloff }) => {
+        const shove = (well.collapse * falloff) / (body.mass ?? 1)
+        body.vx += dir.x * shove
+        body.vy += dir.y * shove
+      },
+    })
+    game.burst(this.x, this.y, 44, PALETTE.alien.beam, 60, 320, 0.8)
+    game.burst(this.x, this.y, 18, PALETTE.alien.shotCore, 40, 200, 1)
+    game.ring(this.x, this.y, 26, PALETTE.fx.flash, 340, 0.6)
+    game.glitchAt(this.x, this.y, 1, well.radius * 1.4, 0.45)
+    game.screenShake = Math.max(game.screenShake, 16)
+    Sound.explode()
+  }
+
+  // A hole rather than a light: a dark middle, a bright rim being dragged round it, and
+  // the accretion the view sees as a lens.
+  draw(renderer) {
+    const well = this.type.well
+    const spin = this.age * 4
+    renderer.circle(this.x, this.y, well.core, { fill: PALETTE.space, glow: 0 })
+    renderer.circle(this.x, this.y, well.core, {
+      stroke: PALETTE.alien.shotCore,
+      width: 2,
+      glow: 22,
+    })
+    for (let arm = 0; arm < 3; arm++) {
+      const angle = spin + (arm / 3) * TAU
+      const from = well.core * 1.4,
+        to = well.core * 2.6
+      renderer.line(
+        this.x + Math.cos(angle) * from,
+        this.y + Math.sin(angle) * from,
+        this.x + Math.cos(angle + 0.9) * to,
+        this.y + Math.sin(angle + 0.9) * to,
+        { color: PALETTE.alien.beam, width: 1.6, glow: 14, alpha: 0.8 },
+      )
     }
   }
 }

@@ -1849,6 +1849,23 @@ export class Game {
     }
   }
 
+  // Draw the loose particles near a point toward it. Particles are not bodies and have
+  // no collections of their own to walk, so this is the one place that reaches into them:
+  // a well pulling what is drifting past is the whole of what a wind-up looks like.
+  drawInParticles(centre, radius, pull, dt) {
+    for (const p of this.particles) {
+      const dx = centre.x - p.x,
+        dy = centre.y - p.y
+      const away = Math.hypot(dx, dy)
+      if (away > radius || away < 1) {
+        continue
+      }
+      const falloff = 1 - away / radius
+      p.vx += (dx / away) * pull * falloff * dt
+      p.vy += (dy / away) * pull * falloff * dt
+    }
+  }
+
   // Tear the picture at a world point: a short-lived, local failure of the screen
   // itself, for a hit that should feel like it reached out of the game. The view turns
   // these into the sources the composite pass reads; nothing in the simulation depends

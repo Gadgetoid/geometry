@@ -604,12 +604,42 @@ export const WEAPON_TYPES = {
       speed: [70, 280],
       ring: { count: 14, speed: 210 },
       shake: 13,
-      // And it tears the picture where it landed, briefly: the one thing in the game
-      // that breaks the screen rather than something in the sector.
-      glitch: { strength: 1, radius: 210 },
+      // And it tears the picture where it landed: the aliens are working on the universe
+      // rather than on the ship, so what their shots damage includes the fabric the game
+      // is drawn on. Over full strength, because it bursts and falls away fast: the first
+      // moments are as broken as the screen gets.
+      glitch: { strength: 1.6, radius: 300, seconds: 0.34 },
     },
     colour: PALETTE.alien.shot,
     survivesDebris: true,
+  },
+  // The pincer's main gun, and the reason it is shaped the way it is. A third kind of
+  // shot: not a round and not a beam but a well, let go of into the jaws.
+  //
+  // `generate` is the wind-up, which is the telegraph. The hunter controller already
+  // gives every heavy gun a charge before it fires; this one spends that charge dragging
+  // in the particles and the loose shots around the muzzle, so what is coming is obvious
+  // to anyone watching the mouth of it. It never drags rock: a sector heaving toward a
+  // point is mayhem, and the contact solver would not survive it.
+  //
+  // `well` is what it lets go of. `pull` is how hard it drags, `bite` how far in it does
+  // real damage, `damage` a second on the gravity channel, which nothing blocks - a
+  // bubble is no help against the space it is sitting in. `collapse` is the shove when it
+  // goes out.
+  singularityGun: {
+    kind: "well",
+    mass: 0.24,
+    damage: 0, // it does its damage by existing, see well.damage
+    energy: 150,
+    reload: [5.5, 7.5],
+    speed: 95, // slow enough to be flown around, if you saw it coming
+    length: 700, // how far off it will start winding up
+    arc: 0.5,
+    chargeTime: 2.2, // a long tell, because the answer is to not be in front of it
+    sound: "bigLaser",
+    colour: PALETTE.alien.beam,
+    generate: { radius: 240, pull: 260, motes: 40 },
+    well: { radius: 210, bite: 120, pull: 340, damage: 260, collapse: 220, core: 13 },
   },
   // The alien seeker's: a snap, as its rival counterpart's is.
   warpNeedle: {
@@ -1667,7 +1697,8 @@ const SHIP_DESIGNS = {
       { local: [-70, 20], role: "engine" },
     ],
     loadout: [
-      { hp: 0, weapon: "cannonLaser", controller: "hunter" },
+      // In the jaws, where the shape was drawn for it.
+      { hp: 0, weapon: "singularityGun", controller: "hunter" },
       // Just under a right angle either side, so a jaw gun covers the mouth and the
       // approach to it and cannot answer anything astern.
       { hp: 1, weapon: "warpOrb", controller: "turret", arc: 1.5 },
