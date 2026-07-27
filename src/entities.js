@@ -1033,6 +1033,18 @@ export class Ship extends Entity {
     return this.type.mass ?? 1
   }
 
+  // What the fitted engines manage backwards, as a fraction of their thrust. The
+  // best of them answers, so refitting one nozzle is enough to back a hull up.
+  driveReverse() {
+    let most = 0
+    for (const hp of this.hardpoints) {
+      if (hp.module && hp.module.kind === "engine") {
+        most = Math.max(most, hp.module.type.reverseAmount ?? 0)
+      }
+    }
+    return most
+  }
+
   // A hull flies for whichever side its type names, and for the rivals without
   // one, so a new type is still a shape and three numbers.
   get faction() {
@@ -1415,12 +1427,22 @@ export class PlayerShip extends Ship {
   // Mount the module an upgrade pays for, as declared in PLAYER_TYPE.fittings.
   // Fitting something already fitted is ignored, so buying twice or resuming a
   // run does not reset a weapon mid-reload.
+  // A purchased fitting takes its hardpoint, replacing whatever else was on it.
+  // That is how an upgrade can be a better piece of equipment instead of a flag:
+  // REVERSE THRUST fits a drive with vanes in place of the one the hull came with.
+  // Fitting what is already there is left alone, so buying twice does not swap in
+  // a fresh module and reset its reload.
   fit(id) {
     const entry = this.type.fittings && this.type.fittings[id]
     const hp = entry && this.hardpoints[entry.hp]
-    if (hp && !hp.module) {
-      this.applyLoadout([entry])
+    if (!hp) {
+      return
     }
+    const wanted = entry.weapon || entry.shield || entry.engine
+    if (hp.module && hp.module.typeName === wanted) {
+      return
+    }
+    this.applyLoadout([entry])
   }
 
   // Mount everything the run has already bought. A resumed run rebuilds the ship
@@ -1619,14 +1641,15 @@ export class PlayerShip extends Ship {
       }
     }
 
+    // Whether the ship can back up at all is the drive's business, not an upgrade
+    // flag: a nozzle pointed one way pushes one way, and the shop sells a drive
+    // whose vanes can turn it around.
+    const reverseAmount = this.driveReverse()
     this.reversing =
-      canControl &&
-      game.upgrades.reverse &&
-      !this.thrusting &&
-      (game.holding("reverse") || pad.reverse)
+      canControl && reverseAmount > 0 && !this.thrusting && (game.holding("reverse") || pad.reverse)
     if (this.reversing) {
-      this.vx -= Math.cos(this.angle) * CONFIG.ACCEL * CONFIG.REVERSE_ACCEL_MULT * dt
-      this.vy -= Math.sin(this.angle) * CONFIG.ACCEL * CONFIG.REVERSE_ACCEL_MULT * dt
+      this.vx -= Math.cos(this.angle) * CONFIG.ACCEL * reverseAmount * dt
+      this.vy -= Math.sin(this.angle) * CONFIG.ACCEL * reverseAmount * dt
       if (this.energy > 0) {
         this.energy -= CONFIG.THRUST_COST * dt
       }

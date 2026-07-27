@@ -45,7 +45,6 @@ export const CONFIG = {
   INVIN_TIME: 2.5, // grace after arriving, counted from when the ship can be flown
   START_LIVES: 3,
   MAX_LIVES: 6,
-  REVERSE_ACCEL_MULT: 0.6, // reverse thrust is weaker than forward
   BOUNDARY_RESTITUTION: 0.35, // bounce off the arena wall
   ROCK_RESTITUTION: 0.5, // bounce off an asteroid
   ROCK_GRIND_DAMAGE: 3.6, // multiplies DMG_AST_GUN per second of contact
@@ -624,6 +623,11 @@ export const SHIELD_TYPES = {
 // what is bolted to it and where, not from a number on the type.
 //
 //   thrust  what one of these puts out
+//   reverseAmount
+//           what it manages backwards, as a fraction of its thrust. Absent or
+//           zero means it cannot reverse at all, which is most of them: a nozzle
+//           pointed one way pushes one way. A separate `canReverse` flag would
+//           only be `reverseAmount > 0` written twice, with room to disagree.
 //   plume   the exhaust it draws. `rate` is plumes a second, `speed` how hard
 //           they are thrown back (which is also how long each streak draws),
 //           `life` how long they linger, `spread` how much they fan out and
@@ -658,6 +662,23 @@ export const ENGINE_TYPES = {
     thrust: 100,
     plume: { rate: 44, speed: 150, life: 0.62, spread: 26, width: 9 },
     colour: PALETTE.rival.hull,
+  },
+  // The player's, and the one thing the hull starts with that can be replaced by
+  // something better. It pushes one way, like every other engine here.
+  minerDrive: {
+    thrust: 270,
+    plume: { rate: 30, speed: 60, life: 0.4, spread: 18, width: 4 },
+    colour: PALETTE.player.exhaust,
+  },
+  // What REVERSE THRUST buys: the same push with vanes that can turn it around.
+  // The upgrade fits this in place of the miner drive rather than flipping a flag
+  // on the old one, so reversing is a property of equipment and a rival could turn
+  // up carrying it.
+  vectoredDrive: {
+    thrust: 270,
+    reverseAmount: 0.6,
+    plume: { rate: 30, speed: 60, life: 0.4, spread: 18, width: 4 },
+    colour: PALETTE.player.exhaust,
   },
 }
 
@@ -1024,12 +1045,23 @@ const PLAYER_DESIGN = {
   // What the ship is confined by, which is less than the hull's own reach of 18.2:
   // see KNOWN_ISSUES.md, "A hull crosses the drawn arena ring".
   confineRadius: 13,
+  // The core is not one contested slot but several, so the shield, the generator,
+  // the radar and the ore magnet each have somewhere to sit rather than competing
+  // for one mount. They are internal, so where they are drawn matters less than
+  // that there are enough of them.
   hardpoints: [
     { local: [18.2, 0], role: "nose" },
-    { local: [0, 0], role: "core" },
+    { local: [0, 0], role: "core" }, // shield
+    { local: [-2.2, 0], role: "core" }, // generator
+    { local: [-4.4, 0], role: "core" }, // radar
+    { local: [-6.6, 0], role: "core" }, // ore magnet
     { local: [2.6, 0], role: "aux" }, // filled by a fitting, see below
+    { local: [-10.4, 0], role: "engine" },
   ],
-  loadout: [{ hp: 0, weapon: "playerLaser", controller: "manual" }],
+  loadout: [
+    { hp: 0, weapon: "playerLaser", controller: "manual" },
+    { hp: 6, engine: "minerDrive" },
+  ],
   // Modules the shop bolts on after the fact, keyed by the upgrade that pays for
   // them. Each entry is an ordinary loadout entry, mounted the same way a spawn
   // loadout is, and re-mounted when a saved run is resumed. A one-off fitting in
@@ -1037,7 +1069,8 @@ const PLAYER_DESIGN = {
   // from its own `apply`, and mounts at level 1.
   fittings: {
     shield: { hp: 1, shield: "player" },
-    turret: { hp: 2, weapon: "defenseBlaster", controller: "defense" },
+    turret: { hp: 5, weapon: "defenseBlaster", controller: "defense" },
+    reverse: { hp: 6, engine: "vectoredDrive" },
   },
 }
 
