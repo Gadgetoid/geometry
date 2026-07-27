@@ -298,12 +298,16 @@
             <select id="grid"></select>
           </div>
           <div>
-            <label for="ghost">PLAYER GHOST</label>
+            <label for="ghost">SCALE GHOST</label>
             <select id="ghost">
               <option value="origin">AT ORIGIN</option>
               <option value="beside">BESIDE</option>
               <option value="off">OFF</option>
             </select>
+          </div>
+          <div>
+            <label for="ghostType">GHOST HULL</label>
+            <select id="ghostType"></select>
           </div>
           <div>
             <label for="wheelMode">TWO FINGERS / WHEEL</label>
@@ -337,13 +341,6 @@
         <button id="addHardpoint">+ HARDPOINT</button>
       </section>
 
-      <section id="exhaustSection">
-        <h2>EXHAUST</h2>
-        <div id="exhaustFields" class="row"></div>
-        <div id="exhaustMounts" style="margin-top: 8px"></div>
-        <button id="addMount">+ MOUNT</button>
-      </section>
-
       <section id="statFields"></section>
 
       <section id="derivedFields"></section>
@@ -373,7 +370,7 @@
         <h2>KEYS</h2>
         <p class="keys">
           <b>V</b> select / move &nbsp; <b>O</b> outline point &nbsp; <b>H</b> hardpoint &nbsp;
-          <b>E</b> exhaust &nbsp; <b>X</b> delete<br />
+          <b>X</b> delete<br />
           <b>DRAG</b> move node, empty space boxes a selection<br />
           <b>TWO FINGERS</b> or <b>WHEEL</b> pan &nbsp; <b>PINCH</b> or <b>CMD</b>+wheel zoom &nbsp;
           <b>SHIFT</b>+wheel pan sideways<br />
@@ -395,7 +392,7 @@
       // uses, and writes nothing: the output is a snippet to paste into config.js.
       //
       // Coordinates are the config's own: outline points, hardpoint `local` and
-      // exhaust `mounts` are in world units, with +y downward as the game draws
+      // hardpoint `local` are in world units, with +y downward as the game draws
       // it. What you see is the size the ship is, and two hulls can be compared
       // by looking at them.
 
@@ -412,6 +409,11 @@
           playerLaser: { kind: "beam", colour: "#eaf4ff" },
         },
         shields: { standard: {}, deflector: {}, player: {} },
+        engines: {
+          pulseDrive: { plume: { rate: 26, speed: 55, life: 0.4, spread: 20 } },
+          ionDrive: { plume: { rate: 40, speed: 30, life: 0.48, spread: 4 } },
+          siegeDrive: { plume: { rate: 44, speed: 150, life: 0.62, spread: 26, width: 9 } },
+        },
         controllers: ["manual", "turret", "miner", "hunter", "defense"],
         palette: {
           player: { hull: "#5fd7ff" },
@@ -445,6 +447,7 @@
       let live = true
       let WEAPON_TYPES = SNAPSHOT.weapons
       let SHIELD_TYPES = SNAPSHOT.shields
+      let ENGINE_TYPES = SNAPSHOT.engines
       let CONTROLLERS = SNAPSHOT.controllers
       let PALETTE = SNAPSHOT.palette
       let SHIP_TYPES = SNAPSHOT.shipTypes
@@ -466,6 +469,7 @@
         ])
         WEAPON_TYPES = config.WEAPON_TYPES
         SHIELD_TYPES = config.SHIELD_TYPES
+        ENGINE_TYPES = config.ENGINE_TYPES
         SHIP_TYPES = config.SHIP_TYPES
         PLAYER_TYPE = config.PLAYER_TYPE
         DEBRIS_MIN_AREA = config.CONFIG.SHIP_DEBRIS_MIN_AREA
@@ -610,7 +614,6 @@
           title: "SHAPE AND THREE NUMBERS",
           fields: [
             { path: "mass", label: "MASS", step: 0.1 },
-            { path: "power", label: "POWER", step: 0.1, kinds: ["rival"] },
             { path: "armour", label: "ARMOUR", step: 0.1, kinds: ["rival"] },
           ],
         },
@@ -664,13 +667,6 @@
         },
       ]
 
-      const EXHAUST_FIELDS = [
-        { path: "exhaust.rate", label: "RATE", step: 1 },
-        { path: "exhaust.speed", label: "SPEED", step: 5 },
-        { path: "exhaust.life", label: "LIFE", step: 0.02 },
-        { path: "exhaust.spread", label: "SPREAD", step: 1 },
-      ]
-
       // What deriveShipStats works out from the shape and the three numbers. Each
       // can be overridden, which states it on the design and keeps that value; the
       // player's design states none of them, so only the two shape fields show.
@@ -699,10 +695,9 @@
           hardpoints: [
             { local: [18.2, 0], role: "nose", mount: freshMount() },
             { local: [0, 0], role: "core", mount: freshMount() },
+            { local: [-15.4, 0], role: "engine", mount: freshMount("engine") },
           ],
-          exhaust: { mounts: [[-15.4, 0]], rate: 26, speed: 55, life: 0.4, spread: 20 },
           mass: 1,
-          power: 1,
           armour: 1,
           overrides: {},
           energyMax: 90,
@@ -717,9 +712,10 @@
         }
       }
 
-      function freshMount() {
+      function freshMount(module = "none") {
         return {
-          module: "none",
+          module,
+          engine: Object.keys(ENGINE_TYPES)[0],
           weapon: Object.keys(WEAPON_TYPES)[0],
           controller: CONTROLLERS.includes("turret") ? "turret" : CONTROLLERS[0],
           shield: Object.keys(SHIELD_TYPES)[0],
@@ -739,7 +735,6 @@
           mass: Number(state.mass),
         }
         if (state.kind === "rival") {
-          out.power = Number(state.power)
           out.armour = Number(state.armour)
         }
         for (const [path, value] of Object.entries(state.overrides || {})) {
@@ -803,13 +798,22 @@
           if (!hp) {
             return
           }
-          hp.mount.module = entry.weapon ? "weapon" : entry.shield ? "shield" : "none"
+          hp.mount.module = entry.weapon
+            ? "weapon"
+            : entry.shield
+              ? "shield"
+              : entry.engine
+                ? "engine"
+                : "none"
           if (entry.weapon) {
             hp.mount.weapon = entry.weapon
             hp.mount.controller = entry.controller || hp.mount.controller
           }
           if (entry.shield) {
             hp.mount.shield = entry.shield
+          }
+          if (entry.engine) {
+            hp.mount.engine = entry.engine
           }
           if (rollKey !== undefined) {
             hp.mount.rolled = true
@@ -823,15 +827,6 @@
         }
         for (const [name, entry] of Object.entries(type.arms || type.fittings || {})) {
           mountEntry(entry, name)
-        }
-        if (type.exhaust) {
-          ship.exhaust = {
-            mounts: type.exhaust.mounts.map((m) => m.slice()),
-            rate: type.exhaust.rate,
-            speed: type.exhaust.speed,
-            life: type.exhaust.life,
-            spread: type.exhaust.spread ?? 20,
-          }
         }
         return ship
       }
@@ -892,6 +887,7 @@
       const options = {
         snap: true,
         grid: 1,
+        ghostType: "player",
         ghost: "origin",
         parts: false,
         shield: true,
@@ -963,6 +959,10 @@
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       }
 
+      // Anything with an outline can stand in as the scale reference. Read on
+      // demand, since the registries are only loaded once the imports resolve.
+      const ghostHulls = () => ({ player: PLAYER_TYPE, ...SHIP_TYPES })
+
       const screenW = () => canvas.clientWidth
       const screenH = () => canvas.clientHeight
 
@@ -989,10 +989,7 @@
       }
 
       function fitView() {
-        const points = ship.outline.concat(
-          ship.hardpoints.map((hp) => hp.local),
-          ship.exhaust.mounts,
-        )
+        const points = ship.outline.concat(ship.hardpoints.map((hp) => hp.local))
         let reach = 1
         for (const p of points) {
           reach = Math.max(reach, Math.abs(p[0]), Math.abs(p[1]))
@@ -1091,28 +1088,25 @@
       }
 
       function drawGhost() {
-        if (options.ghost === "off" || !PLAYER_TYPE.outline) {
+        // Any hull can stand in as the scale reference, drawn at its real
+        // dimensions, so a design can be judged against the one it is meant to sit
+        // beside rather than always against the player.
+        const subject = ghostHulls()[options.ghostType] || PLAYER_TYPE
+        if (options.ghost === "off" || !subject.outline) {
           return
         }
-        // The ghost is drawn at the player's real dimensions, which is the point
-        // of it: it is the scale reference every other hull is judged against.
         const reachOf = (o, axis) => o.reduce((m, p) => Math.max(m, Math.abs(p[axis])), 0)
-        const player = reachOf(PLAYER_TYPE.outline, 1)
+        const half = reachOf(subject.outline, 1)
         let offset = [0, 0]
         if (options.ghost === "beside") {
-          offset = [0, reachOf(ship.outline, 1) + player * 2.2]
+          offset = [0, reachOf(ship.outline, 1) + half * 2.2]
         }
-        const points = PLAYER_TYPE.outline.map((p) =>
-          toScreen([p[0] + offset[0], p[1] + offset[1]]),
-        )
+        const points = subject.outline.map((p) => toScreen([p[0] + offset[0], p[1] + offset[1]]))
         strokePath(points, "rgba(95, 215, 255, 0.45)", 1.2, 0, [4, 3])
-        const tail = toScreen([
-          -reachOf(PLAYER_TYPE.outline, 0) + offset[0],
-          offset[1] + player * 0.2,
-        ])
-        const across = Math.round(reachOf(PLAYER_TYPE.outline, 0) * 2)
+        const tail = toScreen([-reachOf(subject.outline, 0) + offset[0], offset[1] + half * 0.2])
+        const across = Math.round(reachOf(subject.outline, 0) * 2)
         label(
-          "PLAYER (" + across + " ACROSS)",
+          `${options.ghostType.toUpperCase()} (${across} ACROSS)`,
           tail[0] - 30,
           tail[1] + 14,
           "rgba(95, 215, 255, 0.5)",
@@ -1163,26 +1157,36 @@
       let plumeBacklog = 0
 
       function updatePlume(dt) {
-        if (!options.plume || !ship.exhaust.mounts.length || ship.kind === "player") {
+        const engines = ship.hardpoints.filter((hp) => hp.mount.module === "engine")
+        if (!options.plume || !engines.length) {
           plume.length = 0
           return
         }
-        // Mirrors the game: `rate` plumes a second per mount, thrown along -x with
-        // `spread` of jitter, aged with the same drag and lifetime multiplier.
-        const spec = ship.exhaust
-        plumeBacklog += spec.rate * dt
-        while (plumeBacklog >= 1) {
-          plumeBacklog -= 1
-          for (const mount of spec.mounts) {
-            const world = worldOf(mount)
-            plume.push({
-              x: world[0],
-              y: world[1],
-              vx: -spec.speed + (Math.random() * 2 - 1) * spec.spread,
-              vy: (Math.random() * 2 - 1) * spec.spread,
-              life: spec.life * 5,
-              maxLife: spec.life * 5,
-            })
+        // Mirrors Engine.emit: `rate` plumes a second per engine, started across
+        // the nozzle's `width` and thrown along -x with `spread` of jitter, aged
+        // with the same drag and lifetime multiplier.
+        plumeBacklog += dt
+        while (plumeBacklog >= 1 / 60) {
+          plumeBacklog -= 1 / 60
+          for (const hp of engines) {
+            const spec = (ENGINE_TYPES[hp.mount.engine] || {}).plume
+            if (!spec) {
+              continue
+            }
+            hp.mount.backlog = (hp.mount.backlog || 0) + spec.rate / 60
+            while (hp.mount.backlog >= 1) {
+              hp.mount.backlog -= 1
+              const world = worldOf(hp.local)
+              const off = spec.width ? (Math.random() - 0.5) * spec.width : 0
+              plume.push({
+                x: world[0],
+                y: world[1] + off,
+                vx: -spec.speed + (Math.random() * 2 - 1) * spec.spread,
+                vy: (Math.random() * 2 - 1) * spec.spread,
+                life: spec.life * 5,
+                maxLife: spec.life * 5,
+              })
+            }
           }
         }
         const drag = Math.pow(0.4, dt)
@@ -1276,26 +1280,6 @@
           )
         }
 
-        ship.exhaust.mounts.forEach((m, i) => {
-          const [x, y] = localToScreen(m)
-          const active = isSelected("exhaust", i)
-          const colour = active ? "#ffffff" : "#ff9a3c"
-          ctx.save()
-          ctx.strokeStyle = colour
-          ctx.lineWidth = 1.4
-          ctx.shadowBlur = 8
-          ctx.shadowColor = colour
-          ctx.beginPath()
-          ctx.moveTo(x + 4, y - 4)
-          ctx.lineTo(x - 5, y)
-          ctx.lineTo(x + 4, y + 4)
-          ctx.stroke()
-          ctx.restore()
-          if (active) {
-            label(`EX${i}: ${fmt(m[0])}, ${fmt(m[1])}`, x + 8, y - 6, "#ffffff")
-          }
-        })
-
         ship.hardpoints.forEach((hp, i) => {
           const [x, y] = localToScreen(hp.local)
           const active = isSelected("hardpoint", i)
@@ -1325,6 +1309,21 @@
             }
           } else if (mount.module === "shield") {
             circle(x, y, 9, { stroke: "#9fe8ff", width: 1, glow: 6, dash: [1, 3] })
+          } else if (mount.module === "engine") {
+            // a nozzle, pointing back the way the plume goes
+            const throat = ((ENGINE_TYPES[mount.engine] || {}).plume || {}).width || 0
+            const half = Math.max(4, (throat / 2) * view.scale)
+            ctx.save()
+            ctx.strokeStyle = "#7fd8ff"
+            ctx.lineWidth = 1.4
+            ctx.shadowBlur = 8
+            ctx.shadowColor = "#7fd8ff"
+            ctx.beginPath()
+            ctx.moveTo(x + 4, y - half)
+            ctx.lineTo(x - 6, y)
+            ctx.lineTo(x + 4, y + half)
+            ctx.stroke()
+            ctx.restore()
           }
           label(`${i} ${hp.role || "-"}`, x + 8, y + 12, active ? "#ffffff" : "#7fa0c8")
         })
@@ -1512,7 +1511,6 @@
         ship.hardpoints.forEach((hp, index) =>
           nodes.push({ type: "hardpoint", index, local: hp.local }),
         )
-        ship.exhaust.mounts.forEach((m, index) => nodes.push({ type: "exhaust", index, local: m }))
         return nodes
       }
 
@@ -1524,7 +1522,6 @@
         select: "vertex",
         outline: "vertex",
         hardpoint: "hardpoint",
-        exhaust: "exhaust",
         delete: "vertex",
       }
 
@@ -1552,7 +1549,6 @@
         if (node.type === "hardpoint") {
           return ship.hardpoints[node.index].local
         }
-        return ship.exhaust.mounts[node.index]
       }
 
       function insertVertex(local) {
@@ -1583,7 +1579,6 @@
         } else if (node.type === "hardpoint") {
           ship.hardpoints.splice(node.index, 1)
         } else {
-          ship.exhaust.mounts.splice(node.index, 1)
         }
         return true
       }
@@ -1667,12 +1662,6 @@
           pushUndo()
           ship.hardpoints.push({ local, role: "gun", mount: freshMount() })
           selection = [{ type: "hardpoint", index: ship.hardpoints.length - 1 }]
-          beginDrag(selection[0])
-          rebuild()
-        } else if (tool === "exhaust") {
-          pushUndo()
-          ship.exhaust.mounts.push(local)
-          selection = [{ type: "exhaust", index: ship.exhaust.mounts.length - 1 }]
           beginDrag(selection[0])
           rebuild()
         } else {
@@ -1817,7 +1806,7 @@
           }
           return
         }
-        const tools = { v: "select", o: "outline", h: "hardpoint", e: "exhaust", x: "delete" }
+        const tools = { v: "select", o: "outline", h: "hardpoint", x: "delete" }
         if (tools[key]) {
           setTool(tools[key])
           return
@@ -1880,7 +1869,6 @@
         ["select", "SELECT (V)"],
         ["outline", "OUTLINE (O)"],
         ["hardpoint", "HARDPOINT (H)"],
-        ["exhaust", "EXHAUST (E)"],
         ["delete", "DELETE (X)"],
       ]
 
@@ -2039,7 +2027,6 @@
         const shift = ([x, y]) => [round(x - cx), round(y - cy)]
         ship.outline = ship.outline.map(shift)
         ship.hardpoints.forEach((hp) => (hp.local = shift(hp.local)))
-        ship.exhaust.mounts = ship.exhaust.mounts.map(shift)
         rebuild()
         setStatus("outline centred on its centroid")
       }
@@ -2205,42 +2192,6 @@
         host.append(row)
       }
 
-      function buildExhaust() {
-        const section = document.getElementById("exhaustSection")
-        section.hidden = ship.kind === "player"
-        const fields = document.getElementById("exhaustFields")
-        fields.innerHTML = ""
-        for (const field of EXHAUST_FIELDS) {
-          numberField(fields, field)
-        }
-        const host = document.getElementById("exhaustMounts")
-        host.innerHTML = ""
-        ship.exhaust.mounts.forEach((mount, index) => {
-          const node = document.createElement("div")
-          node.className = "node" + (isSelected("exhaust", index) ? " sel" : "")
-          const header = document.createElement("header")
-          header.innerHTML = `<span>MOUNT ${index}</span>`
-          const remove = document.createElement("button")
-          remove.textContent = "REMOVE"
-          remove.addEventListener("click", () => {
-            pushUndo()
-            ship.exhaust.mounts.splice(index, 1)
-            selection = []
-            rebuild()
-          })
-          header.append(remove)
-          const row = document.createElement("div")
-          row.className = "row"
-          row.append(coordInput("X", mount, 0), coordInput("Y", mount, 1))
-          node.append(header, row)
-          node.addEventListener("click", () => {
-            selection = [{ type: "exhaust", index }]
-            refreshSidebarSelection()
-          })
-          host.append(node)
-        })
-      }
-
       function coordInput(name, target, axis) {
         const wrap = document.createElement("div")
         const text = document.createElement("label")
@@ -2322,10 +2273,15 @@
           roleWrap.append(roleLabel, roleInput)
           roleRow.append(
             roleWrap,
-            selectField("MODULE", ["none", "weapon", "shield"], hp.mount.module, (value) => {
-              hp.mount.module = value
-              rebuild()
-            }),
+            selectField(
+              "MODULE",
+              ["none", "weapon", "shield", "engine"],
+              hp.mount.module,
+              (value) => {
+                hp.mount.module = value
+                rebuild()
+              },
+            ),
           )
           node.append(roleRow)
 
@@ -2349,6 +2305,16 @@
             row.append(
               selectField("SHIELD", Object.keys(SHIELD_TYPES), hp.mount.shield, (value) => {
                 hp.mount.shield = value
+                rebuild()
+              }),
+            )
+            node.append(row)
+          } else if (hp.mount.module === "engine") {
+            const row = document.createElement("div")
+            row.className = "row one"
+            row.append(
+              selectField("ENGINE", Object.keys(ENGINE_TYPES), hp.mount.engine, (value) => {
+                hp.mount.engine = value
                 rebuild()
               }),
             )
@@ -2449,8 +2415,7 @@
           if (picked.type === "vertex") {
             continue // an outline point has no row of its own
           }
-          const list = picked.type === "hardpoint" ? "hardpoints" : "exhaustMounts"
-          const rows = document.getElementById(list).children
+          const rows = document.getElementById("hardpoints").children
           if (rows[picked.index]) {
             rows[picked.index].classList.add("sel")
           }
@@ -2539,8 +2504,8 @@
         if (Math.hypot(cx, cy) > 0.35) {
           warnings.push("centroid is well off the origin, so the hull pivots about its edge")
         }
-        if (ship.kind === "rival" && !ship.exhaust.mounts.length) {
-          warnings.push("no exhaust mounts, so the ship draws no thruster plume")
+        if (!ship.hardpoints.some((hp) => hp.mount.module === "engine")) {
+          warnings.push("no engine fitted, so nothing pushes the hull along")
         }
         if (ship.kind === "rival") {
           const rivals = fallbackClaims().filter((name) => name !== ship.key)
@@ -2607,6 +2572,8 @@
           if (hp.mount.controller) {
             pairs.push(`controller: "${hp.mount.controller}"`)
           }
+        } else if (hp.mount.module === "engine") {
+          pairs.push(`engine: "${hp.mount.engine}"`)
         } else {
           pairs.push(`shield: "${hp.mount.shield}"`)
         }
@@ -2638,7 +2605,6 @@
         push(`colour: ${colourExpression()},`)
         push(`mass: ${round(ship.mass)},`)
         if (ship.kind === "rival") {
-          push(`power: ${round(ship.power)},`)
           push(`armour: ${round(ship.armour)},`)
           // Anything stated here is kept in place of what the shape would give.
           for (const field of DERIVED_FIELDS) {
@@ -2646,16 +2612,6 @@
             if (value !== undefined) {
               push(`${field.path}: ${round(value)},`)
             }
-          }
-          if (ship.exhaust.mounts.length) {
-            const pairs = [
-              `mounts: ${pointList(ship.exhaust.mounts, indent + 2)}`,
-              `rate: ${round(ship.exhaust.rate)}`,
-              `speed: ${round(ship.exhaust.speed)}`,
-              `life: ${round(ship.exhaust.life)}`,
-              `spread: ${round(ship.exhaust.spread)}`,
-            ]
-            push(`exhaust: ${braces(pairs, indent, "exhaust: ")},`)
           }
           push(`lifeTime: [${round(ship.lifeTime[0])}, ${round(ship.lifeTime[1])}],`)
           push(`energyMax: ${round(ship.energyMax)},`)
@@ -2861,6 +2817,19 @@
         bind("optParts", "parts")
         bind("optShield", "shield")
         bind("optPlume", "plume")
+        const ghostType = document.getElementById("ghostType")
+        ghostType.innerHTML = ""
+        for (const name of Object.keys(ghostHulls())) {
+          const option = document.createElement("option")
+          option.value = name
+          option.textContent = name.toUpperCase()
+          ghostType.append(option)
+        }
+        ghostType.value = options.ghostType
+        ghostType.addEventListener("change", () => {
+          options.ghostType = ghostType.value
+          rebuild()
+        })
         const ghost = document.getElementById("ghost")
         ghost.value = options.ghost
         ghost.addEventListener("change", () => {
@@ -2895,12 +2864,6 @@
           selection = [{ type: "hardpoint", index: ship.hardpoints.length - 1 }]
           rebuild()
         })
-        document.getElementById("addMount").addEventListener("click", () => {
-          pushUndo()
-          ship.exhaust.mounts.push([-1, 0])
-          selection = [{ type: "exhaust", index: ship.exhaust.mounts.length - 1 }]
-          rebuild()
-        })
         document.getElementById("copy").addEventListener("click", async () => {
           try {
             await navigator.clipboard.writeText(snippet())
@@ -2922,7 +2885,6 @@
           : PALETTE_NAMES[0]
         document.getElementById("grid").value = String(options.grid)
         buildHardpoints()
-        buildExhaust()
         buildStats()
         buildDerived()
         refreshFacts()
