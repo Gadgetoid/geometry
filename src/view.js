@@ -898,16 +898,8 @@ export class GameView {
       align: "right",
       glow: launchSelected ? 16 : 8,
     })
-    r.text(
-      this.#prompt(
-        game,
-        "UP / DOWN select    LEFT / RIGHT along a row    ENTER choose    ESC options",
-        "DPAD select    A / START choose    BACK options",
-      ),
-      VIEW_W / 2,
-      launchY + 26,
-      { size: 11, color: PALETTE.text.muted, align: "center" },
-    )
+    // The dev line stays: free purchases and a sector you can walk to are not things
+    // a player would look for, and the x10 modifier is not visible anywhere else.
     if (game.devMode) {
       r.text(
         this.#prompt(
@@ -916,7 +908,7 @@ export class GameView {
           "DEV   DPAD LEFT / RIGHT choose sector   -   purchases are free",
         ),
         VIEW_W / 2,
-        launchY + 44,
+        launchY + 28,
         { size: 11, color: PALETTE.ui.accentAlt, align: "center" },
       )
     }
@@ -1011,7 +1003,7 @@ export class GameView {
     const width = onRow ? 260 : 200,
       rowHeight = 20
     const desc = chosen && chosen.desc ? this.#wrap(chosen.desc, width - 16, 10) : []
-    const height = titleHeight + rows.length * rowHeight + 28 + desc.length * 12
+    const height = titleHeight + rows.length * rowHeight + 14 + desc.length * 12
     // A menu opened from a row hangs off the tab drawn on that row, sharing its left
     // edge so the two outlines line up; one opened on a special slot hangs under its
     // box, as before.
@@ -1067,12 +1059,6 @@ export class GameView {
         },
       )
     })
-    r.text(
-      this.#prompt(game, "ENTER choose   ESC back", "A choose   B back"),
-      panelX + width / 2,
-      panelY + height - 8,
-      { size: 10, color: PALETTE.text.muted, align: "center" },
-    )
   }
 
   #gameOver(game) {
@@ -1248,18 +1234,15 @@ export class GameView {
           align: "center",
         })
       }
-      r.text(
-        game.rebinding
-          ? this.#prompt(game, "ESC cancels", "HOLD B to cancel")
-          : this.#prompt(
-              game,
-              "UP / DOWN select    LEFT / RIGHT switch column    ENTER rebind    ESC back",
-              "DPAD select and switch column    A rebind    B back",
-            ),
-        VIEW_W / 2,
-        hintY,
-        { size: 11, color: game.rebinding ? PALETTE.ui.warn : PALETTE.text.muted, align: "center" },
-      )
+      // Only while capturing a key: that is a modal state with no standard way out,
+      // so how to abandon it has to be said.
+      if (game.rebinding) {
+        r.text(this.#prompt(game, "ESC cancels", "HOLD B to cancel"), VIEW_W / 2, hintY, {
+          size: 11,
+          color: PALETTE.ui.warn,
+          align: "center",
+        })
+      }
       return
     }
     const leftX = VIEW_W / 2 - 190,
@@ -1279,18 +1262,8 @@ export class GameView {
     }
 
     const hintY = top + rows.length * rowHeight + 18
-    r.text(
-      this.#prompt(
-        game,
-        "UP / DOWN select    LEFT / RIGHT adjust    ENTER choose    ESC / P close",
-        "DPAD select and adjust    A choose    B / START close",
-      ),
-      VIEW_W / 2,
-      hintY,
-      { size: 11, color: PALETTE.text.muted, align: "center" },
-    )
     if (game.pauseConfirming) {
-      r.text("press again to confirm", VIEW_W / 2, hintY + 20, {
+      r.text("press again to confirm", VIEW_W / 2, hintY, {
         size: 11,
         color: PALETTE.ui.warn,
         align: "center",
