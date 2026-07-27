@@ -10,7 +10,7 @@ import assert from "node:assert/strict"
 import { Game } from "../src/game.js"
 import { Asteroid } from "../src/entities.js"
 import { GamepadInput, applyDeadzone, padInUse, readPad } from "../src/gamepad.js"
-import { ARENA, CONFIG, GAMEPAD, SHOP, freshBindings } from "../src/config.js"
+import { ARENA, GAMEPAD, SHOP, freshBindings } from "../src/config.js"
 
 // A pad with everything at rest. `set` takes { buttons: {index: value}, axes: {index: value} }.
 function pad({ buttons = {}, axes = {} } = {}) {
@@ -146,11 +146,13 @@ test("a half-deflected stick turns more slowly than a full one", () => {
 })
 
 test("the keyboard still turns at the full rate", () => {
+  // Which is the fitted thrusters' rate: a key is held or it is not, so a quicker set
+  // is a quicker turn and there is no half deflection to soften it.
   const game = liveGame()
   const before = game.player.angle
   game.pressedKeys.add("KeyD")
   game.advance(1 / 60)
-  assert.ok(Math.abs(game.player.angle - before - CONFIG.ROT / 60) < 1e-9)
+  assert.ok(Math.abs(game.player.angle - before - game.player.turnRate / 60) < 1e-9)
 })
 
 test("holding the trigger charges and releasing it fires", () => {

@@ -52,6 +52,7 @@ import {
   CORE_TYPES,
   EQUIPMENT,
   thrustOf,
+  torqueOf,
   barrelCount,
   deriveShipStats,
 } from "../src/config.js"
@@ -2196,8 +2197,8 @@ test("the shop sits what the core carries under it, and the loadout below", () =
   game.enterShop()
   assert.equal(SHOP[0].id, "life", "a spare ship heads the page")
 
-  // The page reads as three groups: the spare ship, then the core and the three
-  // things it carries, then what is bolted to the hull outside it.
+  // The page reads as three groups: the spare ship, then the core and everything it
+  // carries, then what is bolted to the hull outside it.
   const order = []
   for (let row = 0; row <= SHOP.length; row++) {
     const item = game.shopItem(row)
@@ -2208,18 +2209,19 @@ test("the shop sits what the core carries under it, and the loadout below", () =
     "core",
     "shield",
     "radar",
+    "thruster",
     "specials",
     "laser",
     "turret",
     "engine",
   ])
 
-  // and the three the core carries are the inset ones, which is how the page says so
+  // and what the core carries is inset, which is how the page says so
   const inset = order.filter((id) => {
     const item = SHOP.find((entry) => entry.id === id)
     return id === "specials" || (item && item.inset)
   })
-  assert.deepEqual(inset, ["shield", "radar", "specials"])
+  assert.deepEqual(inset, ["shield", "radar", "thruster", "specials"])
   // every purchase is still reachable, exactly once, in registry order
   assert.deepEqual(
     order.filter((id) => id !== "specials"),
@@ -4309,9 +4311,11 @@ test("the ship stats follow from the shape, the numbers and the engines", () => 
   }
 })
 
-test("a new ship needs a shape, two numbers and an engine, and nothing else", () => {
+test("a new ship needs a shape, two numbers, an engine and a core, and nothing else", () => {
   // Same machinery the shipped types go through, so this cannot pass by way of
-  // a value written down somewhere.
+  // a value written down somewhere. What pushes it and what turns it are both
+  // fitted: a drive on a hardpoint and a set of thrusters in the core, which is
+  // also where its cell comes from.
   const design = {
     outline: [
       [30, 0],
@@ -4326,11 +4330,12 @@ test("a new ship needs a shape, two numbers and an engine, and nothing else", ()
       { local: [0, 0], role: "core" },
       { local: [-20, 0], role: "engine" },
     ],
-    loadout: [{ hp: 1, engine: "pulseDrive" }],
+    loadout: [
+      { hp: 0, core: "prospectorCore", fitted: { thruster: "attitudeJets" } },
+      { hp: 1, engine: "pulseDrive" },
+    ],
     spawn: { fromSector: 5, chance: 0.5, maxConcurrent: 1 },
     lifeTime: [20, 30],
-    energyMax: 120,
-    regen: 25,
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 30, speed: 250, ring: 20, shake: 12 },
     killScore: 500,
@@ -4344,7 +4349,7 @@ test("a new ship needs a shape, two numbers and an engine, and nothing else", ()
     game.player.y = -9000
     const ship = new RivalShip(300, 320, "corvette", [])
     game.rivals = [ship]
-    for (const field of ["accel", "maxSpeed", "turnRate", "drag", "hull"]) {
+    for (const field of ["accel", "maxSpeed", "turnRate", "drag", "hull", "energyMax", "regen"]) {
       assert.ok(Number.isFinite(ship[field]), `corvette ${field} is ${ship[field]}`)
       assert.ok(ship[field] > 0, `corvette ${field} is ${ship[field]}`)
     }
@@ -4453,6 +4458,66 @@ test("the thruster flame is the engine's, so any hull with one burns", () => {
   } finally {
     ENGINE_TYPES.pulseDrive.flame = flame
   }
+})
+
+test("what brings a hull about is its thrusters, and never its drive", () => {
+  // The whole point of the split: a nozzle pointed backwards pushes backwards. A
+  // frigate has thrust to spare and no way to use it sideways, so a bigger drive must
+  // buy speed and nothing else.
+  const base = {
+    outline: SHIP_TYPES.scout.outline,
+    mass: 1,
+    armour: 1,
+    hardpoints: [
+      { local: [0, 0], role: "core" },
+      { local: [-14, 0], role: "engine" },
+    ],
+  }
+  const withParts = (engine, thruster) =>
+    deriveShipStats({
+      ...base,
+      loadout: [
+        { hp: 0, core: "prospectorCore", fitted: thruster ? { thruster } : {} },
+        { hp: 1, engine },
+      ],
+    })
+
+  const light = withParts("pulseDrive", "attitudeJets")
+  const heavy = withParts("minerDrive", "attitudeJets")
+  assert.ok(heavy.accel > light.accel, "the heavier drive accelerates harder")
+  assert.equal(heavy.turnRate, light.turnRate, "and turns the hull not one bit faster")
+
+  const quick = withParts("pulseDrive", "gimbalRing")
+  assert.ok(quick.turnRate > light.turnRate, "a better set of thrusters is what turns it faster")
+  assert.equal(quick.accel, light.accel, "and buys no speed doing it")
+
+  // A hull with none fitted cannot steer at all, which is what makes them equipment
+  // rather than a number every hull happens to have.
+  assert.equal(withParts("pulseDrive", null).turnRate, 0, "no thrusters, no turn")
+})
+
+test("a frigate sweeps where the player pivots", () => {
+  const game = liveGame()
+  assert.ok(
+    SHIP_TYPES.frigate.turnRate < game.player.turnRate,
+    `frigate ${SHIP_TYPES.frigate.turnRate.toFixed(2)} vs player ${game.player.turnRate.toFixed(2)}`,
+  )
+  // Not by a whisker: it has the most torque of any hull in the game and is still the
+  // slowest round, because torque works against mass and reach.
+  assert.ok(torqueOf(SHIP_TYPES.frigate) > 150, "the frigate carries the heaviest set of thrusters")
+  assert.ok(SHIP_TYPES.frigate.turnRate < 0.5, "and comes about in its own time regardless")
+})
+
+test("the shop's other set of thrusters is quicker, and swaps back", () => {
+  const game = liveGame()
+  const stock = game.player.turnRate
+  withEquipment(game, "thruster", "vectorJets")
+  assert.ok(game.player.turnRate > stock, "the quicker set turns the ship faster")
+  // A choice rather than a ladder, so what was bought first is still there to go back
+  // to: a twitchier ship is not simply a better one.
+  assert.equal(EQUIPMENT.thruster.ladder, undefined, "the two are alternatives, not a climb")
+  withEquipment(game, "thruster", "gimbalRing")
+  assert.equal(game.player.turnRate, stock, "and the yard's set is still fitted-able")
 })
 
 test("stating a setting on a type keeps it, for tuning one ship", () => {

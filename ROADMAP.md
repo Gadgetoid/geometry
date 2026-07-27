@@ -55,19 +55,22 @@ smoothed out, so the shape of the shield is the shape of the ship.
 A hull is an outline with things bolted to it, and how it flies should follow from
 what is bolted where. Engines are modules now. The rest follows:
 
-- A core hardpoint takes what a ship runs on: an energy generator, a shield, a
-  radar, maneuvering thrusters. Energy capacity and regen stop being numbers on
-  the type and become the generator's.
-- Main engines push along the facing and cannot reverse. A hull driven by those
-  alone sweeps through a long arc; it cannot pivot. Turning on the spot is what
-  maneuvering thrusters buy, so a frigate with big engines and little else should
-  never out-turn the player, whatever its thrust. `turnRate` stands in for this
-  until it is modelled.
-- Equipment carries its own mass, so fitting more costs handling.
+- Equipment carries its own mass, so fitting more costs handling. Nothing does
+  yet: a hull's mass is still one number on the type, so a fully fitted ship
+  handles exactly as a bare one does.
+- Maneuvering thrusters are drawn nowhere. A set that brings a hull about ought to
+  puff where the turn comes from, the way an engine's flame sits at its nozzle.
 
-The player's ship becomes an ordinary hull that is simply never spawned, and its
-upgrades become progression levels on the same mountable equipment, so a rival
-could turn up carrying what the player bought.
+Done, and left here for the shape of it: engines and maneuvering thrusters are
+both modules, and speed and turn come from what is fitted rather than from numbers
+on the type. A drive decides acceleration and top speed; a set of thrusters
+decides the turn, and never the other way about, so a frigate with siege engines
+sweeps through a long arc it cannot shorten.
+
+The player's ship is most of the way to being an ordinary hull that is simply
+never spawned: its outline, cell, drive, thrusters, shield, radar and guns are all
+fitted equipment read through the same relationships as any rival's. What is left
+on CONFIG is drag, which is a control aid rather than a property of the hull.
 
 ## Length and difficulty
 

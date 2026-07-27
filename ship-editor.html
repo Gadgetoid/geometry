@@ -421,11 +421,12 @@
           siegeDrive: { plume: { rate: 44, speed: 150, life: 0.62, spread: 26, width: 9 } },
         },
         cores: {
-          prospectorCore: { energy: 90, regen: 22, shield: 1, radar: 1, special: 0 },
-          seekerCore: { energy: 300, regen: 34, shield: 1, radar: 1, special: 0 },
-          siegeCore: { energy: 260, regen: 30, shield: 1, radar: 1, special: 0 },
+          prospectorCore: { energy: 90, regen: 22, shield: 1, radar: 1, thruster: 1, special: 0 },
+          seekerCore: { energy: 300, regen: 34, shield: 1, radar: 1, thruster: 1, special: 0 },
+          siegeCore: { energy: 260, regen: 30, shield: 1, radar: 1, thruster: 1, special: 0 },
         },
         radars: { huntingArray: {}, prospectorArray: {}, surveyMk1: {} },
+        thrusters: { attitudeJets: { torque: 100 }, gimbalRing: { torque: 150 } },
         controllers: ["manual", "turret", "miner", "hunter", "defense"],
         factions: { player: [], rival: [], alien: [], hazard: [] },
         palette: {
@@ -453,6 +454,7 @@
         },
         equipment: {
           laser: { label: "LASER", hp: 0 },
+          thruster: { label: "THRUSTERS", hp: 1, slot: "thruster" },
           turret: { label: "TURRET", hp: 2 },
           engine: { label: "ENGINE", hp: 3 },
           shield: { label: "SHIELD", hp: 1, slot: "shield" },
@@ -467,6 +469,7 @@
       let ENGINE_TYPES = SNAPSHOT.engines
       let CORE_TYPES = SNAPSHOT.cores
       let RADAR_TYPES = SNAPSHOT.radars
+      let THRUSTER_TYPES = SNAPSHOT.thrusters
       let EQUIPMENT = SNAPSHOT.equipment
       let FACTIONS = SNAPSHOT.factions
       let CONTROLLERS = SNAPSHOT.controllers
@@ -497,6 +500,7 @@
         ENGINE_TYPES = config.ENGINE_TYPES
         CORE_TYPES = config.CORE_TYPES
         RADAR_TYPES = config.RADAR_TYPES
+        THRUSTER_TYPES = config.THRUSTER_TYPES
         EQUIPMENT = config.EQUIPMENT
         FACTIONS = config.FACTIONS
         coreAt = config.coreAt
@@ -654,7 +658,11 @@
 
       // Core slots the editor can fill, and the registry each offers. `special` is
       // room the run fills for itself, so it is reported and not offered.
-      const CORE_SLOT_TYPES = { shield: () => SHIELD_TYPES, radar: () => RADAR_TYPES }
+      const CORE_SLOT_TYPES = {
+        shield: () => SHIELD_TYPES,
+        radar: () => RADAR_TYPES,
+        thruster: () => THRUSTER_TYPES,
+      }
       // World units, spanning the scales a hull is worked at: 10 and 5 to rough out
       // something a couple of hundred across, 1 to place a vertex, 0.25 to nudge
       // one. Nothing here is a size a hull has to fit; the grid follows the work.

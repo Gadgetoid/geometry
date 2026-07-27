@@ -42,6 +42,7 @@ import {
   SHIELD_TYPES,
   ENGINE_TYPES,
   RADAR_TYPES,
+  THRUSTER_TYPES,
   CORE_TYPES,
   SHIP_TYPES,
   PLAYER_TYPE,
@@ -793,7 +794,23 @@ export function moduleFor(entry) {
   if (entry.radar) {
     return new Radar(entry.radar)
   }
+  if (entry.thruster) {
+    return new Thruster(entry.thruster)
+  }
   return null
+}
+
+// ---------------------------------------------------------------------------
+// Maneuvering thruster module: the nozzles that bring a hull about. It does
+// nothing on its own; what it puts out is read where the turn rate is worked out,
+// which is why a hull with none cannot steer.
+// ---------------------------------------------------------------------------
+export class Thruster {
+  constructor(typeName) {
+    this.kind = "thruster"
+    this.typeName = typeName
+    this.type = THRUSTER_TYPES[typeName]
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1667,18 +1684,25 @@ export class PlayerShip extends Ship {
     return !!(this.aux && this.aux.module && this.aux.module.kind === "weapon")
   }
 
-  // What the fitted engines add up to, which is what the ship flies on. Both numbers
-  // are the drive's through the same relationships every other hull answers to, so
-  // fitting a lesser drive costs top speed as well as acceleration.
+  // What is fitted, and what the hull does with it. Speed is the drive's and the turn
+  // is the maneuvering thrusters', both through the relationships every other hull
+  // answers to: fitting a lesser drive costs top speed as well as acceleration, and
+  // costs nothing off the turn.
   refreshDrive() {
     let thrust = 0
+    let torque = 0
     for (const module of this.modules()) {
       if (module.kind === "engine") {
         thrust += module.type.thrust
       }
+      if (module.kind === "thruster") {
+        torque += module.type.torque
+      }
     }
-    this.accel = thrust / (this.type.mass ?? 1)
+    const mass = this.type.mass ?? 1
+    this.accel = thrust / mass
     this.maxSpeed = this.accel * SHIP_SCALARS.speedPerAccel
+    this.turnRate = (torque * SHIP_SCALARS.turnPerReach) / (mass * this.boundRadius)
   }
 
   fireLaser(game) {
@@ -1778,7 +1802,7 @@ export class PlayerShip extends Ship {
         -1,
         1,
       )
-      this.angle += CONFIG.ROT * turn * dt
+      this.angle += this.turnRate * turn * dt
       this.thrusting = game.holding("thrust") || pad.thrust
     } else {
       this.thrusting = false

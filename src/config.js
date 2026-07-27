@@ -35,8 +35,8 @@ export const SHIELD_SPARK = PALETTE.shield.spark // ring colour when a shield ta
 
 export const CONFIG = {
   // player movement / feel
-  ROT: 3.2,
-  // Top speed is the drive's, see SHIP_SCALARS. Drag stays here: it is a control
+  // Top speed is the drive's and the turn rate the maneuvering thrusters', see
+  // SHIP_SCALARS and THRUSTER_TYPES. Drag stays here: it is a control
   // aid rather than a property of the hull, and it is what makes the ship coast the
   // way it is flown.
   SPEED_DRAG: 0.85,
@@ -711,11 +711,11 @@ function playerShields(marks) {
 //           the block for a drive that shows nothing but its plume.
 //   colour  the plume's colour
 //
-// A main engine pushes along the hull's facing and cannot reverse, so a hull
-// driven by these alone sweeps through a turn instead of pivoting in place.
-// Turning on the spot is a maneuvering thruster's job, which is core equipment;
-// see ROADMAP.md. Nothing models that yet, and until it does `turnRate` stands in
-// for it.
+// A main engine pushes along the hull's facing and cannot reverse, so a hull driven
+// by these alone sweeps through a turn instead of pivoting in place. Turning on the
+// spot is a maneuvering thruster's job, and they are core equipment: see
+// THRUSTER_TYPES. Nothing a drive states has any bearing on how fast its hull comes
+// about, so fitting a bigger one makes a ship faster and not nimbler.
 // ---------------------------------------------------------------------------
 export const ENGINE_TYPES = {
   // One broad nozzle, thrown wide and slow: a dart that scoots.
@@ -764,6 +764,53 @@ export const ENGINE_TYPES = {
   },
 }
 
+// ---------------------------------------------------------------------------
+// THRUSTER TYPES - the small nozzles set around a hull that bring it about, which
+// is core equipment rather than something bolted to the outline: a ship has a set of
+// them or it cannot steer at all.
+//
+// `torque` is what the set puts out. What that becomes in radians a second is the
+// hull's business, since the same nozzles turn a dart smartly and barely trouble a
+// slab: see SHIP_SCALARS.turnPerReach.
+//
+// This is deliberately separate from the drive. A frigate with a pair of siege
+// engines has plenty of thrust and no way to use it sideways, so it sweeps through a
+// long arc; the player pivots on the spot because the yard fitted a gimbal ring, not
+// because the miner drive is strong.
+// ---------------------------------------------------------------------------
+export const THRUSTER_TYPES = {
+  // Cold gas, cheap and adequate: what a working hull leaves the yard with.
+  attitudeJets: { torque: 100 },
+  // Vanes on a ring, the set that pivots rather than sweeps. The player's, and what
+  // the controls were tuned against.
+  gimbalRing: { torque: 150 },
+  // The shop's other set. It is not simply better: on a keyboard a turn is held at
+  // full deflection or not at all, so a fifth more torque is a fifth more overshoot
+  // on a key held a beat too long. A stick gives everything in between and pays less
+  // for it. The trade is in the control rather than in a number here.
+  vectorJets: { torque: 180 },
+  // Heavier nozzles for a heavier hull. More torque than either of the above and
+  // nowhere near enough to make a slab handle: a frigate comes about in 18 seconds
+  // with these, which is the point of a frigate.
+  siegeJets: { torque: 200 },
+}
+
+// What a design's maneuvering thrusters add up to, which is what brings it about.
+// They sit in a core slot, so this walks what each core carries as well as anything
+// mounted on a hardpoint directly.
+export function torqueOf(type) {
+  let total = 0
+  for (const entry of type.loadout || []) {
+    const names = [entry.thruster, (entry.fitted || {}).thruster]
+    for (const name of names) {
+      if (name) {
+        total += THRUSTER_TYPES[name].torque
+      }
+    }
+  }
+  return total
+}
+
 // One mark of the player's survey set: everything it can pick out, at any range.
 function surveyMarks(marks) {
   return Object.fromEntries(Object.entries(marks).map(([name, sees]) => [name, { sees }]))
@@ -789,6 +836,8 @@ export function thrustOf(type) {
 //   regen    how fast it refills
 //   shield   how many shields it will carry, normally one
 //   radar    how many radar sets, normally one
+//   thruster how many sets of maneuvering thrusters, normally one. A hull with none
+//            fitted cannot come about at all, so every core has room for a set.
 //   special  room for the equipment a run buys: the ore magnet to start with, and
 //            whatever is found or bought after it
 //
@@ -809,16 +858,17 @@ export function thrustOf(type) {
 // ---------------------------------------------------------------------------
 export const CORE_TYPES = {
   // A dart's: barely enough to run a mining laser, with nothing spare.
-  prospectorCore: { energy: 90, regen: 22, shield: 1, radar: 1, special: 0 },
+  prospectorCore: { energy: 90, regen: 22, shield: 1, radar: 1, thruster: 1, special: 0 },
   // A hunter's: a deep cell, because a beam that snaps costs more than a gun.
-  seekerCore: { energy: 300, regen: 34, shield: 1, radar: 1, special: 0 },
+  seekerCore: { energy: 300, regen: 34, shield: 1, radar: 1, thruster: 1, special: 0 },
   // A siege hull's: feeds four turrets and a cannon between them.
-  siegeCore: { energy: 260, regen: 30, shield: 1, radar: 1, special: 0 },
+  siegeCore: { energy: 260, regen: 30, shield: 1, radar: 1, thruster: 1, special: 0 },
   // The player's, and the only one the shop can improve. Each level is a bigger
   // cell, a faster refill and another slot to spend it through.
   minerCore: {
     shield: 1,
     radar: 1,
+    thruster: 1,
     // One level per slot, so every purchase earns room as well as cell. A fifth
     // level would be energy alone, which is the shape this replaced.
     levels: [
@@ -966,10 +1016,14 @@ export const SHIP_SCALARS = {
   // pair was tuned against the controls by hand, so it is the one measurement here
   // worth calibrating against. Rounded, which puts the player at 340.2.
   speedPerAccel: 1.26,
-  // turnRate = thrust * this / (mass * reach): thrusters at the hull's edge give a
-  // torque proportional to its reach, against a spin inertia that grows with mass
-  // and with reach squared, so one power of the reach cancels.
-  turnPerReach: 0.3906,
+  // turnRate = torque * this / (mass * reach): nozzles set around the hull act at a
+  // moment arm proportional to its reach, against a spin inertia that grows with
+  // mass and with reach squared, so one power of the reach cancels. The torque is
+  // the maneuvering thrusters' and has nothing to do with the drive.
+  //
+  // Taken from the player, as speedPerAccel is: 3.2 radians a second on a hull of
+  // mass 1 reaching 18 units, with the gimbal ring's 150 behind it.
+  turnPerReach: 0.384,
   dragPerMass: 0.39, // drag = 1 - this / mass: a heavy hull coasts, a light one bites
   shieldClearance: 1.33, // the bubble, as a multiple of how far the outline reaches
   hullWidthBase: 1.74, // outline weight, which grows a little with the hull
@@ -1035,7 +1089,7 @@ export function deriveShipStats(type) {
     regen: stated("regen", core ? core.regen : 0),
     turnRate: stated(
       "turnRate",
-      (thrust * k.turnPerReach * (type.handling ?? 1)) / (type.mass * reach),
+      (torqueOf(type) * k.turnPerReach * (type.handling ?? 1)) / (type.mass * reach),
     ),
     drag: stated("drag", clamp(1 - k.dragPerMass / type.mass, 0.05, 0.98)),
     boundRadius: shape.boundRadius,
@@ -1073,11 +1127,9 @@ export function deriveShipStats(type) {
 // Debris takes its mass from its area, being rock from then on, so wreckage
 // weighs less than the ship it was cut from.
 //
-// `exhaust` is the thruster: `mounts` are nozzle positions in local space, as
-// hardpoints are, and every one of them emits, so two mounts read as two streams.
-// `rate` is plumes a second per stream, `speed` how hard they are thrown back
-// (which is also how long each streak draws), `life` how long they linger and
-// `spread` how much they fan out.
+// What drives a hull and what turns it are both fitted rather than stated: engines
+// on hardpoints (ENGINE_TYPES) and a set of maneuvering thrusters in the core
+// (THRUSTER_TYPES). Every engine mounted emits, so two of them read as two streams.
 //
 // A beam cuts any unshielded hull, exactly as it cuts a rock. Nothing marks a
 // type as cuttable: the material's `minArea` decides what the cut leaves, so a
@@ -1149,7 +1201,11 @@ const SHIP_DESIGNS = {
       { hp: 0, weapon: "seekerLaser", controller: "hunter" },
       { hp: 3, engine: "ionDrive" },
       { hp: 4, engine: "ionDrive" },
-      { hp: 2, core: "seekerCore", fitted: { shield: "deflector", radar: "huntingArray" } },
+      {
+        hp: 2,
+        core: "seekerCore",
+        fitted: { shield: "deflector", radar: "huntingArray", thruster: "gimbalRing" },
+      },
     ],
     arms: {
       gun: {
@@ -1190,7 +1246,11 @@ const SHIP_DESIGNS = {
     loadout: [
       { hp: 0, weapon: "minerLaser", controller: "miner" }, // always has a mining laser
       { hp: 3, engine: "pulseDrive" },
-      { hp: 2, core: "prospectorCore", fitted: { radar: "prospectorArray" } },
+      {
+        hp: 2,
+        core: "prospectorCore",
+        fitted: { radar: "prospectorArray", thruster: "attitudeJets" },
+      },
     ],
     arms: {
       gun: {
@@ -1241,7 +1301,11 @@ const SHIP_DESIGNS = {
       { hp: 4, weapon: "autocannon", controller: "turret" },
       { hp: 6, engine: "siegeDrive" },
       { hp: 7, engine: "siegeDrive" },
-      { hp: 5, core: "siegeCore", fitted: { shield: "bulwark", radar: "huntingArray" } },
+      {
+        hp: 5,
+        core: "siegeCore",
+        fitted: { shield: "bulwark", radar: "huntingArray", thruster: "siegeJets" },
+      },
     ],
     spawn: { fromSector: 6, weight: 2, maxConcurrent: 1 },
     hunts: true, // steers for the player rather than for ore and rocks
@@ -1283,6 +1347,8 @@ const PLAYER_DESIGN = {
   ],
   // The nose and the engine are filled from EQUIPMENT, since what is in them is the
   // run's to choose; the core is the hull's own.
+  // The core is the hull's own. What goes in it, like what goes on the nose and in
+  // the tail, is the run's: see EQUIPMENT.
   loadout: [{ hp: 1, core: "minerCore" }],
   // What the ship is fitted with before anything is bought, one id per slot. The
   // magnet is here rather than in the shop because a ship that cannot pick ore up
@@ -1389,6 +1455,30 @@ export const EQUIPMENT = {
         name: "RADAR MK IV",
         desc: "Adds specials, so nothing drifting past is missed.",
         cost: 160,
+      },
+    ],
+  },
+  // What brings the ship about, in the core beside the cell that runs it. No ladder:
+  // the quicker set is not the better one, and which suits depends on what is being
+  // flown with. A hull cannot steer without a set, so this cannot come off.
+  thruster: {
+    label: "THRUSTERS",
+    desc: "The nozzles that turn the ship. How fast it comes about, and how finely.",
+    hp: 1,
+    mount: "thruster",
+    slot: "thruster",
+    options: [
+      {
+        id: "gimbalRing",
+        name: "GIMBAL RING",
+        desc: "The yard's set. Slow and precise.",
+        cost: 0,
+      },
+      {
+        id: "vectorJets",
+        name: "VECTOR JETS",
+        desc: "Fast but harder to master.",
+        cost: 70,
       },
     ],
   },
@@ -1815,15 +1905,17 @@ export const SHOP = [
   ),
   equipmentRow("shield", true),
   equipmentRow("radar", true),
+  equipmentRow("thruster", true),
   equipmentRow("laser"),
   equipmentRow("turret"),
   equipmentRow("engine"),
 ]
 
 // Where the shop's own rows sit among the purchases, and how the page is grouped.
-// The specials row is the third thing the core carries, so it follows the shield and
-// the radar under it, and `groupGap` sets that group apart from the loadout below.
-export const SHOP_LAYOUT = { slotsRow: 4, groupGap: 14, insetBy: 18 }
+// The specials row is the last thing the core carries, so it follows the shield, the
+// radar and the thrusters under it, and `groupGap` sets that group apart from the
+// loadout below. Adding another core slot to SHOP moves this down with it.
+export const SHOP_LAYOUT = { slotsRow: 5, groupGap: 14, insetBy: 18 }
 
 // ---------------------------------------------------------------------------
 // SLOT MENU - the pop-over that opens on a special slot in the shop. One entry
