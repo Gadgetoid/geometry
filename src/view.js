@@ -793,9 +793,6 @@ export class GameView {
     for (let row = 0; row <= SHOP.length; row++) {
       const selected = game.shopSelection === row
       if (selected) {
-        this.selectedRowY = y
-      }
-      if (selected) {
         r.rect(leftX - 16, y - 18, rightX - leftX + 32, rowHeight - 4, {
           fill: "rgba(95,215,255,.12)",
         })
@@ -818,7 +815,29 @@ export class GameView {
         bold: selected,
         color: maxed ? PALETTE.ui.good : selected ? PALETTE.text.bright : PALETTE.text.normal,
       })
-      r.text(item.info(game), leftX + 206, y, { size: 11, color: PALETTE.text.faint })
+      // The row a pop-over was opened from wears the panel's own outline, and the
+      // panel hangs directly off it, so the two read as one thing rather than as a
+      // box that happens to be nearby.
+      const infoX = leftX + 206
+      const openedHere =
+        game.slotMenu &&
+        ((item.equipment && item.equipment === game.slotMenu.equipment) ||
+          (item.levels && item.id === game.slotMenu.levels))
+      const fitted = item.info(game)
+      if (openedHere) {
+        const tabW = Math.max(60, fitted.length * 11 * 0.62 + 14)
+        this.menuAnchor = { x: infoX - 7, y: y + 7, w: tabW }
+        r.rect(this.menuAnchor.x, y - 13, tabW, 20, { fill: "rgba(95,215,255,.14)" })
+        r.rect(this.menuAnchor.x, y - 13, tabW, 20, {
+          stroke: PALETTE.ui.accent,
+          width: 1.2,
+          glow: 8,
+        })
+      }
+      r.text(fitted, infoX, y, {
+        size: 11,
+        color: openedHere ? PALETTE.text.bright : PALETTE.text.faint,
+      })
       const price = opens
         ? maxed
           ? "MAX"
@@ -843,7 +862,6 @@ export class GameView {
       y += rowHeight
     }
 
-    const selectedRowY = this.selectedRowY ?? slotsY
     const selectedItem = game.shopItem(game.shopSelection)
     const hint = selectedItem
       ? selectedItem.desc
@@ -904,7 +922,7 @@ export class GameView {
     }
     // Last, so the pop-over sits over the rows it is opened from.
     if (game.slotMenu) {
-      this.#slotPopover(game, rightX, slotsY, selectedRowY)
+      this.#slotPopover(game, rightX, slotsY)
     }
   }
 
@@ -978,7 +996,7 @@ export class GameView {
     return lines
   }
 
-  #slotPopover(game, rightX, slotsY, selectedRowY) {
+  #slotPopover(game, rightX, slotsY) {
     const r = this.renderer,
       { slot, selection } = game.slotMenu,
       rows = game.slotMenuRows(slot)
@@ -994,11 +1012,20 @@ export class GameView {
       rowHeight = 20
     const desc = chosen && chosen.desc ? this.#wrap(chosen.desc, width - 16, 10) : []
     const height = titleHeight + rows.length * rowHeight + 28 + desc.length * 12
-    const anchorX = onRow ? rightX - width : this.#slotBox(rightX, slot).x - 6
+    // A menu opened from a row hangs off the tab drawn on that row, sharing its left
+    // edge so the two outlines line up; one opened on a special slot hangs under its
+    // box, as before.
+    const tab = onRow ? this.menuAnchor : null
+    const anchorX = tab ? tab.x : this.#slotBox(rightX, slot).x - 6
     const panelX = Math.min(anchorX, rightX - width),
-      panelY = (onRow ? selectedRowY : slotsY) + 15
+      panelY = tab ? tab.y : slotsY + 15
     r.rect(panelX, panelY, width, height, { fill: "rgba(4,8,16,.95)" })
     r.rect(panelX, panelY, width, height, { stroke: PALETTE.ui.accent, width: 1.2, glow: 8 })
+    if (tab) {
+      // The join: the tab's floor and the panel's ceiling are the same line, so it is
+      // painted out and the pair becomes one outline with a shoulder in it.
+      r.rect(panelX + 1.6, panelY - 1.4, tab.w - 3.2, 3, { fill: "rgba(4,8,16,1)" })
+    }
     r.text(game.slotMenuTitle(), panelX + width / 2, panelY + 15, {
       size: 12,
       bold: true,
