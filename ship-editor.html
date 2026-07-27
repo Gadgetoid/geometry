@@ -370,7 +370,7 @@
         <h2>KEYS</h2>
         <p class="keys">
           <b>V</b> select / move &nbsp; <b>O</b> outline point &nbsp; <b>H</b> hardpoint &nbsp;
-          <b>X</b> delete<br />
+          <b>M</b> seam &nbsp; <b>S</b> scale selection &nbsp; <b>X</b> delete<br />
           <b>DRAG</b> move node, empty space boxes a selection<br />
           <b>TWO FINGERS</b> or <b>WHEEL</b> pan &nbsp; <b>PINCH</b> or <b>CMD</b>+wheel zoom &nbsp;
           <b>SHIFT</b>+wheel pan sideways<br />
@@ -458,6 +458,7 @@
       // the editor asks it rather than restating the relationships.
       let deriveShipStats = null
       let SHIP_SCALARS = null
+      let slicePolygon = null
       const SHARED_SHAPES = []
 
       try {
@@ -476,6 +477,7 @@
         CONTROLLERS = Object.keys(entities.WEAPON_CONTROLLERS)
         PALETTE = palette.PALETTE
         convexPartition = math.convexPartition
+        slicePolygon = math.slicePolygon
         deriveShipStats = config.deriveShipStats
         SHIP_SCALARS = config.SHIP_SCALARS
         // Outlines config.js keeps as a named constant, so a design that still uses
@@ -1258,6 +1260,23 @@
           }
         })
 
+        if (seam) {
+          const a = localToScreen(seam.from)
+          const b = localToScreen(seam.to)
+          ctx.save()
+          ctx.strokeStyle = "#ff7fdc"
+          ctx.lineWidth = 1.4
+          ctx.setLineDash([6, 4])
+          ctx.shadowBlur = 10
+          ctx.shadowColor = "#ff7fdc"
+          ctx.beginPath()
+          ctx.moveTo(a[0], a[1])
+          ctx.lineTo(b[0], b[1])
+          ctx.stroke()
+          ctx.restore()
+          label("SEAM", b[0] + 8, b[1] - 6, "#ff7fdc")
+        }
+
         // The seam a mirror would fold about, drawn as soon as both ends are held.
         const seam = selectedVertices()
         if (seam.length === 2) {
@@ -1542,6 +1561,47 @@
         return best
       }
 
+      // Scale the selection about its own centroid, live, until the next click.
+      // Nothing selected means the whole design, which is the same thing the SCALE
+      // button does by typing a number. Hardpoints move with the outline, so what
+      // is mounted stays where it sits on the hull.
+      function beginScale() {
+        const picked = selection.length ? selection : nodesForPicking()
+        const targets = picked.map((node) => localOf(node)).filter(Boolean)
+        if (targets.length < 2) {
+          setStatus("select at least two points to scale, or none to scale the lot", true)
+          return
+        }
+        const centre = [
+          targets.reduce((sum, p) => sum + p[0], 0) / targets.length,
+          targets.reduce((sum, p) => sum + p[1], 0) / targets.length,
+        ]
+        const at = screenToLocal(pointer[0], pointer[1])
+        const startDist = Math.hypot(at[0] - centre[0], at[1] - centre[1])
+        if (startDist < 1e-6) {
+          setStatus("move the cursor away from the centre of the selection first", true)
+          return
+        }
+        pushUndo()
+        scaling = {
+          centre,
+          startDist,
+          nodes: targets.map((target) => ({ target, from: target.slice() })),
+        }
+        setStatus("scaling - move to resize, click to keep it, ESC to put it back")
+      }
+
+      function cancelScale() {
+        for (const { target, from } of scaling.nodes) {
+          target[0] = from[0]
+          target[1] = from[1]
+        }
+        scaling = null
+        undo(undoStack, redoStack)
+        rebuild()
+        setStatus("scale abandoned")
+      }
+
       function localOf(node) {
         if (node.type === "vertex") {
           return ship.outline[node.index]
@@ -1584,6 +1644,15 @@
       }
 
       let drag = null
+      // A reflection line drawn on the canvas, in world units, or null for none.
+      // Kept apart from the selection because it is not part of the design: it is
+      // an instruction about how to fold one.
+      let seam = null
+      let pointer = [0, 0] // last cursor position in screen pixels
+      // A live scale: the points being resized, where they started, and what the
+      // cursor's distance from the centroid was when it began, which is the factor
+      // of 1. Moving out grows, moving in shrinks.
+      let scaling = null
 
       // Begin a drag of everything selected, keeping the offsets between them and
       // putting the node under the cursor on the grid.
@@ -1598,6 +1667,9 @@
       }
 
       canvas.addEventListener("pointerdown", (event) => {
+        if (scaling) {
+          return // the click that keeps a scale must not also start a tool
+        }
         canvas.setPointerCapture(event.pointerId)
         const sx = event.offsetX
         const sy = event.offsetY
@@ -1664,6 +1736,11 @@
           selection = [{ type: "hardpoint", index: ship.hardpoints.length - 1 }]
           beginDrag(selection[0])
           rebuild()
+        } else if (tool === "seam") {
+          pushUndo()
+          seam = { from: local, to: local }
+          drag = { seam: true }
+          rebuild()
         } else {
           // Empty space in SELECT drags a box around whatever it covers. Shift
           // keeps what is already picked, so a box can be added to a pair.
@@ -1690,12 +1767,28 @@
       canvas.addEventListener("pointermove", (event) => {
         const sx = event.offsetX
         const sy = event.offsetY
+        pointer = [sx, sy]
+        if (scaling) {
+          const at = screenToLocal(sx, sy)
+          const away = Math.hypot(at[0] - scaling.centre[0], at[1] - scaling.centre[1])
+          const factor = away / scaling.startDist
+          for (const { target, from } of scaling.nodes) {
+            target[0] = round(scaling.centre[0] + (from[0] - scaling.centre[0]) * factor)
+            target[1] = round(scaling.centre[1] + (from[1] - scaling.centre[1]) * factor)
+          }
+          setStatus(`scaling by ${factor.toFixed(3)} - click to keep it, ESC to put it back`)
+          rebuild()
+          return
+        }
         hover = pick(sx, sy)
         canvas.style.cursor =
           drag && drag.pan ? "grabbing" : spaceHeld ? "grab" : hover ? "move" : "crosshair"
         if (drag && drag.pan) {
           view.x = drag.from[0] - (sx - drag.sx) / view.scale
           view.y = drag.from[1] - (sy - drag.sy) / view.scale
+        } else if (drag && drag.seam) {
+          seam.to = snap(screenToLocal(sx, sy), event.shiftKey)
+          rebuild()
         } else if (drag && drag.marquee) {
           drag.marquee.x = sx
           drag.marquee.y = sy
@@ -1717,6 +1810,13 @@
       })
 
       canvas.addEventListener("pointerup", () => {
+        if (scaling) {
+          scaling = null
+          drag = null
+          rebuild()
+          setStatus("scaled")
+          return
+        }
         if (drag && drag.node) {
           rebuild()
         } else if (drag && drag.marquee) {
@@ -1791,6 +1891,20 @@
           return
         }
         const key = event.key.toLowerCase()
+        if (key === "escape" && scaling) {
+          cancelScale()
+          return
+        }
+        if (key === "s" && !event.ctrlKey && !event.metaKey) {
+          if (scaling) {
+            scaling = null
+            rebuild()
+            setStatus("scaled")
+          } else {
+            beginScale()
+          }
+          return
+        }
         if (key === "escape" && selection.length) {
           selection = []
           refreshSidebarSelection()
@@ -1806,7 +1920,7 @@
           }
           return
         }
-        const tools = { v: "select", o: "outline", h: "hardpoint", x: "delete" }
+        const tools = { v: "select", o: "outline", h: "hardpoint", m: "seam", x: "delete" }
         if (tools[key]) {
           setTool(tools[key])
           return
@@ -1869,6 +1983,7 @@
         ["select", "SELECT (V)"],
         ["outline", "OUTLINE (O)"],
         ["hardpoint", "HARDPOINT (H)"],
+        ["seam", "SEAM (M)"],
         ["delete", "DELETE (X)"],
       ]
 
@@ -1889,19 +2004,10 @@
           [
             "MIRROR",
             mirrorOutline,
-            "Fold the outline about a seam: shift-click the two points the halves meet at, or " +
-              "leave nothing selected to use the two points on the centreline. The half kept is " +
-              "the one left of the seam running from the first point picked to the second.",
+            "Fold the outline about a seam. Draw one with the SEAM tool and the bigger half " +
+              "is kept and reflected; otherwise shift-click the two points the halves meet at, " +
+              "or leave nothing selected to use the two points on the centreline.",
             "mirror",
-          ],
-          [
-            "REVERSE",
-            () => {
-              pushUndo()
-              ship.outline.reverse()
-              rebuild()
-            },
-            "Reverse the winding of the outline.",
           ],
           ["CENTRE", centreOutline, "Move everything so the hull's centroid is on the origin."],
           [
@@ -1934,7 +2040,9 @@
         }
         const picked = selectedVertices().length
         const onAxis = ship.outline.filter(([, y]) => Math.abs(y) <= 1e-6).length
-        if (picked === 2) {
+        if (seam) {
+          button.textContent = "MIRROR: DRAWN SEAM"
+        } else if (picked === 2) {
           button.textContent = "MIRROR: 2 PICKED"
         } else if (picked === 0 && onAxis === 2) {
           button.textContent = "MIRROR: CENTRELINE"
@@ -1959,7 +2067,68 @@
       // The half kept is the one to the left of the seam as it runs from the first
       // point to the second, which for a nose-to-tail seam on the centreline is
       // the top half.
+      // Fold about a line drawn anywhere, rather than about two of the outline's
+      // own points. The outline is cut on the line and the half on the keeping side
+      // is reflected back, so the seam needs no vertices to land on: the cut makes
+      // them. `slicePolygon` is the same cut the game's laser uses.
+      function mirrorAboutSeam() {
+        const eps = 1e-6
+        const from = seam.from
+        const dx = seam.to[0] - from[0]
+        const dy = seam.to[1] - from[1]
+        if (Math.hypot(dx, dy) < eps) {
+          setStatus("the seam has no length, so there is nothing to fold about", true)
+          return
+        }
+        const normal = { x: -dy, y: dx }
+        const pieces = slicePolygon(
+          ship.outline.map(([x, y]) => ({ x, y })),
+          { x: from[0], y: from[1] },
+          normal,
+        )
+        if (pieces.length < 2) {
+          setStatus("the seam misses the outline, so there is no half to keep", true)
+          return
+        }
+        // Keep the bigger half, which is what someone drawing a seam down a hull
+        // means by it. Drag the seam the other way to keep the other side.
+        const areaOf = (piece) => Math.abs(polygonArea(piece.map((p) => [p.x, p.y])))
+        const kept = pieces.reduce((best, piece) => (areaOf(piece) > areaOf(best) ? piece : best))
+        const len2 = dx * dx + dy * dy
+        const reflect = ([x, y]) => {
+          const t = ((x - from[0]) * dx + (y - from[1]) * dy) / len2
+          const foot = [from[0] + dx * t, from[1] + dy * t]
+          return [round(2 * foot[0] - x), round(2 * foot[1] - y)]
+        }
+        const onSeam = ({ x, y }) =>
+          Math.abs((x - from[0]) * normal.x + (y - from[1]) * normal.y) / Math.hypot(dx, dy) < 0.01
+        // Start the ring at a point on the seam, so the two seam points bookend the
+        // half and everything between them is what gets reflected.
+        const start = kept.findIndex((p, i) => onSeam(p) && !onSeam(kept[(i + 1) % kept.length]))
+        if (start < 0) {
+          setStatus("the cut left no edge along the seam to fold about", true)
+          return
+        }
+        const ring = kept.map((_, i) => kept[(start + i) % kept.length])
+        const points = ring.filter((p, i) => i === 0 || !onSeam(p) || i === ring.length - 1)
+        const half = points.map((p) => [round(p.x), round(p.y)])
+        if (half.length < 3) {
+          setStatus("the half being kept has no points off the seam", true)
+          return
+        }
+        pushUndo()
+        ship.outline = half.concat(half.slice(1, -1).reverse().map(reflect))
+        selection = []
+        seam = null
+        rebuild()
+        setStatus(`outline mirrored about the drawn seam, now ${ship.outline.length} points`)
+      }
+
       function mirrorOutline() {
+        if (seam) {
+          mirrorAboutSeam()
+          return
+        }
         const eps = 1e-6
         const picked = selectedVertices()
         let seam = picked
