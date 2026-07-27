@@ -88,6 +88,8 @@ export const PALETTE = {
     beam: "#3dffb4",
     shield: "#7dffd0",
     void: "#000000", // the middle of a singularity, which is not a colour but an absence
+    exhaust: "#48e08a", // what their drives throw
+    exhaustFlame: "#9dffc6", // and the fire at the throat, paler than the plume
   },
 
   // asteroids. Plain rock is a size ramp between `sizeCool` and `sizeWarm`;

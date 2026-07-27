@@ -1121,20 +1121,39 @@ export class Engine {
       by = Math.sin(back)
     const acrossX = -by,
       acrossY = bx
-    renderer.strokePoly(
-      [
-        { x: world.x + acrossX * half, y: world.y + acrossY * half },
-        { x: world.x + bx * reach, y: world.y + by * reach },
-        { x: world.x - acrossX * half, y: world.y - acrossY * half },
-      ],
-      {
-        color: flame.colour ?? this.type.colour,
-        width: 1.4,
-        glow: 10,
-        closed: false,
-        alpha,
-      },
-    )
+    const paint = {
+      color: flame.colour ?? this.type.colour,
+      width: 1.4,
+      glow: 10,
+      alpha,
+    }
+    if (!flame.round) {
+      // A hard V: two edges meeting at the tip, open across the throat.
+      renderer.strokePoly(
+        [
+          { x: world.x + acrossX * half, y: world.y + acrossY * half },
+          { x: world.x + bx * reach, y: world.y + by * reach },
+          { x: world.x - acrossX * half, y: world.y - acrossY * half },
+        ],
+        { ...paint, closed: false },
+      )
+      return
+    }
+    // A teardrop: the throat bulges round into the hull and the fire draws out to a point.
+    // Sampled from one lip, back around the bulge, to the other, and closed through the tip.
+    const points = []
+    const steps = 8
+    for (let i = 0; i <= steps; i++) {
+      const angle = Math.PI / 2 - (i / steps) * Math.PI
+      const outward = -Math.cos(angle) * half * 0.55
+      const across = Math.sin(angle) * half
+      points.push({
+        x: world.x + bx * outward + acrossX * across,
+        y: world.y + by * outward + acrossY * across,
+      })
+    }
+    points.push({ x: world.x + bx * reach, y: world.y + by * reach })
+    renderer.strokePoly(points, { ...paint, closed: true })
   }
 }
 

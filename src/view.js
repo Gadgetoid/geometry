@@ -297,7 +297,7 @@ export class GameView {
     for (const rival of game.rivals) {
       const warp = rival.type.warp
       if (warp && rival.inPlay()) {
-        lenses.push(source(rival.x, rival.y, warp.radius, warp.strength))
+        lenses.push(source(rival.x, rival.y, warp.radius, warp.strength, warp.wave || 0))
       }
     }
     for (const shot of game.projectiles) {

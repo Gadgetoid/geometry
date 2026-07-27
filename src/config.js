@@ -945,6 +945,30 @@ export const ENGINE_TYPES = {
     flame: { length: 16, flicker: 8 }, // as wide as the throat it comes out of
     colour: PALETTE.rival.hull,
   },
+  // The aliens'. The same thrust as the rival drives of each tier, so the hulls handle as
+  // they did, and nothing else about them is the same: green where everything else here is
+  // orange, and a fire with a rounded throat and a long tail rather than a short hard V.
+  swarmDrive: {
+    thrust: 100,
+    mass: 0.03,
+    plume: { rate: 30, speed: 48, life: 0.55, spread: 14 },
+    flame: { length: 13, flicker: 5, width: 7, round: true, colour: PALETTE.alien.exhaustFlame },
+    colour: PALETTE.alien.exhaust,
+  },
+  stalkerDrive: {
+    thrust: 75,
+    mass: 0.02,
+    plume: { rate: 42, speed: 34, life: 0.6, spread: 5 },
+    flame: { length: 11, flicker: 4, width: 4, round: true, colour: PALETTE.alien.exhaustFlame },
+    colour: PALETTE.alien.exhaust,
+  },
+  pincerDrive: {
+    thrust: 100,
+    mass: 0.16,
+    plume: { rate: 46, speed: 120, life: 0.8, spread: 20, width: 9 },
+    flame: { length: 34, flicker: 12, round: true, colour: PALETTE.alien.exhaustFlame },
+    colour: PALETTE.alien.exhaust,
+  },
   // The player's, and the one thing the hull starts with that can be replaced by
   // something better. It pushes one way, like every other engine here.
   minerDrive: {
@@ -1552,8 +1576,8 @@ const SHIP_DESIGNS = {
     spawn: { fromSector: 4, weight: 2, maxConcurrent: 1 },
     hunts: true,
     // A dart lines up, fires and leaves rather than closing to a knife fight it cannot win.
-    // Half its own beam's reach is close enough, and it will not sit in front of a ship
-    // that is pointed at it inside the reach of a charged one.
+    // Half its own beam's reach is close enough, and it will not sit in front of a ship that
+    // is pointed at it inside the reach of a charged one.
     breakOff: { near: 210, facing: 0.55, aimedWithin: 520, hold: 1.3 },
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 260, ring: 19, shake: 10 },
@@ -1720,14 +1744,16 @@ const SHIP_DESIGNS = {
     colour: PALETTE.alien.hull,
     faction: "alien",
     // The biggest of them bends the most, and reaches past its own jaws.
-    warp: { radius: 190, strength: 0.42 },
+    // Space is never quite still around one of these. The pull is what bends what is
+    // behind it; the wave is the ring in it, kept low enough to be felt rather than seen.
+    warp: { radius: 190, strength: 0.42, wave: 0.07 },
     // Twice the material of a frigate for the same laden 6, which is what a hull this wide
     // and this hollow comes to. Bare here: its plant, field, drives and five guns make up
     // the rest.
     //
     // Tougher than the frigate it answers, as everything else about it is: 1456 of hull
     // against 1012, which is ten seconds of flak rather than seven.
-    mass: 4.75,
+    mass: 4.61,
     armour: 1.2,
     lifeTime: [34, 50],
     hardpoints: [
@@ -1751,8 +1777,8 @@ const SHIP_DESIGNS = {
       { hp: 2, weapon: "warpOrb", controller: "turret", arc: 1.5 },
       { hp: 3, weapon: "warpOrb", controller: "turret" },
       { hp: 4, weapon: "warpOrb", controller: "turret" },
-      { hp: 6, engine: "siegeDrive" },
-      { hp: 7, engine: "siegeDrive" },
+      { hp: 6, engine: "pincerDrive" },
+      { hp: 7, engine: "pincerDrive" },
       {
         hp: 5,
         core: "pincerCore",
@@ -1792,7 +1818,7 @@ const SHIP_DESIGNS = {
     faction: "alien",
     // Space bends around it. Read by the view, which turns it into a lens over whatever
     // is behind the hull, so a sector with one in it looks wrong before a shot is fired.
-    warp: { radius: 70, strength: 0.3 },
+    warp: { radius: 70, strength: 0.3, wave: 0.05 },
     mass: 0.58, // bare hull; its loadout brings it to the 0.7 of the scout it answers
     armour: 1,
     lifeTime: [16, 26],
@@ -1809,7 +1835,7 @@ const SHIP_DESIGNS = {
         core: "swarmCore",
         fitted: { radar: "prospectorArray", thruster: "attitudeJets" },
       },
-      { hp: 3, engine: "pulseDrive" },
+      { hp: 3, engine: "swarmDrive" },
     ],
     arms: {
       gun: {
@@ -1855,7 +1881,7 @@ const SHIP_DESIGNS = {
     ],
     colour: PALETTE.alien.hull,
     faction: "alien",
-    warp: { radius: 66, strength: 0.28 },
+    warp: { radius: 66, strength: 0.28, wave: 0.05 },
     mass: 0.47, // bare hull; laden it matches the seeker at 0.8
     armour: 1.2,
     lifeTime: [26, 36],
@@ -1873,8 +1899,8 @@ const SHIP_DESIGNS = {
         core: "stalkerCore",
         fitted: { shield: "alienField", radar: "huntingArray", thruster: "gimbalRing" },
       },
-      { hp: 3, engine: "ionDrive" },
-      { hp: 4, engine: "ionDrive" },
+      { hp: 3, engine: "stalkerDrive" },
+      { hp: 4, engine: "stalkerDrive" },
     ],
     arms: {
       gun: {
@@ -1888,8 +1914,8 @@ const SHIP_DESIGNS = {
     spawn: { fromSector: 20, weight: 2, maxConcurrent: 1 },
     hunts: true,
     // A dart lines up, fires and leaves rather than closing to a knife fight it cannot win.
-    // Half its own beam's reach is close enough, and it will not sit in front of a ship
-    // that is pointed at it inside the reach of a charged one.
+    // Half its own beam's reach is close enough, and it will not sit in front of a ship that
+    // is pointed at it inside the reach of a charged one.
     breakOff: { near: 210, facing: 0.55, aimedWithin: 520, hold: 1.3 },
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 260, ring: 19, shake: 10 },
