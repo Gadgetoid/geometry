@@ -27,6 +27,12 @@ What that bought:
 - The shop is slots the whole way down: buy once, swap freely, fly without what is
   optional. A rival could be given anything the player bought.
 
+Any hull in the game can be flown from the dev page. The shop finds its mounts by
+the role each plays rather than by index, a turret is fitted per mount, and whatever
+the hull carries is found and swappable against the yard's own from then on. It is a
+dev tool and nothing is balanced around it, but it is also the groundwork for
+unlockable weapons and for an alternate player ship: see Aliens.
+
 The player's ship is most of the way to being an ordinary hull that is simply
 never spawned. Its outline, cell, drive, thrusters, shield, radar and guns are all
 fitted equipment read through the same relationships as any rival's; what is left
@@ -49,9 +55,13 @@ player, since every gun asks one question of the faction table.
 What is there: the shapes, green, the pincer's jaw guns held to the front by a mount
 arc, the singularity it holds in them, drives that burn green with a rounded plume,
 a permanent faint ripple in the space each one occupies, `ALIEN_PLATING`, so a cut
-alien burns and smokes in their own colour, and a sky that turns over to them as the
-run does: about half the planets behind a sector 40 fight are theirs, sickly green
-and pulsing. What is not:
+alien burns and smokes in their own colour, a sky that turns over to them as the run
+does (about half the planets behind a sector 40 fight are theirs, sickly green and
+pulsing), guns in their own yellow-green, beams that bend the space along their whole
+length, and a round that tears the picture wherever it lands rather than only on the
+player. The pincer holds its field up rather than spending it on the gun, and comes
+round twice as fast as its mass says it should, because a hull that slow is beaten by
+standing behind it. What is not:
 
 - **The glitch over them.** They bend space around themselves, but the tearing that
   is meant to go with it only happens where their shots land. Over a hull it wants
@@ -60,6 +70,11 @@ and pulsing. What is not:
 - **A spawn budget of their own.** They share the rivals' one, so an alien arriving
   is a rival that did not. `PROGRESSION.rivals` wants generalising to a table per
   faction.
+- **A reason to meet their weapons before sector 20.** Every module an alien hull
+  carries is an EQUIPMENT option now, locked until a run has one, and flying the hull
+  is what finds it. That is the machinery for unlocking a warp orb or a singularity
+  gun in ordinary play; what it wants is the way in. Salvage off a cut hull is the
+  obvious one, and nothing about it needs new code beyond deciding when it drops.
 
 The singularity in the jaws is the fight the pincer was drawn for, and it is there:
 flying into the well is bad news, so the approach is the fight, and a hull cut while
@@ -76,33 +91,24 @@ pincer that drifts on its field alone needs no rule of its own.
 
 ## Alien weapons
 
-Alien guns work like the ones already in the game, projectiles and beams through
-the same modules and controllers, and do their damage by warping the space around
-them rather than by burning or striking it.
+Alien guns work like the ones already in the game, projectiles and beams through the
+same modules and controllers, and do their damage by warping the space around them
+rather than by burning or striking it. All of it is one capability, a local
+distortion of what is behind a thing, stated as data on a weapon or a hull and read
+by one pass in the renderer: a source names a point or a line, how far it reaches and
+how hard it bends.
 
-- **The beam** is a laser that distorts the level along its length: the stars, the
-  rocks and the arena ring bending where it passes rather than a bright line drawn
-  over them.
-- **The turrets** fire slow balls of energy that warp slightly as they travel, so a
-  volley reads as something falling toward you rather than being shot at you. Slow
-  enough to be flown around, which is what makes a hull ringed with them a problem
-  of approach.
-- **The hulls themselves** warp the field around them, and glitch a little. That is
-  the effect the whole faction turns on: a sector with one in it should look wrong
-  before anything has been fired.
+The beam bends the space along its whole length, the orbs bend it as they travel and
+fall toward what they were thrown at, and the hulls ripple the space they sit in. A
+round tears the picture where it lands, whatever it landed on. The singularity is the
+far end of the same idea: it winds up, drawing in particles and loose shot; it costs
+as it winds rather than at the shot; it is let go of to fire; and two of them fall
+toward each other, bounded so a pair cannot outrun the ship watching them. It does
+not drag rocks around, and it never will: the sector heaving toward a point is mayhem
+the contact solver would not survive.
 
-All of that is one capability, a local distortion of what is behind a thing, and
-the same shader work serves the beam, the shots, the hulls and the singularity. It
-is worth building once and reading from data, so a weapon or a hull says how much
-it bends and the renderer does the rest.
-
-New entries in the `ROCK_TURRETS` pool so rocks can mount alien guns too, which is
-data and no code.
-
-The singularity is the far end of the same idea: a mini black hole that drags in
-whatever passes near it. It draws in particles while it charges, and loose shots.
-It does not drag rocks around; the sector heaving toward a point is mayhem, and the
-contact solver would not survive it.
+What is left of it: entries in the `ROCK_TURRETS` pool so rocks can mount alien guns,
+which is data and no code.
 
 ## The alien shield
 
@@ -112,10 +118,10 @@ away: rocks, shots and other ships alike. What it costs to run follows what it i
 holding off, so a hull backed into a rock field bleeds energy far faster than one
 in open space, and burying it in debris is a way to strip it.
 
-A shield prices each damage channel separately now, so a field that is hard to
-shoot through and expensive under a beam is something the registry can already
-say. What it cannot say yet is a cost that follows what the field is pushing. The
-three alien hulls carry ordinary bubbles until it can.
+All three alien hulls carry one. A shield prices each damage channel separately and
+pays per unit of momentum it turns away, so what it costs to run is what it is
+holding off. What is not there is the last line of this section: the field is still
+drawn as a ring rather than as the hull's own shape.
 
 Generating a singularity defeats the repel. The well needs to draw shots in, and
 it cannot do that through a field pushing them out, so the ship is bare for as
@@ -123,8 +129,10 @@ long as it is winding up. That is the same window the hull can be cut in, which
 puts the fight on one clock: the moment it is most dangerous is the moment it can
 be killed.
 
-It is drawn as a direct offset outline of the ship itself, with convex regions
-smoothed out, so the shape of the shield is the shape of the ship.
+It wants to be drawn as a direct offset outline of the ship itself, with convex
+regions smoothed out, so the shape of the shield is the shape of the ship. That is
+its own project: everything that meets a shield meets a circle, and
+`KNOWN_ISSUES.md` measures how far the drawn ring already diverges from it.
 
 ## Length and difficulty
 
@@ -167,6 +175,12 @@ Small things, none of them load-bearing.
   cannot answer.
 - **Guns the player picks.** The nose is a mount like any other, so the beam could
   become a slot with alternatives in it rather than a ladder of one gun.
+- **Aiming a hull's own guns.** A flown hull's turrets fire through their own
+  controllers, which is fine to watch and impossible to direct: the player has one
+  aimable mount and a frigate has four guns doing as they please.
+- **A cell for every core.** Only `minerCore` has an upgrade ladder, so a hull flown
+  from the dev page has whatever fixed cell its own core states and the shop's CORE
+  row sells it levels it does not have. Four levels per core is data.
 - **A continue that gets dearer.** Buying back into a run costs the shop's flat
   price for a ship every time. Charging more for each one in a row would make a
   hoard finite in a way a flat price does not, at the cost of a second number
