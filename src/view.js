@@ -12,6 +12,7 @@ import {
   ARENA,
   SHOP,
   SHOP_LAYOUT,
+  EQUIPMENT,
   MAX_SLOTS,
   SPECIAL_TYPES,
 } from "./config.js"
@@ -793,6 +794,9 @@ export class GameView {
     for (let row = 0; row <= SHOP.length; row++) {
       const selected = game.shopSelection === row
       if (selected) {
+        this.selectedRowY = y
+      }
+      if (selected) {
         r.rect(leftX - 16, y - 18, rightX - leftX + 32, rowHeight - 4, {
           fill: "rgba(95,215,255,.12)",
         })
@@ -826,6 +830,7 @@ export class GameView {
       y += rowHeight
     }
 
+    const selectedRowY = this.selectedRowY ?? slotsY
     const selectedItem = game.shopItem(game.shopSelection)
     const hint = selectedItem
       ? selectedItem.desc
@@ -886,7 +891,7 @@ export class GameView {
     }
     // Last, so the pop-over sits over the rows it is opened from.
     if (game.slotMenu) {
-      this.#slotPopover(game, rightX, slotsY)
+      this.#slotPopover(game, rightX, slotsY, selectedRowY)
     }
   }
 
@@ -938,26 +943,59 @@ export class GameView {
   // back inside the right-hand column where it would otherwise overhang. It is
   // headed by what is in the slot, so which one is being worked on is never in
   // doubt once the panel covers the row.
-  #slotPopover(game, rightX, slotsY) {
+  // Break `text` into lines that fit `width` at `size`, so a description can say
+  // more than a panel is wide. The atlas is monospace, so a character is a fixed
+  // fraction of the size and this needs no measuring.
+  #wrap(text, width, size) {
+    const perLine = Math.max(8, Math.floor(width / (size * 0.62)))
+    const lines = []
+    let line = ""
+    for (const word of String(text).split(" ")) {
+      const next = line ? `${line} ${word}` : word
+      if (next.length > perLine && line) {
+        lines.push(line)
+        line = word
+      } else {
+        line = next
+      }
+    }
+    if (line) {
+      lines.push(line)
+    }
+    return lines
+  }
+
+  #slotPopover(game, rightX, slotsY, selectedRowY) {
     const r = this.renderer,
-      { slot, selection } = game.slotMenu,
+      { slot, selection, equipment } = game.slotMenu,
       rows = game.slotMenuRows(slot)
-    const { x } = this.#slotBox(rightX, slot)
-    const spec = game.slotType(slot)
+    // An equipment menu belongs to the shop row it was opened from and is titled
+    // for the slot it fills; a specials menu belongs to one of the slot boxes and is
+    // titled for whatever is in it. Reading the special in slot 0 for both is what
+    // put ORE MAGNET at the top of the ENGINE menu.
+    const spec = equipment ? null : game.slotType(slot)
+    const chosen = rows[selection]
     const titleHeight = 20
-    const width = 200, // wide enough for the longest special name beside its price
-      rowHeight = 20,
-      // the title, the rows, and the line saying how to work them
-      height = titleHeight + rows.length * rowHeight + 28
-    const panelX = Math.min(x - 6, rightX - width),
-      panelY = slotsY + 15
+    const width = equipment ? 260 : 200,
+      rowHeight = 20
+    const desc = chosen && chosen.desc ? this.#wrap(chosen.desc, width - 16, 10) : []
+    const height = titleHeight + rows.length * rowHeight + 28 + desc.length * 12
+    const anchorX = equipment ? rightX - width : this.#slotBox(rightX, slot).x - 6
+    const panelX = Math.min(anchorX, rightX - width),
+      panelY = (equipment ? selectedRowY : slotsY) + 15
     r.rect(panelX, panelY, width, height, { fill: "rgba(4,8,16,.95)" })
     r.rect(panelX, panelY, width, height, { stroke: PALETTE.ui.accent, width: 1.2, glow: 8 })
-    const title = spec ? spec.label : slot < game.specialSlots() ? "EMPTY" : "LOCKED"
+    const title = equipment
+      ? EQUIPMENT[equipment].label
+      : spec
+        ? spec.label
+        : slot < game.specialSlots()
+          ? "EMPTY"
+          : "LOCKED"
     r.text(title, panelX + width / 2, panelY + 15, {
       size: 12,
       bold: true,
-      color: spec ? spec.colour : PALETTE.text.faint,
+      color: spec ? spec.colour : PALETTE.text.bright,
       align: "center",
     })
     r.line(panelX + 6, panelY + titleHeight + 1, panelX + width - 6, panelY + titleHeight + 1, {
@@ -982,6 +1020,18 @@ export class GameView {
           align: "right",
         })
       }
+    })
+    desc.forEach((line, index) => {
+      r.text(
+        line,
+        panelX + width / 2,
+        panelY + titleHeight + 20 + rows.length * rowHeight + index * 12,
+        {
+          size: 10,
+          color: PALETTE.text.soft,
+          align: "center",
+        },
+      )
     })
     r.text(
       this.#prompt(game, "ENTER choose   ESC back", "A choose   B back"),

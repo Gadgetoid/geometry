@@ -49,6 +49,7 @@ import {
   WEAPON_TYPES,
   SHIP_TYPES,
   CORE_TYPES,
+  EQUIPMENT,
   thrustOf,
   barrelCount,
   deriveShipStats,
@@ -3633,6 +3634,80 @@ test("dev mode walks the sector only from the row that shows it", () => {
   game.menuAdjust(-1)
   assert.equal(game.shopSector, 1, "it cannot go below the first sector")
   assert.equal(game.shopSelection, game.optionsRow, "and the press walks to OPTIONS instead")
+})
+
+// Every string the shop draws, with the y it landed at. The pop-over is drawn last
+// and over the rows, so what it says has to be read out of the whole frame.
+function shopText(game) {
+  const texts = []
+  const renderer = {
+    beginFrame() {},
+    endFrame() {},
+    clearFrame() {},
+    pushView() {},
+    popView() {},
+    nebula() {},
+    compositeBackground() {},
+    setWarp() {},
+    strokePoly() {},
+    line() {},
+    circle() {},
+    rect() {},
+    point() {},
+    planet() {},
+    text: (str, x, y) => texts.push({ str: String(str), y: Math.round(y) }),
+  }
+  new GameView(renderer).render(game)
+  return texts
+}
+
+// Which shop row fills an equipment slot, since the order is the registry's.
+function equipmentRowIndex(game, slot) {
+  for (let row = 0; row < 20; row++) {
+    const item = game.shopItem(row)
+    if (item && item.equipment === slot) {
+      return row
+    }
+  }
+  throw new Error(`no shop row for the ${slot} slot`)
+}
+
+test("a pop-over is titled by whatever opened it, not by the first special slot", () => {
+  // The equipment menu carried no identity of its own, so it was drawn as a
+  // specials menu on slot 0: the ENGINE options appeared under the title ORE
+  // MAGNET, in the ore magnet's box.
+  const game = liveGame()
+  game.enterShop()
+  game.oreBalance = 500
+  game.shopSelection = equipmentRowIndex(game, "engine")
+  game.doShopAction()
+  assert.ok(game.slotMenu, "the row should open a pop-over")
+  assert.equal(game.slotMenu.equipment, "engine")
+
+  const said = shopText(game).map((entry) => entry.str)
+  assert.ok(said.includes(EQUIPMENT.engine.label), "titled for the slot it fills")
+  assert.ok(
+    !said.includes(SPECIAL_TYPES.oreMagnet.label),
+    "and not for whatever happens to be in the first special slot",
+  )
+  for (const option of EQUIPMENT.engine.options) {
+    assert.ok(
+      said.some((line) => line.includes(option.name)),
+      `${option.name} should be offered`,
+    )
+  }
+})
+
+test("a specials pop-over is still titled by what is in its slot", () => {
+  const game = liveGame()
+  game.enterShop()
+  game.shopSelection = game.slotsRow
+  game.shopSlot = 0
+  game.doShopAction()
+  assert.ok(game.slotMenu, "a filled slot opens")
+  assert.equal(game.slotMenu.equipment, undefined)
+  const said = shopText(game).map((entry) => entry.str)
+  assert.ok(said.includes(SPECIAL_TYPES.oreMagnet.label), "named for what it holds")
 })
 
 // ---- control bindings -----------------------------------------------------
