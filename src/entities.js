@@ -2265,6 +2265,9 @@ export class PlayerShip extends Ship {
             Sound.bump() // knock on contact with a rock
             this.impactSfx = 0.15
           }
+          // Hit hard enough, the piece comes apart on the hull instead of bouncing off
+          // it. The hull is charged for the contact either way, below.
+          game.impactShatter(asteroid, closing)
         } else if (!worstImpact) {
           worstImpact = impact
         }
@@ -2620,6 +2623,7 @@ export class RivalShip extends Ship {
       }
       touching = true
       const { impact, closing } = resolveHullRockContact(this, asteroid, contact)
+      game.impactShatter(asteroid, closing)
       if (closing > closingSpeed) {
         closingSpeed = closing
         worstImpact = impact
@@ -2818,6 +2822,13 @@ export class Asteroid extends Entity {
 
   hitOutline() {
     return this.vertices
+  }
+
+  // The closing speed at which this piece comes apart rather than being shoved. Its
+  // material's if it has one, which is how a hull fragment is more fragile than the
+  // rock it is drifting among.
+  get shatterAt() {
+    return (this.material && this.material.shatterAt) ?? CONFIG.ROCK_SHATTER_SPEED
   }
 
   contactShape() {

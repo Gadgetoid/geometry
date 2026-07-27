@@ -2317,6 +2317,47 @@ test("every alien hull carries alien guns", () => {
   }
 })
 
+test("a piece hit harder than it holds together comes apart, and otherwise is shoved", () => {
+  // One rule, priced in closing speed, so nothing here knows what wreckage is: a hull
+  // fragment still carrying its ship's momentum bursts on the first thing it meets, the
+  // same fragment slowed to a drift is shouldered aside, and rock takes far more.
+  const thrown = (speed, material) => {
+    const game = liveGame()
+    game.player.x = -9000
+    game.player.y = -9000
+    const piece = new Asteroid({
+      vertices: square(300, 320, 30),
+      vx: speed,
+      vy: 0,
+      spin: 0,
+      material,
+    })
+    const rock = new Asteroid({ vertices: square(500, 320, 60), vx: 0, vy: 0, spin: 0 })
+    game.asteroids = [piece, rock]
+    const ore = game.oreChunks.length
+    for (let i = 0; i < 180 && !piece.dead && !rock.dead; i++) {
+      game.advance(1 / 60)
+    }
+    return { burst: piece.dead, rockBurst: rock.dead, ore: game.oreChunks.length - ore }
+  }
+
+  const fast = thrown(SHIP_PLATING.shatterAt + 40, SHIP_PLATING)
+  assert.ok(fast.burst, "plating thrown faster than it holds bursts")
+  assert.ok(fast.ore > 0, "leaving ore where it struck")
+  assert.ok(!fast.rockBurst, "and the rock it struck is untouched, being far tougher")
+
+  const slow = thrown(SHIP_PLATING.shatterAt - 40, SHIP_PLATING)
+  assert.ok(!slow.burst, "the same piece drifting is shoved aside instead")
+
+  // Rock holds together through anything a hull can do to it short of a full-tilt ram.
+  assert.ok(
+    CONFIG.ROCK_SHATTER_SPEED > Math.max(...Object.values(SHIP_TYPES).map((t) => t.maxSpeed)),
+    "no rival can drive a rock hard enough to break it",
+  )
+  assert.ok(!thrown(CONFIG.ROCK_SHATTER_SPEED - 50, null).burst, "so an ordinary field holds")
+  assert.ok(thrown(CONFIG.ROCK_SHATTER_SPEED + 40, null).burst, "and a hard enough hit does not")
+})
+
 test("a rock costs a rival hull, as it costs the player energy", () => {
   for (const typeName of Object.keys(SHIP_TYPES)) {
     assert.ok(ramARock(typeName) > 0, `a ${typeName} driving into a rock must be worn down by it`)

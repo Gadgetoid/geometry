@@ -1839,6 +1839,22 @@ export class Game {
     }
   }
 
+  // A piece hit harder than it holds together comes apart where it was struck, rather
+  // than being shoved. What decides it is the closing speed and the piece's own
+  // material, so nothing here knows what wreckage is: a hull fragment still carrying
+  // its ship's momentum bursts on the first thing it meets, the same fragment once it
+  // has slowed to a drift is shouldered aside, and a rock takes a great deal more
+  // either way. Called from every contact that measures a closing speed.
+  impactShatter(asteroid, closing) {
+    if (asteroid.dead || closing <= asteroid.shatterAt) {
+      return false
+    }
+    this.shatterToOre(asteroid)
+    asteroid.dead = true
+    this.screenShake = Math.max(this.screenShake, 5)
+    return true
+  }
+
   // One rock pair. `spark` gates the impact effect to the first sweep, so a
   // contact does not emit particles once per iteration.
   #resolveRockPair(a, b, spark) {
@@ -1868,6 +1884,13 @@ export class Game {
     }
     const closing = (b.vx - a.vx) * ux + (b.vy - a.vy) * uy
     if (closing < 0) {
+      // Either of them may be hit harder than it holds together. Checked before the
+      // bounce, so a piece that comes apart does so where it struck rather than being
+      // flung off first, and checked for both, so which one was moving does not matter.
+      const broke = this.impactShatter(a, -closing) || this.impactShatter(b, -closing)
+      if (broke) {
+        return true
+      }
       const j = (-(1 + CONFIG.ROCK_RESTITUTION) * closing) / (1 / massA + 1 / massB)
       a.vx -= (j * ux) / massA
       a.vy -= (j * uy) / massA

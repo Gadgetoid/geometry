@@ -110,6 +110,17 @@ export const CONFIG = {
   CONTACT_SLOP: 0.5,
   CONTACT_BIAS: 0.35,
   CONTACT_ITERATIONS: 4,
+  // How hard a piece has to be hit before it comes apart instead of being shoved.
+  // Priced in closing speed, as every other impact in the game is (see
+  // ROCK_IMPACT_DAMAGE), so one number covers a splinter and a boulder alike: hit it
+  // hard enough and it breaks.
+  //
+  // Rock is set above every hull's top speed, so an ordinary field never shatters
+  // itself: rocks drift at 30 to 74 and the fastest rival manages 245. What does reach
+  // it is the player at full tilt and a rock flung by a blast, both of which should
+  // break something. A material states its own instead, and plating states far less,
+  // which is what makes fast wreckage come apart on whatever it meets.
+  ROCK_SHATTER_SPEED: 300,
   AST_MASS_AREA: 3200, // rock area per unit of mass, for collision response
   // Clamp on the mass a rock's area may imply, as a guard against extremes. It
   // has to stay clear of what a sector actually spawns: those run 4.3 to 8.2, so
@@ -1367,6 +1378,11 @@ export function deriveShipStats(type) {
 export const SHIP_PLATING = {
   minArea: CONFIG.SHIP_DEBRIS_MIN_AREA,
   burn: { seconds: 9.0, rate: 30 }, // rate is fire particles a second at full heat
+  // A hull fragment is a shell rather than a boulder, so it comes apart at a fraction
+  // of what rock takes: above the drift of a rock field and well under the speed a
+  // wreck is thrown at, so a piece still carrying its ship's momentum bursts on the
+  // first thing it meets and one that has slowed to a drift is shouldered aside.
+  shatterAt: 120,
 }
 // ---------------------------------------------------------------------------
 export const FRIGATE_SHAPE = [
