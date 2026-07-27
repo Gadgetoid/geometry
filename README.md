@@ -39,6 +39,8 @@ The game and art direction lean heavily on genre and industry tropes as a common
 
 GEOMETRY is, of course, heavily inspired by the classic Asteroids, but it also draws inspiration from Subspace Continuum- a gloriously frenetic 2D space MMO you ought to go and try for yourself. Babylon 5 fans will also appreciate bringing a laser to bear on rival drone ships.
 
+Oh, and that name of a game you're reaching for - it's Geometry Wars. This game wasn't inspired or influenced by that Xbox Live classic, but hat-tip to it anyway. The name Geometry came from the old, original, 32blit code- when it really did begin as a test of geometry.
+
 I think it's fair to say I have reservations about GenAI, but I'm old, exhausted, perpetually busy, and struggle to bring my glacially slow, frustratingly stubborn brain to bear on new things, much less see them through to completion. This tool is a hack, an ugly hack, to leverage the addictive nature of (comparatively) immediate results to get me on task and keep me there.
 
 This is, for my best efforts, not intentional slop, but a well-intentioned and methodical plod towards the game I always (with perhaps sometimes spur of the moment new ideas) wanted to build. Take it or leave it!
