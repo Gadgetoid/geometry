@@ -695,19 +695,12 @@ function trackedAim(seen, hp, at, fallback) {
 
 // A gun on its mount: a nub with a barrel per shot it throws at once. `scale` draws the
 // whole thing larger or smaller without changing its proportions, for a diagram of a ship
-// drawn at some other size than the sector draws it at.
-export function drawTurret(
-  renderer,
-  x,
-  y,
-  aim,
-  barrels,
-  colour,
-  length = 10,
-  alpha = 1,
-  scale = 1,
-) {
-  renderer.circle(x, y, 3.4 * scale, { stroke: colour, width: 1.6 * scale, glow: 8, alpha })
+// drawn at some other size than the sector draws it at, and `glow` is worth turning off
+// for one drawn faintly: half a dozen soft edges over each other read as a smudge rather
+// than as a gun.
+export function drawTurret(renderer, x, y, aim, barrels, colour, opts = {}) {
+  const { length = 10, alpha = 1, scale = 1, glow = 8 } = opts
+  renderer.circle(x, y, 3.4 * scale, { stroke: colour, width: 1.6 * scale, glow, alpha })
   const across = 2.6 * scale // barrel separation, across the line of fire
   const px = -Math.sin(aim) * across,
     py = Math.cos(aim) * across
@@ -718,7 +711,7 @@ export function drawTurret(
     renderer.line(bx, by, bx + Math.cos(aim) * length, by + Math.sin(aim) * length, {
       color: colour,
       width: 1.6 * scale,
-      glow: 8,
+      glow,
       alpha,
     })
   }
@@ -1955,7 +1948,7 @@ export class Ship extends Entity {
       if (m.type.kind === "projectile") {
         // pointed where the controller points it, so a heavy turret is legible
         const aim = trackedAim(seen, hp, w, this.angle)
-        drawTurret(renderer, w.x, w.y, aim, m.barrels, PALETTE.weapon.gun, 8)
+        drawTurret(renderer, w.x, w.y, aim, m.barrels, PALETTE.weapon.gun, { length: 8 })
       } else if (hp.role === "nose") {
         renderer.line(w.x, w.y, w.x + Math.cos(this.angle) * 8, w.y + Math.sin(this.angle) * 8, {
           color: m.type.colour,
@@ -2776,7 +2769,10 @@ export class PlayerShip extends Ship {
       const aim = this.turretAim || 0
       const mount = this.mountWorld(this.aux.local)
       const barrels = this.aux.module ? this.aux.module.barrels : 1
-      drawTurret(renderer, mount.x, mount.y, aim, barrels, PALETTE.player.turret, 12, fade)
+      drawTurret(renderer, mount.x, mount.y, aim, barrels, PALETTE.player.turret, {
+        length: 12,
+        alpha: fade,
+      })
     }
 
     const w = this.mainWeapon

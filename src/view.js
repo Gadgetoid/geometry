@@ -1270,17 +1270,12 @@ export class GameView {
         if (gun && hp.role !== "nose") {
           // At the hull's own scale, since a turret is a real size on a real ship: the
           // point of showing it is how much of the hull it takes up.
-          drawTurret(
-            r,
-            at.x,
-            at.y,
-            -Math.PI / 2,
-            gun.barrels,
-            PALETTE.player.turret,
-            12 * scale,
-            0.45,
+          drawTurret(r, at.x, at.y, -Math.PI / 2, gun.barrels, PALETTE.player.turret, {
+            length: 12 * scale,
+            alpha: 0.5,
             scale,
-          )
+            glow: 0,
+          })
         }
         // Named on a leader line, the way a special in the sector names itself: out from
         // the hull, a short run, and the label at the end of it.
