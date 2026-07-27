@@ -1379,6 +1379,64 @@ test("the alien field is not a wall: it is passed through by what pushes hard en
   assert.equal(alien.blockingRadius("projectile"), 0, "and shot is not blocked, but repelled")
 })
 
+test("an alien plant is deep enough to run a field through a crossfire", () => {
+  // A bubble only costs energy when something hits it; a field pays for everything it
+  // holds off, and an alien arrives into a sector already thick with other people's
+  // fire. So an alien core carries a good deal more than the rival core of its tier,
+  // and the pincer's most of all.
+  for (const [alien, rival] of [
+    ["alienScout", "scout"],
+    ["alienSeeker", "seeker"],
+    ["alienFrigate", "frigate"],
+  ]) {
+    assert.ok(
+      SHIP_TYPES[alien].energyMax > SHIP_TYPES[rival].energyMax,
+      `${alien} should carry more cell than a ${rival}`,
+    )
+  }
+
+  // What that is worth against the weapon that breaks a field: charged shots at the
+  // cadence the gun allows. On a siege core the pincer's field fell to five of them.
+  const shotsToStrip = (mark) => {
+    const game = liveGame()
+    beSolid(game.player)
+    game.asteroids = [new Asteroid({ vertices: square(-600, -600, 40), spin: 0 })]
+    withEquipment(game, "laser", mark)
+    const gun = game.player.mainWeapon
+    const cycle = Math.ceil(60 * (gun.type.chargeMax / gun.type.chargeRate + gun.type.reload))
+    const reach = gun.type.chargeMax * game.player.beamLengthMult() + gun.type.chargeReach
+    const at = 300 + reach * 0.55
+    const alien = plainRival(at, 320, "alienFrigate")
+    game.rivals = [alien]
+    const field = alien.shieldModule()
+    let shots = 0
+    for (let frame = 0; frame < 60 * 60 && field.up; frame++) {
+      game.player.x = 300
+      game.player.y = 320
+      game.player.angle = 0
+      game.player.invincible = 99999
+      alien.x = at
+      alien.y = 320
+      alien.vx = 0
+      alien.vy = 0
+      if (frame % cycle === 0) {
+        gun.cooldown = 0
+        gun.charge = gun.type.chargeMax
+        game.player.energy = game.player.energyMax
+        game.player.fireLaser(game)
+        shots++
+      }
+      game.advance(1 / 60)
+    }
+    return field.up ? Infinity : shots
+  }
+  const early = shotsToStrip("playerLaserMk1")
+  const late = shotsToStrip("playerLaserMk5")
+  assert.ok(early > 10, `the yard's beam should need a good many shots, needed ${early}`)
+  assert.ok(late < early, "and the mark the shop finishes with should need fewer")
+  assert.ok(late > 5, `but not so few that it is over at once, needed ${late}`)
+})
+
 test("the field turns shot away, so a stream of it cannot take a pincer apart", () => {
   // What a flak turret was doing before the field repelled shot: taking a pincer to
   // pieces. A round now has to push through a field that leans harder the closer it
@@ -2407,16 +2465,27 @@ test("a piece hit harder than it holds together comes apart, and otherwise is sh
     const rock = new Asteroid({ vertices: square(500, 320, 60), vx: 0, vy: 0, spin: 0 })
     game.asteroids = [piece, rock]
     const ore = game.oreChunks.length
+    const particles = game.particles.length
     for (let i = 0; i < 180 && !piece.dead && !rock.dead; i++) {
       game.advance(1 / 60)
     }
-    return { burst: piece.dead, rockBurst: rock.dead, ore: game.oreChunks.length - ore }
+    return {
+      burst: piece.dead,
+      rockBurst: rock.dead,
+      ore: game.oreChunks.length - ore,
+      made: game.particles.length - particles,
+    }
   }
 
   const fast = thrown(SHIP_PLATING.shatterAt + 40, SHIP_PLATING)
   assert.ok(fast.burst, "plating thrown faster than it holds bursts")
   assert.ok(fast.ore > 0, "leaving ore where it struck")
   assert.ok(!fast.rockBurst, "and the rock it struck is untouched, being far tougher")
+  // And it looks like something breaking up rather than a handful of ore appearing: how
+  // much comes off follows how big the piece was and how hard it was hit.
+  assert.ok(fast.made > 30, `a break-up should throw a shower, threw ${fast.made}`)
+  const harder = thrown(SHIP_PLATING.shatterAt + 170, SHIP_PLATING)
+  assert.ok(harder.made > fast.made, "a harder hit throws more")
 
   const slow = thrown(SHIP_PLATING.shatterAt - 40, SHIP_PLATING)
   assert.ok(!slow.burst, "the same piece drifting is shoved aside instead")

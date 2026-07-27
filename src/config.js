@@ -1014,6 +1014,15 @@ export const CORE_TYPES = {
   seekerCore: { mass: 0.08, energy: 300, regen: 34, shield: 1, radar: 1, thruster: 1, special: 0 },
   // A siege hull's: feeds four turrets and a cannon between them.
   siegeCore: { mass: 0.2, energy: 260, regen: 30, shield: 1, radar: 1, thruster: 1, special: 0 },
+  // The aliens' own plants. They are larger than the rival cores of the same tier for a
+  // reason that is in the machinery rather than in the fiction: a bubble only costs
+  // energy when something hits it, while a repel field pays for everything it holds off,
+  // and an alien arrives into a sector already thick with other people's fire. A pincer
+  // on a siege core had its field stripped by five charged beam shots; on this it takes
+  // sixteen, and eight from the mark the shop finishes with.
+  swarmCore: { mass: 0.05, energy: 260, regen: 28, shield: 1, radar: 1, thruster: 1, special: 0 },
+  stalkerCore: { mass: 0.12, energy: 420, regen: 32, shield: 1, radar: 1, thruster: 1, special: 0 },
+  pincerCore: { mass: 0.3, energy: 800, regen: 34, shield: 1, radar: 1, thruster: 1, special: 0 },
   // The player's, and the only one the shop can improve. Each level is a bigger
   // cell, a faster refill and another slot to spend it through.
   minerCore: {
@@ -1630,10 +1639,11 @@ const SHIP_DESIGNS = {
     ],
     colour: PALETTE.alien.hull,
     faction: "alien",
-    // Twice the material of a frigate for the same mass, which is what a hull this
+    // Twice the material of a frigate for the same laden 6, which is what a hull this
     // wide and this hollow comes to, and 728 of hull because armour times area is
-    // what decides that.
-    mass: 4.45,
+    // what decides that. Bare here: its plant, field, drives and five guns make up the
+    // rest.
+    mass: 4.75,
     armour: 0.6,
     lifeTime: [34, 50],
     hardpoints: [
@@ -1660,7 +1670,7 @@ const SHIP_DESIGNS = {
       { hp: 7, engine: "siegeDrive" },
       {
         hp: 5,
-        core: "siegeCore",
+        core: "pincerCore",
         fitted: { shield: "alienField", radar: "huntingArray", thruster: "siegeJets" },
       },
     ],
@@ -1695,7 +1705,7 @@ const SHIP_DESIGNS = {
     ],
     colour: PALETTE.alien.hull,
     faction: "alien",
-    mass: 0.6,
+    mass: 0.58, // bare hull; its loadout brings it to the 0.7 of the scout it answers
     armour: 1,
     lifeTime: [16, 26],
     hardpoints: [
@@ -1708,7 +1718,7 @@ const SHIP_DESIGNS = {
       { hp: 0, weapon: "warpCutter", controller: "miner" },
       {
         hp: 2,
-        core: "prospectorCore",
+        core: "swarmCore",
         fitted: { radar: "prospectorArray", thruster: "attitudeJets" },
       },
       { hp: 3, engine: "pulseDrive" },
@@ -1757,7 +1767,7 @@ const SHIP_DESIGNS = {
     ],
     colour: PALETTE.alien.hull,
     faction: "alien",
-    mass: 0.48,
+    mass: 0.47, // bare hull; laden it matches the seeker at 0.8
     armour: 1.2,
     lifeTime: [26, 36],
     hardpoints: [
@@ -1771,7 +1781,7 @@ const SHIP_DESIGNS = {
       { hp: 0, weapon: "warpNeedle", controller: "hunter" },
       {
         hp: 2,
-        core: "seekerCore",
+        core: "stalkerCore",
         fitted: { shield: "alienField", radar: "huntingArray", thruster: "gimbalRing" },
       },
       { hp: 3, engine: "ionDrive" },

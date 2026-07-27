@@ -1853,7 +1853,21 @@ export class Game {
     }
     this.shatterToOre(asteroid)
     asteroid.dead = true
-    this.screenShake = Math.max(this.screenShake, 5)
+    // What it looked like when it went, which the ore puff alone does not carry: the
+    // bigger the piece and the harder it was hit, the more comes off it. A piece that
+    // burns is throwing fire as well as debris, so plating breaking up reads differently
+    // from rock giving way.
+    const heft = clamp(asteroid.area / CONFIG.ORE_PER_ROCK_AREA, 0.4, 2.5)
+    const force = clamp(closing / asteroid.shatterAt, 1, 2.5)
+    const at = asteroid.center
+    this.burst(at.x, at.y, Math.round(16 * heft * force), PALETTE.rock.impact, 60, 240 * force, 0.6)
+    this.ring(at.x, at.y, Math.round(10 * heft), PALETTE.fx.flash, 180 * force, 0.45)
+    if (asteroid.burnSpec) {
+      this.burst(at.x, at.y, Math.round(14 * heft), PALETTE.fx.fire, 40, 190 * force, 0.75)
+      this.burst(at.x, at.y, Math.round(6 * heft), PALETTE.fx.ember, 30, 120, 0.9)
+    }
+    this.screenShake = Math.max(this.screenShake, 4 + 4 * heft)
+    Sound.explode()
     return true
   }
 
