@@ -40,6 +40,7 @@ import {
   WEAPON_TYPES,
   SHIELD_TYPES,
   ENGINE_TYPES,
+  RADAR_TYPES,
   SHIP_TYPES,
   PLAYER_TYPE,
   AST_SHAPE,
@@ -408,6 +409,20 @@ export class Entity {
     return true
   }
 
+  // How far this body notices `what`, one of ships, rocks, ore or powerups.
+  // Everything sees as far as the sensor floor, which is a circle over what is on
+  // screen, and a fitted radar set reaches past it for the kinds it covers. So a
+  // hull with nothing fitted is not blind, it is just short-sighted.
+  sensorRange(what) {
+    let reach = CONFIG.SENSOR_FLOOR
+    for (const hp of this.hardpoints) {
+      if (hp.module && hp.module.kind === "radar") {
+        reach = Math.max(reach, hp.module.reach(what))
+      }
+    }
+    return reach
+  }
+
   // Which side this body is on, for deciding what shoots at what. A rock is a
   // hazard, and so is the wreckage cut from a hull: whatever it was made of, once
   // it is debris it fires on the player alone.
@@ -739,6 +754,23 @@ export const WEAPON_CONTROLLERS = {
       weapon.fire(game, host, world.x, world.y, host.turretAim, reach)
     }
   },
+}
+
+// ---------------------------------------------------------------------------
+// Radar module: what its host knows about, and how far off. It does nothing on
+// its own; everything that looks for something asks the host, and the host asks
+// whatever set is fitted.
+// ---------------------------------------------------------------------------
+export class Radar {
+  constructor(typeName) {
+    this.kind = "radar"
+    this.typeName = typeName
+    this.type = RADAR_TYPES[typeName]
+  }
+
+  reach(what) {
+    return this.type.sees[what] ?? 0
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1084,6 +1116,8 @@ export class Ship extends Entity {
         hp.module = new Shield(entry.shield)
       } else if (entry.engine) {
         hp.module = new Engine(entry.engine)
+      } else if (entry.radar) {
+        hp.module = new Radar(entry.radar)
       }
     }
   }
@@ -1978,6 +2012,8 @@ export class RivalShip extends Ship {
     // the clock does not start until it has reached one.
     this.arrived = false
     this.leaving = false
+    this.wander = null // where it is headed with nothing better to do
+    this.wanderFor = 0
     this.buildHardpoints(type.hardpoints)
     this.applyLoadout(loadout || type.loadout || [])
     this.hunts = !!type.hunts
@@ -2043,12 +2079,15 @@ export class RivalShip extends Ship {
     // Ore close by is worth a detour; with none in reach it makes for the nearest
     // rock, which is where ore comes from. A rock's own x/y is its centroid, so
     // steering at the body steers at the middle of it.
-    const found = game.nearestOre(this, CONFIG.RIVAL_ORE_INTEREST) || game.nearestAsteroid(this)
+    const found =
+      game.nearestOre(this, Math.min(CONFIG.RIVAL_ORE_INTEREST, this.sensorRange("ore"))) ||
+      game.nearestAsteroid(this, this.sensorRange("rocks"))
     const target = found && found.target
     if (this.lifeTimer <= 0) {
       this.leaving = true
     }
 
+    this.wanderFor -= dt
     const outAngle = Math.atan2(this.y - ARENA.cy, this.x - ARENA.cx)
     const goal = this.leaving
       ? {
@@ -2057,7 +2096,7 @@ export class RivalShip extends Ship {
         }
       : this.hunts && prey
         ? { x: prey.target.x, y: prey.target.y }
-        : target || { x: ARENA.cx, y: ARENA.cy }
+        : target || this.#wanderGoal()
     const turn = shortestTurn(this.angle, bearingTo(this, goal))
     this.angle += clamp(turn, -this.turnRate * dt, this.turnRate * dt)
     this.vx += Math.cos(this.angle) * this.accel * dt
@@ -2097,6 +2136,33 @@ export class RivalShip extends Ship {
     ) {
       this.dead = true
     }
+  }
+
+  // Where a hull goes when its radar finds nothing worth going to. It keeps to one
+  // point until it arrives or gives up on it, which reads as looking for something;
+  // steering at the middle of the arena instead reads as waiting on the spawn, and
+  // is where the player is about to appear.
+  #wanderGoal() {
+    const reached = this.wander && Math.hypot(this.x - this.wander.x, this.y - this.wander.y) < 120
+    if (!this.wander || reached || this.wanderFor <= 0) {
+      // A step from where it stands, rather than a point picked over the field.
+      // Picking over the field walks a hull toward the middle of the arena, because
+      // that is where the middle of the field is, and the middle of the arena is
+      // where the player warps in. A step has no such pull.
+      const bearing = randRange(0, TAU)
+      const step = randRange(320, 720)
+      let x = this.x + Math.cos(bearing) * step
+      let y = this.y + Math.sin(bearing) * step
+      const away = Math.hypot(x - ARENA.cx, y - ARENA.cy)
+      const limit = ARENA.radius - 60 // room to search the rim, not just the middle
+      if (away > limit) {
+        x = ARENA.cx + ((x - ARENA.cx) / away) * limit
+        y = ARENA.cy + ((y - ARENA.cy) / away) * limit
+      }
+      this.wander = { x, y }
+      this.wanderFor = randRange(4, 9)
+    }
+    return this.wander
   }
 
   // Every engine draws its own plume from its own hardpoint, so a hull with two

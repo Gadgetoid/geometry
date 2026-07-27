@@ -403,11 +403,17 @@ export class GameView {
       sy = VIEW_H / 2
     const halfX = sx - 30,
       halfY = sy - 30
-    const mark = (wx, wy, color, size = 9) => {
+    // What the ship's own radar reaches, per kind. Marking something the hull
+    // cannot detect would be the HUD knowing more than the ship does.
+    const player = game.player
+    const mark = (wx, wy, color, size = 9, reach = Infinity) => {
       const dx = wx - c.x,
         dy = wy - c.y
       if (Math.abs(dx) <= sx - 10 && Math.abs(dy) <= sy - 10) {
         return // on-screen: no marker
+      }
+      if (Math.hypot(wx - player.x, wy - player.y) > reach) {
+        return // out of range: the ship does not know it is there
       }
       const ang = Math.atan2(dy, dx)
       const k = 1 / Math.max(Math.abs(dx) / halfX, Math.abs(dy) / halfY)
@@ -420,15 +426,20 @@ export class GameView {
       const rb = { x: mx + Math.cos(ang - 2.5) * size, y: my + Math.sin(ang - 2.5) * size }
       r.strokePoly([tip, la, rb], { color, width: 1.6, glow: 8, alpha, closed: true })
     }
+    const sees = (what) => player.sensorRange(what)
     for (const chunk of game.oreChunks) {
-      mark(chunk.x, chunk.y, PALETTE.ore.body, 6)
+      mark(chunk.x, chunk.y, PALETTE.ore.body, 6, sees("ore"))
     }
     for (const a of game.asteroids) {
-      mark(a.center.x, a.center.y, a.explosive ? PALETTE.rock.explosive : PALETTE.rock.gun)
+      const colour = a.explosive ? PALETTE.rock.explosive : PALETTE.rock.gun
+      mark(a.center.x, a.center.y, colour, 9, sees("rocks"))
+    }
+    for (const pickup of game.powerupPickups) {
+      mark(pickup.x, pickup.y, POWERUP_TYPES[pickup.type].colour, 7, sees("powerups"))
     }
     for (const rv of game.rivals) {
       if (!rv.dead) {
-        mark(rv.x, rv.y, PALETTE.rival.hull)
+        mark(rv.x, rv.y, PALETTE.rival.hull, 9, sees("ships"))
       }
     }
   }

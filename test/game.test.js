@@ -583,9 +583,13 @@ test("a rival beyond the arena holds its fire", () => {
   game.advance(1 / 60)
   assert.equal(game.projectiles.length, 0, "nothing may be fired from outside the ring")
 
-  // ...and once it reaches the field, it does fire
+  // ...and once it reaches the field, it does fire. The player comes in with it:
+  // this is about the boundary gate, and a target left 660 units away is simply
+  // outside a radarless hull's sensor floor.
   rival.x = ARENA.cx
   rival.y = ARENA.cy
+  game.player.x = ARENA.cx + 120
+  game.player.y = ARENA.cy
   game.viewCenter.x = ARENA.cx
   game.viewCenter.y = ARENA.cy
   assert.equal(rival.insideArena(), true)
@@ -3409,7 +3413,9 @@ test("a cannon does not wind up on a ship that has just arrived", () => {
   assert.ok(committed, "and it takes the shot once the ship is fair game")
 })
 
-test("a hunting rival does not beeline for a spawn point", () => {
+// Put a hunter 700 units out, take the player away with a respawn, and report how
+// much of that gap it closed while it could not be seen.
+function spawnCampRun() {
   const hunter = Object.keys(SHIP_TYPES).find((name) => SHIP_TYPES[name].hunts)
   const game = liveGame()
   const player = game.player
@@ -3430,10 +3436,28 @@ test("a hunting rival does not beeline for a spawn point", () => {
     frames++
   }
   assert.ok(frames > 60, "the untouchable window must be worth measuring")
-  const closed = startedAt - Math.hypot(rival.x - ARENA.cx, rival.y - ARENA.cy)
-  // it wanders toward whatever else is in the sector instead; without this it
-  // closed 630 of the 700 units and was waiting on top of the spawn point
-  assert.ok(closed < startedAt / 4, `it closed ${closed.toFixed(0)} of ${startedAt.toFixed(0)}`)
+  return { startedAt, endedAt: Math.hypot(rival.x - ARENA.cx, rival.y - ARENA.cy) }
+}
+
+test("a hunting rival does not settle on a spawn point it cannot see", () => {
+  // Steering at the middle of the arena closed 630 of the 700 units every single
+  // time and then waited there, which is the behaviour worth forbidding. A search
+  // is random, so what replaces it cannot be pinned by one run or by how far it
+  // happened to travel: a walk about a field ends up somewhere in that field, and
+  // sometimes that is nearby.
+  //
+  // What must hold is that it does not end up on the spawn. Measured over several
+  // searches: it must sit a fair way off on average, and it must not be true that
+  // every search brings it closer.
+  const runs = [11, 23, 37, 41, 59, 71, 83, 97].map((seed) => seeded(seed, spawnCampRun))
+  const ended = runs.map((r) => r.endedAt)
+  const mean = ended.reduce((sum, at) => sum + at, 0) / ended.length
+  const report = ended.map((at) => at.toFixed(0)).join(", ")
+  assert.ok(mean > 350, `ended a mean of ${mean.toFixed(0)} from the spawn: ${report}`)
+  assert.ok(
+    runs.some((r) => r.endedAt > r.startedAt),
+    `every search closed on the spawn, so it is still drawn to it: ${report}`,
+  )
 })
 
 // ---- progression is data ---------------------------------------------------

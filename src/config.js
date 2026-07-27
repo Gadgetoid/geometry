@@ -57,6 +57,10 @@ export const CONFIG = {
   ORE_GRAB_RADIUS: 8, // added to the ship radius when collecting ore
   ORE_VACUUM_GRAB_RADIUS: 42, // wider grab while sweeping a cleared sector
   OFFSCREEN_FIRE_MARGIN: 40, // enemies hold fire this far beyond the view edge
+  // What every hull sees without a radar to help it: a circle a little wider than
+  // the view's half-diagonal of 604, so whatever is on screen is also in reach of
+  // being noticed.
+  SENSOR_FLOOR: 620,
   CUT_EDGE_TOLERANCE: 0.5, // world units, for spotting vertices left on a cut line
 
   // asteroids
@@ -695,6 +699,38 @@ export function thrustOf(type) {
 }
 
 // ---------------------------------------------------------------------------
+// RADAR TYPES - core equipment, and what a hull knows about the sector it is in.
+// `sees` is an effective range per kind of thing: `ships`, `rocks`, `ore` and
+// `powerups`. A kind left out is one this set cannot pick up at all, beyond the
+// floor below.
+//
+// Every hull, radar or not, sees whatever is close enough to be on screen. That
+// floor is a circle a little larger than the view's half-diagonal, so a hull can
+// always see what someone looking at it can, and a set is only worth carrying for
+// what it finds beyond that.
+//
+// A range is what the hull knows, not what it can shoot: a gun still holds fire
+// until its target is on screen.
+// ---------------------------------------------------------------------------
+export const RADAR_TYPES = {
+  // The player's. Everything, everywhere, which is where the shop's levels start
+  // from rather than where they end up.
+  surveyArray: {
+    sees: { ships: Infinity, rocks: Infinity, ore: Infinity, powerups: Infinity },
+  },
+  // A hunter's: tuned for hulls and vague about the scenery. It loses the player
+  // across the full width of the arena, which is 1720 corner to corner.
+  huntingArray: {
+    sees: { ships: 1000, rocks: 600 },
+  },
+  // A miner's: finds rock and ore a long way off and notices a hull late, which is
+  // why a scout is so often surprised.
+  prospectorArray: {
+    sees: { rocks: 1200, ore: 900, ships: 600 },
+  },
+}
+
+// ---------------------------------------------------------------------------
 // FACTIONS - who shoots at whom. One entry per side, listing the sides it is
 // hostile to, and Game.hostileTarget is the only thing that reads it: every gun
 // and every hull that steers at something asks that one question, so no
@@ -919,6 +955,7 @@ const SHIP_DESIGNS = {
       { local: [-1, 0], role: "core" },
       { local: [-11, 6.5], role: "engine" },
       { local: [-11, -6.5], role: "engine" },
+      { local: [-3, 0], role: "core" },
     ],
     loadout: [
       // `hunter` is the behaviour, not the ship: line up, wind up briefly, fire.
@@ -926,6 +963,7 @@ const SHIP_DESIGNS = {
       { hp: 2, shield: "deflector" },
       { hp: 3, engine: "ionDrive" },
       { hp: 4, engine: "ionDrive" },
+      { hp: 5, radar: "huntingArray" },
     ],
     arms: {
       gun: {
@@ -962,10 +1000,12 @@ const SHIP_DESIGNS = {
       { local: [2, 0], role: "gun" },
       { local: [0, 0], role: "core" },
       { local: [-14, 0], role: "engine" },
+      { local: [-3, 0], role: "core" },
     ],
     loadout: [
       { hp: 0, weapon: "minerLaser", controller: "miner" }, // always has a mining laser
       { hp: 3, engine: "pulseDrive" },
+      { hp: 4, radar: "prospectorArray" },
     ],
     arms: {
       gun: {
@@ -1003,6 +1043,7 @@ const SHIP_DESIGNS = {
       // than pivoting it
       { local: [-71, -14], role: "engine" },
       { local: [-71, 14], role: "engine" },
+      { local: [-12, 0], role: "core" },
     ],
     loadout: [
       { hp: 0, weapon: "cannonLaser", controller: "hunter" },
@@ -1013,6 +1054,7 @@ const SHIP_DESIGNS = {
       { hp: 5, shield: "standard" },
       { hp: 6, engine: "siegeDrive" },
       { hp: 7, engine: "siegeDrive" },
+      { hp: 8, radar: "huntingArray" },
     ],
     spawn: { fromSector: 6, weight: 2, maxConcurrent: 1 },
     hunts: true, // steers for the player rather than for ore and rocks
@@ -1060,6 +1102,7 @@ const PLAYER_DESIGN = {
   ],
   loadout: [
     { hp: 0, weapon: "playerLaser", controller: "manual" },
+    { hp: 3, radar: "surveyArray" },
     { hp: 6, engine: "minerDrive" },
   ],
   // Modules the shop bolts on after the fact, keyed by the upgrade that pays for

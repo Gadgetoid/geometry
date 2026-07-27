@@ -1355,6 +1355,9 @@ export class Game {
     if (!hostile) {
       return null
     }
+    // A target has to be found before it can be shot at, so the search is bounded
+    // by what the host's radar reaches as well as by whatever the caller asked for.
+    const reach = host.sensorRange ? host.sensorRange("ships") : Infinity
     const candidates = []
     if (hostile.includes("player")) {
       const player = this.visiblePlayer()
@@ -1367,7 +1370,7 @@ export class Game {
         candidates.push(rival)
       }
     }
-    return this.#nearest(candidates, from, within)
+    return this.#nearest(candidates, from, Math.min(within, reach))
   }
 
   // Powerups the run has met. A kind has to be found in a sector before the shop
