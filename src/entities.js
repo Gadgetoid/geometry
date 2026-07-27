@@ -1315,6 +1315,10 @@ export class PlayerShip extends Ship {
     // One entry per slot, null where the slot is empty, so a slot's index is its
     // identity: buying into the third slot puts it in the third box.
     this.items = new Array(MAX_SLOTS).fill(null)
+    // What the hull leaves the yard carrying, before anything is bought.
+    for (const [slot, id] of (PLAYER_TYPE.startingSpecials || []).entries()) {
+      this.equip(slot, id)
+    }
     this.buffs = new Map() // special id -> seconds of effect remaining
     this.turretAim = 0
     this.turretManual = 0 // time left under player (arrow-key) control
@@ -1446,8 +1450,12 @@ export class PlayerShip extends Ship {
       yield SPECIAL_TYPES[id]
     }
     for (const item of this.items) {
-      if (item && item.active) {
-        yield SPECIAL_TYPES[item.id]
+      if (!item) {
+        continue
+      }
+      const type = SPECIAL_TYPES[item.id]
+      if (item.active || type.mode === "passive") {
+        yield type
       }
     }
   }
@@ -1529,7 +1537,13 @@ export class PlayerShip extends Ship {
         continue
       }
       const type = SPECIAL_TYPES[item.id]
-      if (item.active) {
+      if (type.mode === "passive") {
+        // Always on, so what it costs is charged for as long as it is fitted. The
+        // magnet costs nothing, which is why it can sit in a slot for a whole run.
+        if (type.drain) {
+          this.energy = Math.max(0, this.energy - type.drain * this.energyMax * dt)
+        }
+      } else if (item.active) {
         this.energy = Math.max(0, this.energy - type.drain * this.energyMax * dt)
         if (this.energy <= 0) {
           item.active = false
@@ -2890,12 +2904,13 @@ export class Ore extends Entity {
     this.life -= dt
     const player = game.player,
       dist = Math.hypot(this.x - player.x, this.y - player.y)
-    // A special declaring a `pull` reaches the whole sector; the fitted magnet
-    // only works inside its range.
+    // Whatever is fitted that pulls ore, and how far it reaches: a special with no
+    // `pullRange` reaches the whole sector.
     const buffPull = player.buffField("pull", 0)
-    if (game.oreVacuum || buffPull || dist < CONFIG.MAGNET_RANGE[game.upgrades.magnet]) {
+    const reach = player.buffField("pullRange", Infinity)
+    if (game.oreVacuum || (buffPull > 0 && dist < reach)) {
       const pull = normalize(subtract(player, this))
-      const force = game.oreVacuum ? CONFIG.ORE_VACUUM_PULL : buffPull || CONFIG.ORE_PASSIVE_PULL
+      const force = game.oreVacuum ? CONFIG.ORE_VACUUM_PULL : buffPull
       this.vx += pull.x * force * dt
       this.vy += pull.y * force * dt
     }

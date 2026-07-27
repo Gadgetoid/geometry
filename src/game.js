@@ -908,6 +908,13 @@ export class Game {
     this.upgrades = freshUpgrades()
     this.seenSpecials = new Set()
     this.player = new PlayerShip(this)
+    // What the hull came with counts as met, so a magnet thrown overboard can be
+    // bought back rather than being gone for the run.
+    for (const item of this.player.items) {
+      if (item) {
+        this.findSpecial(item.id)
+      }
+    }
     this.startLevel(1)
   }
 

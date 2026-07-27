@@ -110,6 +110,15 @@ function withoutShield(loadout) {
     })
 }
 
+// A fresh hull leaves the yard with its one slot holding the ore magnet, and that
+// counts as having met one, so a test about an empty slot with an empty shelf has
+// to undo both.
+function clearSlots(game) {
+  game.player.items.fill(null)
+  game.seenSpecials.clear()
+  return game
+}
+
 // A shield is bought, not issued: a run starts without one. A test about a
 // shield fits it the way the shop does.
 function withShield(game, level = 1) {
@@ -1885,7 +1894,6 @@ test("every level the shop offers is one every table it indexes can answer", () 
       CONFIG.LASER_DAMAGE_MULT,
       CONFIG.LASER_OVERDRIVE,
     ],
-    magnet: [CONFIG.MAGNET_RANGE],
   }
   for (const [id, indexed] of Object.entries(tables)) {
     const item = SHOP.find((entry) => entry.id === id)
@@ -2097,7 +2105,7 @@ test("the cursor walks every slot box, fitted or not, and stops at either end", 
 })
 
 test("the pop-over opens on a slot with something in it, and not on an empty one", () => {
-  const game = liveGame()
+  const game = clearSlots(liveGame())
   game.upgrades.slots = 2
   equip(game, 0, "booster")
   game.enterShop()
@@ -2139,7 +2147,7 @@ test("selling a slot pays what the special is worth and empties that slot", () =
   game.upgrades.slots = 3
   equip(game, 0, "repel")
   equip(game, 1, "booster")
-  equip(game, 2, "magnet")
+  equip(game, 2, "oreMagnet")
   game.level = 3
   game.enterShop()
   const ore = game.oreBalance
@@ -2149,9 +2157,9 @@ test("selling a slot pays what the special is worth and empties that slot", () =
   game.menuConfirm() // SELL
   assert.equal(game.oreBalance, ore + game.specialSellValue("booster"))
   // a slot's index is its identity, so the ones beside it stay where they are
-  assert.deepEqual(carried(game), ["repel", null, "magnet"])
+  assert.deepEqual(carried(game), ["repel", null, "oreMagnet"])
   assert.equal(game.slotMenu, null, "and the pop-over goes with it")
-  assert.deepEqual(game.savedRun.items.slice(0, 3), ["repel", null, "magnet"])
+  assert.deepEqual(game.savedRun.items.slice(0, 3), ["repel", null, "oreMagnet"])
 })
 
 // ---- a special is equipment, not ammunition --------------------------------
@@ -2310,27 +2318,28 @@ test("throwing a special out takes its effect with it", () => {
 
 test("the shop sells only what the run has found, and dev mode sells everything", () => {
   const game = liveGame()
-  assert.deepEqual(game.buyableSpecials(), [], "a fresh run has met nothing")
-  game.findSpecial("magnet")
-  assert.deepEqual(game.buyableSpecials(), ["magnet"])
+  // The magnet the hull came with counts as met, so it can be bought back.
+  assert.deepEqual(game.buyableSpecials(), ["oreMagnet"], "a fresh run has met its own kit")
+  game.findSpecial("repel")
+  assert.deepEqual(game.buyableSpecials().sort(), ["oreMagnet", "repel"])
   game.devMode = true
   assert.deepEqual(game.buyableSpecials(), SPECIAL_IDS, "dev mode stocks the lot")
 })
 
 test("picking a special up is what puts it on the shop's shelf", () => {
-  const game = liveGame()
+  const game = clearSlots(liveGame())
   const player = game.player
-  const pickup = new Special(player.x, player.y, 0, 0, "magnet")
+  const pickup = new Special(player.x, player.y, 0, 0, "oreMagnet")
   game.specialPickups = [pickup]
   player.update(1 / 60, game)
-  assert.equal(carried(game)[0], "magnet", "collected into the free slot")
-  assert.ok(game.seenSpecials.has("magnet"), "and remembered as found")
+  assert.equal(carried(game)[0], "oreMagnet", "collected into the free slot")
+  assert.ok(game.seenSpecials.has("oreMagnet"), "and remembered as found")
 })
 
 test("an empty slot offers what is in stock, and buying one fills that slot", () => {
-  const game = liveGame()
+  const game = clearSlots(liveGame())
   game.upgrades.slots = 2
-  game.findSpecial("magnet")
+  game.findSpecial("oreMagnet")
   game.findSpecial("repel")
   game.oreBalance = 1000
   game.enterShop()
@@ -2340,23 +2349,23 @@ test("an empty slot offers what is in stock, and buying one fills that slot", ()
   assert.ok(game.slotMenu, "an empty slot opens once there is something to offer")
   assert.deepEqual(
     game.slotMenuRows(1).map((row) => row.name),
-    [SPECIAL_TYPES.repel.label, SPECIAL_TYPES.magnet.label],
+    [SPECIAL_TYPES.repel.label, SPECIAL_TYPES.oreMagnet.label],
     "one row per special found, in registry order",
   )
   const before = game.oreBalance
   game.slotMenu.selection = 1 // MAGNET
   game.menuConfirm()
-  assert.equal(carried(game)[1], "magnet", "it goes into the slot it was bought for")
+  assert.equal(carried(game)[1], "oreMagnet", "it goes into the slot it was bought for")
   assert.equal(carried(game)[0], null, "and no other")
-  assert.equal(game.oreBalance, before - SPECIAL_TYPES.magnet.cost)
+  assert.equal(game.oreBalance, before - SPECIAL_TYPES.oreMagnet.cost)
   assert.equal(game.slotMenu, null, "the pop-over closes behind it")
-  assert.deepEqual(game.savedRun.items[1], "magnet", "and the purchase is banked")
+  assert.deepEqual(game.savedRun.items[1], "oreMagnet", "and the purchase is banked")
 })
 
 test("a slot is fitted from the slot it would fill, one at a time", () => {
   const game = liveGame()
   const start = game.upgrades.slots
-  game.findSpecial("magnet") // in stock, and still not offered for a locked slot
+  game.findSpecial("oreMagnet") // in stock, and still not offered for a locked slot
   game.oreBalance = 1000
   game.enterShop()
   game.shopSelection = game.slotsRow
@@ -2385,7 +2394,7 @@ test("a slot is fitted from the slot it would fill, one at a time", () => {
 
 test("fitting a slot puts what could fill it in the pop-over straight away", () => {
   const game = liveGame()
-  game.findSpecial("magnet")
+  game.findSpecial("oreMagnet")
   game.oreBalance = 1000
   game.enterShop()
   const slot = game.upgrades.slots
@@ -2396,11 +2405,11 @@ test("fitting a slot puts what could fill it in the pop-over straight away", () 
   assert.ok(game.slotMenu, "the pop-over stays open")
   assert.deepEqual(
     game.slotMenuRows(slot).map((row) => row.name),
-    [SPECIAL_TYPES.magnet.label],
+    [SPECIAL_TYPES.oreMagnet.label],
     "showing what the new slot could hold",
   )
   game.menuConfirm()
-  assert.equal(carried(game)[slot], "magnet")
+  assert.equal(carried(game)[slot], "oreMagnet")
 })
 
 test("slots are no longer sold as a row of their own", () => {
@@ -2412,17 +2421,17 @@ test("slots are no longer sold as a row of their own", () => {
 })
 
 test("a special that cannot be afforded is not bought", () => {
-  const game = liveGame()
-  game.findSpecial("magnet")
+  const game = clearSlots(liveGame())
+  game.findSpecial("oreMagnet")
   game.enterShop()
-  game.oreBalance = SPECIAL_TYPES.magnet.cost - 1
-  game.buySpecial(0, "magnet")
+  game.oreBalance = SPECIAL_TYPES.oreMagnet.cost - 1
+  game.buySpecial(0, "oreMagnet")
   assert.equal(carried(game)[0], null)
-  assert.equal(game.oreBalance, SPECIAL_TYPES.magnet.cost - 1)
+  assert.equal(game.oreBalance, SPECIAL_TYPES.oreMagnet.cost - 1)
 })
 
 test("a slot with nothing in it and nothing to offer does not open", () => {
-  const game = liveGame()
+  const game = clearSlots(liveGame())
   game.enterShop()
   game.shopSelection = game.slotsRow
   game.menuConfirm()
@@ -2609,7 +2618,7 @@ test("a special left too long flashes out rather than blinking away", () => {
   const game = liveGame()
   game.player.x = -9000 // well clear, so it expires rather than being collected
   game.player.y = -9000
-  const pickup = new Special(ARENA.cx, ARENA.cy, 0, 0, "magnet")
+  const pickup = new Special(ARENA.cx, ARENA.cy, 0, 0, "oreMagnet")
   game.specialPickups = [pickup]
   pickup.life = CONFIG.EXPIRY_WARN
   game.particles = []
@@ -2627,7 +2636,7 @@ test("a loose special names itself for a ship close by, when help text is on", (
     game.settings.help = help
     game.player.x = ARENA.cx
     game.player.y = ARENA.cy
-    const pickup = new Special(ARENA.cx + distance, ARENA.cy, 0, 0, "magnet")
+    const pickup = new Special(ARENA.cx + distance, ARENA.cy, 0, 0, "oreMagnet")
     const drawn = []
     const renderer = { strokePoly() {}, line() {}, circle() {}, text: (str) => drawn.push(str) }
     pickup.draw(renderer, game)
@@ -2635,12 +2644,12 @@ test("a loose special names itself for a ship close by, when help text is on", (
   }
   const near = CONFIG.SPECIAL_LABEL_RANGE * 0.5,
     far = CONFIG.SPECIAL_LABEL_RANGE * 1.5
-  assert.ok(labels(near, true).includes(SPECIAL_TYPES.magnet.label), "named when close by")
+  assert.ok(labels(near, true).includes(SPECIAL_TYPES.oreMagnet.label), "named when close by")
   assert.ok(
-    !labels(far, true).includes(SPECIAL_TYPES.magnet.label),
+    !labels(far, true).includes(SPECIAL_TYPES.oreMagnet.label),
     "and not from across the sector",
   )
-  assert.ok(!labels(near, false).includes(SPECIAL_TYPES.magnet.label), "nor with help text off")
+  assert.ok(!labels(near, false).includes(SPECIAL_TYPES.oreMagnet.label), "nor with help text off")
 })
 
 test("the shop stocks only what the registry says is for sale", () => {

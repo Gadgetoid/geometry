@@ -188,7 +188,6 @@ export const CONFIG = {
   // energy per point of damage. Level 0 flies without one, so its entry is never
   // read.
   SHIELD_EFFICIENCY: [2, 2, 1.44, 1, 0.64],
-  MAGNET_RANGE: [62, 120, 190, 270, 350],
   LASER_RATE_MULT: [1, 1.45, 1.45, 1.45, 1.45],
   LASER_COST_MULT: [1, 1, 0.55, 0.55, 0.55],
   LASER_DAMAGE_MULT: [1, 1, 1, 1.5, 1.5],
@@ -1137,6 +1136,10 @@ const PLAYER_DESIGN = {
     { hp: 1, core: "minerCore", fitted: { radar: "surveyArray" } },
     { hp: 3, engine: "minerDrive" },
   ],
+  // What the ship is fitted with before anything is bought, one id per slot. The
+  // magnet is here rather than in the shop because a ship that cannot pick ore up
+  // is not a ship: it can be ejected, which is a choice, not a starting state.
+  startingSpecials: ["oreMagnet"],
   // Modules the shop bolts on after the fact, keyed by the upgrade that pays for
   // them. Each entry is an ordinary loadout entry, mounted the same way a spawn
   // loadout is, and re-mounted when a saved run is resumed. A one-off fitting in
@@ -1161,6 +1164,10 @@ export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
 //   buyable  whether the shop will ever stock it; one that is not can still be
 //            found in a sector, it just cannot be bought
 //   mode     how using it works, one of:
+//              passive always on for as long as it is fitted. There is nothing to
+//                     press, no cooldown and no cost at the moment of use; what it
+//                     costs, if anything, is `drain`. Sold, ejected and found in
+//                     the field like any other.
 //              pulse  one-off effect, then the cooldown
 //              single one-off effect that is used up, emptying the slot
 //              timed  runs for `seconds`, then the cooldown
@@ -1185,7 +1192,8 @@ export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
 //   beamLengthMult  multiplies the charged beam's reach
 //   freeCharge      charging the laser costs no energy
 //   collisionImmune asteroid contact does no damage
-//   pull            ore attraction strength, at any range
+//   pull            ore attraction strength
+//   pullRange       how far that attraction reaches, or the whole sector without one
 //   tintsShip       the hull and the energy bar take this entry's `colour`
 //   invisible       nothing hunting the player can see it, see Game.visiblePlayer
 //   hullAlpha       the hull is drawn this solid
@@ -1282,18 +1290,19 @@ export const SPECIAL_TYPES = {
     seconds: 9,
     beamOffsets: [-28, 0, 28], // parallel beams either side of the nose
   },
-  magnet: {
+  // The one the ship leaves the yard with. It runs for nothing, which is what
+  // makes it worth keeping in a slot that could hold something louder; ejecting it
+  // for a stealth field is a real trade rather than an obvious one.
+  oreMagnet: {
     label: "ORE MAGNET",
     short: "MAGNET",
     icon: "M",
     colour: PALETTE.special.magnet,
     cost: 100,
     buyable: true,
-    mode: "timed",
-    energy: 0.19,
-    cooldown: 45,
-    seconds: 6.5,
-    pull: 260,
+    mode: "passive",
+    pull: CONFIG.ORE_PASSIVE_PULL,
+    pullRange: 190,
   },
   // Held on rather than triggered: it costs energy for as long as it runs, and
   // firing the main laser gives the position away and drops it.
@@ -1318,7 +1327,7 @@ export const SPECIAL_IDS = Object.keys(SPECIAL_TYPES)
 export const MAX_SLOTS = 4
 
 export function freshUpgrades() {
-  return { slots: 1, core: 0, shield: 0, laser: 0, magnet: 0, turret: false, reverse: false }
+  return { slots: 1, core: 0, shield: 0, laser: 0, turret: false, reverse: false }
 }
 
 // Sizes the in-game HUD can be drawn at, in menu order. The menus themselves are
@@ -1487,13 +1496,6 @@ export const SHOP = [
     "Lv1 charges faster, Lv2 costs less energy, Lv3 hits harder, Lv4 overdrive.",
     CONFIG.LASER_RATE_MULT.length - 1,
     (level) => 45 + level * 45,
-  ),
-  levelled(
-    "magnet",
-    "ORE MAGNET",
-    "Wider passive ore attraction, no special needed.",
-    CONFIG.MAGNET_RANGE.length - 1,
-    (level) => 35 + level * 35,
   ),
   fitting(
     "turret",
