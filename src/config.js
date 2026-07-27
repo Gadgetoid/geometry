@@ -40,8 +40,6 @@ export const CONFIG = {
   MAX_SPEED: 340,
   SPEED_DRAG: 0.85,
   THRUST_COST: 21, // energy/sec while thrusting
-  CORE_MAX: [320, 520, 760, 1000, 1260], // player energy capacity by power-core level
-  PLAYER_REGEN: [32, 53, 74, 95, 116], // energy regen/sec by power-core level (raises back to full)
   INVIN_TIME: 2.5, // grace after arriving, counted from when the ship can be flown
   START_LIVES: 3,
   MAX_LIVES: 6,
@@ -157,8 +155,6 @@ export const CONFIG = {
   // How long a slot button must be held before the special in it is thrown
   // overboard instead of used.
   SPECIAL_JETTISON_HOLD: 0.55,
-  // Ore for the next special slot, multiplied by how many the ship already has.
-  SLOT_COST: 30,
   SPECIAL_JETTISON_SPEED: [110, 160], // how hard a jettisoned one is flung clear
   SPECIAL_JETTISON_DRAG: 0.25, // and how quickly it slows, so it lands within reach
   SPECIAL_ARM_TIME: 1.4, // how long before it can be picked up again
@@ -705,8 +701,15 @@ export function thrustOf(type) {
 //   regen    how fast it refills
 //   shield   how many shields it will carry, normally one
 //   radar    how many radar sets, normally one
-//   special  room for passive utilities: the ore magnet, and the maneuvering
-//            thrusters that will let a hull pivot rather than only arc
+//   special  room for the equipment a run buys: the ore magnet to start with, and
+//            whatever is found or bought after it
+//
+// `levels` is a core the shop can upgrade, one entry per level, each stating the
+// whole plant rather than a delta. Energy and slots move together on purpose: a
+// slot is only worth having if there is cell to run what goes in it, and the
+// specials that drain take a fraction of the cell rather than a flat amount, so
+// paying for room is also paying for the power to use it. A core without `levels`
+// is what it is, which is every hull but the player's.
 //
 // Energy is not one of the slots. A hull without a cell is not a hull with an
 // empty slot, it is a hull that does not work, so the core supplies it by being
@@ -723,8 +726,31 @@ export const CORE_TYPES = {
   seekerCore: { energy: 300, regen: 34, shield: 1, radar: 1, special: 0 },
   // A siege hull's: feeds four turrets and a cannon between them.
   siegeCore: { energy: 260, regen: 30, shield: 1, radar: 1, special: 0 },
-  // The player's, with room for the utilities a run buys.
-  minerCore: { energy: 320, regen: 32, shield: 1, radar: 1, special: 2 },
+  // The player's, and the only one the shop can improve. Each level is a bigger
+  // cell, a faster refill and another slot to spend it through.
+  minerCore: {
+    shield: 1,
+    radar: 1,
+    levels: [
+      { energy: 320, regen: 32, special: 1 },
+      { energy: 520, regen: 53, special: 2 },
+      { energy: 760, regen: 74, special: 3 },
+      { energy: 1000, regen: 95, special: 4 },
+      { energy: 1260, regen: 116, special: 4 },
+    ],
+  },
+}
+
+// A core as it stands at `level`: its own fields, with the level's on top. A core
+// with no levels is the same at every level, which is what a rival's is.
+export function coreAt(type, level = 0) {
+  if (!type) {
+    return null
+  }
+  if (!type.levels) {
+    return type
+  }
+  return { ...type, ...type.levels[clamp(level, 0, type.levels.length - 1)] }
 }
 
 // The core a design is built around, which is where its energy comes from.
@@ -1327,7 +1353,7 @@ export const SPECIAL_IDS = Object.keys(SPECIAL_TYPES)
 export const MAX_SLOTS = 4
 
 export function freshUpgrades() {
-  return { slots: 1, core: 0, shield: 0, laser: 0, turret: false, reverse: false }
+  return { core: 0, shield: 0, laser: 0, turret: false, reverse: false }
 }
 
 // Sizes the in-game HUD can be drawn at, in menu order. The menus themselves are
@@ -1472,8 +1498,8 @@ export const SHOP = [
   levelled(
     "core",
     "POWER CORE",
-    "Bigger energy cell: more shields and more laser charge.",
-    CONFIG.CORE_MAX.length - 1,
+    "A bigger cell, a faster refill, and another special slot to spend it through.",
+    CORE_TYPES.minerCore.levels.length - 1,
     (level) => 45 + level * 55,
     (g) => {
       if (g.player) {
@@ -1512,7 +1538,9 @@ export const SHOP_LAYOUT = { slotsRow: 1, groupGap: 14 }
 
 // ---------------------------------------------------------------------------
 // SLOT MENU - the pop-over that opens on a special slot in the shop. One entry
-// per row, in menu order, each taking the slot it was opened on. Fields:
+// per row, in menu order, each taking the slot it was opened on. There is no row
+// for unlocking one: slots come with the power core, since a slot without the cell
+// to run it is not worth selling. Fields:
 //   name      the label
 //   value     optional (game, slot) => text shown on the right
 //   available optional (game, slot) => whether the row belongs on this slot
@@ -1523,14 +1551,6 @@ export const SHOP_LAYOUT = { slotsRow: 1, groupGap: 14 }
 // offer stays inert.
 // ---------------------------------------------------------------------------
 export const SLOT_MENU = [
-  // A slot the ship has not been fitted with yet. Only the next one along can be
-  // opened, so this appears on exactly one slot and the rest stay inert.
-  {
-    name: "UNLOCK SLOT",
-    value: (g) => (g.devMode ? "FREE" : `${g.slotUnlockCost()} ore`),
-    available: (g, slot) => slot === g.upgrades.slots && slot < MAX_SLOTS,
-    action: (g, slot) => g.unlockSlot(slot),
-  },
   {
     name: "SELL",
     value: (g, slot) => `+${g.slotSellValue(slot)} ore`,
@@ -1542,7 +1562,7 @@ export const SLOT_MENU = [
   // fitted with yet has to be unlocked before it can hold anything.
   {
     rows: (game, slot) =>
-      game.slotItem(slot) || slot >= game.upgrades.slots
+      game.slotItem(slot) || slot >= game.specialSlots()
         ? []
         : game.buyableSpecials().map((id) => ({
             name: SPECIAL_TYPES[id].label,

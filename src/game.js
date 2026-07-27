@@ -12,6 +12,7 @@ import {
   PROGRESSION,
   HAZARD_TRAITS,
   FACTIONS,
+  coreAt,
   weightAt,
   SHIP_TYPES,
   PAUSE_MENU,
@@ -250,8 +251,28 @@ export class Game {
       turretFire: false,
     }
   }
+  // The cell the fitted core supplies at the level it has been bought to. Read
+  // through the core rather than off a table, so a hull carrying a different one
+  // answers for itself.
+  playerCore() {
+    if (!this.player) {
+      return null
+    }
+    for (const module of this.player.modules()) {
+      if (module.kind === "core") {
+        return coreAt(module.type, this.upgrades.core)
+      }
+    }
+    return null
+  }
   maxEnergy() {
-    return CONFIG.CORE_MAX[this.upgrades.core]
+    const core = this.playerCore()
+    return core ? core.energy : 0
+  }
+  // How many specials the ship has room for, which the power core decides.
+  specialSlots() {
+    const core = this.playerCore()
+    return Math.min(core ? (core.special ?? 0) : 0, MAX_SLOTS)
   }
   // Mount the module an upgrade pays for, if the ship exists yet. The shop can be
   // reached before one does (the dev shop), so this is where the check lives.
@@ -1031,40 +1052,9 @@ export class Game {
     Sound.collect()
   }
 
-  // What the next special slot costs. Each one is dearer than the last.
-  slotUnlockCost() {
-    return CONFIG.SLOT_COST * this.upgrades.slots
-  }
-
-  // Fit the ship with the next slot along. Only that one can be bought, so the
-  // slots fill left to right and none is skipped.
-  unlockSlot(slot) {
-    if (slot !== this.upgrades.slots || slot >= MAX_SLOTS) {
-      return
-    }
-    const cost = this.slotUnlockCost()
-    if (!this.devMode) {
-      if (this.oreBalance < cost) {
-        Sound.hit()
-        return
-      }
-      this.oreBalance -= cost
-    }
-    this.upgrades.slots++
-    this.rememberRun()
-    Sound.power()
-    // What the slot can be filled with takes the row's place, so unlocking and
-    // stocking it is one visit to the pop-over.
-    if (this.slotMenu && this.slotMenuRows(slot).length) {
-      this.slotMenu.selection = 0
-    } else {
-      this.closeSlotMenu()
-    }
-  }
-
   // Fit a bought special into an empty slot.
   buySpecial(slot, id) {
-    if (this.slotItem(slot) || slot >= this.upgrades.slots) {
+    if (this.slotItem(slot) || slot >= this.specialSlots()) {
       return
     }
     const cost = SPECIAL_TYPES[id].cost

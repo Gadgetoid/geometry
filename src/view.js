@@ -575,7 +575,7 @@ export class GameView {
     if (game.player) {
       const size = 20 * ui,
         gap = 4 * ui,
-        count = game.upgrades.slots,
+        count = game.specialSlots(),
         startX = VIEW_W - 14 * ui - count * (size + gap)
       for (let i = 0; i < count; i++) {
         const sx = startX + i * (size + gap),
@@ -912,7 +912,7 @@ export class GameView {
     for (let index = 0; index < MAX_SLOTS; index++) {
       const { x, size } = this.#slotBox(rightX, index),
         boxY = y - size + 7
-      const owned = index < game.upgrades.slots,
+      const owned = index < game.specialSlots(),
         spec = game.slotType(index),
         onCursor = selected && game.shopSlot === index
       if (onCursor) {
@@ -953,7 +953,7 @@ export class GameView {
       panelY = slotsY + 15
     r.rect(panelX, panelY, width, height, { fill: "rgba(4,8,16,.95)" })
     r.rect(panelX, panelY, width, height, { stroke: PALETTE.ui.accent, width: 1.2, glow: 8 })
-    const title = spec ? spec.label : slot < game.upgrades.slots ? "EMPTY" : "LOCKED"
+    const title = spec ? spec.label : slot < game.specialSlots() ? "EMPTY" : "LOCKED"
     r.text(title, panelX + width / 2, panelY + 15, {
       size: 12,
       bold: true,

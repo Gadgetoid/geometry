@@ -1843,10 +1843,7 @@ export class PlayerShip extends Ship {
         w.release()
       }
       if (!this.thrusting) {
-        this.energy = Math.min(
-          this.energyMax,
-          this.energy + CONFIG.PLAYER_REGEN[game.upgrades.core] * dt,
-        )
+        this.energy = Math.min(this.energyMax, this.energy + game.playerCore().regen * dt)
       }
     }
     this.energy = clamp(this.energy, 0, this.energyMax)
@@ -1875,7 +1872,7 @@ export class PlayerShip extends Ship {
     // still arming, and is passed over until it settles.
     for (let i = game.specialPickups.length - 1; i >= 0; i--) {
       const pickup = game.specialPickups[i]
-      const slot = this.freeSlot(game.upgrades.slots)
+      const slot = this.freeSlot(game.specialSlots())
       if (
         pickup.arming <= 0 &&
         slot >= 0 &&

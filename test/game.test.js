@@ -48,6 +48,7 @@ import {
   VIEW_H,
   WEAPON_TYPES,
   SHIP_TYPES,
+  CORE_TYPES,
   thrustOf,
   barrelCount,
   deriveShipStats,
@@ -92,7 +93,7 @@ function equip(game, slot, id) {
   return game.player.equip(slot, id)
 }
 function carried(game) {
-  return game.player.items.slice(0, game.upgrades.slots).map((item) => (item ? item.id : null))
+  return game.player.items.slice(0, game.specialSlots()).map((item) => (item ? item.id : null))
 }
 
 // A loadout with the shield taken off, wherever it is fitted: on a hardpoint of
@@ -108,6 +109,16 @@ function withoutShield(loadout) {
       delete fitted.shield
       return { ...entry, fitted }
     })
+}
+
+// Slots come with the power core, so a test wanting room buys its way to it.
+function withSlots(game, wanted) {
+  const level = CORE_TYPES.minerCore.levels.findIndex((step) => step.special >= wanted)
+  assert.ok(level >= 0, `no core level offers ${wanted} slots`)
+  game.upgrades.core = level
+  game.player.energyMax = game.maxEnergy()
+  game.player.energy = game.player.energyMax
+  return game
 }
 
 // A fresh hull leaves the yard with its one slot holding the ore magnet, and that
@@ -1886,7 +1897,7 @@ test("a resumed run re-mounts the shield it had bought", () => {
 // left one entry short is a level the shop can reach and the game cannot answer.
 test("every level the shop offers is one every table it indexes can answer", () => {
   const tables = {
-    core: [CONFIG.CORE_MAX, CONFIG.PLAYER_REGEN],
+    core: [CORE_TYPES.minerCore.levels],
     shield: [CONFIG.SHIELD_EFFICIENCY],
     laser: [
       CONFIG.LASER_RATE_MULT,
@@ -2033,7 +2044,7 @@ test("every special has a price, and fetches less than it than when sold", () =>
 
 test("carried specials survive the trip to the next sector, and a saved run", () => {
   const game = liveGame()
-  game.upgrades.slots = 2
+  withSlots(game, 2)
   equip(game, 0, "repel")
   equip(game, 1, "booster")
   game.level = 4
@@ -2087,7 +2098,7 @@ test("the shop groups the spare ship and the specials above the loadout", () => 
 
 test("the cursor walks every slot box, fitted or not, and stops at either end", () => {
   const game = liveGame()
-  game.upgrades.slots = 3
+  withSlots(game, 3)
   game.enterShop()
   game.shopSelection = game.slotsRow
   assert.equal(game.shopSlot, 0)
@@ -2106,7 +2117,7 @@ test("the cursor walks every slot box, fitted or not, and stops at either end", 
 
 test("the pop-over opens on a slot with something in it, and not on an empty one", () => {
   const game = clearSlots(liveGame())
-  game.upgrades.slots = 2
+  withSlots(game, 2)
   equip(game, 0, "booster")
   game.enterShop()
   game.shopSelection = game.slotsRow
@@ -2144,7 +2155,7 @@ test("the pop-over takes the input the shop behind it would have taken", () => {
 
 test("selling a slot pays what the special is worth and empties that slot", () => {
   const game = liveGame()
-  game.upgrades.slots = 3
+  withSlots(game, 3)
   equip(game, 0, "repel")
   equip(game, 1, "booster")
   equip(game, 2, "oreMagnet")
@@ -2338,7 +2349,7 @@ test("picking a special up is what puts it on the shop's shelf", () => {
 
 test("an empty slot offers what is in stock, and buying one fills that slot", () => {
   const game = clearSlots(liveGame())
-  game.upgrades.slots = 2
+  withSlots(game, 2)
   game.findSpecial("oreMagnet")
   game.findSpecial("repel")
   game.oreBalance = 1000
@@ -2362,54 +2373,55 @@ test("an empty slot offers what is in stock, and buying one fills that slot", ()
   assert.deepEqual(game.savedRun.items[1], "oreMagnet", "and the purchase is banked")
 })
 
-test("a slot is fitted from the slot it would fill, one at a time", () => {
+test("a slot comes with the power core, along with the cell to run it", () => {
+  // Slots used to be bought one at a time, separately from the cell, so a ship
+  // could carry four specials it had no energy to run. One purchase now.
   const game = liveGame()
-  const start = game.upgrades.slots
-  game.findSpecial("oreMagnet") // in stock, and still not offered for a locked slot
+  const core = CORE_TYPES.minerCore.levels
+  assert.equal(game.specialSlots(), core[0].special, "a fresh hull has what level 0 gives")
+  assert.equal(game.maxEnergy(), core[0].energy)
+
   game.oreBalance = 1000
-  game.enterShop()
-  game.shopSelection = game.slotsRow
-
-  // only the next slot along offers it, so none can be skipped
-  game.shopSlot = start + 1
-  game.menuConfirm()
-  assert.equal(game.slotMenu, null, "a slot beyond the next one is inert")
-
-  game.shopSlot = start
-  game.menuConfirm()
-  assert.ok(game.slotMenu, "the next one offers to be fitted")
-  assert.deepEqual(
-    game.slotMenuRows(start).map((row) => row.name),
-    ["UNLOCK SLOT"],
-    "and nothing else: a slot has to exist before it can be stocked",
-  )
-  const cost = game.slotUnlockCost()
+  const item = SHOP.find((entry) => entry.id === "core")
   const ore = game.oreBalance
-  game.menuConfirm()
-  assert.equal(game.upgrades.slots, start + 1, "the ship is fitted with it")
+  const cost = item.cost(game)
+  item.apply(game)
+  game.oreBalance -= cost
+
+  assert.equal(game.upgrades.core, 1)
+  assert.equal(game.specialSlots(), core[1].special, "another slot")
+  assert.equal(game.maxEnergy(), core[1].energy, "and the cell to spend through it")
+  assert.equal(game.player.energyMax, core[1].energy, "the fitted hull knows about it")
   assert.equal(game.oreBalance, ore - cost)
-  assert.ok(game.slotUnlockCost() > cost, "and the one after it costs more")
-  assert.deepEqual(game.savedRun.upgrades.slots, start + 1, "banked with the run")
+  // every level grants at least as much of both as the one below it
+  for (let i = 1; i < core.length; i++) {
+    assert.ok(core[i].energy > core[i - 1].energy, `level ${i} must hold more`)
+    assert.ok(core[i].special >= core[i - 1].special, `level ${i} must not lose a slot`)
+  }
 })
 
-test("fitting a slot puts what could fill it in the pop-over straight away", () => {
-  const game = liveGame()
+test("a slot the core does not provide is inert, and the next level opens it", () => {
+  const game = clearSlots(liveGame())
   game.findSpecial("oreMagnet")
   game.oreBalance = 1000
+  const beyond = game.specialSlots() // the first slot the core does not reach
   game.enterShop()
-  const slot = game.upgrades.slots
   game.shopSelection = game.slotsRow
-  game.shopSlot = slot
+  game.shopSlot = beyond
   game.menuConfirm()
-  game.menuConfirm() // UNLOCK SLOT
-  assert.ok(game.slotMenu, "the pop-over stays open")
+  assert.equal(game.slotMenu, null, "nothing to offer for a slot the ship has not got")
+
+  // buying the core reaches it, and then it stocks like any other
+  SHOP.find((entry) => entry.id === "core").apply(game)
+  assert.ok(game.specialSlots() > beyond, "the level pays for that slot")
+  game.menuConfirm()
+  assert.ok(game.slotMenu, "so the pop-over opens on it")
   assert.deepEqual(
-    game.slotMenuRows(slot).map((row) => row.name),
+    game.slotMenuRows(beyond).map((row) => row.name),
     [SPECIAL_TYPES.oreMagnet.label],
-    "showing what the new slot could hold",
   )
   game.menuConfirm()
-  assert.equal(carried(game)[slot], "oreMagnet")
+  assert.equal(carried(game)[beyond], "oreMagnet")
 })
 
 test("slots are no longer sold as a row of their own", () => {
@@ -2451,7 +2463,7 @@ test("stealth toggles, drains the cell while it runs, and drops when it is empty
   assert.equal(item.active, true)
   // Costs are a fraction of the cell, so a bigger core buys no more stealth; what
   // the ship actually loses is that draw less what it regenerates meanwhile.
-  const net = type.drain * player.energyMax - CONFIG.PLAYER_REGEN[game.upgrades.core]
+  const net = type.drain * player.energyMax - game.playerCore().regen
   assert.ok(net > 0, "stealth must out-draw the cell's own regen")
   const before = player.energy
   for (let frame = 0; frame < 60; frame++) {
@@ -2480,7 +2492,7 @@ test("stealth toggles, drains the cell while it runs, and drops when it is empty
 test("switching one special off leaves the others running", () => {
   const game = liveGame()
   const player = game.player
-  game.upgrades.slots = 2
+  withSlots(game, 2)
   player.energy = player.energyMax
   equip(game, 0, "stealth")
   equip(game, 1, "booster")
@@ -3623,7 +3635,7 @@ test("a rebound fire key still fires on release", () => {
 
 test("a rebound slot key uses that slot", () => {
   const game = liveGame()
-  game.upgrades.slots = 2
+  withSlots(game, 2)
   game.player.equip(0, "refuel")
   game.player.equip(1, "repel")
   game.bindings.keys.slot2 = ["KeyN"]
