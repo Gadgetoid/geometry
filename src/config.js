@@ -2360,6 +2360,10 @@ export const UI_SCALES = [1, 1.5, 2]
 // all the ones already there. `rows` generates a group from a registry, which is how
 // "spawn any of them" stays true as hulls are added.
 // ---------------------------------------------------------------------------
+// What a dev-spawned hull turns up carrying: the design alone, whatever the spawner would
+// roll for it in this sector, or every arm it could ever have.
+export const DEV_ARMS = ["none", "rolled", "all"]
+
 export const DEV_MENU = [
   {
     name: "TESTING ARENA",
@@ -2369,6 +2373,15 @@ export const DEV_MENU = [
   { name: "CLEAR SECTOR", action: (g) => g.clearSectorNow() },
   { name: "OWN EVERYTHING", value: () => ">", action: (g) => g.devOwnEverything() },
   { name: "FULLY UPGRADE", value: () => ">", action: (g) => g.devMaxOut() },
+  // What the spawn rows below hand the hull they make. Rolling at the sector the run is
+  // actually in gives almost nothing early on, which is the least useful of the three for
+  // looking at a hull, so all three are offered rather than a yes and a no.
+  {
+    name: "ARMS",
+    value: (g) => DEV_ARMS[g.devArms].toUpperCase(),
+    action: (g) => g.stepDevArms(1),
+    adjust: (g, step) => g.stepDevArms(step),
+  },
   {
     rows: (g) =>
       Object.keys(g.spawnableTypes()).map((name) => ({

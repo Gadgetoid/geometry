@@ -4,6 +4,7 @@
 // read / mutate its public fields; nothing here reaches for module globals.
 
 import {
+  DEV_ARMS,
   SHIP_SCALARS,
   DEV_MENU,
   VIEW_W,
@@ -180,6 +181,7 @@ export class Game {
     this.devMode = false
     // A sector that never counts as cleared, so a dev arena stays put. See enterSandbox.
     this.sandbox = false
+    this.devArms = 0 // what a dev-spawned hull carries, an index into DEV_ARMS
     this.paused = false
     this.gameTime = 0
     this.screenShake = 0
@@ -2369,6 +2371,25 @@ export class Game {
     return SHIP_TYPES
   }
 
+  // Walk the choice of what a spawned hull carries.
+  stepDevArms(step) {
+    const count = DEV_ARMS.length
+    this.devArms = (this.devArms + (step > 0 ? 1 : count - 1)) % count
+  }
+
+  // What a dev-spawned hull turns up with: nothing beyond its design, what the spawner
+  // would roll for it here, or every arm it could ever carry.
+  devLoadout(type) {
+    const arms = Object.values(type.arms || {})
+    if (DEV_ARMS[this.devArms] === "all") {
+      return [...(type.loadout || []), ...arms]
+    }
+    if (DEV_ARMS[this.devArms] === "rolled") {
+      return this.rollLoadout(type)
+    }
+    return type.loadout || []
+  }
+
   // Put one in the sector, in front of the ship rather than out beyond the boundary: the
   // point of asking for it is to look at it.
   devSpawn(name) {
@@ -2382,7 +2403,7 @@ export class Game {
       this.player.x + Math.cos(ahead) * away,
       this.player.y + Math.sin(ahead) * away,
       name,
-      this.rollLoadout(type),
+      this.devLoadout(type),
     )
     ship.angle = ahead + Math.PI
     ship.arrived = true // it is already here; nothing to fly in from

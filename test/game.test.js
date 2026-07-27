@@ -1674,6 +1674,38 @@ test("the dev page reaches every part of the game without playing up to it", () 
     const label = `SPAWN ${name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase()}`
     row(label)
   }
+  // What a spawned hull carries is chosen rather than assumed: rolling at the sector the
+  // run is in gives almost nothing early on, which is the least useful of the three.
+  const arms = (name) => {
+    game.rivals = []
+    row(`SPAWN ${name}`).action(game)
+    return [...game.rivals[0].modules()].map((m) => m.typeName)
+  }
+  const armsRow = row("ARMS")
+  assert.equal(armsRow.value(game), "NONE", "it starts on the design alone")
+  const bare = arms("SCOUT")
+  const design = SHIP_TYPES.scout.loadout.map((entry) => entry.weapon).filter(Boolean)
+  assert.ok(
+    design.every((gun) => bare.includes(gun)),
+    "which is everything the design states",
+  )
+  assert.ok(
+    !bare.includes(SHIP_TYPES.scout.arms.gun.weapon),
+    "and nothing it only sometimes turns up with",
+  )
+  armsRow.action(game)
+  assert.equal(armsRow.value(game), "ROLLED")
+  armsRow.action(game)
+  assert.equal(armsRow.value(game), "ALL")
+  const loaded = arms("SCOUT")
+  for (const arm of Object.values(SHIP_TYPES.scout.arms)) {
+    const carried = arm.weapon || arm.shield
+    assert.ok(loaded.includes(carried), `every arm should be aboard, missing ${carried}`)
+  }
+  armsRow.action(game)
+  assert.equal(armsRow.value(game), "NONE", "and the choice wraps")
+
+  game.rivals = []
   row("SPAWN ALIEN FRIGATE").action(game)
   assert.equal(game.rivals.length, 1, "and spawning puts one in the sector")
   assert.equal(game.rivals[0].typeName, "alienFrigate")
