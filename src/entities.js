@@ -1636,6 +1636,9 @@ export class PlayerShip extends Ship {
     // Before the equipment goes on, because what a rock costs is priced off the hull it
     // has to get through.
     this.hull = PLAYER_TYPE.hull
+    // What the hull bar was reading a moment ago, which recedes toward the truth: the
+    // gap between the two is drawn as the part just lost.
+    this.hullShown = this.hull
     this.fitEquipment(game)
     this.nose = this.hardpointByRole("nose")
     this.aux = this.hardpointByRole("aux") // the turret's mount, filled from EQUIPMENT
@@ -2033,6 +2036,13 @@ export class PlayerShip extends Ship {
     this.#tickSlots(dt, game)
     this.impactSfx = Math.max(0, this.impactSfx - dt)
     this.slamCooldown = Math.max(0, this.slamCooldown - dt)
+    // The hull bar catches up with the hull, so a loss is shown receding rather than
+    // having already happened. A gain (a fresh ship) is taken at once: there is nothing
+    // to explain about being whole again.
+    this.hullShown =
+      this.hullShown > this.hull
+        ? Math.max(this.hull, this.hullShown - CONFIG.HULL_LOSS_FADE * dt)
+        : this.hull
     this.energyMax = game.maxEnergy()
 
     const pad = game.padInput

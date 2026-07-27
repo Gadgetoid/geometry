@@ -557,8 +557,20 @@ export class GameView {
       const hullH = 5 * ui
       const hullY = barY + barH + 3 * ui
       const left = clamp(game.player.hull / PLAYER_TYPE.hull, 0, 1)
+      const was = clamp((game.player.hullShown ?? game.player.hull) / PLAYER_TYPE.hull, 0, 1)
       const hurt = left < 0.35
       r.rect(barX, hullY, barW, hullH, { stroke: PALETTE.ui.edge, width: 1 * ui })
+      // What was just lost, between where the bar is going and where it was, in red and
+      // shrinking away. Drawn first so the hull that is left sits over it.
+      if (was > left) {
+        r.rect(
+          barX + ui + barW * left,
+          hullY + ui,
+          Math.max(0, barW * (was - left) - ui),
+          hullH - 2 * ui,
+          { fill: PALETTE.ui.lost, glow: 12 },
+        )
+      }
       r.rect(barX + ui, hullY + ui, Math.max(0, barW * left - 2 * ui), hullH - 2 * ui, {
         fill: hurt ? PALETTE.ui.warn : PALETTE.player.turret,
         glow: hurt ? 10 : 6,

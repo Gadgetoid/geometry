@@ -40,6 +40,10 @@ export const CONFIG = {
   // aid rather than a property of the hull, and it is what makes the ship coast the
   // way it is flown.
   SPEED_DRAG: 0.85,
+  // Hull points a second the lost part of the hull bar takes to recede. A hit shows as
+  // red where the hull used to be and then shrinks away, so what just happened is
+  // readable at a glance instead of being a bar that is quietly shorter than it was.
+  HULL_LOSS_FADE: 26,
   THRUST_COST: 21, // energy/sec while thrusting
   INVIN_TIME: 2.5, // grace after arriving, counted from when the ship can be flown
   START_LIVES: 3,

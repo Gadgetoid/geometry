@@ -2358,6 +2358,37 @@ test("a bump against a rock costs the player hull, not the run", () => {
   assert.ok(bump(30).left > bump(150).left, "and what it costs follows how hard it was")
 })
 
+test("the hull just lost is shown receding, so a hit reads at a glance", () => {
+  const game = liveGame()
+  beSolid(game.player)
+  game.player.x = 400
+  game.player.y = 320
+  game.player.vx = 300
+  game.player.angle = 0
+  game.asteroids = [new Asteroid({ vertices: square(500, 320, 50), vx: 0, vy: 0, spin: 0 })]
+  for (let i = 0; i < 40 && game.player.hull === PLAYER_TYPE.hull; i++) {
+    game.advance(1 / 60)
+  }
+  assert.ok(game.player.hull < PLAYER_TYPE.hull, "the ram cost hull")
+  assert.ok(game.player.hullShown > game.player.hull, "the bar still reads where it was")
+
+  // And it closes the gap over time rather than at once.
+  const gap = game.player.hullShown - game.player.hull
+  game.player.vx = 0
+  game.player.x = -9000 // clear of the rock, so nothing else lands
+  game.advance(0.25)
+  const closing = game.player.hullShown - game.player.hull
+  assert.ok(closing < gap, "the lost part shrinks")
+  assert.ok(closing > 0, "but not instantly")
+  game.advance(gap / CONFIG.HULL_LOSS_FADE + 0.1)
+  assert.equal(game.player.hullShown, game.player.hull, "and it arrives")
+
+  // A fresh ship is whole at once: there is nothing to explain about being repaired.
+  game.player.hull = PLAYER_TYPE.hull
+  game.advance(1 / 60)
+  assert.equal(game.player.hullShown, PLAYER_TYPE.hull)
+})
+
 test("a piece hit harder than it holds together comes apart, and otherwise is shoved", () => {
   // One rule, priced in closing speed, so nothing here knows what wreckage is: a hull
   // fragment still carrying its ship's momentum bursts on the first thing it meets, the
