@@ -341,10 +341,27 @@ export class GameView {
       wave,
     })
     const lenses = []
-    for (const rival of game.rivals) {
-      const warp = rival.type.warp
-      if (warp && rival.inPlay()) {
-        lenses.push(source(rival.x, rival.y, warp.radius, warp.strength, warp.wave || 0))
+    // Whatever is flying, the player's hull among them: a hull bends space because of what
+    // it is, not because of who is holding it, and a dev build can put the player in one.
+    for (const ship of [...game.rivals, game.player]) {
+      const warp = ship && ship.type && ship.type.warp
+      if (warp && ship.inPlay()) {
+        lenses.push(source(ship.x, ship.y, warp.radius, warp.strength, warp.wave || 0))
+      }
+    }
+    // A well held ready bends space where it is being held: the wind-up is a telegraph,
+    // and this is the part of it that says the thing is finished rather than coming.
+    for (const ship of [...game.rivals, game.player]) {
+      if (!ship || !ship.inPlay || !ship.inPlay()) {
+        continue
+      }
+      for (const hp of ship.hardpoints) {
+        const gun = hp.module
+        const warp = gun && gun.kind === "weapon" && gun.wound ? gun.type.warp : null
+        if (warp) {
+          const at = ship.mountWorld(hp.local)
+          lenses.push(source(at.x, at.y, warp.radius, warp.strength, warp.wave || 0))
+        }
       }
     }
     for (const shot of game.projectiles) {

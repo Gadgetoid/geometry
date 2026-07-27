@@ -803,7 +803,8 @@ export class Weapon {
   }
 
   emitBeam(game, host, ax, ay, angle, length) {
-    if (!host.spendEnergy(this.type.energy)) {
+    // Paid for over the wind-up where there is one, so the shot itself is free.
+    if (!this.type.chargeTime && !host.spendEnergy(this.type.energy)) {
       this.cooldown = 0.4
       return
     }
@@ -840,7 +841,8 @@ export class Weapon {
   // what it does there is the gun's business, and it remembers who fired it: a well
   // spares its owner while the owner lives.
   launchWell(game, host, x, y, aim) {
-    if (!host.spendEnergy(this.type.energy)) {
+    // Paid for over the wind-up where there is one, so the shot itself is free.
+    if (!this.type.chargeTime && !host.spendEnergy(this.type.energy)) {
       this.cooldown = 0.4
       return
     }
@@ -866,6 +868,71 @@ export class Weapon {
   // Particles and other people's shots, never rock, because a sector heaving toward a
   // point is mayhem and the contact solver would not survive it. Vanity particles are
   // spawned out at the edge so there is always something falling in.
+  // A wind-up is paid for as it runs rather than at the shot: what it costs is the gun's
+  // `energy`, spread over its `chargeTime`, so a hull that cannot keep it up loses what it
+  // has spent and the shot with it. Returns false when the cell has run dry.
+  windUp(dt, host) {
+    const seconds = this.type.chargeTime
+    if (!seconds || !this.type.energy) {
+      return true
+    }
+    return host.spendEnergy((this.type.energy * dt) / seconds)
+  }
+
+  // A wind-up let go of before it was ready. Nothing is fired: it comes apart where it
+  // was being held, at whatever it had become.
+  evaporate(game, world) {
+    const progress = this.chargeDuration > 0 ? 1 - this.charging / this.chargeDuration : 0
+    if (progress <= 0.05) {
+      return
+    }
+    const colour = this.type.colour || PALETTE.alien.beam
+    game.burst(world.x, world.y, Math.round(6 + 26 * progress), colour, 20, 120 * progress, 0.5)
+    game.ring(world.x, world.y, Math.round(6 + 10 * progress), colour, 120 * progress, 0.35)
+    this.cooldown = Math.max(this.cooldown, this.rollReload() * 0.5)
+    Sound.hit()
+  }
+
+  // What a wind-up looks like where it is happening. A gun that throws a well grows one
+  // at the muzzle as it goes, a dark middle inside a ring, so what is about to be let go
+  // of is the thing itself rather than a glow standing in for it.
+  drawWindUp(renderer, world, aim) {
+    if ((this.charging <= 0 && !this.wound) || this.chargeDuration <= 0) {
+      return
+    }
+    const prog = this.wound ? 1 : clamp(1 - this.charging / this.chargeDuration, 0, 1)
+    const colour = this.type.colour
+    if (this.type.well) {
+      const reach = 3 + prog * (this.type.well.radius ?? 40) * 0.3
+      renderer.circle(world.x, world.y, reach, { fill: PALETTE.alien.void, alpha: 0.85 })
+      renderer.circle(world.x, world.y, reach, {
+        stroke: colour,
+        width: 1.2 + prog * 1.8,
+        glow: 8 + prog * 26,
+        alpha: 0.45 + 0.55 * prog,
+      })
+      return
+    }
+    renderer.circle(world.x, world.y, 2 + prog * 9, {
+      fill: colour,
+      glow: 10 + prog * 24,
+      alpha: 0.35 + 0.55 * prog,
+    })
+    const along = 24 + prog * 40
+    renderer.line(
+      world.x,
+      world.y,
+      world.x + Math.cos(aim) * along,
+      world.y + Math.sin(aim) * along,
+      {
+        color: colour,
+        width: 1 + prog * 2.5,
+        glow: 12,
+        alpha: 0.3 + 0.5 * prog,
+      },
+    )
+  }
+
   generate(dt, game, host, world) {
     const spec = this.type.generate
     if (!spec) {
@@ -957,6 +1024,10 @@ export const WEAPON_CONTROLLERS = {
       return
     }
     if (weapon.charging > 0) {
+      if (!weapon.windUp(dt, host)) {
+        weapon.charging = 0 // the cell gave out, and what was spent is spent
+        return
+      }
       weapon.charging -= dt
       // A gun that generates rather than charges spends the wind-up drawing things in,
       // which is the telegraph: the same clock, doing something visible with it.
@@ -1923,28 +1994,7 @@ export class Ship extends Entity {
         continue
       }
       const w = this.mountWorld(hp.local)
-      // charging beam: a glow at the emitter that grows as the shot winds up
-      if (m.charging > 0 && m.chargeDuration > 0) {
-        const prog = 1 - m.charging / m.chargeDuration
-        renderer.circle(w.x, w.y, 2 + prog * 9, {
-          fill: m.type.colour,
-          glow: 10 + prog * 24,
-          alpha: 0.35 + 0.55 * prog,
-        })
-        const reach = 24 + prog * 40
-        renderer.line(
-          w.x,
-          w.y,
-          w.x + Math.cos(this.angle) * reach,
-          w.y + Math.sin(this.angle) * reach,
-          {
-            color: m.type.colour,
-            width: 1 + prog * 2.5,
-            glow: 12,
-            alpha: 0.3 + 0.5 * prog,
-          },
-        )
-      }
+      m.drawWindUp(renderer, w, this.angle)
       if (m.type.kind === "projectile") {
         // pointed where the controller points it, so a heavy turret is legible
         const aim = trackedAim(seen, hp, w, this.angle)
@@ -2560,7 +2610,46 @@ export class PlayerShip extends Ship {
     // shield bubble all read off it, and a bubble drawn at NaN alpha is an opaque white
     // ring round the ship. It fires on its own cooldown for as long as the trigger is
     // held instead, which is how every other hull fires one.
-    if (holding && !w.type.chargeable) {
+    // A gun that winds up rather than charging keeps its own clock, and pays as it runs.
+    // It is held wound once the clock is out, and let go of on the release, which is how
+    // the main laser is fired: the trigger means the same thing whatever is on the nose.
+    const winds = !w.type.chargeable && w.type.chargeTime
+    if (winds && (holding || w.wound || w.charging > 0)) {
+      if (!holding) {
+        if (w.wound) {
+          this.fireLaser(game) // let go of, so it goes
+        } else {
+          // Let go of early: what was drawn in comes apart where it was being held, and
+          // what it cost is gone with it. The hulls that carry these guns hold them until
+          // they are ready, so this is the player's to get right.
+          w.evaporate(game, this.mountWorld(this.nose.local))
+        }
+        w.wound = false
+        w.charging = 0
+      } else if (w.wound) {
+        // Holding a finished one keeps drawing on the cell: what limits how often it can
+        // be thrown is how fast the cell fills, and everything the cell is also paying
+        // for goes short while it is being held. The shield reads the same cell.
+        if (w.windUp(dt, this)) {
+          w.generate(dt, game, this, this.mountWorld(this.nose.local))
+        } else {
+          w.evaporate(game, this.mountWorld(this.nose.local))
+          w.wound = false
+        }
+      } else if (w.charging > 0) {
+        if (w.windUp(dt, this)) {
+          w.charging -= dt
+          w.generate(dt, game, this, this.mountWorld(this.nose.local))
+          w.wound = w.charging <= 0
+        } else {
+          w.charging = 0 // the cell gave out, and what was spent is spent
+        }
+      } else if (w.ready) {
+        w.charging = w.type.chargeTime
+        w.chargeDuration = w.charging
+        Sound.charge(w.chargeDuration)
+      }
+    } else if (holding && !w.type.chargeable) {
       this.fireLaser(game)
     } else if (holding) {
       const rate = w.type.chargeRate
@@ -2796,6 +2885,11 @@ export class PlayerShip extends Ship {
     }
 
     const w = this.mainWeapon
+    // A gun that winds up shows it at the muzzle, the same way it does on the hull this
+    // one was taken from.
+    if (w && (w.charging > 0 || w.wound)) {
+      w.drawWindUp(renderer, this.mountWorld(this.nose.local), this.angle)
+    }
     if (w && w.charge > 4) {
       const nose = this.mountWorld(this.nose.local)
       const length = w.charge * this.beamLengthMult() + w.type.chargeReach

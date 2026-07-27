@@ -1810,6 +1810,10 @@ const SHIP_DESIGNS = {
     // against 1012, which is ten seconds of flak rather than seven.
     mass: 4.61,
     armour: 1.2,
+    // It comes round twice as fast as its mass and its reach say it should. A hull this
+    // slow to turn is fought by standing behind it, which is no fight at all: this is the
+    // one that is supposed to be able to answer.
+    handling: 2,
     lifeTime: [34, 50],
     hardpoints: [
       // On the tip of the spike, which is where the singularity goes when there is

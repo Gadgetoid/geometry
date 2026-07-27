@@ -4048,6 +4048,68 @@ test("holding the trigger on a gun that does not charge keeps the cell a number"
   }
 })
 
+test("a gun that winds up is paid for while it winds, and let go of to fire", () => {
+  // The wind-up is the telegraph and the cost both: what limits how often a well can be
+  // thrown is how fast the cell fills, and everything else the cell pays for goes short
+  // while one is being held.
+  const spec = WEAPON_TYPES.singularityGun
+  const hold = (game, frames) => {
+    for (let f = 0; f < frames; f++) {
+      game.pressedKeys.add("Space")
+      game.player.update(1 / 60, game)
+    }
+  }
+  const letGo = (game, frames = 2) => {
+    for (let f = 0; f < frames; f++) {
+      game.pressedKeys.delete("Space")
+      game.player.update(1 / 60, game)
+    }
+  }
+  const armed = () => {
+    const game = liveGame()
+    beSolid(game.player)
+    game.upgrades.owned.laser.push("singularityGun")
+    game.fitEquipment("laser", "singularityGun")
+    game.player.mainWeapon.cooldown = 0 // a gun just fitted is on its reload
+    game.player.energy = game.player.energyMax
+    return game
+  }
+
+  // Paid for as it winds, at its own price over its own clock.
+  const game = armed()
+  const cell = game.player.energy
+  hold(game, Math.round(60 * spec.chargeTime * 0.5))
+  const halfway = cell - game.player.energy
+  assert.ok(
+    Math.abs(halfway - spec.energy / 2) < spec.energy * 0.15,
+    `half wound costs about half, got ${halfway.toFixed(0)} of ${spec.energy}`,
+  )
+  assert.equal(game.projectiles.length, 0, "and nothing has been thrown yet")
+
+  // Wound, held, and still drawing: the ship is vulnerable for as long as it holds one.
+  hold(game, Math.round(60 * spec.chargeTime))
+  assert.equal(game.player.mainWeapon.wound, true, "it is ready")
+  assert.equal(game.projectiles.length, 0, "and holds there rather than firing itself")
+  const held = game.player.energy
+  hold(game, 30)
+  assert.ok(game.player.energy < held, "holding it keeps drawing on the cell")
+
+  // Let go of, and it goes.
+  letGo(game)
+  assert.equal(game.projectiles.length, 1, "the release is what fires it")
+  assert.equal(game.player.mainWeapon.wound, false)
+
+  // Let go of early and it comes apart where it was held: the cost is spent either way.
+  const early = armed()
+  const before = early.player.energy
+  hold(early, Math.round(60 * spec.chargeTime * 0.4))
+  early.particles.length = 0
+  letGo(early)
+  assert.equal(early.projectiles.length, 0, "nothing is thrown")
+  assert.ok(early.particles.length > 0, "it comes apart where it was being held")
+  assert.ok(before - early.player.energy > 0, "and what it cost is gone")
+})
+
 test("a hull's rolled arms are found with it, not only what it always carries", () => {
   // A dart's gun is an arm rather than part of its loadout, and it is as much the hull's
   // own for that: flying one hands over everything it flies with.
