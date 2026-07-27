@@ -422,17 +422,17 @@
         ? [...new Set(GUN_HAZARDS.flatMap((h) => h.traits.gun.guns.map((entry) => entry.weapon)))]
         : []
 
-      // Which powerups a sector can drop, measured by asking for some: the picker is
+      // Which specials a sector can drop, measured by asking for some: the picker is
       // the game's, so a weighting added to it would show up here.
-      function measurePowerupKinds() {
+      function measureSpecialKinds() {
         const counts = new Map()
-        const before = probe.powerupPickups.length
+        const before = probe.specialPickups.length
         for (let i = 0; i < 400; i++) {
-          probe.spawnPowerup()
-          const kind = probe.powerupPickups[probe.powerupPickups.length - 1].type
+          probe.spawnSpecial()
+          const kind = probe.specialPickups[probe.specialPickups.length - 1].type
           counts.set(kind, (counts.get(kind) || 0) + 1)
         }
-        probe.powerupPickups.length = before
+        probe.specialPickups.length = before
         const total = [...counts.values()].reduce((a, b) => a + b, 0)
         return [...counts.entries()].map(([kind, n]) => [kind, n / total])
       }
@@ -516,7 +516,7 @@
           rocks: plan.spawns.length,
           rivalsAtOnce: plan.rivals,
           arrivalGap: plan.rivals ? plan.rivalInterval : 0,
-          powerups: plan.powerups,
+          specials: plan.specials,
           hazardChance: rocks ? hazardous / rocks : 0,
           hazardMix: Object.fromEntries(
             HAZARD_KINDS.map((kind) => [kind, hazardous ? (mix.get(kind) || 0) / hazardous : 0]),
@@ -557,7 +557,7 @@
       for (let sector = 0; sector <= LAST; sector++) {
         SURVEY.push(surveySector(sector))
       }
-      const POWERUP_KINDS = measurePowerupKinds()
+      const SPECIAL_KINDS = measureSpecialKinds()
       const elapsed = Math.round(performance.now() - started)
 
       // ---- the shared hover layer -------------------------------------------
@@ -646,7 +646,7 @@
             entry.rocks,
             entry.rivalsAtOnce,
             entry.arrivalGap,
-            entry.powerups,
+            entry.specials,
             entry.guns.join(" "),
           ].join("|")
         const last = signature(SURVEY[SURVEY.length - 1])
@@ -952,7 +952,7 @@
             firstWhere(`${name} may carry ${armName}`, (e) => (e.arms[name][armName] || 0) > 0)
           }
         }
-        firstWhere("powerups drop", (e) => e.powerups)
+        firstWhere("specials drop", (e) => e.specials)
         firstWhere("a second rival at once", (e) => e.rivalsAtOnce > 1)
         firstWhere("a third rival at once", (e) => e.rivalsAtOnce > 2)
         firstWhere("the rock count caps", (e) => e.rocks >= config.PROGRESSION.rocks.max)
@@ -1086,13 +1086,13 @@
         )
 
         section(
-          "powerups",
-          "POWERUPS",
+          "specials",
+          "SPECIALS",
           "Whether a sector drops them at all, and which. The kind is picked by the game's own " +
             "picker, measured over 400 drops, and it does not depend on the sector: what changes " +
             "with the sector is only whether they come at all.",
-          heatGrid(sectors, [{ label: "powerups drop", key: "powerups", emphasis: true }], {
-            valueOf: (row, entry) => (entry.powerups ? 1 : 0),
+          heatGrid(sectors, [{ label: "specials drop", key: "specials", emphasis: true }], {
+            valueOf: (row, entry) => (entry.specials ? 1 : 0),
             format: (v) => (v ? "yes" : "no"),
           }),
           el("h3", { textContent: "WHICH KIND, WHEN ONE DROPS" }),
@@ -1108,7 +1108,7 @@
                 el(
                   "tr",
                   {},
-                  el("th", { textContent: "powerup" }),
+                  el("th", { textContent: "special" }),
                   el("th", { textContent: "share of drops" }),
                   el("th", { textContent: "at most on the field" }),
                 ),
@@ -1116,7 +1116,7 @@
               el(
                 "tbody",
                 {},
-                POWERUP_KINDS.map(([kind, share]) =>
+                SPECIAL_KINDS.map(([kind, share]) =>
                   el(
                     "tr",
                     {},
@@ -1125,12 +1125,12 @@
                       {},
                       el("span", {
                         className: "swatch",
-                        style: `background:${config.POWERUP_TYPES[kind].colour}`,
+                        style: `background:${config.SPECIAL_TYPES[kind].colour}`,
                       }),
-                      document.createTextNode(config.POWERUP_TYPES[kind].label),
+                      document.createTextNode(config.SPECIAL_TYPES[kind].label),
                     ),
                     el("td", { textContent: pct(share) }),
-                    el("td", { textContent: String(config.PROGRESSION.powerups.maxOnField) }),
+                    el("td", { textContent: String(config.PROGRESSION.specials.maxOnField) }),
                   ),
                 ),
               ),
@@ -1148,7 +1148,7 @@
           ["rivals", (e) => e.rivalsAtOnce],
           ["gap", (e) => (e.arrivalGap ? `${round(e.arrivalGap)}s` : "-")],
           ...RIVAL_NAMES.map((name) => [name, (e) => pct(e.arrivals[name])]),
-          ["powerups", (e) => (e.powerups ? "yes" : "no")],
+          ["specials", (e) => (e.specials ? "yes" : "no")],
           ["worlds", (e) => e.planets.map((p) => p.kind).join(" ")],
           ["nebula", (e) => e.nebula.colorA],
         ]

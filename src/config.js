@@ -6,7 +6,7 @@
 //   * a SHIELD module means "incoming damage drains energy instead of hull
 //     until energy hits zero, then the shield is down"
 //   * a CONTROLLER decides when a mounted weapon fires
-// New weapons/ships/shields/powerups are added by editing the registries below.
+// New weapons/ships/shields/specials are added by editing the registries below.
 // A registry entry may carry an `apply` function; it drives the effect through
 // the public Game API so the whole definition stays in one place.
 
@@ -123,13 +123,13 @@ export const CONFIG = {
   ORE_LIFE: 24, // seconds before an uncollected chunk expires
   ORE_DRAG: 0.55, // velocity retained per second
   ORE_SIZE: [4, 6.5],
-  POWERUP_LIFE: 26,
-  // Seconds of flashing before an uncollected ore chunk or powerup goes, so the
+  SPECIAL_LIFE: 26,
+  // Seconds of flashing before an uncollected ore chunk or special goes, so the
   // last of a run at one is not a surprise.
   EXPIRY_WARN: 6,
-  // How close the ship has to be for a loose powerup to name itself, when help
+  // How close the ship has to be for a loose special to name itself, when help
   // text is on.
-  POWERUP_LABEL_RANGE: 260,
+  SPECIAL_LABEL_RANGE: 260,
 
   // camera, pacing and end-of-sector scoring
   CAMERA_FOLLOW: 6, // how quickly the view eases toward the ship
@@ -151,17 +151,17 @@ export const CONFIG = {
   ACCURACY_BONUS: 500, // scaled by hit fraction
   FLAWLESS_BONUS: 800, // for taking no damage
   CLEAR_BONUS_PER_SECTOR: 150,
-  // What a powerup fetches when traded in, as a fraction of what it costs. One
+  // What a special fetches when traded in, as a fraction of what it costs. One
   // number so no entry can be worth more sold than bought.
-  POWERUP_SELL_FRACTION: 0.35,
-  // How long a slot button must be held before the powerup in it is thrown
+  SPECIAL_SELL_FRACTION: 0.35,
+  // How long a slot button must be held before the special in it is thrown
   // overboard instead of used.
-  POWERUP_JETTISON_HOLD: 0.55,
-  // Ore for the next powerup slot, multiplied by how many the ship already has.
+  SPECIAL_JETTISON_HOLD: 0.55,
+  // Ore for the next special slot, multiplied by how many the ship already has.
   SLOT_COST: 30,
-  POWERUP_JETTISON_SPEED: [110, 160], // how hard a jettisoned one is flung clear
-  POWERUP_JETTISON_DRAG: 0.25, // and how quickly it slows, so it lands within reach
-  POWERUP_ARM_TIME: 1.4, // how long before it can be picked up again
+  SPECIAL_JETTISON_SPEED: [110, 160], // how hard a jettisoned one is flung clear
+  SPECIAL_JETTISON_DRAG: 0.25, // and how quickly it slows, so it lands within reach
+  SPECIAL_ARM_TIME: 1.4, // how long before it can be picked up again
 
   // audio. Every effect is mixed through MASTER_VOLUME, so its own level only sets
   // where it sits against the others and this one number sets how loud the game is.
@@ -220,7 +220,7 @@ export const GAMEPAD = {
   buttons: {
     pause: 8, // back / select
     confirm: 9, // start
-    // A confirms a menu and B backs out of one, as well as filling powerup slots.
+    // A confirms a menu and B backs out of one, as well as filling special slots.
     // The two never collide: a slot can only be used in a flying phase and a menu
     // only exists outside one, so each press reaches exactly one of them.
     confirmAlt: 0,
@@ -246,7 +246,7 @@ export const GAMEPAD = {
 
 // ---------------------------------------------------------------------------
 // CONTROLS - the ship controls a player may rebind, in menu order, with each
-// one's default binding per device. `slot` marks the powerup slots, so the code
+// one's default binding per device. `slot` marks the special slots, so the code
 // never has to read a meaning out of an id.
 //
 // An action with no entry for a device does not appear in that device's section:
@@ -268,25 +268,25 @@ export const BINDABLE_CONTROLS = [
   { id: "turretFire", name: "TURRET FIRE", defaults: { keys: ["ArrowUp"], buttons: 5 } },
   {
     id: "slot1",
-    name: "POWERUP 1",
+    name: "SPECIAL 1",
     slot: 0,
     defaults: { keys: ["Digit1", "Numpad1"], buttons: 0 },
   },
   {
     id: "slot2",
-    name: "POWERUP 2",
+    name: "SPECIAL 2",
     slot: 1,
     defaults: { keys: ["Digit2", "Numpad2"], buttons: 1 },
   },
   {
     id: "slot3",
-    name: "POWERUP 3",
+    name: "SPECIAL 3",
     slot: 2,
     defaults: { keys: ["Digit3", "Numpad3"], buttons: 2 },
   },
   {
     id: "slot4",
-    name: "POWERUP 4",
+    name: "SPECIAL 4",
     slot: 3,
     defaults: { keys: ["Digit4", "Numpad4"], buttons: 3 },
   },
@@ -351,13 +351,13 @@ export const PROGRESSION = {
     speed: [30, 74],
     spin: [-0.6, 0.6],
   },
-  powerups: { fromSector: 3, firstDelay: [6, 10], interval: [12, 20], maxOnField: 2 },
+  specials: { fromSector: 3, firstDelay: [6, 10], interval: [12, 20], maxOnField: 2 },
 }
 
 // ---------------------------------------------------------------------------
 // WEIGHTS - what an entry weighs against its siblings at a given sector, for
 // every "which one turns up" roll in the game: which rival arrives, which hazard
-// a rock carries, which gun it is armed with, which powerup drifts in.
+// a rock carries, which gun it is armed with, which special drifts in.
 //
 //   fromSector      not in the running at all before this
 //   weight          how much it weighs once it is, against its siblings (1)
@@ -741,7 +741,7 @@ export function coreOf(type) {
 // ---------------------------------------------------------------------------
 // RADAR TYPES - core equipment, and what a hull knows about the sector it is in.
 // `sees` is an effective range per kind of thing: `ships`, `rocks`, `ore` and
-// `powerups`. A kind left out is one this set cannot pick up at all, beyond the
+// `specials`. A kind left out is one this set cannot pick up at all, beyond the
 // floor below.
 //
 // Every hull, radar or not, sees whatever is close enough to be on screen. That
@@ -756,7 +756,7 @@ export const RADAR_TYPES = {
   // The player's. Everything, everywhere, which is where the shop's levels start
   // from rather than where they end up.
   surveyArray: {
-    sees: { ships: Infinity, rocks: Infinity, ore: Infinity, powerups: Infinity },
+    sees: { ships: Infinity, rocks: Infinity, ore: Infinity, specials: Infinity },
   },
   // A hunter's: tuned for hulls and vague about the scenery. It loses the player
   // across the full width of the arena, which is 1720 corner to corner.
@@ -1152,7 +1152,7 @@ const PLAYER_DESIGN = {
 export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
 
 // ---------------------------------------------------------------------------
-// POWERUP TYPES - one entry per collectable. Fields:
+// SPECIAL TYPES - one entry per collectable. Fields:
 //   label   name shown in the pickup toast
 //   short   name shown in the active-buff list (omit to reuse `label`)
 //   icon    single character drawn on the pickup and in the inventory slot
@@ -1176,10 +1176,10 @@ export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
 //   seconds  how long a timed effect lasts
 //   apply    optional immediate effect, run on use
 //
-// A powerup is equipment, not ammunition: using one leaves it in its slot and
+// A special is equipment, not ammunition: using one leaves it in its slot and
 // starts its cooldown. Its ongoing effect is declared here as a field the
 // gameplay code looks up by name through PlayerShip.buffField, so nothing tests
-// for a powerup by id. The fields the simulation currently reads off an active
+// for a special by id. The fields the simulation currently reads off an active
 // effect:
 //   beamOffsets     parallel beam positions either side of the nose
 //   beamLengthMult  multiplies the charged beam's reach
@@ -1190,17 +1190,17 @@ export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
 //   invisible       nothing hunting the player can see it, see Game.visiblePlayer
 //   hullAlpha       the hull is drawn this solid
 //   endsOnFire      firing the main laser switches the effect off
-// Adding a field means reading it at one gameplay site; adding a powerup that
+// Adding a field means reading it at one gameplay site; adding a special that
 // reuses existing fields means editing nothing but this registry.
 // ---------------------------------------------------------------------------
-export const POWERUP_TYPES = {
+export const SPECIAL_TYPES = {
   // Shoves what is around the ship clear. `range` keeps it to the immediate
   // neighbourhood, so it is a way out of a squeeze and not a way to sweep the
   // sector; a rock counts as in range when its surface is.
   repel: {
     label: "REPEL",
     icon: "R",
-    colour: PALETTE.powerup.repel,
+    colour: PALETTE.special.repel,
     cost: 90,
     buyable: true,
     mode: "pulse",
@@ -1235,12 +1235,12 @@ export const POWERUP_TYPES = {
       game.screenShake = 9
     },
   },
-  // The one powerup that cannot be paid for in energy, being made of it, so it is
+  // The one special that cannot be paid for in energy, being made of it, so it is
   // spent instead: a full cell once, and the slot is empty again.
   refuel: {
     label: "REFUEL",
     icon: "F",
-    colour: PALETTE.powerup.refuel,
+    colour: PALETTE.special.refuel,
     cost: 70,
     buyable: true,
     mode: "single",
@@ -1254,7 +1254,7 @@ export const POWERUP_TYPES = {
     label: "BOOSTER",
     short: "BOOST",
     icon: "B",
-    colour: PALETTE.powerup.booster,
+    colour: PALETTE.special.booster,
     cost: 140,
     buyable: true,
     mode: "timed",
@@ -1273,7 +1273,7 @@ export const POWERUP_TYPES = {
     label: "MULTI-LASER",
     short: "MULTI",
     icon: "L",
-    colour: PALETTE.powerup.multi,
+    colour: PALETTE.special.multi,
     cost: 130,
     buyable: true,
     mode: "timed",
@@ -1286,7 +1286,7 @@ export const POWERUP_TYPES = {
     label: "ORE MAGNET",
     short: "MAGNET",
     icon: "M",
-    colour: PALETTE.powerup.magnet,
+    colour: PALETTE.special.magnet,
     cost: 100,
     buyable: true,
     mode: "timed",
@@ -1300,7 +1300,7 @@ export const POWERUP_TYPES = {
   stealth: {
     label: "STEALTH",
     icon: "S",
-    colour: PALETTE.powerup.stealth,
+    colour: PALETTE.special.stealth,
     cost: 160,
     buyable: true,
     mode: "toggle",
@@ -1312,9 +1312,9 @@ export const POWERUP_TYPES = {
   },
 }
 
-export const POWERUP_IDS = Object.keys(POWERUP_TYPES)
+export const SPECIAL_IDS = Object.keys(SPECIAL_TYPES)
 
-// Maximum powerup slots the ship can be fitted with.
+// Maximum special slots the ship can be fitted with.
 export const MAX_SLOTS = 4
 
 export function freshUpgrades() {
@@ -1447,7 +1447,7 @@ const fitting = (id, name, desc, price, apply) => ({
 })
 
 export const SHOP = [
-  // A spare ship and the powerups already carried are not part of the loadout the
+  // A spare ship and the specials already carried are not part of the loadout the
   // rest of the page sells, so they head the list as their own group.
   {
     id: "life",
@@ -1491,7 +1491,7 @@ export const SHOP = [
   levelled(
     "magnet",
     "ORE MAGNET",
-    "Wider passive ore attraction, no powerup needed.",
+    "Wider passive ore attraction, no special needed.",
     CONFIG.MAGNET_RANGE.length - 1,
     (level) => 35 + level * 35,
   ),
@@ -1504,12 +1504,12 @@ export const SHOP = [
   fitting("reverse", "REVERSE THRUST", "Forward thrusters: hold DOWN or S to back away.", 55),
 ]
 
-// Where the shop's own rows sit among the purchases: the powerup slots follow
+// Where the shop's own rows sit among the purchases: the special slots follow
 // EXTRA LIFE, and the gap under them sets that pair apart from the loadout below.
 export const SHOP_LAYOUT = { slotsRow: 1, groupGap: 14 }
 
 // ---------------------------------------------------------------------------
-// SLOT MENU - the pop-over that opens on a powerup slot in the shop. One entry
+// SLOT MENU - the pop-over that opens on a special slot in the shop. One entry
 // per row, in menu order, each taking the slot it was opened on. Fields:
 //   name      the label
 //   value     optional (game, slot) => text shown on the right
@@ -1535,17 +1535,17 @@ export const SLOT_MENU = [
     available: (g, slot) => g.slotItem(slot) !== null,
     action: (g, slot) => g.sellSlot(slot),
   },
-  // One row per powerup an empty slot could be filled with: everything the run
+  // One row per special an empty slot could be filled with: everything the run
   // has found, and everything at all in dev mode. A slot the ship has not been
   // fitted with yet has to be unlocked before it can hold anything.
   {
     rows: (game, slot) =>
       game.slotItem(slot) || slot >= game.upgrades.slots
         ? []
-        : game.buyablePowerups().map((id) => ({
-            name: POWERUP_TYPES[id].label,
-            value: (g) => (g.devMode ? "FREE" : `${POWERUP_TYPES[id].cost} ore`),
-            action: (g, at) => g.buyPowerup(at, id),
+        : game.buyableSpecials().map((id) => ({
+            name: SPECIAL_TYPES[id].label,
+            value: (g) => (g.devMode ? "FREE" : `${SPECIAL_TYPES[id].cost} ore`),
+            action: (g, at) => g.buySpecial(at, id),
           })),
   },
 ]

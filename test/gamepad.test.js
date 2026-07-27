@@ -185,7 +185,7 @@ test("the right stick aims the turret and the bumper fires it", () => {
   assert.ok(game.player.turretManual > 0, "aiming takes manual control")
 })
 
-test("a face button uses its powerup slot on release, once per press", () => {
+test("a face button uses its special slot on release, once per press", () => {
   const game = liveGame()
   const player = game.player
   const item = player.equip(0, "repel")
@@ -199,7 +199,7 @@ test("a face button uses its powerup slot on release, once per press", () => {
   assert.equal(player.energy, player.energyMax)
   input.apply(released)
   assert.ok(player.energy < player.energyMax, "letting go used it")
-  assert.equal(player.items[0], item, "and the powerup stays in its slot")
+  assert.equal(player.items[0], item, "and the special stays in its slot")
   const after = player.energy
   input.apply(held)
   input.apply(released)
@@ -262,7 +262,7 @@ test("A confirms as well as start, in every menu", () => {
 })
 
 test("A fills a slot in flight and confirms in a menu, never both", () => {
-  // A is also powerup slot 1, which is only reachable in a flying phase, so the
+  // A is also special slot 1, which is only reachable in a flying phase, so the
   // two uses cannot collide.
   const inFlight = liveGame()
   inFlight.player.equip(0, "refuel")
@@ -525,7 +525,7 @@ test("BACK still abandons a wait outright, being reserved and unbindable", () =>
   assert.equal(game.bindings.buttons.thrust, before, "and BACK was not captured")
 })
 
-test("B still works its powerup slot in flight", () => {
+test("B still works its special slot in flight", () => {
   // B is slot 2 by default and back in a menu. The two never collide, because a
   // slot only works in a flying phase and a menu only exists outside one.
   const game = liveGame()
@@ -540,7 +540,7 @@ test("B still works its powerup slot in flight", () => {
   assert.equal(game.player.items[0].cooldown, 0, "and only that one")
 })
 
-test("the HUD names a powerup slot by what is actually bound to it", () => {
+test("the HUD names a special slot by what is actually bound to it", () => {
   const game = liveGame()
   game.inputMode = "gamepad"
   assert.equal(game.slotLabel(0), "A", "the default is the face button it sits on")

@@ -4,7 +4,7 @@ import { WebGLRenderer } from "./glrenderer.js"
 import { GameView } from "./view.js"
 import { Game } from "./game.js"
 import { GamepadInput } from "./gamepad.js"
-import { DEV_VISIBLE, POWERUP_TYPES, SHOP } from "./config.js"
+import { DEV_VISIBLE, SPECIAL_TYPES, SHOP } from "./config.js"
 import { PALETTE } from "./palette.js"
 import { Sound } from "./audio.js"
 
@@ -37,7 +37,7 @@ const gamepad = new GamepadInput(game)
 
 // Debug / test handle: lets the browser console and the smoke test inspect and
 // drive live state without reaching into module scope.
-window.__geometry = { game, view, renderer, gamepad, POWERUP_TYPES, SHOP, PALETTE }
+window.__geometry = { game, view, renderer, gamepad, SPECIAL_TYPES, SHOP, PALETTE }
 
 // The help line names whichever device is in use. Both are in the page so the
 // swap costs nothing and neither has to be built in script.

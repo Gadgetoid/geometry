@@ -18,8 +18,8 @@ import {
   SHOP,
   SHOP_LAYOUT,
   SLOT_MENU,
-  POWERUP_TYPES,
-  POWERUP_IDS,
+  SPECIAL_TYPES,
+  SPECIAL_IDS,
   MAX_SLOTS,
   UI_SCALES,
   SHIELD_SPARK,
@@ -67,7 +67,7 @@ import {
 import {
   Asteroid,
   Ore,
-  Powerup,
+  Special,
   PlayerShip,
   RivalShip,
   oreFromFragment,
@@ -126,7 +126,7 @@ export class Game {
     this.asteroids = []
     this.oreChunks = []
     this.projectiles = []
-    this.powerupPickups = []
+    this.specialPickups = []
     this.rivals = []
     this.particles = []
     this.laserShots = []
@@ -145,11 +145,11 @@ export class Game {
 
     this.shopSelection = 0
     this.shopSector = 1
-    this.shopSlot = 0 // which powerup slot the cursor is on, along the slots row
+    this.shopSlot = 0 // which special slot the cursor is on, along the slots row
     this.slotMenu = null // the open pop-over: { slot, selection }
-    this.seenPowerups = new Set() // kinds the run has found, which the shop then sells
+    this.seenSpecials = new Set() // kinds the run has found, which the shop then sells
     // How long each slot button has been held, and whether that hold has already
-    // thrown the powerup overboard. A tap uses the slot on release; a hold
+    // thrown the special overboard. A tap uses the slot on release; a hold
     // jettisons as it passes the threshold, and the release then does nothing.
     this.slotHeld = new Array(MAX_SLOTS).fill(0)
     this.slotDown = new Array(MAX_SLOTS).fill(false)
@@ -175,7 +175,7 @@ export class Game {
     this.gameTime = 0
     this.screenShake = 0
     this.oreVacuum = false
-    this.powerupTimer = 0
+    this.specialTimer = 0
     this.rivalTimer = 0
     this.clearTimer = 0
     this.pressedKeys = new Set()
@@ -319,8 +319,8 @@ export class Game {
     this.oreChunks.push(new Ore(x, y, vx, vy))
   }
 
-  spawnPowerup() {
-    const type = weightedPick(POWERUP_IDS, (id) => weightAt(POWERUP_TYPES[id], this.level))
+  spawnSpecial() {
+    const type = weightedPick(SPECIAL_IDS, (id) => weightAt(SPECIAL_TYPES[id], this.level))
     if (!type) {
       return
     }
@@ -330,8 +330,8 @@ export class Game {
     const x = c.x + Math.cos(angle) * (VIEW_W / 2 + 30)
     const y = c.y + Math.sin(angle) * (VIEW_H / 2 + 30)
     const dir = normalize(subtract(c, { x, y }))
-    this.powerupPickups.push(
-      new Powerup(x, y, dir.x * randRange(30, 50), dir.y * randRange(30, 50), type),
+    this.specialPickups.push(
+      new Special(x, y, dir.x * randRange(30, 50), dir.y * randRange(30, 50), type),
     )
   }
 
@@ -803,7 +803,7 @@ export class Game {
   }
 
   planLevel(sector) {
-    const { rocks, hazards, rivals, spawn, powerups } = PROGRESSION
+    const { rocks, hazards, rivals, spawn, specials } = PROGRESSION
     const count = Math.min(rocks.base + Math.ceil(sector * rocks.perSector), rocks.max)
     const hazardChance =
       sector < hazards.fromSector
@@ -818,7 +818,7 @@ export class Game {
     }
     return {
       spawns,
-      powerups: sector >= powerups.fromSector,
+      specials: sector >= specials.fromSector,
       rivals:
         sector < RIVALS_FROM_SECTOR
           ? 0
@@ -838,7 +838,7 @@ export class Game {
     this.asteroids = []
     this.oreChunks = []
     this.projectiles = []
-    this.powerupPickups = []
+    this.specialPickups = []
     this.rivals = []
     this.laserShots = []
     this.particles = []
@@ -877,9 +877,9 @@ export class Game {
       )
     }
 
-    this.powerupTimer = randRange(
-      PROGRESSION.powerups.firstDelay[0],
-      PROGRESSION.powerups.firstDelay[1],
+    this.specialTimer = randRange(
+      PROGRESSION.specials.firstDelay[0],
+      PROGRESSION.specials.firstDelay[1],
     )
     this.rivalTimer = this.plan.rivalInterval * 0.6
     this.clearTimer = 0
@@ -906,7 +906,7 @@ export class Game {
     this.lives = CONFIG.START_LIVES
     this.oreBalance = 0
     this.upgrades = freshUpgrades()
-    this.seenPowerups = new Set()
+    this.seenSpecials = new Set()
     this.player = new PlayerShip(this)
     this.startLevel(1)
   }
@@ -968,7 +968,7 @@ export class Game {
     this.enterShop(false)
   }
 
-  // The shop's page in cursor order: the purchases, with the powerup slots at the
+  // The shop's page in cursor order: the purchases, with the special slots at the
   // row SHOP_LAYOUT names, then the launch line. Everything that walks or draws
   // the shop takes its indices from here, so the layout is stated once.
   get slotsRow() {
@@ -989,7 +989,7 @@ export class Game {
     return SHOP[row < this.slotsRow ? row : row - 1]
   }
 
-  // What is held in a powerup slot, or null for an empty one.
+  // What is held in a special slot, or null for an empty one.
   slotItem(slot) {
     return (this.player && this.player.items[slot]) || null
   }
@@ -997,34 +997,34 @@ export class Game {
   // The registry entry for what is in a slot, or null.
   slotType(slot) {
     const item = this.slotItem(slot)
-    return item ? POWERUP_TYPES[item.id] : null
+    return item ? SPECIAL_TYPES[item.id] : null
   }
 
-  // A powerup fetches a fixed fraction of what it costs, so none is worth more
+  // A special fetches a fixed fraction of what it costs, so none is worth more
   // sold than bought.
-  powerupSellValue(id) {
-    return Math.round(POWERUP_TYPES[id].cost * CONFIG.POWERUP_SELL_FRACTION)
+  specialSellValue(id) {
+    return Math.round(SPECIAL_TYPES[id].cost * CONFIG.SPECIAL_SELL_FRACTION)
   }
   slotSellValue(slot) {
     const item = this.slotItem(slot)
-    return item ? this.powerupSellValue(item.id) : 0
+    return item ? this.specialSellValue(item.id) : 0
   }
 
-  // Trade a carried powerup back in for ore. The slot is emptied where it stands:
+  // Trade a carried special back in for ore. The slot is emptied where it stands:
   // a slot's index is its identity, so the ones beside it do not shuffle along.
   sellSlot(slot) {
     const item = this.slotItem(slot)
     if (!item) {
       return
     }
-    this.oreBalance += this.powerupSellValue(item.id)
+    this.oreBalance += this.specialSellValue(item.id)
     this.player.items[slot] = null
     this.closeSlotMenu()
     this.rememberRun()
     Sound.collect()
   }
 
-  // What the next powerup slot costs. Each one is dearer than the last.
+  // What the next special slot costs. Each one is dearer than the last.
   slotUnlockCost() {
     return CONFIG.SLOT_COST * this.upgrades.slots
   }
@@ -1055,12 +1055,12 @@ export class Game {
     }
   }
 
-  // Fit a bought powerup into an empty slot.
-  buyPowerup(slot, id) {
+  // Fit a bought special into an empty slot.
+  buySpecial(slot, id) {
     if (this.slotItem(slot) || slot >= this.upgrades.slots) {
       return
     }
-    const cost = POWERUP_TYPES[id].cost
+    const cost = SPECIAL_TYPES[id].cost
     if (!this.devMode) {
       if (this.oreBalance < cost) {
         Sound.hit()
@@ -1220,16 +1220,16 @@ export class Game {
     this.clearInput()
   }
 
-  // Use what is in a slot. A powerup is equipment: it stays in its slot and the
+  // Use what is in a slot. A special is equipment: it stays in its slot and the
   // slot goes on cooldown, so what limits its use is the cell and the wait.
   // A toggle switches off again from here, which is the same press.
-  usePowerupSlot(index) {
+  useSpecialSlot(index) {
     const player = this.player,
       item = player.items[index]
     if (!item) {
       return
     }
-    const type = POWERUP_TYPES[item.id]
+    const type = SPECIAL_TYPES[item.id]
     if (item.active) {
       player.stopSlot(index)
       this.showToast(`${type.label} OFF`)
@@ -1263,7 +1263,7 @@ export class Game {
     }
   }
 
-  // Throw the powerup in a slot overboard. It is flung clear of the nose and
+  // Throw the special in a slot overboard. It is flung clear of the nose and
   // arms before it can be picked up, so letting go of the button does not
   // immediately take it back.
   jettisonSlot(index) {
@@ -1272,23 +1272,23 @@ export class Game {
     if (!item || !this.canFly()) {
       return
     }
-    const type = POWERUP_TYPES[item.id]
+    const type = SPECIAL_TYPES[item.id]
     player.stopSlot(index) // whatever it was doing stops with it
     player.items[index] = null
     // Out of the tail, at its own speed and not the ship's, so flying on leaves it
     // behind instead of dragging it along or overtaking it.
     const bearing = player.angle + Math.PI + randRange(-0.5, 0.5)
-    const speed = randRange(CONFIG.POWERUP_JETTISON_SPEED[0], CONFIG.POWERUP_JETTISON_SPEED[1])
-    const pickup = new Powerup(
+    const speed = randRange(CONFIG.SPECIAL_JETTISON_SPEED[0], CONFIG.SPECIAL_JETTISON_SPEED[1])
+    const pickup = new Special(
       player.x + Math.cos(bearing) * (player.boundRadius + 10),
       player.y + Math.sin(bearing) * (player.boundRadius + 10),
       Math.cos(bearing) * speed,
       Math.sin(bearing) * speed,
       item.id,
     )
-    pickup.arming = CONFIG.POWERUP_ARM_TIME
-    pickup.drag = CONFIG.POWERUP_JETTISON_DRAG
-    this.powerupPickups.push(pickup)
+    pickup.arming = CONFIG.SPECIAL_ARM_TIME
+    pickup.drag = CONFIG.SPECIAL_JETTISON_DRAG
+    this.specialPickups.push(pickup)
     this.showToast(`${type.label} JETTISONED`)
     Sound.bump()
   }
@@ -1297,7 +1297,7 @@ export class Game {
   // able to. Every site that steers toward, aims at or shoots at the player asks
   // through this, so one answer hides it from all of them.
   //
-  // Two things hide it. A powerup that declares `invisible`, and simply not being
+  // Two things hide it. A special that declares `invisible`, and simply not being
   // reachable: a ship still warping in, or inside the grace period that follows,
   // cannot be harmed, and anything allowed to keep shooting at it would only be
   // stacking up rounds to land the moment the grace runs out.
@@ -1373,18 +1373,18 @@ export class Game {
     return this.#nearest(candidates, from, Math.min(within, reach))
   }
 
-  // Powerups the run has met. A kind has to be found in a sector before the shop
+  // Specials the run has met. A kind has to be found in a sector before the shop
   // will sell it, so the shop's stock is a record of what the run has seen.
-  findPowerup(id) {
-    this.seenPowerups.add(id)
+  findSpecial(id) {
+    this.seenSpecials.add(id)
   }
 
   // What the shop can put in an empty slot. Dev mode waives having found one, so
-  // a new powerup can be tried without hunting for it, but not the registry's own
+  // a new special can be tried without hunting for it, but not the registry's own
   // say on whether it is for sale at all.
-  buyablePowerups() {
-    return POWERUP_IDS.filter(
-      (id) => POWERUP_TYPES[id].buyable && (this.devMode || this.seenPowerups.has(id)),
+  buyableSpecials() {
+    return SPECIAL_IDS.filter(
+      (id) => SPECIAL_TYPES[id].buyable && (this.devMode || this.seenSpecials.has(id)),
     )
   }
 
@@ -1399,16 +1399,16 @@ export class Game {
     }
 
     if (this.phase === "play") {
-      if (this.plan.powerups) {
-        this.powerupTimer -= dt
+      if (this.plan.specials) {
+        this.specialTimer -= dt
         if (
-          this.powerupTimer <= 0 &&
-          this.powerupPickups.length < PROGRESSION.powerups.maxOnField
+          this.specialTimer <= 0 &&
+          this.specialPickups.length < PROGRESSION.specials.maxOnField
         ) {
-          this.spawnPowerup()
-          this.powerupTimer = randRange(
-            PROGRESSION.powerups.interval[0],
-            PROGRESSION.powerups.interval[1],
+          this.spawnSpecial()
+          this.specialTimer = randRange(
+            PROGRESSION.specials.interval[0],
+            PROGRESSION.specials.interval[1],
           )
         }
       }
@@ -1466,10 +1466,10 @@ export class Game {
       chunk.update(dt, this)
     }
     this.oreChunks = this.oreChunks.filter((o) => !o.dead)
-    for (const pickup of this.powerupPickups) {
+    for (const pickup of this.specialPickups) {
       pickup.update(dt, this)
     }
-    this.powerupPickups = this.powerupPickups.filter((p) => !p.dead)
+    this.specialPickups = this.specialPickups.filter((p) => !p.dead)
     for (const rival of this.rivals) {
       rival.update(dt, this)
     }
@@ -1721,11 +1721,11 @@ export class Game {
       oreBalance: this.oreBalance,
       rivalScore: this.rivalScore,
       upgrades: { ...this.upgrades },
-      // Carried powerups are part of the loadout the shop sends you out with, so
+      // Carried specials are part of the loadout the shop sends you out with, so
       // they survive a session the way the upgrades do. So does the record of
       // what the run has found, which is what the shop will sell.
       items: this.player ? this.player.items.map((item) => (item ? item.id : null)) : [],
-      seen: [...this.seenPowerups],
+      seen: [...this.seenSpecials],
     }
     saveRun(this.savedRun)
   }
@@ -1765,18 +1765,18 @@ export class Game {
     this.player = new PlayerShip(this)
     this.player.fitPurchased(this.upgrades)
     // Anything the registry no longer knows is dropped, so an old save cannot put
-    // a powerup that has since been removed into a slot or onto the shop's shelf.
+    // a special that has since been removed into a slot or onto the shop's shelf.
     ;(run.items || []).forEach((id, slot) => {
-      if (POWERUP_TYPES[id] && slot < MAX_SLOTS) {
+      if (SPECIAL_TYPES[id] && slot < MAX_SLOTS) {
         this.player.equip(slot, id)
       }
     })
-    this.seenPowerups = new Set((run.seen || []).filter((id) => POWERUP_TYPES[id]))
+    this.seenSpecials = new Set((run.seen || []).filter((id) => SPECIAL_TYPES[id]))
     this.stats = this.blankStats()
     this.asteroids = []
     this.oreChunks = []
     this.projectiles = []
-    this.powerupPickups = []
+    this.specialPickups = []
     this.rivals = []
     this.particles = []
     this.laserShots = []
@@ -1827,7 +1827,7 @@ export class Game {
     return null
   }
 
-  // What to press for a powerup slot, as the HUD should name it. It follows the
+  // What to press for a special slot, as the HUD should name it. It follows the
   // live binding, so a rebound slot is not still labelled with the button it used
   // to be on.
   slotLabel(index) {
@@ -1980,7 +1980,7 @@ export class Game {
     if (this.paused) {
       return this.pauseMenu().length
     }
-    // the purchases, the POWERUPS row among them, then LAUNCH and SETTINGS
+    // the purchases, the SPECIALS row among them, then LAUNCH and SETTINGS
     return this.phase === "shop" ? SHOP.length + 3 : 0
   }
 
@@ -2075,7 +2075,7 @@ export class Game {
     return this.#shopSideStep(step)
   }
 
-  // The powerup slots sit side by side on one row, so left and right walk along
+  // The special slots sit side by side on one row, so left and right walk along
   // them. It stops at each end: the row is a row of boxes, not a loop.
   #slotStep(step) {
     if (this.phase !== "shop" || this.shopSelection !== this.slotsRow) {
@@ -2212,7 +2212,7 @@ export class Game {
   }
 
   // A slot button going down. Nothing happens yet: a tap uses the slot when it
-  // comes back up, and a hold throws the powerup overboard before then.
+  // comes back up, and a hold throws the special overboard before then.
   slotDownAt(index) {
     if (index < 0 || index >= MAX_SLOTS) {
       return
@@ -2232,7 +2232,7 @@ export class Game {
     this.slotHeld[index] = 0
     this.slotSpent[index] = false
     if (!spent && this.canFly() && !this.paused) {
-      this.usePowerupSlot(index)
+      this.useSpecialSlot(index)
     }
   }
 
@@ -2242,7 +2242,7 @@ export class Game {
         continue
       }
       this.slotHeld[index] += dt
-      if (this.slotHeld[index] >= CONFIG.POWERUP_JETTISON_HOLD) {
+      if (this.slotHeld[index] >= CONFIG.SPECIAL_JETTISON_HOLD) {
         this.slotSpent[index] = true
         this.jettisonSlot(index)
       }

@@ -17,7 +17,7 @@ import { PALETTE } from "../src/palette.js"
 import {
   Asteroid,
   Ore,
-  Powerup,
+  Special,
   Projectile,
   RivalShip,
   Shield,
@@ -36,8 +36,8 @@ import {
   weightAt,
   MAX_SLOTS,
   PLAYER_TYPE,
-  POWERUP_IDS,
-  POWERUP_TYPES,
+  SPECIAL_IDS,
+  SPECIAL_TYPES,
   PROGRESSION,
   SHIELD_TYPES,
   SHIP_PLATING,
@@ -86,7 +86,7 @@ function fullChargeShot(game, chargeFraction = 1, overdrive = 0) {
   player.fireLaser(game)
 }
 
-// Put a powerup in a slot, and read back what the slots hold. Slots carry an
+// Put a special in a slot, and read back what the slots hold. Slots carry an
 // object each so they can hold a cooldown, so a test says what it means by id.
 function equip(game, slot, id) {
   return game.player.equip(slot, id)
@@ -1744,21 +1744,21 @@ test("a rival outside the arena is passed through by a shot, as it is by a beam"
   assert.equal(rival.hull, SHIP_TYPES.scout.hull)
 })
 
-// ---- powerups are declared, not special-cased ------------------------------
+// ---- specials are declared, not special-cased ------------------------------
 
-test("a powerup's ongoing effect is read from its registry entry", () => {
+test("a special's ongoing effect is read from its registry entry", () => {
   const game = liveGame()
   const player = game.player
   assert.equal(player.buffField("beamLengthMult", 1), 1)
-  // grant whichever powerup declares the effect, rather than naming one here
-  const id = Object.keys(POWERUP_TYPES).find((key) => POWERUP_TYPES[key].beamLengthMult)
+  // grant whichever special declares the effect, rather than naming one here
+  const id = Object.keys(SPECIAL_TYPES).find((key) => SPECIAL_TYPES[key].beamLengthMult)
   player.grantBuff(id, 5)
-  assert.equal(player.beamLengthMult(), POWERUP_TYPES[id].beamLengthMult)
+  assert.equal(player.beamLengthMult(), SPECIAL_TYPES[id].beamLengthMult)
 })
 
-test("a powerup declaring collisionImmune stops rock contact damage", () => {
-  const id = Object.keys(POWERUP_TYPES).find((key) => POWERUP_TYPES[key].collisionImmune)
-  assert.ok(id, "some powerup should declare collision immunity")
+test("a special declaring collisionImmune stops rock contact damage", () => {
+  const id = Object.keys(SPECIAL_TYPES).find((key) => SPECIAL_TYPES[key].collisionImmune)
+  assert.ok(id, "some special should declare collision immunity")
   const ram = (withBuff) => {
     const game = liveGame()
     const player = game.player
@@ -1776,7 +1776,7 @@ test("a powerup declaring collisionImmune stops rock contact damage", () => {
     return game.stats.damage
   }
   assert.ok(ram(false) > 0, "ramming a rock should hurt")
-  assert.equal(ram(true), 0, "unless a powerup says otherwise")
+  assert.equal(ram(true), 0, "unless a special says otherwise")
 })
 
 // Drive a rival into a stationary boulder and report what first contact cost it.
@@ -2010,20 +2010,20 @@ test("a level without overdrive never winds one up, however long it is held", ()
   assert.equal(player.overdriven, false)
 })
 
-// ---- what the shop does with a powerup -------------------------------------
+// ---- what the shop does with a special -------------------------------------
 
-test("every powerup has a price, and fetches less than it than when sold", () => {
+test("every special has a price, and fetches less than it than when sold", () => {
   const game = liveGame()
-  for (const [id, type] of Object.entries(POWERUP_TYPES)) {
+  for (const [id, type] of Object.entries(SPECIAL_TYPES)) {
     assert.equal(typeof type.cost, "number", `${id} needs a price`)
     assert.ok(type.cost > 0, `${id} should cost something`)
-    const sell = game.powerupSellValue(id)
+    const sell = game.specialSellValue(id)
     assert.ok(sell > 0, `${id} should be worth something traded in`)
     assert.ok(sell < type.cost, `${id} must not be worth more sold than bought`)
   }
 })
 
-test("carried powerups survive the trip to the next sector, and a saved run", () => {
+test("carried specials survive the trip to the next sector, and a saved run", () => {
   const game = liveGame()
   game.upgrades.slots = 2
   equip(game, 0, "repel")
@@ -2042,7 +2042,7 @@ test("carried powerups survive the trip to the next sector, and a saved run", ()
   assert.deepEqual(carried(resumed), ["repel", "booster"], "nor a session boundary")
 })
 
-test("a saved run drops a powerup the registry no longer knows", () => {
+test("a saved run drops a special the registry no longer knows", () => {
   const game = liveGame()
   equip(game, 0, "repel")
   game.level = 2
@@ -2054,11 +2054,11 @@ test("a saved run drops a powerup the registry no longer knows", () => {
   assert.deepEqual(carried(resumed), ["repel"])
 })
 
-test("the shop groups the spare ship and the powerups above the loadout", () => {
+test("the shop groups the spare ship and the specials above the loadout", () => {
   const game = liveGame()
   game.enterShop()
   assert.equal(SHOP[0].id, "life", "a spare ship heads the page")
-  assert.equal(game.shopItem(game.slotsRow), null, "and the powerups row follows it")
+  assert.equal(game.shopItem(game.slotsRow), null, "and the specials row follows it")
   assert.equal(game.slotsRow, 1)
   // every purchase is still reachable, exactly once, in registry order
   const walked = []
@@ -2134,7 +2134,7 @@ test("the pop-over takes the input the shop behind it would have taken", () => {
   assert.equal(game.slotMenu, null, "and so does escape")
 })
 
-test("selling a slot pays what the powerup is worth and empties that slot", () => {
+test("selling a slot pays what the special is worth and empties that slot", () => {
   const game = liveGame()
   game.upgrades.slots = 3
   equip(game, 0, "repel")
@@ -2147,71 +2147,71 @@ test("selling a slot pays what the powerup is worth and empties that slot", () =
   game.shopSlot = 1
   game.menuConfirm()
   game.menuConfirm() // SELL
-  assert.equal(game.oreBalance, ore + game.powerupSellValue("booster"))
+  assert.equal(game.oreBalance, ore + game.specialSellValue("booster"))
   // a slot's index is its identity, so the ones beside it stay where they are
   assert.deepEqual(carried(game), ["repel", null, "magnet"])
   assert.equal(game.slotMenu, null, "and the pop-over goes with it")
   assert.deepEqual(game.savedRun.items.slice(0, 3), ["repel", null, "magnet"])
 })
 
-// ---- a powerup is equipment, not ammunition --------------------------------
+// ---- a special is equipment, not ammunition --------------------------------
 
-test("using a powerup keeps it, spends energy and puts the slot on cooldown", () => {
+test("using a special keeps it, spends energy and puts the slot on cooldown", () => {
   const game = liveGame()
   const player = game.player
   const item = equip(game, 0, "repel")
-  const type = POWERUP_TYPES.repel
+  const type = SPECIAL_TYPES.repel
   player.energy = player.energyMax
 
   const cost = type.energy * player.energyMax
-  game.usePowerupSlot(0)
-  assert.equal(player.items[0], item, "the powerup stays in its slot")
+  game.useSpecialSlot(0)
+  assert.equal(player.items[0], item, "the special stays in its slot")
   assert.equal(player.energy, player.energyMax - cost, "and the cell paid for it")
   assert.equal(item.cooldown, type.cooldown)
 
   // and it cannot be used again until the cooldown has run out
   const spent = player.energy
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   assert.equal(player.energy, spent, "a slot on cooldown does nothing")
   for (let frame = 0; frame < Math.ceil(type.cooldown * 60) + 1; frame++) {
     player.update(1 / 60, game)
   }
   assert.equal(item.cooldown, 0, "the cooldown runs down")
   player.energy = player.energyMax
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   assert.ok(player.energy < player.energyMax, "and it works again")
 })
 
-test("a single-use powerup is spent, leaving the slot empty", () => {
+test("a single-use special is spent, leaving the slot empty", () => {
   const game = liveGame()
   const player = game.player
-  const single = POWERUP_IDS.find((id) => POWERUP_TYPES[id].mode === "single")
-  assert.ok(single, "some powerup should be spent on use")
+  const single = SPECIAL_IDS.find((id) => SPECIAL_TYPES[id].mode === "single")
+  assert.ok(single, "some special should be spent on use")
   equip(game, 0, single)
   player.energy = player.energyMax * 0.2
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   assert.ok(player.energy > player.energyMax * 0.2, "it did what it does")
   assert.equal(player.items[0], null, "and the slot is empty again")
 })
 
-test("a powerup the cell cannot pay for does not go off", () => {
+test("a special the cell cannot pay for does not go off", () => {
   const game = liveGame()
   const player = game.player
   const item = equip(game, 0, "repel")
-  const short = POWERUP_TYPES.repel.energy * player.energyMax - 1
+  const short = SPECIAL_TYPES.repel.energy * player.energyMax - 1
   player.energy = short
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   assert.equal(item.cooldown, 0, "nothing was used")
   assert.equal(player.energy, short, "and nothing was spent")
 })
 
-test("a timed powerup starts its cooldown when the effect ends, not when it starts", () => {
+test("a timed special starts its cooldown when the effect ends, not when it starts", () => {
   const game = liveGame()
   const player = game.player
-  const type = POWERUP_TYPES.booster
+  const type = SPECIAL_TYPES.booster
   const item = equip(game, 0, "booster")
   player.energy = player.energyMax
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   assert.ok(player.buffTime("booster") > 0, "the effect is running")
   assert.equal(item.cooldown, 0, "and the slot is not counting down yet")
 
@@ -2228,32 +2228,32 @@ test("repel reaches what is around the ship and nothing across the sector", () =
   player.x = 400
   player.y = 320
   player.energy = player.energyMax
-  const type = POWERUP_TYPES.repel
+  const type = SPECIAL_TYPES.repel
   const near = new Asteroid({ vertices: square(400 + type.range / 2, 320, 30), vx: 0, vy: 0 })
   const far = new Asteroid({ vertices: square(400 + type.range * 3, 320, 30), vx: 0, vy: 0 })
   game.asteroids = [near, far]
   equip(game, 0, "repel")
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   assert.ok(near.vx > 0, "a rock in the neighbourhood is shoved clear")
   assert.equal(far.vx, 0, "one across the sector is not")
 })
 
-// ---- throwing a powerup overboard ------------------------------------------
+// ---- throwing a special overboard ------------------------------------------
 
-test("holding a slot button throws the powerup out, and the release does not use it", () => {
+test("holding a slot button throws the special out, and the release does not use it", () => {
   const game = liveGame()
   const player = game.player
   player.energy = player.energyMax
   equip(game, 0, "repel")
 
   game.slotDownAt(0)
-  game.update(CONFIG.POWERUP_JETTISON_HOLD / 2)
+  game.update(CONFIG.SPECIAL_JETTISON_HOLD / 2)
   assert.ok(player.items[0], "a short hold has not thrown it yet")
-  game.update(CONFIG.POWERUP_JETTISON_HOLD)
+  game.update(CONFIG.SPECIAL_JETTISON_HOLD)
   assert.equal(player.items[0], null, "holding on throws it overboard")
-  assert.equal(game.powerupPickups.length, 1, "and it is out there to be picked up again")
+  assert.equal(game.specialPickups.length, 1, "and it is out there to be picked up again")
 
-  const pickup = game.powerupPickups[0]
+  const pickup = game.specialPickups[0]
   assert.equal(pickup.type, "repel")
   assert.ok(Math.hypot(pickup.vx, pickup.vy) > 0, "flung clear rather than dropped")
   assert.ok(pickup.arming > 0, "and not collectable the instant it leaves")
@@ -2263,15 +2263,15 @@ test("holding a slot button throws the powerup out, and the release does not use
   assert.equal(player.energy, player.energyMax, "nothing was spent on the way out")
 })
 
-test("a jettisoned powerup is passed over until it has armed, then picked up again", () => {
+test("a jettisoned special is passed over until it has armed, then picked up again", () => {
   const game = liveGame()
   const player = game.player
   player.energy = player.energyMax
   equip(game, 0, "repel")
   game.slotDownAt(0)
-  game.update(CONFIG.POWERUP_JETTISON_HOLD + 0.01)
+  game.update(CONFIG.SPECIAL_JETTISON_HOLD + 0.01)
   game.slotUpAt(0)
-  const pickup = game.powerupPickups[0]
+  const pickup = game.specialPickups[0]
 
   // parked on top of the ship, it is still passed over while it arms
   pickup.vx = 0
@@ -2284,7 +2284,7 @@ test("a jettisoned powerup is passed over until it has armed, then picked up aga
   }
   assert.equal(player.items[0], null, "it cannot be taken straight back")
 
-  for (let frame = 0; frame < Math.ceil(CONFIG.POWERUP_ARM_TIME * 60) + 20; frame++) {
+  for (let frame = 0; frame < Math.ceil(CONFIG.SPECIAL_ARM_TIME * 60) + 20; frame++) {
     pickup.x = player.x
     pickup.y = player.y
     pickup.update(1 / 60, game)
@@ -2293,45 +2293,45 @@ test("a jettisoned powerup is passed over until it has armed, then picked up aga
   assert.equal(carried(game)[0], "repel", "once armed it goes back in the slot")
 })
 
-test("throwing a powerup out takes its effect with it", () => {
+test("throwing a special out takes its effect with it", () => {
   const game = liveGame()
   const player = game.player
   player.energy = player.energyMax
   equip(game, 0, "stealth")
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   assert.equal(game.visiblePlayer(), null, "hidden while it runs")
   game.slotDownAt(0)
-  game.update(CONFIG.POWERUP_JETTISON_HOLD + 0.01)
+  game.update(CONFIG.SPECIAL_JETTISON_HOLD + 0.01)
   assert.equal(player.items[0], null)
   assert.equal(game.visiblePlayer(), player, "and visible again once it is gone")
 })
 
-// ---- buying a powerup the run has found ------------------------------------
+// ---- buying a special the run has found ------------------------------------
 
 test("the shop sells only what the run has found, and dev mode sells everything", () => {
   const game = liveGame()
-  assert.deepEqual(game.buyablePowerups(), [], "a fresh run has met nothing")
-  game.findPowerup("magnet")
-  assert.deepEqual(game.buyablePowerups(), ["magnet"])
+  assert.deepEqual(game.buyableSpecials(), [], "a fresh run has met nothing")
+  game.findSpecial("magnet")
+  assert.deepEqual(game.buyableSpecials(), ["magnet"])
   game.devMode = true
-  assert.deepEqual(game.buyablePowerups(), POWERUP_IDS, "dev mode stocks the lot")
+  assert.deepEqual(game.buyableSpecials(), SPECIAL_IDS, "dev mode stocks the lot")
 })
 
-test("picking a powerup up is what puts it on the shop's shelf", () => {
+test("picking a special up is what puts it on the shop's shelf", () => {
   const game = liveGame()
   const player = game.player
-  const pickup = new Powerup(player.x, player.y, 0, 0, "magnet")
-  game.powerupPickups = [pickup]
+  const pickup = new Special(player.x, player.y, 0, 0, "magnet")
+  game.specialPickups = [pickup]
   player.update(1 / 60, game)
   assert.equal(carried(game)[0], "magnet", "collected into the free slot")
-  assert.ok(game.seenPowerups.has("magnet"), "and remembered as found")
+  assert.ok(game.seenSpecials.has("magnet"), "and remembered as found")
 })
 
 test("an empty slot offers what is in stock, and buying one fills that slot", () => {
   const game = liveGame()
   game.upgrades.slots = 2
-  game.findPowerup("magnet")
-  game.findPowerup("repel")
+  game.findSpecial("magnet")
+  game.findSpecial("repel")
   game.oreBalance = 1000
   game.enterShop()
   game.shopSelection = game.slotsRow
@@ -2340,15 +2340,15 @@ test("an empty slot offers what is in stock, and buying one fills that slot", ()
   assert.ok(game.slotMenu, "an empty slot opens once there is something to offer")
   assert.deepEqual(
     game.slotMenuRows(1).map((row) => row.name),
-    [POWERUP_TYPES.repel.label, POWERUP_TYPES.magnet.label],
-    "one row per powerup found, in registry order",
+    [SPECIAL_TYPES.repel.label, SPECIAL_TYPES.magnet.label],
+    "one row per special found, in registry order",
   )
   const before = game.oreBalance
   game.slotMenu.selection = 1 // MAGNET
   game.menuConfirm()
   assert.equal(carried(game)[1], "magnet", "it goes into the slot it was bought for")
   assert.equal(carried(game)[0], null, "and no other")
-  assert.equal(game.oreBalance, before - POWERUP_TYPES.magnet.cost)
+  assert.equal(game.oreBalance, before - SPECIAL_TYPES.magnet.cost)
   assert.equal(game.slotMenu, null, "the pop-over closes behind it")
   assert.deepEqual(game.savedRun.items[1], "magnet", "and the purchase is banked")
 })
@@ -2356,7 +2356,7 @@ test("an empty slot offers what is in stock, and buying one fills that slot", ()
 test("a slot is fitted from the slot it would fill, one at a time", () => {
   const game = liveGame()
   const start = game.upgrades.slots
-  game.findPowerup("magnet") // in stock, and still not offered for a locked slot
+  game.findSpecial("magnet") // in stock, and still not offered for a locked slot
   game.oreBalance = 1000
   game.enterShop()
   game.shopSelection = game.slotsRow
@@ -2385,7 +2385,7 @@ test("a slot is fitted from the slot it would fill, one at a time", () => {
 
 test("fitting a slot puts what could fill it in the pop-over straight away", () => {
   const game = liveGame()
-  game.findPowerup("magnet")
+  game.findSpecial("magnet")
   game.oreBalance = 1000
   game.enterShop()
   const slot = game.upgrades.slots
@@ -2396,7 +2396,7 @@ test("fitting a slot puts what could fill it in the pop-over straight away", () 
   assert.ok(game.slotMenu, "the pop-over stays open")
   assert.deepEqual(
     game.slotMenuRows(slot).map((row) => row.name),
-    [POWERUP_TYPES.magnet.label],
+    [SPECIAL_TYPES.magnet.label],
     "showing what the new slot could hold",
   )
   game.menuConfirm()
@@ -2407,18 +2407,18 @@ test("slots are no longer sold as a row of their own", () => {
   assert.equal(
     SHOP.find((item) => item.id === "slot"),
     undefined,
-    "the powerups row is where a slot is bought",
+    "the specials row is where a slot is bought",
   )
 })
 
-test("a powerup that cannot be afforded is not bought", () => {
+test("a special that cannot be afforded is not bought", () => {
   const game = liveGame()
-  game.findPowerup("magnet")
+  game.findSpecial("magnet")
   game.enterShop()
-  game.oreBalance = POWERUP_TYPES.magnet.cost - 1
-  game.buyPowerup(0, "magnet")
+  game.oreBalance = SPECIAL_TYPES.magnet.cost - 1
+  game.buySpecial(0, "magnet")
   assert.equal(carried(game)[0], null)
-  assert.equal(game.oreBalance, POWERUP_TYPES.magnet.cost - 1)
+  assert.equal(game.oreBalance, SPECIAL_TYPES.magnet.cost - 1)
 })
 
 test("a slot with nothing in it and nothing to offer does not open", () => {
@@ -2434,11 +2434,11 @@ test("a slot with nothing in it and nothing to offer does not open", () => {
 test("stealth toggles, drains the cell while it runs, and drops when it is empty", () => {
   const game = liveGame()
   const player = game.player
-  const type = POWERUP_TYPES.stealth
+  const type = SPECIAL_TYPES.stealth
   const item = equip(game, 0, "stealth")
   player.energy = player.energyMax
 
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   assert.equal(item.active, true)
   // Costs are a fraction of the cell, so a bigger core buys no more stealth; what
   // the ship actually loses is that draw less what it regenerates meanwhile.
@@ -2454,33 +2454,33 @@ test("stealth toggles, drains the cell while it runs, and drops when it is empty
   )
 
   // pressing again switches it off, onto its cooldown
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   assert.equal(item.active, false)
   assert.ok(item.cooldown > 0)
 
   // and running the cell dry switches it off rather than stranding the ship
   item.cooldown = 0
   player.energy = type.drain * player.energyMax * 0.2
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   for (let frame = 0; frame < 60; frame++) {
     player.update(1 / 60, game)
   }
   assert.equal(item.active, false, "it gives up when there is nothing left to draw on")
 })
 
-test("switching one powerup off leaves the others running", () => {
+test("switching one special off leaves the others running", () => {
   const game = liveGame()
   const player = game.player
   game.upgrades.slots = 2
   player.energy = player.energyMax
   equip(game, 0, "stealth")
   equip(game, 1, "booster")
-  game.usePowerupSlot(0)
-  game.usePowerupSlot(1)
+  game.useSpecialSlot(0)
+  game.useSpecialSlot(1)
   assert.equal(player.items[0].active, true)
   assert.ok(player.buffTime("booster") > 0)
 
-  game.usePowerupSlot(0) // switch stealth back off
+  game.useSpecialSlot(0) // switch stealth back off
   assert.equal(player.items[0].active, false)
   assert.ok(player.buffTime("booster") > 0, "the booster is still running")
 })
@@ -2491,7 +2491,7 @@ test("nothing hunting the player can see a stealthed ship", () => {
   player.energy = player.energyMax
   equip(game, 0, "stealth")
   assert.equal(game.visiblePlayer(), player)
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   assert.equal(game.visiblePlayer(), null, "the player is hidden")
 
   // a rock turret holds fire at a ship it cannot see
@@ -2502,7 +2502,7 @@ test("nothing hunting the player can see a stealthed ship", () => {
     if (hidden) {
       sector.player.energy = sector.player.energyMax
       equip(sector, 0, "stealth")
-      sector.usePowerupSlot(0)
+      sector.useSpecialSlot(0)
     }
     const rock = new Asteroid({
       vertices: square(400, 320, 60),
@@ -2540,7 +2540,7 @@ test("a hunting rival steers for the player only while it can see one", () => {
     player.energy = player.energyMax
     if (hidden) {
       equip(game, 0, "stealth")
-      game.usePowerupSlot(0)
+      game.useSpecialSlot(0)
     }
     const hunter = Object.keys(SHIP_TYPES).find((name) => SHIP_TYPES[name].hunts)
     assert.ok(hunter, "some ship should hunt the player")
@@ -2563,7 +2563,7 @@ test("firing the main laser gives a stealthed ship away", () => {
   const player = game.player
   player.energy = player.energyMax
   const item = equip(game, 0, "stealth")
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   assert.equal(game.visiblePlayer(), null)
   fullChargeShot(game)
   assert.equal(item.active, false, "the shot drops it")
@@ -2582,7 +2582,7 @@ test("the defense turret holds fire in stealth, but still answers the player's h
     player.energy = player.energyMax
     if (hidden) {
       equip(game, 0, "stealth")
-      game.usePowerupSlot(0)
+      game.useSpecialSlot(0)
     }
     if (manual) {
       // held through the bound control, since the ship reads its own input each
@@ -2605,12 +2605,12 @@ test("the defense turret holds fire in stealth, but still answers the player's h
   assert.ok(armed(true, true) > 0, "unless the player is working it by hand")
 })
 
-test("a powerup left too long flashes out rather than blinking away", () => {
+test("a special left too long flashes out rather than blinking away", () => {
   const game = liveGame()
   game.player.x = -9000 // well clear, so it expires rather than being collected
   game.player.y = -9000
-  const pickup = new Powerup(ARENA.cx, ARENA.cy, 0, 0, "magnet")
-  game.powerupPickups = [pickup]
+  const pickup = new Special(ARENA.cx, ARENA.cy, 0, 0, "magnet")
+  game.specialPickups = [pickup]
   pickup.life = CONFIG.EXPIRY_WARN
   game.particles = []
   for (let frame = 0; frame < Math.ceil(CONFIG.EXPIRY_WARN * 60) + 2; frame++) {
@@ -2620,47 +2620,47 @@ test("a powerup left too long flashes out rather than blinking away", () => {
   assert.ok(game.particles.length > 0, "and left something behind when it did")
 })
 
-test("a loose powerup names itself for a ship close by, when help text is on", () => {
+test("a loose special names itself for a ship close by, when help text is on", () => {
   // Counted as drawn text, since the label is the whole point of the feature.
   const labels = (distance, help) => {
     const game = liveGame()
     game.settings.help = help
     game.player.x = ARENA.cx
     game.player.y = ARENA.cy
-    const pickup = new Powerup(ARENA.cx + distance, ARENA.cy, 0, 0, "magnet")
+    const pickup = new Special(ARENA.cx + distance, ARENA.cy, 0, 0, "magnet")
     const drawn = []
     const renderer = { strokePoly() {}, line() {}, circle() {}, text: (str) => drawn.push(str) }
     pickup.draw(renderer, game)
     return drawn
   }
-  const near = CONFIG.POWERUP_LABEL_RANGE * 0.5,
-    far = CONFIG.POWERUP_LABEL_RANGE * 1.5
-  assert.ok(labels(near, true).includes(POWERUP_TYPES.magnet.label), "named when close by")
+  const near = CONFIG.SPECIAL_LABEL_RANGE * 0.5,
+    far = CONFIG.SPECIAL_LABEL_RANGE * 1.5
+  assert.ok(labels(near, true).includes(SPECIAL_TYPES.magnet.label), "named when close by")
   assert.ok(
-    !labels(far, true).includes(POWERUP_TYPES.magnet.label),
+    !labels(far, true).includes(SPECIAL_TYPES.magnet.label),
     "and not from across the sector",
   )
-  assert.ok(!labels(near, false).includes(POWERUP_TYPES.magnet.label), "nor with help text off")
+  assert.ok(!labels(near, false).includes(SPECIAL_TYPES.magnet.label), "nor with help text off")
 })
 
 test("the shop stocks only what the registry says is for sale", () => {
   const game = liveGame()
   game.devMode = true
-  assert.deepEqual(game.buyablePowerups(), POWERUP_IDS, "everything is for sale today")
-  for (const id of POWERUP_IDS) {
-    assert.equal(typeof POWERUP_TYPES[id].buyable, "boolean", `${id} must say either way`)
+  assert.deepEqual(game.buyableSpecials(), SPECIAL_IDS, "everything is for sale today")
+  for (const id of SPECIAL_IDS) {
+    assert.equal(typeof SPECIAL_TYPES[id].buyable, "boolean", `${id} must say either way`)
   }
   // and one taken off the shelf is gone from the list, dev mode or not
-  const id = POWERUP_IDS[0]
-  const was = POWERUP_TYPES[id].buyable
-  POWERUP_TYPES[id].buyable = false
+  const id = SPECIAL_IDS[0]
+  const was = SPECIAL_TYPES[id].buyable
+  SPECIAL_TYPES[id].buyable = false
   try {
-    assert.ok(!game.buyablePowerups().includes(id), "not offered in dev mode")
-    game.findPowerup(id)
+    assert.ok(!game.buyableSpecials().includes(id), "not offered in dev mode")
+    game.findSpecial(id)
     game.devMode = false
-    assert.ok(!game.buyablePowerups().includes(id), "nor once the run has found one")
+    assert.ok(!game.buyableSpecials().includes(id), "nor once the run has found one")
   } finally {
-    POWERUP_TYPES[id].buyable = was
+    SPECIAL_TYPES[id].buyable = was
   }
 })
 
@@ -3160,7 +3160,7 @@ function drawnBearings(game, body) {
 function hideThePlayer(game) {
   game.player.energy = game.player.energyMax
   equip(game, 0, "stealth")
-  game.usePowerupSlot(0)
+  game.useSpecialSlot(0)
   assert.equal(game.visiblePlayer(), null, "the pose must actually be hidden")
 }
 
@@ -4009,7 +4009,7 @@ test("sector plans follow PROGRESSION", () => {
   const game = new Game()
   const early = game.planLevel(1)
   assert.equal(early.rivals, 0, "no rivals in sector 1")
-  assert.equal(early.powerups, false, "and no powerups yet")
+  assert.equal(early.specials, false, "and no specials yet")
   const late = game.planLevel(40)
   assert.equal(late.spawns.length, PROGRESSION.rocks.max, "the rock count is capped")
   assert.equal(late.rivals, PROGRESSION.rivals.max, "as is the rival count")

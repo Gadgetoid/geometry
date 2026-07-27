@@ -284,7 +284,7 @@
       // modules rather than by restating them: every registry is walked for
       // whatever keys it happens to have, and anything the game works out at
       // runtime is worked out here by calling the same code. Adding a weapon, a
-      // powerup, a ship or a tuning value shows up here without this file
+      // special, a ship or a tuning value shows up here without this file
       // changing.
       //
       // Nothing in src/ is imported by this page in reverse: it reads, and writes
@@ -869,30 +869,30 @@
         ),
       )
 
-      // ---- powerups ---------------------------------------------------------
+      // ---- specials ---------------------------------------------------------
 
-      const POWERUP_META = ["label", "short", "icon", "colour", "apply"]
+      const SPECIAL_META = ["label", "short", "icon", "colour", "apply"]
 
       section(
-        "powerups",
-        "POWERUPS",
-        "Every entry in POWERUP_TYPES. `mode` says how it is used: a pulse fires once per press, " +
+        "specials",
+        "SPECIALS",
+        "Every entry in SPECIAL_TYPES. `mode` says how it is used: a pulse fires once per press, " +
           "a toggle runs while it is on and drains, a timed one lasts `seconds`, a single is spent. " +
           "The fields below the divider are what the simulation reads off an active one, so a new " +
-          "field appears here as soon as a powerup carries it. What a sell fetches comes from " +
-          "Game.powerupSellValue.",
+          "field appears here as soon as a special carries it. What a sell fetches comes from " +
+          "Game.specialSellValue.",
         el(
           "div",
           { className: "cards" },
-          Object.entries(config.POWERUP_TYPES).map(([name, type]) =>
+          Object.entries(config.SPECIAL_TYPES).map(([name, type]) =>
             card(
               `${type.icon}  ${type.label}`,
               type.colour,
-              pairs(type, POWERUP_META),
+              pairs(type, SPECIAL_META),
               probe
                 ? el("div", { className: "pairs" }, [
                     el("b", { textContent: "sells for" }),
-                    el("span", {}, document.createTextNode(`${probe.powerupSellValue(name)} ore`)),
+                    el("span", {}, document.createTextNode(`${probe.specialSellValue(name)} ore`)),
                   ])
                 : null,
               type.apply
@@ -1042,7 +1042,7 @@
         probe.upgrades.slots = before
         shopCards.push(
           card(
-            "POWERUP SLOT",
+            "SPECIAL SLOT",
             null,
             el("p", {
               className: "note",
@@ -1294,7 +1294,7 @@
             `${Math.round((hazardous / Math.max(1, rocks)) * 100)}%`,
             plan.rivals,
             plan.rivals ? `${num(plan.rivalInterval)}s` : "-",
-            plan.powerups ? "yes" : "no",
+            plan.specials ? "yes" : "no",
             guns.join(", ") || "-",
           ])
           mixes.push([
@@ -1323,7 +1323,7 @@
               "hazard chance",
               "rivals at once",
               "arrival gap",
-              "powerups",
+              "specials",
               "rock guns",
             ],
             rows,
@@ -1344,7 +1344,7 @@
           "action with no entry for a device does not appear in that device's section: a pad steers " +
           "with a stick, so there is nothing to bind for turning.",
         dataTable(
-          ["action", "name", "keyboard", "gamepad", "powerup slot"],
+          ["action", "name", "keyboard", "gamepad", "special slot"],
           config.BINDABLE_CONTROLS.map((action) => [
             action.id,
             action.name,

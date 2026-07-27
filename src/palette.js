@@ -111,8 +111,8 @@ export const PALETTE = {
     dust: "#cfe0ff",
   },
 
-  // powerups, one per POWERUP_TYPES entry
-  powerup: {
+  // specials, one per SPECIAL_TYPES entry
+  special: {
     repel: "#ff6bd0",
     refuel: "#57e39a",
     booster: "#ffcf5c",

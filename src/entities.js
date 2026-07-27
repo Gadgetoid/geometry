@@ -45,7 +45,7 @@ import {
   SHIP_TYPES,
   PLAYER_TYPE,
   AST_SHAPE,
-  POWERUP_TYPES,
+  SPECIAL_TYPES,
   MAX_SLOTS,
   SHIELD_SPARK,
   barrelCount,
@@ -53,7 +53,7 @@ import {
 import { Sound } from "./audio.js"
 import { PALETTE, mixColour } from "./palette.js"
 
-const SINGLE_BEAM_OFFSETS = [0] // the player's laser without the multi powerup
+const SINGLE_BEAM_OFFSETS = [0] // the player's laser without the multi special
 
 // Mass a rock's area implies, in the same units as a ship type's `mass`.
 export function rockMass(area) {
@@ -425,7 +425,7 @@ export class Entity {
     return true
   }
 
-  // How far this body notices `what`, one of ships, rocks, ore or powerups.
+  // How far this body notices `what`, one of ships, rocks, ore or specials.
   // Everything sees as far as the sensor floor, which is a circle over what is on
   // screen, and a fitted radar set reaches past it for the kinds it covers. So a
   // hull with nothing fitted is not blind, it is just short-sighted.
@@ -1315,7 +1315,7 @@ export class PlayerShip extends Ship {
     // One entry per slot, null where the slot is empty, so a slot's index is its
     // identity: buying into the third slot puts it in the third box.
     this.items = new Array(MAX_SLOTS).fill(null)
-    this.buffs = new Map() // powerup id -> seconds of effect remaining
+    this.buffs = new Map() // special id -> seconds of effect remaining
     this.turretAim = 0
     this.turretManual = 0 // time left under player (arrow-key) control
     this.turretFiring = false
@@ -1417,7 +1417,7 @@ export class PlayerShip extends Ship {
     }
   }
 
-  // Put a powerup in a slot. The slot holds its own state, so a level or any
+  // Put a special in a slot. The slot holds its own state, so a level or any
   // other per-copy property has somewhere to live beside the cooldown.
   equip(slot, id) {
     this.items[slot] = { id, cooldown: 0, active: false }
@@ -1434,26 +1434,26 @@ export class PlayerShip extends Ship {
     return -1
   }
 
-  // Seconds left on a timed powerup, 0 when it is not running.
+  // Seconds left on a timed special, 0 when it is not running.
   buffTime(id) {
     return this.buffs.get(id) ?? 0
   }
 
-  // Every powerup effect currently running: the timed ones, and any toggle that
+  // Every special effect currently running: the timed ones, and any toggle that
   // is switched on.
   *activeEffects() {
     for (const id of this.buffs.keys()) {
-      yield POWERUP_TYPES[id]
+      yield SPECIAL_TYPES[id]
     }
     for (const item of this.items) {
       if (item && item.active) {
-        yield POWERUP_TYPES[item.id]
+        yield SPECIAL_TYPES[item.id]
       }
     }
   }
 
-  // The running powerup type declaring `field`, or null. Effects are named in
-  // POWERUP_TYPES rather than tested for by id, so the gameplay code below asks
+  // The running special type declaring `field`, or null. Effects are named in
+  // SPECIAL_TYPES rather than tested for by id, so the gameplay code below asks
   // "is anything lengthening my beam?" instead of "is BOOSTER running?".
   buffWith(field) {
     for (const type of this.activeEffects()) {
@@ -1480,32 +1480,32 @@ export class PlayerShip extends Ship {
     }
     item.active = false
     this.buffs.delete(item.id)
-    item.cooldown = POWERUP_TYPES[item.id].cooldown
+    item.cooldown = SPECIAL_TYPES[item.id].cooldown
   }
 
   // Stop whatever is running that declares `field`, wherever it is held: a timed
   // effect is dropped and a toggle is switched off, both onto their cooldowns.
   endEffectsWith(field) {
     for (const [id, remaining] of this.buffs) {
-      if (POWERUP_TYPES[id][field] !== undefined && remaining > 0) {
+      if (SPECIAL_TYPES[id][field] !== undefined && remaining > 0) {
         this.buffs.delete(id)
         this.#beginCooldown(id)
       }
     }
     for (const item of this.items) {
-      if (item && item.active && POWERUP_TYPES[item.id][field] !== undefined) {
+      if (item && item.active && SPECIAL_TYPES[item.id][field] !== undefined) {
         item.active = false
-        item.cooldown = POWERUP_TYPES[item.id].cooldown
+        item.cooldown = SPECIAL_TYPES[item.id].cooldown
       }
     }
   }
 
   // A timed effect is held in `buffs` by id, so its cooldown has to be found in
-  // whichever slots carry that powerup.
+  // whichever slots carry that special.
   #beginCooldown(id) {
     for (const item of this.items) {
       if (item && item.id === id) {
-        item.cooldown = POWERUP_TYPES[id].cooldown
+        item.cooldown = SPECIAL_TYPES[id].cooldown
       }
     }
   }
@@ -1528,7 +1528,7 @@ export class PlayerShip extends Ship {
       if (!item) {
         continue
       }
-      const type = POWERUP_TYPES[item.id]
+      const type = SPECIAL_TYPES[item.id]
       if (item.active) {
         this.energy = Math.max(0, this.energy - type.drain * this.energyMax * dt)
         if (this.energy <= 0) {
@@ -1627,7 +1627,7 @@ export class PlayerShip extends Ship {
     Sound.fire(0.9 + 0.35 * chargeFrac) // pitch rises slightly with charge
   }
 
-  // Charged-beam reach multiplier, extended by a powerup that declares one.
+  // Charged-beam reach multiplier, extended by a special that declares one.
   beamLengthMult() {
     return this.buffField("beamLengthMult", 1)
   }
@@ -1857,10 +1857,10 @@ export class PlayerShip extends Ship {
       }
     }
 
-    // Pick up powerups into a free inventory slot. One just thrown overboard is
+    // Pick up specials into a free inventory slot. One just thrown overboard is
     // still arming, and is passed over until it settles.
-    for (let i = game.powerupPickups.length - 1; i >= 0; i--) {
-      const pickup = game.powerupPickups[i]
+    for (let i = game.specialPickups.length - 1; i >= 0; i--) {
+      const pickup = game.specialPickups[i]
       const slot = this.freeSlot(game.upgrades.slots)
       if (
         pickup.arming <= 0 &&
@@ -1868,12 +1868,12 @@ export class PlayerShip extends Ship {
         Math.hypot(pickup.x - this.x, pickup.y - this.y) < this.radius + 14
       ) {
         this.equip(slot, pickup.type)
-        game.powerupPickups.splice(i, 1)
-        game.findPowerup(pickup.type)
+        game.specialPickups.splice(i, 1)
+        game.findSpecial(pickup.type)
         Sound.power()
-        const spec = POWERUP_TYPES[pickup.type]
+        const spec = SPECIAL_TYPES[pickup.type]
         game.burst(pickup.x, pickup.y, 12, spec.colour, 30, 120, 0.6)
-        game.showToast(`${spec.label} POWERUP COLLECTED`)
+        game.showToast(`${spec.label} SPECIAL COLLECTED`)
       }
     }
 
@@ -1996,7 +1996,7 @@ export class PlayerShip extends Ship {
       : this.energy < this.energyMax * 0.22
         ? PALETTE.player.lowEnergy
         : this.colour
-    // A powerup that hides the ship draws it faint, so the player can still fly
+    // A special that hides the ship draws it faint, so the player can still fly
     // it while nothing else can see it.
     const fade = this.buffField("hullAlpha", 1)
 
@@ -2867,7 +2867,7 @@ export class Asteroid extends Entity {
 }
 
 // ---------------------------------------------------------------------------
-// Ore chunk and powerup pickup (simple drifting collectables).
+// Ore chunk and special pickup (simple drifting collectables).
 // ---------------------------------------------------------------------------
 // How close a collectable is to expiring, 0 until its last few seconds and 1 as
 // it goes. Drives the flash that warns it is about to be lost.
@@ -2890,7 +2890,7 @@ export class Ore extends Entity {
     this.life -= dt
     const player = game.player,
       dist = Math.hypot(this.x - player.x, this.y - player.y)
-    // A powerup declaring a `pull` reaches the whole sector; the fitted magnet
+    // A special declaring a `pull` reaches the whole sector; the fitted magnet
     // only works inside its range.
     const buffPull = player.buffField("pull", 0)
     if (game.oreVacuum || buffPull || dist < CONFIG.MAGNET_RANGE[game.upgrades.magnet]) {
@@ -2929,14 +2929,14 @@ export class Ore extends Entity {
   }
 }
 
-export class Powerup extends Entity {
+export class Special extends Entity {
   constructor(x, y, vx, vy, type) {
     super(x, y)
     this.vx = vx
     this.vy = vy
     this.type = type
     this.angle = 0
-    this.life = CONFIG.POWERUP_LIFE
+    this.life = CONFIG.SPECIAL_LIFE
     // Seconds before it can be picked up. One that spawned in the sector is live
     // at once; one just thrown overboard has to clear the ship first.
     this.arming = 0
@@ -2952,11 +2952,11 @@ export class Powerup extends Entity {
     this.vx *= Math.pow(this.drag, dt)
     this.vy *= Math.pow(this.drag, dt)
     this.integrate(dt)
-    // A powerup is something to come back for, so it bounces off the arena wall
+    // A special is something to come back for, so it bounces off the arena wall
     // instead of leaving the sector.
     this.confine(0.5, 24)
     if (this.life <= 0) {
-      const spec = POWERUP_TYPES[this.type]
+      const spec = SPECIAL_TYPES[this.type]
       game.burst(this.x, this.y, randInt(10, 16), spec.colour, 40, 170, 0.5)
       game.ring(this.x, this.y, 10, spec.colour, 90, 0.4)
       this.dead = true
@@ -2964,7 +2964,7 @@ export class Powerup extends Entity {
   }
 
   draw(renderer, game) {
-    const spec = POWERUP_TYPES[this.type]
+    const spec = SPECIAL_TYPES[this.type]
     // Two flashes with nothing to do with each other: one still arming cannot be
     // picked up, and one near the end of its life is about to be lost.
     const urgency = expiryUrgency(this.life)
@@ -3002,7 +3002,7 @@ export class Powerup extends Entity {
     if (!game.settings.help || !player || !game.canFly()) {
       return
     }
-    const range = CONFIG.POWERUP_LABEL_RANGE
+    const range = CONFIG.SPECIAL_LABEL_RANGE
     const distance = Math.hypot(this.x - player.x, this.y - player.y)
     if (distance > range) {
       return

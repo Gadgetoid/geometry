@@ -13,7 +13,7 @@ import {
   SHOP,
   SHOP_LAYOUT,
   MAX_SLOTS,
-  POWERUP_TYPES,
+  SPECIAL_TYPES,
 } from "./config.js"
 import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
@@ -207,7 +207,7 @@ export class GameView {
       for (const asteroid of game.asteroids) {
         asteroid.draw(r, game)
       }
-      for (const pickup of game.powerupPickups) {
+      for (const pickup of game.specialPickups) {
         pickup.draw(r, game)
       }
       for (const rival of game.rivals) {
@@ -434,8 +434,8 @@ export class GameView {
       const colour = a.explosive ? PALETTE.rock.explosive : PALETTE.rock.gun
       mark(a.center.x, a.center.y, colour, 9, sees("rocks"))
     }
-    for (const pickup of game.powerupPickups) {
-      mark(pickup.x, pickup.y, POWERUP_TYPES[pickup.type].colour, 7, sees("powerups"))
+    for (const pickup of game.specialPickups) {
+      mark(pickup.x, pickup.y, SPECIAL_TYPES[pickup.type].colour, 7, sees("specials"))
     }
     for (const rv of game.rivals) {
       if (!rv.dead) {
@@ -537,7 +537,7 @@ export class GameView {
     if (low) {
       fillW = barW * fraction * (0.85 + 0.15 * Math.sin(game.gameTime * 10))
     }
-    // a powerup that tints the ship tints its energy bar to match
+    // a special that tints the ship tints its energy bar to match
     const tint = game.player ? game.player.buffWith("tintsShip") : null
     const barColour = tint ? tint.colour : low ? PALETTE.ui.warn : PALETTE.player.hull
     r.rect(barX + ui, barY + ui, Math.max(0, fillW - 2 * ui), barH - 2 * ui, {
@@ -569,7 +569,7 @@ export class GameView {
       r.text(offline ? "SHIELD OFFLINE" : "SHIELD", barX + 46 * ui, barY - 4 * ui, {
         size: 9 * ui,
         color: offline ? PALETTE.ui.warn : PALETTE.shield.spark,
-      }) // beside ENERGY, clear of the powerup slots at the right edge
+      }) // beside ENERGY, clear of the special slots at the right edge
     }
 
     if (game.player) {
@@ -581,7 +581,7 @@ export class GameView {
         const sx = startX + i * (size + gap),
           sy = barY - 4 * ui - size,
           item = game.player.items[i]
-        const spec = item ? POWERUP_TYPES[item.id] : null
+        const spec = item ? SPECIAL_TYPES[item.id] : null
         r.rect(sx, sy, size, size, {
           stroke: spec ? spec.colour : PALETTE.ui.slotEmpty,
           width: 1.2 * ui,
@@ -633,7 +633,7 @@ export class GameView {
     if (game.player) {
       let row = 0
       for (const [id, remaining] of game.player.buffs) {
-        const spec = POWERUP_TYPES[id]
+        const spec = SPECIAL_TYPES[id]
         r.text(
           `${spec.short || spec.label} ${remaining.toFixed(1)}s`,
           VIEW_W / 2,
@@ -786,7 +786,7 @@ export class GameView {
       rightX = VIEW_W / 2 + 250,
       top = 146,
       rowHeight = 32
-    // The purchases and the powerups row share one column, so the running y is what
+    // The purchases and the specials row share one column, so the running y is what
     // places the group gap and everything below the list.
     let y = top,
       slotsY = top
@@ -890,7 +890,7 @@ export class GameView {
     }
   }
 
-  // Where a powerup slot sits on the shop's right-hand column. The row and the
+  // Where a special slot sits on the shop's right-hand column. The row and the
   // pop-over that opens on one both place themselves from here, so they line up.
   #slotBox(rightX, index) {
     const size = 26,
@@ -899,12 +899,12 @@ export class GameView {
     return { x: rightX - width + index * (size + spacing), size }
   }
 
-  // The powerups row: the heading under the item names, the slots under the costs.
+  // The specials row: the heading under the item names, the slots under the costs.
   // A slot the ship has not been fitted with is drawn faint but is still reachable,
   // since selecting it is how the next one is bought.
   #shopSlots(game, leftX, rightX, y, selected) {
     const r = this.renderer
-    r.text(`${selected ? "> " : "  "}POWERUPS`, leftX, y, {
+    r.text(`${selected ? "> " : "  "}SPECIALS`, leftX, y, {
       size: 15,
       bold: selected,
       color: selected ? PALETTE.text.bright : PALETTE.text.normal,
@@ -934,7 +934,7 @@ export class GameView {
     }
   }
 
-  // The pop-over on one powerup slot, hung under the slot it belongs to and pulled
+  // The pop-over on one special slot, hung under the slot it belongs to and pulled
   // back inside the right-hand column where it would otherwise overhang. It is
   // headed by what is in the slot, so which one is being worked on is never in
   // doubt once the panel covers the row.
@@ -945,7 +945,7 @@ export class GameView {
     const { x } = this.#slotBox(rightX, slot)
     const spec = game.slotType(slot)
     const titleHeight = 20
-    const width = 200, // wide enough for the longest powerup name beside its price
+    const width = 200, // wide enough for the longest special name beside its price
       rowHeight = 20,
       // the title, the rows, and the line saying how to work them
       height = titleHeight + rows.length * rowHeight + 28
