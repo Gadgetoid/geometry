@@ -40,25 +40,22 @@ one per rival tier, so the spawn tables and the controllers carried over and bei
 alien is a faction, a colour and how it is drawn. They fight rivals as readily as
 the player, since every gun asks one question of the faction table.
 
-What is there: the shapes, green, and the pincer's jaw guns held to the front by a
-mount arc. What is not:
+What is there: the shapes, green, the pincer's jaw guns held to the front by a mount
+arc, the singularity it holds in them, drives that burn green with a rounded plume,
+a permanent faint ripple in the space each one occupies, and `ALIEN_PLATING`, so a
+cut alien burns and smokes in their own colour. What is not:
 
-- **The look.** They are ordinary green hulls at the moment. They should be set
-  apart by a localised distortion and glitch over the space they occupy, in the
-  spirit of the warp ripple the view already runs on arrival. The effect is the
-  point: organic, wrong, and a little outside the game the rest of the screen is
-  playing. See Alien weapons, which wants the same shader.
-- **Green where they are cut.** The burn colour is the material's to state, so this
-  is an `ALIEN_PLATING` beside `SHIP_PLATING` and the three sites that hard-code
-  `PALETTE.fx.fire` reading it from there instead.
+- **The glitch over them.** They bend space around themselves, but the tearing that
+  is meant to go with it only happens where their shots land. Over a hull it wants
+  to be constant and low: organic, wrong, and a little outside the game the rest of
+  the screen is playing.
 - **A spawn budget of their own.** They share the rivals' one, so an alien arriving
   is a rival that did not. `PROGRESSION.rivals` wants generalising to a table per
   faction.
-- **The singularity in the pincer's jaws**, which is the fight it was drawn for.
-  Flying into the well is bad news, so the approach is the fight. Cut the hull
-  while the well is live and the halves are wreckage inside a field that no longer
-  knows them, which is the ship killing itself if you time the shot: emergent, not
-  edge cased.
+
+The singularity in the jaws is the fight the pincer was drawn for, and it is there:
+flying into the well is bad news, so the approach is the fight, and a hull cut while
+its own well is live leaves halves inside a field that no longer knows them.
 
 The pincer's mouth is a real void: contact is decided part by part, so a rock sits
 in the jaws touching nothing and stays cuttable through the opening. Its hull is
