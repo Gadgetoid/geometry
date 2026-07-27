@@ -1904,6 +1904,11 @@
             "Reverse the winding of the outline.",
           ],
           ["CENTRE", centreOutline, "Move everything so the hull's centroid is on the origin."],
+          [
+            "SCALE",
+            scaleOutline,
+            "Resize the whole design about the origin, by a factor or to a span.",
+          ],
           ["FIT (F)", fitView, "Fit the whole ship in the view."],
         ]
         for (const [name, action, hint, id] of extra) {
@@ -2021,6 +2026,45 @@
 
       // Move the outline so its centroid sits on the origin, which is the point the
       // hull rotates about.
+      // Resize the whole design about the origin: the outline and every hardpoint
+      // together, so what is mounted stays where it was on the hull. Geometry is in
+      // world units, so a design can be drawn at whatever size is comfortable and
+      // then set to the size it should be. Answering with a span rather than a
+      // factor is the common case: a hull is usually specified as "this long".
+      function scaleOutline() {
+        const across = extent(ship.outline, 0)
+        const answer = prompt(
+          `Scale by a factor, or give a target span with x (currently ${round(across)} across).` +
+            "\n\ne.g.  1.5   or   x200",
+          `x${round(across)}`,
+        )
+        if (!answer) {
+          return
+        }
+        const text = answer.trim()
+        const target = text.startsWith("x") || text.startsWith("X")
+        const value = Number(text.slice(target ? 1 : 0))
+        if (!Number.isFinite(value) || value <= 0) {
+          setStatus("scale needs a positive factor, or x followed by a target span")
+          return
+        }
+        if (target && across <= 0) {
+          setStatus("the outline has no span to scale to")
+          return
+        }
+        const factor = target ? value / across : value
+        pushUndo()
+        const by = ([x, y]) => [round(x * factor), round(y * factor)]
+        ship.outline = ship.outline.map(by)
+        ship.hardpoints.forEach((hp) => (hp.local = by(hp.local)))
+        fitView()
+        rebuild()
+        setStatus(
+          `scaled by ${factor.toFixed(3)}, now ${round(extent(ship.outline, 0))} by ` +
+            `${round(extent(ship.outline, 1))}`,
+        )
+      }
+
       function centreOutline() {
         const [cx, cy] = centroid(ship.outline)
         pushUndo()
