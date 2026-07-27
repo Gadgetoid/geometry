@@ -1222,6 +1222,7 @@ export const EQUIPMENT = {
   // not issued. It sits in the core, which is what carries it.
   shield: {
     label: "SHIELD",
+    desc: "An energy bubble. Damage drains the cell instead of the hull, until it runs out.",
     hp: 1,
     mount: "shield",
     slot: "shield",
@@ -1229,25 +1230,25 @@ export const EQUIPMENT = {
     options: [
       {
         id: "playerShieldMk1",
-        name: "PLATING MK I",
+        name: "SHIELD MK I",
         desc: "A bubble at last. Turns damage into energy drain until the cell gives out.",
         cost: 40,
       },
       {
         id: "playerShieldMk2",
-        name: "PLATING MK II",
+        name: "SHIELD MK II",
         desc: "Drains 1.44 energy a point instead of 2, so the same cell soaks more.",
         cost: 85,
       },
       {
         id: "playerShieldMk3",
-        name: "PLATING MK III",
+        name: "SHIELD MK III",
         desc: "A point of damage costs a point of energy.",
         cost: 130,
       },
       {
         id: "playerShieldMk4",
-        name: "PLATING MK IV",
+        name: "SHIELD MK IV",
         desc: "0.64 a point: the cell goes three times as far against fire as Mk I.",
         cost: 175,
       },
@@ -1255,6 +1256,7 @@ export const EQUIPMENT = {
   },
   laser: {
     label: "LASER",
+    desc: "The cutting beam. Hold to charge: reach is what charge buys, damage follows gently.",
     hp: 0,
     mount: "weapon",
     controller: "manual",
@@ -1292,6 +1294,7 @@ export const EQUIPMENT = {
   },
   engine: {
     label: "ENGINE",
+    desc: "What pushes the ship, and whether it can push backwards.",
     hp: 3,
     mount: "engine",
     options: [
