@@ -655,6 +655,7 @@ export class Weapon {
         Math.sin(aim) * this.type.speed,
         this.type.damage,
         host,
+        this.type,
       ),
     )
     game.burst(x, y, 4, this.type.colour, 40, 120, 0.3)
@@ -1073,17 +1074,23 @@ export class Shield {
 // Projectile: damages every entity except its owner (friendly fire).
 // ---------------------------------------------------------------------------
 export class Projectile extends Entity {
-  constructor(x, y, vx, vy, damage, owner) {
+  constructor(x, y, vx, vy, damage, owner, type = null) {
     super(x, y)
     this.vx = vx
     this.vy = vy
     this.damage = damage
     this.owner = owner
+    // The gun that fired it, so a round is drawn the way that gun's rounds look
+    // rather than the way every round in the game used to look.
+    this.type = type
     this.life = CONFIG.BULLET_LIFE
+    this.age = 0
   }
 
   update(dt, game) {
     this.life -= dt
+    this.age += dt
+    this.#steer(dt, game)
     this.integrate(dt)
     if (
       this.life <= 0 ||
@@ -1145,12 +1152,79 @@ export class Projectile extends Entity {
     return dx * dx + dy * dy <= radius * radius
   }
 
+  // A shot that leans toward what it was fired at. `homing` is the gun's: `turn` is
+  // how many radians a second it can bend its course by and `reach` how far it looks.
+  // Speed is untouched, so it curves rather than accelerating, and a slow one can
+  // still be flown around, which is the whole point of a slow one.
+  //
+  // It hunts through the faction table, like everything else that picks a target, and
+  // asks on behalf of whoever fired it. With that host gone it stops steering: a ball
+  // with nothing behind it carries on as it was going.
+  #steer(dt, game) {
+    const homing = this.type && this.type.homing
+    if (!homing || !this.owner || this.owner.dead) {
+      return
+    }
+    const found = game.hostileTarget(this.owner, this, homing.reach)
+    if (!found) {
+      return
+    }
+    const speed = Math.hypot(this.vx, this.vy)
+    if (speed < 1) {
+      return
+    }
+    const turn = clamp(
+      shortestTurn(Math.atan2(this.vy, this.vx), bearingTo(this, found.target)),
+      -homing.turn * dt,
+      homing.turn * dt,
+    )
+    const heading = Math.atan2(this.vy, this.vx) + turn
+    this.vx = Math.cos(heading) * speed
+    this.vy = Math.sin(heading) * speed
+  }
+
+  // A round looks like whatever fired it. Without a `shot` spec it is the streak
+  // every gun in the game drew before guns had a say: a short smear back along its
+  // own travel. With one it can be a ball instead, breathing as it goes, which is
+  // what the aliens throw.
   draw(renderer) {
-    renderer.line(this.x, this.y, this.x - this.vx * 0.02, this.y - this.vy * 0.02, {
-      color: PALETTE.weapon.gun,
-      width: 2,
-      glow: 10,
-      cap: "round",
+    const colour = (this.type && this.type.colour) || PALETTE.weapon.gun
+    const shot = this.type && this.type.shot
+    if (!shot) {
+      renderer.line(this.x, this.y, this.x - this.vx * 0.02, this.y - this.vy * 0.02, {
+        color: colour,
+        width: 2,
+        glow: 10,
+        cap: "round",
+      })
+      return
+    }
+    if (shot.streak) {
+      renderer.line(
+        this.x,
+        this.y,
+        this.x - this.vx * shot.streak,
+        this.y - this.vy * shot.streak,
+        {
+          color: colour,
+          width: 2,
+          glow: 10,
+          cap: "round",
+        },
+      )
+    }
+    if (!shot.radius) {
+      return
+    }
+    const breath = shot.pulse ? 1 + 0.18 * Math.sin(this.age * shot.pulse) : 1
+    renderer.circle(this.x, this.y, shot.radius * breath, {
+      stroke: colour,
+      width: 1.6,
+      glow: 18,
+    })
+    renderer.circle(this.x, this.y, shot.radius * 0.35, {
+      fill: shot.core || PALETTE.alien.shotCore,
+      glow: 12,
     })
   }
 }

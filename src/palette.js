@@ -83,6 +83,10 @@ export const PALETTE = {
   // the glitch pass over them are still to come, see ROADMAP.md.
   alien: {
     hull: "#5cff9a",
+    shot: "#8bffb0", // the orbs their turrets throw
+    shotCore: "#e8fff0", // and the bright middle of one
+    beam: "#3dffb4",
+    shield: "#7dffd0",
   },
 
   // asteroids. Plain rock is a size ramp between `sizeCool` and `sizeWarm`;

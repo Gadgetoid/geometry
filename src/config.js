@@ -553,6 +553,62 @@ export const WEAPON_TYPES = {
     speed: 380,
     colour: PALETTE.player.turret,
   },
+  // ---------------------------------------------------------------------------
+  // ALIEN GUNS. They fire through the same modules and controllers as anything else:
+  // what sets them apart is that they do their damage by bending the space a hull is
+  // in, which is why they are slow, quiet and hard to read.
+  //
+  // `shot` is how a projectile draws itself, so a gun's rounds look like its own
+  // rounds: `radius` is the ball, `streak` how far it smears back along its travel
+  // (0 for a ball that does not), and `pulse` how fast it breathes. A gun without one
+  // draws the streak every gun used to draw.
+  // ---------------------------------------------------------------------------
+  // What the turrets throw: slow, heavy and dodgeable, which is what makes a hull
+  // ringed with them a problem of approach rather than a problem of reflexes.
+  warpOrb: {
+    kind: "projectile",
+    mass: 0.08,
+    damage: 150,
+    energy: 10,
+    reload: [1.3, 2.1],
+    speed: 130,
+    // It leans after what it was fired at rather than flying where it was pointed,
+    // gently enough that flying around it still works: at this speed and this turn it
+    // takes four seconds to come about, and it does not live that long.
+    homing: { turn: 0.8, reach: 700 },
+    shot: { radius: 5.5, streak: 0, pulse: 9 },
+    colour: PALETTE.alien.shot,
+    survivesDebris: true,
+  },
+  // The alien seeker's: a snap, as its rival counterpart's is.
+  warpNeedle: {
+    kind: "beam",
+    mass: 0.04,
+    damage: 45,
+    energy: 24,
+    reload: [0.9, 1.4],
+    length: 440,
+    width: 3,
+    glow: 16,
+    arc: 0.35,
+    chargeTime: 0.22,
+    sound: "snapLaser",
+    colour: PALETTE.alien.beam,
+  },
+  // And the alien scout's, which cuts rock for ore exactly as a miner's does. They
+  // compete for the same sector.
+  warpCutter: {
+    kind: "beam",
+    mass: 0.02,
+    damage: 30,
+    energy: 16,
+    reload: [1.4, 2.6],
+    length: [320, 520],
+    width: 2.4,
+    glow: 18,
+    triggerRange: 420,
+    colour: PALETTE.alien.beam,
+  },
   // The player's cutting beam, in the marks the shop sells. Each states the whole
   // gun rather than a multiplier on the one below, so what a mark does is read off
   // its own entry instead of out of four tables indexed in parallel.
@@ -1515,10 +1571,10 @@ const SHIP_DESIGNS = {
       { hp: 0, weapon: "cannonLaser", controller: "hunter" },
       // Just under a right angle either side, so a jaw gun covers the mouth and the
       // approach to it and cannot answer anything astern.
-      { hp: 1, weapon: "autocannon", controller: "turret", arc: 1.5 },
-      { hp: 2, weapon: "autocannon", controller: "turret", arc: 1.5 },
-      { hp: 3, weapon: "autocannon", controller: "turret" },
-      { hp: 4, weapon: "autocannon", controller: "turret" },
+      { hp: 1, weapon: "warpOrb", controller: "turret", arc: 1.5 },
+      { hp: 2, weapon: "warpOrb", controller: "turret", arc: 1.5 },
+      { hp: 3, weapon: "warpOrb", controller: "turret" },
+      { hp: 4, weapon: "warpOrb", controller: "turret" },
       { hp: 6, engine: "siegeDrive" },
       { hp: 7, engine: "siegeDrive" },
       {
@@ -1568,7 +1624,7 @@ const SHIP_DESIGNS = {
       { local: [-16, 0], role: "engine" },
     ],
     loadout: [
-      { hp: 0, weapon: "minerLaser", controller: "miner" },
+      { hp: 0, weapon: "warpCutter", controller: "miner" },
       {
         hp: 2,
         core: "prospectorCore",
@@ -1579,7 +1635,7 @@ const SHIP_DESIGNS = {
     arms: {
       gun: {
         hp: 1,
-        weapon: "autocannon",
+        weapon: "warpOrb",
         controller: "turret",
         chancePerSector: 0.15,
         chanceCap: 0.85,
@@ -1625,7 +1681,7 @@ const SHIP_DESIGNS = {
       { local: [-9, -3], role: "engine" },
     ],
     loadout: [
-      { hp: 0, weapon: "seekerLaser", controller: "hunter" },
+      { hp: 0, weapon: "warpNeedle", controller: "hunter" },
       {
         hp: 2,
         core: "seekerCore",
@@ -1637,7 +1693,7 @@ const SHIP_DESIGNS = {
     arms: {
       gun: {
         hp: 1,
-        weapon: "autocannon",
+        weapon: "warpOrb",
         controller: "turret",
         chancePerSector: 0.15,
         chanceCap: 0.85,

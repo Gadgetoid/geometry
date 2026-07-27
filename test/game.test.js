@@ -64,6 +64,8 @@ import {
   mulberry32,
   pointInPolygon,
   polygonArea,
+  shortestTurn,
+  bearingTo,
 } from "../src/math.js"
 
 // A rival as the spawner would bring it in, carrying its design's own loadout and
@@ -1991,12 +1993,115 @@ test("a mount only fires where it can bear", () => {
 
 test("the pincer's jaw guns face forward and its rear pair do not", () => {
   const design = SHIP_TYPES.alienFrigate
+  // By the mount rather than by the gun on it: what it carries is data, where it can
+  // point is the claim.
   const arcs = design.loadout
-    .filter((entry) => entry.weapon === "autocannon")
+    .filter((entry) => design.hardpoints[entry.hp].role === "gun")
     .map((entry) => entry.arc ?? Infinity)
   assert.equal(arcs.length, 4, "four turrets")
   assert.equal(arcs.filter((arc) => arc < Math.PI / 2).length, 2, "two held to the front")
   assert.equal(arcs.filter((arc) => arc === Infinity).length, 2, "two that traverse freely")
+})
+
+test("a round is drawn the way its own gun draws rounds", () => {
+  // Every projectile in the game was drawn as the same orange streak, whatever fired
+  // it: the guns each stated a colour and nothing read it.
+  const drawn = []
+  const renderer = {
+    line: (x1, y1, x2, y2, opts) => drawn.push({ kind: "line", colour: opts.color }),
+    circle: (x, y, r, opts) => drawn.push({ kind: "circle", r, colour: opts.stroke || opts.fill }),
+  }
+  const shot = (weapon) => {
+    drawn.length = 0
+    const p = new Projectile(0, 0, 100, 0, 10, null, WEAPON_TYPES[weapon])
+    p.draw(renderer)
+    return [...drawn]
+  }
+
+  // A gun that says nothing about its rounds still gets the streak, in its own colour.
+  const cannon = shot("autocannon")
+  assert.equal(cannon.length, 1, "one streak")
+  assert.equal(cannon[0].kind, "line")
+  assert.equal(cannon[0].colour, WEAPON_TYPES.autocannon.colour)
+
+  // The aliens throw balls, which is a different shape and not a streak at all.
+  const orb = shot("warpOrb")
+  assert.ok(
+    orb.every((piece) => piece.kind === "circle"),
+    "an orb is drawn as circles rather than as a smear",
+  )
+  assert.equal(orb[0].colour, WEAPON_TYPES.warpOrb.colour)
+  assert.ok(orb[0].r >= WEAPON_TYPES.warpOrb.shot.radius * 0.8, "about the size it states")
+
+  // And it breathes, so two moments of the same shot are not the same size.
+  const one = new Projectile(0, 0, 100, 0, 10, null, WEAPON_TYPES.warpOrb)
+  one.age = 0
+  drawn.length = 0
+  one.draw(renderer)
+  const first = drawn[0].r
+  one.age = Math.PI / (2 * WEAPON_TYPES.warpOrb.shot.pulse)
+  drawn.length = 0
+  one.draw(renderer)
+  assert.ok(Math.abs(drawn[0].r - first) > 0.5, "the ball pulses as it travels")
+})
+
+test("an alien orb leans after what it was fired at", () => {
+  const game = liveGame()
+  game.player.x = 500
+  game.player.y = 200 // off to one side of where the shot is going
+  const alien = plainRival(500, 500, "alienSeeker")
+  game.rivals = [alien]
+
+  // Fired straight along +x, with the player well off that line.
+  const orb = new Projectile(
+    500,
+    500,
+    WEAPON_TYPES.warpOrb.speed,
+    0,
+    10,
+    alien,
+    WEAPON_TYPES.warpOrb,
+  )
+  game.projectiles = [orb]
+  const heading = () => Math.atan2(orb.vy, orb.vx)
+  const before = heading()
+  const speed = Math.hypot(orb.vx, orb.vy)
+  for (let i = 0; i < 30; i++) {
+    game.advance(1 / 60)
+  }
+  assert.ok(heading() < before, "it curved toward the player")
+  assert.ok(Math.abs(Math.hypot(orb.vx, orb.vy) - speed) < 1e-6, "by turning, not by speeding up")
+  // Gently: half a second of steering must not have it pointing at the target already.
+  const straightAt = bearingTo(orb, game.player)
+  assert.ok(Math.abs(shortestTurn(heading(), straightAt)) > 0.2, "and not sharply")
+
+  // With whatever fired it gone, it stops caring.
+  alien.dead = true
+  const held = heading()
+  for (let i = 0; i < 30; i++) {
+    game.advance(1 / 60)
+  }
+  assert.equal(heading(), held, "a ball with nothing behind it flies on as it was")
+})
+
+test("every alien hull carries alien guns", () => {
+  // A hull is alien by faction, but a sector reads as alien because of what is being
+  // fired across it.
+  const alienGuns = Object.keys(WEAPON_TYPES).filter((name) => name.startsWith("warp"))
+  assert.ok(alienGuns.length >= 3, "there should be a family of them")
+  for (const [name, type] of Object.entries(SHIP_TYPES)) {
+    if (type.faction !== "alien") {
+      continue
+    }
+    const guns = [...type.loadout, ...Object.values(type.arms || {})]
+      .filter((entry) => entry.weapon)
+      .map((entry) => entry.weapon)
+    assert.ok(guns.length, `${name} should be armed`)
+    // The pincer's main gun is the singularity it was drawn around, which is still to
+    // come; everything else it carries is already alien.
+    const rivalGuns = guns.filter((gun) => !gun.startsWith("warp"))
+    assert.ok(rivalGuns.length <= 1, `${name} still carries rival guns: ${rivalGuns.join(", ")}`)
+  }
 })
 
 test("a rock costs a rival hull, as it costs the player energy", () => {
