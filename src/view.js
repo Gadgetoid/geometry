@@ -6,6 +6,7 @@
 // their own draw(renderer, game) methods.
 
 import {
+  OVER_MENU,
   VIEW_W,
   VIEW_H,
   TAU,
@@ -1254,18 +1255,43 @@ export class GameView {
       VIEW_H / 2 + 58,
       { size: 12, color: newBest ? PALETTE.ui.goodBright : PALETTE.ui.accent, align: "center" },
     )
-    if (Math.floor(game.gameTime * 2) % 2 === 0) {
-      r.text(
-        this.#prompt(game, "PRESS ENTER TO RETRY", "PRESS A OR START TO RETRY"),
-        VIEW_W / 2,
-        VIEW_H / 2 + 82,
-        {
-          size: 13,
-          color: PALETTE.text.dim,
-          align: "center",
-        },
-      )
-    }
+    // What was mined is still in the hold and buys another ship, so the run ends on a
+    // choice rather than an announcement. The rows are laid out as the menus are, and
+    // CONTINUE greys out when there is not the ore for it.
+    r.text(`ORE  ${game.oreBalance}`, VIEW_W / 2, VIEW_H / 2 + 84, {
+      size: 13,
+      color: PALETTE.ore.body,
+      align: "center",
+    })
+    const leftX = VIEW_W / 2 - 120,
+      rightX = VIEW_W / 2 + 120
+    OVER_MENU.forEach((row, index) => {
+      const y = VIEW_H / 2 + 118 + index * 30
+      const selected = game.overSelection === index
+      const affordable = row.name !== "CONTINUE" || game.canContinue()
+      if (selected) {
+        r.rect(leftX - 12, y - 14, rightX - leftX + 26, 28, {
+          fill: affordable ? "rgba(95,215,255,.12)" : "rgba(255,91,91,.12)",
+        })
+      }
+      r.text(`${selected ? "> " : "  "}${row.name}`, leftX, y, {
+        size: 16,
+        bold: selected,
+        color: !affordable
+          ? PALETTE.text.disabled
+          : selected
+            ? PALETTE.text.bright
+            : PALETTE.text.normal,
+      })
+      const value = row.value ? row.value(game) : ""
+      if (value) {
+        r.text(value, rightX, y, {
+          size: 15,
+          color: affordable ? PALETTE.fx.flash : PALETTE.ui.warn,
+          align: "right",
+        })
+      }
+    })
   }
 
   // One menu row: its name on the left and, on the right, either what it is set to,

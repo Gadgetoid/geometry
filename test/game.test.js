@@ -46,6 +46,7 @@ import {
   SHIP_PLATING,
   SHIP_SCALARS,
   SHOP,
+  OVER_MENU,
   UI_SCALES,
   VIEW_W,
   VIEW_H,
@@ -6949,6 +6950,101 @@ test("rock flak is the rarest gun a rock can carry, and a late one", () => {
   }
   assert.ok(shareAt(RUN_LENGTH) > shareAt(flak.fromSector), "it does grow, slowly")
   assert.ok(shareAt(RUN_LENGTH) < 0.25, "but is never a quarter of what a rock mounts")
+})
+
+// ---- the end of a run ------------------------------------------------------
+
+// A run with its last ship gone, and ore in the hold.
+function lastShipLost(ore) {
+  const game = liveGame()
+  game.lives = 1
+  game.oreBalance = ore
+  game.playerLoseLife()
+  assert.equal(game.phase, "over", "the run must be over for any of this to mean anything")
+  return game
+}
+
+test("a lost run can be bought back into at the shop's price for a ship", () => {
+  // Ore is worth nothing once a run ends, so what was mined and not spent is what
+  // stands between the last ship and the end of it.
+  const shopPrice = SHOP.find((row) => row.id === "life").cost(liveGame())
+  const game = lastShipLost(shopPrice + 25)
+  assert.equal(game.continueCost(), shopPrice, "and the two prices cannot drift apart")
+  assert.equal(game.savedRun, null, "a run nobody has paid for is not resumable")
+
+  assert.equal(game.canContinue(), true)
+  game.continueRun()
+  assert.equal(game.oreBalance, 25, "the ore is spent")
+  assert.equal(game.lives, 1, "and it bought a ship")
+  assert.equal(game.phase, "arriving", "which warps into the sector it was lost in")
+  assert.ok(game.player.invincible > 0, "with a moment to take stock")
+  assert.equal(game.player.hull, PLAYER_TYPE.hull, "and a fresh hull")
+  assert.ok(game.savedRun, "the run is worth coming back to again")
+  assert.equal(game.savedRun.lives, 1)
+})
+
+test("the sector a run was lost in is the sector it is bought back into", () => {
+  const game = lastShipLost(500)
+  game.level = 12
+  const rival = plainRival(700, 300, "scout")
+  game.rivals = [rival]
+  game.asteroids = [new Asteroid({ x: 300, y: 300, radius: 50 })]
+  game.continueRun()
+  assert.equal(game.level, 12, "the same sector, not the next one")
+  assert.equal(game.rivals[0], rival, "with whatever killed the player still in it")
+  assert.equal(game.asteroids.length, 1, "and the rocks that were left to clear")
+})
+
+test("a run with nothing left in the hold is over", () => {
+  const game = lastShipLost(0)
+  const before = game.oreBalance
+  assert.equal(game.canContinue(), false)
+  game.continueRun()
+  assert.equal(game.phase, "over", "no ore, no ship")
+  assert.equal(game.lives, 0)
+  assert.equal(game.oreBalance, before, "and nothing is taken for the refusal")
+
+  // One short is still short.
+  game.oreBalance = game.continueCost() - 1
+  game.continueRun()
+  assert.equal(game.phase, "over")
+})
+
+test("buying back in is as repeatable as the ore allows", () => {
+  // Lives are the player's to refill as they see fit: three ships' worth of ore is
+  // three more ships, one death at a time.
+  const game = lastShipLost(0)
+  const price = game.continueCost()
+  game.oreBalance = price * 3
+  for (let bought = 0; bought < 3; bought++) {
+    assert.equal(game.canContinue(), true, `should afford ship ${bought + 1}`)
+    game.continueRun()
+    assert.equal(game.lives, 1)
+    game.playerLoseLife()
+    assert.equal(game.phase, "over")
+  }
+  assert.equal(game.oreBalance, 0)
+  assert.equal(game.canContinue(), false, "and then the run really is over")
+})
+
+test("the screen a run ends on is a menu, and CONTINUE is a row of it", () => {
+  const game = lastShipLost(500)
+  assert.equal(game.menuRows(), OVER_MENU.length, "the cursor has somewhere to be")
+  assert.equal(game.overSelection, 0, "starting on the first row")
+  assert.equal(OVER_MENU[0].name, "CONTINUE", "which is the one worth offering")
+  assert.match(OVER_MENU[0].value(game), new RegExp(`${game.continueCost()} ore`))
+
+  game.menuConfirm()
+  assert.equal(game.phase, "arriving", "confirming it buys the ship")
+
+  // And the other row walks away from the run entirely.
+  const over = lastShipLost(500)
+  over.menuMove(1)
+  assert.equal(over.overSelection, 1)
+  assert.equal(OVER_MENU[1].name, "NEW RUN")
+  over.menuConfirm()
+  assert.equal(over.lives, CONFIG.START_LIVES, "a fresh run, not the old one")
+  assert.equal(over.oreBalance, 0, "and none of the old one's ore")
 })
 
 // ---- pause menu, settings and the saved run --------------------------------

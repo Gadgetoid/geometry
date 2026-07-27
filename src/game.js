@@ -8,6 +8,7 @@ import {
   SHIP_SCALARS,
   DEV_MENU,
   DEV_SPAWN_MENU,
+  OVER_MENU,
   VIEW_W,
   VIEW_H,
   ARENA,
@@ -188,6 +189,7 @@ export class Game {
     // A sector that never counts as cleared, so a dev arena stays put. See enterSandbox.
     this.sandbox = false
     this.devArms = {} // what a dev spawn of each hull carries, an index into DEV_ARMS
+    this.overSelection = 0 // the cursor on the screen a run ends at
     this.paused = false
     this.gameTime = 0
     this.screenShake = 0
@@ -1521,14 +1523,21 @@ export class Game {
     this.screenShake = 14
     if (this.lives <= 0) {
       this.recordBest()
-      this.forgetRun() // the run is over; nothing to come back to
+      // Nothing to come back to from the title screen. What was mined is still in the
+      // hold, though, so the run itself can be bought back into from here.
+      this.forgetRun()
       this.phase = "over"
+      this.overSelection = 0
       Sound.setThruster(false)
       return
     }
-    // Move to the spawn point straight away but stay warped out for a beat, so
-    // there is a moment to take stock. The camera is deliberately not moved
-    // with it: it pans across from wherever the wreck was.
+    this.#flyTheSpare()
+  }
+
+  // Put the next ship in the sector. It moves to the spawn point straight away but
+  // stays warped out for a beat, so there is a moment to take stock. The camera is
+  // deliberately not moved with it: it pans across from wherever the wreck was.
+  #flyTheSpare() {
     const p = this.player
     p.x = ARENA.cx
     p.y = ARENA.cy
@@ -1541,6 +1550,38 @@ export class Game {
     p.beginWarpIn(CONFIG.RESPAWN_PAUSE)
     this.phase = "arriving"
     this.clearInput()
+  }
+
+  // What a spare ship costs, which is the shop's price for one: dying is neither a
+  // discount nor a premium, and there is one number for both.
+  continueCost() {
+    return SHOP.find((row) => row.id === "life").cost(this)
+  }
+
+  // A run ends when the ore does. Everything mined and not spent is what stands
+  // between the last ship and the end of the run, so a player who banked it can buy
+  // their way back in as often as it lasts.
+  canContinue() {
+    return this.devMode || this.oreBalance >= this.continueCost()
+  }
+
+  // Back into the sector that killed them, which is untouched: the rocks that were
+  // there are still there and so is whatever did it.
+  continueRun() {
+    if (this.phase !== "over") {
+      return
+    }
+    if (!this.canContinue()) {
+      Sound.hit()
+      return
+    }
+    if (!this.devMode) {
+      this.oreBalance -= this.continueCost()
+    }
+    this.lives++
+    this.#flyTheSpare()
+    this.rememberRun() // worth coming back to again
+    Sound.power()
   }
 
   // Use what is in a slot. A special is equipment: it stays in its slot and the
@@ -2620,6 +2661,9 @@ export class Game {
     if (this.paused) {
       return this.pauseMenu().length
     }
+    if (this.phase === "over") {
+      return OVER_MENU.length
+    }
     // the purchases, the SPECIALS row among them, then LAUNCH and SETTINGS
     return this.phase === "shop" ? SHOP.length + 3 : 0
   }
@@ -2638,6 +2682,8 @@ export class Game {
     if (this.paused) {
       this.pauseConfirming = null // moving away abandons a pending confirmation
       this.pauseSelection = (this.pauseSelection + delta + rows) % rows
+    } else if (this.phase === "over") {
+      this.overSelection = (this.overSelection + delta + rows) % rows
     } else {
       this.shopSelection = (this.shopSelection + delta + rows) % rows
     }
@@ -2668,9 +2714,11 @@ export class Game {
     }
     if (this.phase === "shop") {
       this.doShopAction()
-    } else if (this.phase === "title" || this.phase === "over") {
+    } else if (this.phase === "over") {
+      OVER_MENU[this.overSelection].action(this)
+    } else if (this.phase === "title") {
       // Enter carries on from where a previous session stopped, if it left anything.
-      if (this.phase === "title" && this.savedRun) {
+      if (this.savedRun) {
         this.resumeRun()
       } else {
         this.startNewGame()

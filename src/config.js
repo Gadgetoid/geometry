@@ -2516,6 +2516,18 @@ export const DEV_SPAWN_MENU = [
   { name: "BACK", action: (g) => g.openPausePage("dev") },
 ]
 
+// What is on offer once the last ship is gone. The ore in the hold is worth nothing
+// after a run ends, so spending it on another ship is the choice worth putting here;
+// the price is the shop's, read through the game so the two cannot drift apart.
+export const OVER_MENU = [
+  {
+    name: "CONTINUE",
+    value: (g) => (g.devMode ? "FREE" : `${g.continueCost()} ore`),
+    action: (g) => g.continueRun(),
+  },
+  { name: "NEW RUN", action: (g) => g.startNewGame() },
+]
+
 export const PAUSE_MENU = [
   // First, because on a build that has it, it is what the menu is most often opened for.
   // Only where the dev buttons show at all, so a published build has no way in.
