@@ -2393,23 +2393,57 @@ export class Game {
 
   // Put one in the sector, in front of the ship rather than out beyond the boundary: the
   // point of asking for it is to look at it.
+  //
+  // And clear of whatever is already there. Asking for six of something used to stack all
+  // six on the same spot, where the contact solver would spend the next second shoving them
+  // apart and they would scatter as a shower. The place in front is tried first, then a ring
+  // of places around it, each one further out.
   devSpawn(name) {
     if (!this.player) {
       return
     }
     const type = SHIP_TYPES[name]
     const ahead = this.player.angle
-    const away = 260 + type.boundRadius
-    const ship = new RivalShip(
-      this.player.x + Math.cos(ahead) * away,
-      this.player.y + Math.sin(ahead) * away,
-      name,
-      this.devLoadout(type),
-    )
+    const at = this.#clearSpawnSpot(this.player, ahead, 260 + type.boundRadius, type.boundRadius)
+    const ship = new RivalShip(at.x, at.y, name, this.devLoadout(type))
     ship.angle = ahead + Math.PI
     ship.arrived = true // it is already here; nothing to fly in from
     this.rivals.push(ship)
     Sound.power()
+  }
+
+  // Somewhere a hull of `reach` fits without touching anything already in the sector, or the
+  // first place tried if the sector is too full to be fussy about it.
+  #clearSpawnSpot(from, bearing, away, reach) {
+    const first = { x: from.x + Math.cos(bearing) * away, y: from.y + Math.sin(bearing) * away }
+    for (let ring = 0; ring < 5; ring++) {
+      const spread = away + ring * (reach * 2 + 40)
+      const places = ring === 0 ? 1 : 6
+      for (let i = 0; i < places; i++) {
+        const angle = bearing + (i / places) * TAU
+        const at = { x: from.x + Math.cos(angle) * spread, y: from.y + Math.sin(angle) * spread }
+        const fromCentre = Math.hypot(at.x - ARENA.cx, at.y - ARENA.cy)
+        if (!this.#crowdedAt(at, reach) && fromCentre + reach < ARENA.radius) {
+          return at
+        }
+      }
+    }
+    return first
+  }
+
+  // Is anything already close enough to be touching a hull of `reach` put here?
+  #crowdedAt(at, reach) {
+    for (const other of this.rivals) {
+      if (Math.hypot(other.x - at.x, other.y - at.y) < reach + other.boundRadius + 30) {
+        return true
+      }
+    }
+    for (const rock of this.asteroids) {
+      if (Math.hypot(rock.center.x - at.x, rock.center.y - at.y) < reach + rock.boundRadius + 20) {
+        return true
+      }
+    }
+    return false
   }
 
   // End the sector the way clearing it would, which is what the dev button used to do on

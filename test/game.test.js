@@ -1731,6 +1731,39 @@ test("the dev page reaches every part of the game without playing up to it", () 
   assert.equal(game.fittedEquipment("engine"), EQUIPMENT.engine.options[0].id)
 })
 
+test("dev spawns are set down clear of each other", () => {
+  // Asking for six of something used to stack all six on one spot, where the contact solver
+  // would spend the next second shoving them apart and they would scatter as a shower.
+  const game = liveGame()
+  beSolid(game.player)
+  game.openDevMenu()
+  const row = (name) => game.pauseMenu().find((entry) => entry.name === name)
+  row("TESTING ARENA").action(game)
+  game.openDevMenu()
+  for (let i = 0; i < 6; i++) {
+    row("SPAWN ALIEN FRIGATE").action(game)
+  }
+  for (let i = 0; i < 4; i++) {
+    row("SPAWN SEEKER").action(game)
+  }
+  assert.equal(game.rivals.length, 10, "all ten arrived")
+  let closest = Infinity
+  for (let i = 0; i < game.rivals.length; i++) {
+    for (let j = i + 1; j < game.rivals.length; j++) {
+      const a = game.rivals[i],
+        b = game.rivals[j]
+      closest = Math.min(closest, Math.hypot(a.x - b.x, a.y - b.y) - a.boundRadius - b.boundRadius)
+    }
+  }
+  assert.ok(closest > 0, `no two are touching: closest pair ${closest.toFixed(0)} apart`)
+  for (const ship of game.rivals) {
+    assert.ok(
+      Math.hypot(ship.x - ARENA.cx, ship.y - ARENA.cy) + ship.boundRadius < ARENA.radius,
+      "and all of them are inside the ring",
+    )
+  }
+})
+
 test("a testing arena never clears itself", () => {
   const game = liveGame()
   beSolid(game.player)
