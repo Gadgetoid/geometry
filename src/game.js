@@ -2768,7 +2768,9 @@ export class Game {
     }
     this.paused = !this.paused
     this.slotMenu = null
-    this.pausePage = "root"
+    // A testing arena opens on the dev page, since that is the only reason to be in one and
+    // the options are a row of it. Anywhere else, the options are what pausing is for.
+    this.pausePage = this.sandbox ? "dev" : "root"
     this.pauseSelection = 0
     this.pauseConfirming = null
     this.rebinding = null

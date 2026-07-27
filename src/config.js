@@ -2406,10 +2406,20 @@ export const DEV_MENU = [
         action: (game) => game.devSpawn(name),
       })),
   },
-  { name: "BACK", action: (g) => g.openPausePage("root") },
+  // Not "back": in a testing arena this page is what ESCAPE opens, so there is nothing
+  // behind it. The options are a row of it, the way it is a row of them.
+  { name: "OPTIONS", value: () => ">", action: (g) => g.openPausePage("root") },
 ]
 
 export const PAUSE_MENU = [
+  // First, because on a build that has it, it is what the menu is most often opened for.
+  // Only where the dev buttons show at all, so a published build has no way in.
+  {
+    name: "DEV TOOLS",
+    value: () => ">",
+    available: () => DEV_VISIBLE,
+    action: (g) => g.openPausePage("dev"),
+  },
   // Only offered while the sector is still being fought, and asked twice like the
   // other rows that throw something away.
   {
@@ -2448,13 +2458,6 @@ export const PAUSE_MENU = [
     adjust: (g, step) => g.setHelp(step > 0),
   },
   { name: "CONTROLS", value: () => ">", action: (g) => g.openPausePage("controls") },
-  // Only where the dev buttons show at all, so a published build has no way in.
-  {
-    name: "DEV TOOLS",
-    value: () => ">",
-    available: () => DEV_VISIBLE,
-    action: (g) => g.openPausePage("dev"),
-  },
   {
     name: "RESET PROGRESS",
     value: (g) => (g.savedRun ? `SECTOR ${g.resumeSector()}` : "-"),
@@ -2524,7 +2527,7 @@ export const SHOP = [
   // rest of the page sells, so they head the list as their own group.
   {
     id: "life",
-    name: "EXTRA LIFE",
+    name: "LIVES",
     desc: "One more spare ship.",
     info: (g) => `${g.lives} / ${CONFIG.MAX_LIVES}`,
     cost: () => 60,

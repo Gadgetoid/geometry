@@ -3368,6 +3368,67 @@ test("a saved run drops a special the registry no longer knows", () => {
   assert.deepEqual(carried(resumed), ["repel"])
 })
 
+test("launch sits above options, both starting where the item names do", () => {
+  const game = liveGame()
+  game.enterShop()
+  const drawn = []
+  const renderer = new Proxy(
+    {
+      text: (text, x, y, opts) =>
+        drawn.push({ text: String(text).trim(), x, y, size: opts && opts.size }),
+    },
+    { get: (target, key) => (key in target ? target[key] : () => {}) },
+  )
+  new GameView(renderer).render(game)
+  const find = (match) => drawn.find((row) => match.test(row.text))
+  const launch = find(/^LAUNCH TO SECTOR/)
+  const options = find(/^OPTIONS$/)
+  const hint = drawn.find((row) => row.text === "One more spare ship.")
+  assert.ok(launch && options && hint, "all three are drawn")
+  assert.ok(launch.y < options.y, "launch is the line above")
+  // Left-aligned together, and to the same pixel: they are set at different sizes, and a
+  // leading space is proportional to its size, so a placeholder inside the label put the
+  // smaller of them a couple of pixels to the left of the larger.
+  assert.equal(options.x, launch.x, "and starts in the same column")
+  const names = drawn.filter((row) => row.size === 17 && /^(TURRET|ENGINE)$/.test(row.text))
+  assert.ok(names.length, "the item rows are drawn")
+  assert.ok(
+    Math.abs(names[0].x + 17 * 0.45 * 2 - launch.x) < 0.01,
+    "which is where the item names begin, once their own placeholder is counted",
+  )
+  assert.ok(launch.y - hint.y > 40, "and clear of the hint above them")
+})
+
+test("the shop calls the spare ships LIVES", () => {
+  const game = liveGame()
+  game.enterShop()
+  assert.equal(game.shopItem(0).name, "LIVES")
+})
+
+test("a dev build offers its tools first, and a testing arena opens on them", () => {
+  const game = liveGame()
+  game.toggleOptions()
+  assert.equal(game.pauseMenu()[0].name, "DEV TOOLS", "first of the rows on a dev build")
+  // And the way back out of the dev page is the options page, since in an arena there is
+  // nothing behind it to go back to.
+  game.openPausePage("dev")
+  const out = game.pauseMenu().at(-1)
+  assert.equal(out.name, "OPTIONS")
+  out.action(game)
+  assert.equal(game.pausePage, "root")
+
+  // In a testing arena, ESCAPE opens the dev page rather than the options.
+  game.openPausePage("dev")
+  game
+    .pauseMenu()
+    .find((row) => row.name === "TESTING ARENA")
+    .action(game)
+  assert.equal(game.sandbox, true)
+  game.toggleOptions()
+  assert.equal(game.paused, true)
+  assert.equal(game.pausePage, "dev", "which is the only reason to be in one")
+})
+
 test("the specials row is titled like the rows it sits among", () => {
   // It is a row of that list and has to read as one: it was drawn two points smaller than
   // its neighbours and never took the colour they take when there is nothing left to buy,
@@ -6759,7 +6820,10 @@ function inSector(level = 6) {
 test("EXIT SECTOR is the first option in a sector, and is not offered elsewhere", () => {
   const game = inSector()
   game.toggleOptions()
-  assert.equal(game.pauseMenu()[0].name, "EXIT SECTOR", "it is what the cursor lands on")
+  // First of the rows a player ever sees. A dev build puts DEV TOOLS above it, since on
+  // one of those that is what the menu is most often opened for.
+  const forPlayers = game.pauseMenu().filter((row) => row.name !== "DEV TOOLS")
+  assert.equal(forPlayers[0].name, "EXIT SECTOR", "it is what the cursor lands on")
 
   // once the last rock is gone the shop is coming anyway, so there is nothing to
   // walk out of and a stray press must not throw the clear away
@@ -6778,7 +6842,7 @@ test("EXIT SECTOR is the first option in a sector, and is not offered elsewhere"
 test("EXIT SECTOR asks twice, as the other rows that throw something away do", () => {
   const game = inSector()
   game.toggleOptions()
-  game.pauseSelection = 0
+  game.pauseSelection = game.pauseMenu().findIndex((row) => row.name === "EXIT SECTOR")
   game.menuConfirm()
   assert.equal(game.pauseConfirming, "EXIT SECTOR", "one press asks")
   assert.equal(game.phase, "play", "and leaves the sector alone")

@@ -885,8 +885,11 @@ export class GameView {
     const headerHeight = 114 // the title, the stats and the ore, above the first row
     const titleOffset = 26
     const listHeight = (SHOP.length + 1) * rowHeight + SHOP_LAYOUT.groupGap
-    const launchOffset = headerHeight + listHeight + 44
-    const lastOffset = launchOffset + (game.devMode ? 28 : 0)
+    // Clear of the hint that sits under the list, since the two were close enough to read
+    // as one block. LAUNCH sits on the first of these lines and OPTIONS on the second.
+    const launchOffset = headerHeight + listHeight + 62
+    const optionsOffset = launchOffset + 30
+    const lastOffset = optionsOffset + (game.devMode ? 26 : 0)
     const blockTop = Math.max(24, Math.round((VIEW_H - titleOffset - lastOffset) / 2))
 
     // A sector walked out of was not cleared, and the screen should not say it was.
@@ -1013,31 +1016,42 @@ export class GameView {
       r.text(hint, VIEW_W / 2, y + 10, { size: 13, color: PALETTE.text.soft, align: "center" })
     }
 
-    // The last line holds both, sharing the column edges the rows above use: OPTIONS
-    // left-aligned under the item names, LAUNCH right-aligned under the costs. Each
-    // keeps the two-space placeholder the rows above use, so the cursor arrow
-    // replaces it instead of shoving the text along.
-    const launchY = y + 44,
+    // Two lines of their own under the list, both starting where the item names start, in
+    // the order the cursor reaches them: what the page is for on top, and the way out of it
+    // below.
+    //
+    // The cursor is drawn beside them rather than as a placeholder inside the label. These
+    // two are set at different sizes, and a leading space is proportional to its size, so
+    // the smaller of them started a couple of pixels left of the larger.
+    const launchY = blockTop + launchOffset,
+      optionsY = blockTop + optionsOffset,
       launchSelected = game.shopSelection === game.launchRow,
       optionsSelected = game.shopSelection === game.optionsRow
-    const midX = (leftX + rightX) / 2
-    if (optionsSelected) {
-      r.rect(leftX - 16, launchY - 19, midX - leftX + 8, 28, { fill: "rgba(95,215,255,.12)" })
-    }
+    const rowWidth = rightX - leftX + 24
     if (launchSelected) {
-      r.rect(midX + 8, launchY - 19, rightX - midX + 8, 28, { fill: "rgba(87,227,154,.16)" })
+      r.rect(leftX - 16, launchY - 19, rowWidth, 28, { fill: "rgba(87,227,154,.16)" })
     }
-    r.text(`${optionsSelected ? "> " : "  "}OPTIONS`, leftX, launchY, {
-      size: 15,
-      bold: optionsSelected,
-      color: optionsSelected ? PALETTE.text.bright : PALETTE.text.normal,
-    })
-    r.text(`${launchSelected ? "> " : "  "}LAUNCH TO SECTOR ${game.shopSector}`, rightX, launchY, {
+    if (optionsSelected) {
+      r.rect(leftX - 16, optionsY - 17, rowWidth, 26, { fill: "rgba(95,215,255,.12)" })
+    }
+    // Where the item names above start, once their own two-space placeholder is counted.
+    const labelX = leftX + 17 * 0.45 * 2
+    if (launchSelected) {
+      r.text(">", leftX, launchY, { size: 18, bold: true, color: PALETTE.ui.goodBright })
+    }
+    r.text(`LAUNCH TO SECTOR ${game.shopSector}`, labelX, launchY, {
       size: 18,
       bold: true,
       color: PALETTE.ui.goodBright,
-      align: "right",
       glow: launchSelected ? 16 : 8,
+    })
+    if (optionsSelected) {
+      r.text(">", leftX, optionsY, { size: 15, bold: true, color: PALETTE.text.bright })
+    }
+    r.text("OPTIONS", labelX, optionsY, {
+      size: 15,
+      bold: optionsSelected,
+      color: optionsSelected ? PALETTE.text.bright : PALETTE.text.normal,
     })
     // The dev line stays: free purchases and a sector you can walk to are not things
     // a player would look for, and the x10 modifier is not visible anywhere else.
@@ -1049,7 +1063,7 @@ export class GameView {
           "DEV   DPAD LEFT / RIGHT choose sector   -   purchases are free",
         ),
         VIEW_W / 2,
-        launchY + 28,
+        optionsY + 26,
         { size: 11, color: PALETTE.ui.accentAlt, align: "center" },
       )
     }
