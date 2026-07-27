@@ -25,9 +25,11 @@ import {
   distanceTo,
   bearingTo,
   shortestTurn,
+  weightedPick,
 } from "../src/math.js"
 
 const point = (x, y) => ({ x, y })
+
 const SQUARE = [point(0, 0), point(10, 0), point(10, 10), point(0, 10)]
 
 // A square with a notch cut out of the bottom middle, so a horizontal cut low
@@ -468,4 +470,86 @@ test("a separating-axis test on a concave outline reports a contact across its n
     (part) => !convexContact(part, inNotch, centreOf(part), centreOf(inNotch)),
   )
   assert.ok(apart, "partitioned: correctly apart")
+})
+
+// ---- weighted picks --------------------------------------------------------
+
+function withSeed(seed, body) {
+  const rng = mulberry32(seed)
+  const real = Math.random
+  Math.random = rng
+  try {
+    return body()
+  } finally {
+    Math.random = real
+  }
+}
+
+test("a weighted pick lands in proportion to the weights", () => {
+  const entries = [
+    { id: "a", w: 1 },
+    { id: "b", w: 3 },
+    { id: "c", w: 6 },
+  ]
+  const counts = withSeed(20260727, () => {
+    const seen = { a: 0, b: 0, c: 0 }
+    for (let i = 0; i < 60000; i++) {
+      seen[weightedPick(entries, (e) => e.w).id]++
+    }
+    return seen
+  })
+  for (const { id, w } of entries) {
+    const share = counts[id] / 60000
+    assert.ok(
+      Math.abs(share - w / 10) < 0.01,
+      `${id} should land ${w / 10} of the time, landed ${share.toFixed(3)}`,
+    )
+  }
+})
+
+test("a weighted pick does not care what order the entries are in", () => {
+  // The property the whole thing exists for: a share is one weight over the
+  // total, so no entry's odds depend on which ones were rolled before it.
+  const entries = [
+    { id: "a", w: 1 },
+    { id: "b", w: 3 },
+    { id: "c", w: 6 },
+  ]
+  const shareOfB = (list) =>
+    withSeed(4242, () => {
+      let hits = 0
+      for (let i = 0; i < 40000; i++) {
+        hits += weightedPick(list, (e) => e.w).id === "b" ? 1 : 0
+      }
+      return hits / 40000
+    })
+  const forward = shareOfB(entries)
+  const reversed = shareOfB(entries.slice().reverse())
+  assert.ok(Math.abs(forward - 0.3) < 0.01, `b should be 0.3, was ${forward.toFixed(3)}`)
+  assert.ok(Math.abs(forward - reversed) < 0.02, `${forward} vs ${reversed} reversed`)
+})
+
+test("a weight of zero is never picked, and nothing to pick gives null", () => {
+  const entries = [
+    { id: "gated", w: 0 },
+    { id: "live", w: 2 },
+  ]
+  for (let i = 0; i < 200; i++) {
+    assert.equal(weightedPick(entries, (e) => e.w).id, "live")
+  }
+  assert.equal(
+    weightedPick([], () => 1),
+    null,
+    "an empty list has no answer",
+  )
+  assert.equal(
+    weightedPick(entries, () => 0),
+    null,
+    "and neither has an all-zero one",
+  )
+  assert.equal(
+    weightedPick(entries, () => -5),
+    null,
+    "a negative weight is not a negative share",
+  )
 })

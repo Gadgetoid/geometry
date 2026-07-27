@@ -12,6 +12,7 @@ import {
   PROGRESSION,
   HAZARD_TRAITS,
   FACTIONS,
+  weightAt,
   SHIP_TYPES,
   PAUSE_MENU,
   SHOP,
@@ -33,7 +34,7 @@ import {
 import {
   randRange,
   randInt,
-  pick,
+  weightedPick,
   clamp,
   subtract,
   normalize,
@@ -319,7 +320,10 @@ export class Game {
   }
 
   spawnPowerup() {
-    const type = pick(POWERUP_IDS)
+    const type = weightedPick(POWERUP_IDS, (id) => weightAt(POWERUP_TYPES[id], this.level))
+    if (!type) {
+      return
+    }
     // just beyond a screen edge near the camera, drifting in toward the player
     const c = this.viewCenter
     const angle = randRange(0, TAU)
@@ -775,33 +779,24 @@ export class Game {
   }
 
   // ---- level / sector flow --------------------------------------------
-  // Pick a hazard from HAZARD_TRAITS: an entry joins the pool once its sector is
-  // reached, and `weightPerSector` gives it extra entries as sectors advance so
-  // it gradually crowds the others out.
+  // Which hazard a rock carries, weighed the way every pool is: see WEIGHTS.
   rollHazardTraits(sector) {
-    const pool = []
-    for (const hazard of HAZARD_TRAITS) {
-      if (sector < hazard.fromSector) {
-        continue
-      }
-      const growth = (hazard.weightPerSector || 0) * (sector - hazard.fromSector)
-      const weight = Math.min(1 + growth, hazard.weightCap ?? Infinity)
-      for (let i = 0; i < weight; i++) {
-        pool.push(hazard.traits)
-      }
-    }
-    return pool.length ? this.#traitsForSector(pick(pool), sector) : {}
+    const hazard = weightedPick(HAZARD_TRAITS, (entry) => weightAt(entry, sector))
+    return hazard ? this.#traitsForSector(hazard.traits, sector) : {}
   }
 
-  // Which of a gun trait's pool a sector may arm a rock from. Each kind joins at
-  // its own sector, so a late sector arms its rocks from a broader mix than an
-  // early one without arming any more of them.
+  // Which of a gun trait's pool a sector may arm a rock from, and what each of
+  // them weighs there. Each kind joins at its own sector, so a late sector arms
+  // its rocks from a broader mix than an early one without arming any more of
+  // them.
   gunsForSector(gun, sector) {
-    return gun.guns.filter((entry) => sector >= (entry.fromSector ?? 0))
+    return gun.guns
+      .map((entry) => ({ ...entry, weight: weightAt(entry, sector) }))
+      .filter((entry) => entry.weight > 0)
   }
 
-  // Nothing downstream knows which sector it is in, so the pool is cut to size
-  // here, on the copy the spawn is handed.
+  // A rock is built without knowing which sector it is in, so the pool it is
+  // handed is cut to size and weighed here, where the sector is known.
   #traitsForSector(traits, sector) {
     const rolled = { ...traits }
     if (rolled.gun && rolled.gun.guns) {

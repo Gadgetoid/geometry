@@ -351,13 +351,33 @@ export const PROGRESSION = {
   powerups: { fromSector: 3, firstDelay: [6, 10], interval: [12, 20], maxOnField: 2 },
 }
 
-// Hazard traits a rock can spawn with. A trait joins the roll once its
-// `fromSector` is reached, and `weightPerSector` adds an extra entry for each
-// sector past that, so a trait can come to crowd out the others. `weightCap` is
-// how far that may go: growth with nothing to stop it does not crowd the others
-// out so much as delete them, and a hazard nobody meets any more may as well not
-// be in the game. Armed rocks at a cap of 5 are still three quarters of what a
-// late sector rolls, against 95% and rising without one.
+// ---------------------------------------------------------------------------
+// WEIGHTS - what an entry weighs against its siblings at a given sector, for
+// every "which one turns up" roll in the game: which rival arrives, which hazard
+// a rock carries, which gun it is armed with, which powerup drifts in.
+//
+//   fromSector      not in the running at all before this
+//   weight          how much it weighs once it is, against its siblings (1)
+//   weightPerSector how much heavier it gets for each sector past `fromSector`
+//   weightCap       how heavy it is allowed to get
+//
+// A share is always one weight over the total of the eligible ones, so a number
+// here can be read on its own and no entry's odds depend on where it sits in the
+// list. Growth with nothing to stop it does not crowd the others out so much as
+// delete them, and a thing nobody meets any more may as well not be in the game,
+// which is what `weightCap` is for.
+// ---------------------------------------------------------------------------
+export function weightAt(entry, sector) {
+  const from = entry.fromSector ?? 0
+  if (sector < from) {
+    return 0
+  }
+  const growth = (entry.weightPerSector ?? 0) * (sector - from)
+  return Math.min((entry.weight ?? 1) + growth, entry.weightCap ?? Infinity)
+}
+
+// Hazard traits a rock can spawn with. Armed rocks at a cap of 5 are still three
+// quarters of what a late sector rolls, against 95% and rising without one.
 //
 // `gun` and `shield` name the modules to mount, so arming a rock differently is
 // an edit here rather than in the Asteroid constructor. `explosive` is a property
@@ -367,9 +387,10 @@ export const PROGRESSION = {
 // its bearing it sits as a fraction of the distance to the outline.
 //
 // `guns` is the pool each turret is rolled from, one entry per kind of gun a rock
-// may mount, in the same shape a loadout entry uses. Every turret rolls on its
-// own, so a rock can carry a mix; repeat an entry to weight it. Both projectiles
-// and beams work, since the controller fires whichever the entry names.
+// may mount, in the same shape a loadout entry uses, and weighed the way every
+// other pool is (see WEIGHTS). Every turret rolls on its own, so a rock can carry
+// a mix. Both projectiles and beams work, since the controller fires whichever
+// the entry names.
 //
 // A gun joins the pool at its own `fromSector`, so what a rock may be armed with
 // widens over a run while the rocks themselves are no more likely to be armed. A

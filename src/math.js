@@ -16,6 +16,31 @@ export const randRange = (min, max) => min + Math.random() * (max - min)
 export const randInt = (min, max) => Math.floor(randRange(min, max + 1))
 export const pick = (arr) => arr[randInt(0, arr.length - 1)]
 export const clamp = (value, min, max) => (value < min ? min : value > max ? max : value)
+
+// Pick one entry in proportion to what `weightOf` says it weighs. A weight of
+// zero is never picked, so a caller excludes an entry by weighing it nothing
+// rather than by filtering the list first; nothing left to pick gives null.
+//
+// Every "which one turns up" roll in the game goes through here, so a share is
+// always one weight against the total and never depends on what order the
+// entries are in.
+export function weightedPick(entries, weightOf) {
+  let total = 0
+  for (const entry of entries) {
+    total += Math.max(0, weightOf(entry))
+  }
+  if (total <= 0) {
+    return null
+  }
+  let roll = Math.random() * total
+  for (const entry of entries) {
+    roll -= Math.max(0, weightOf(entry))
+    if (roll < 0) {
+      return entry
+    }
+  }
+  return entries[entries.length - 1] // only reachable on floating-point dust
+}
 export const lerp = (a, b, t) => a + (b - a) * t
 
 // 2D vector helpers operating on {x, y} objects.

@@ -11,7 +11,7 @@
 import {
   randRange,
   randInt,
-  pick,
+  weightedPick,
   clamp,
   lerp,
   subtract,
@@ -2219,7 +2219,12 @@ export class Asteroid extends Entity {
             this.boundRadius * 2 + 1,
           )
           const out = reach * randRange(inset[0], inset[1])
-          const gun = pick(guns)
+          // Weighed as every pool is, on weights the spawner baked in for the
+          // sector; an empty pool arms nothing rather than throwing.
+          const gun = weightedPick(guns, (entry) => entry.weight ?? 1)
+          if (!gun) {
+            continue
+          }
           this.hardpoints.push({
             x: this.center.x + ux * out,
             y: this.center.y + uy * out,

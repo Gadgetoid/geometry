@@ -33,6 +33,7 @@ import {
   BINDING_DEVICES,
   CONFIG,
   HAZARD_TRAITS,
+  weightAt,
   MAX_SLOTS,
   PLAYER_TYPE,
   POWERUP_IDS,
@@ -2961,6 +2962,46 @@ test("a nearest scan answers for every collection it is asked about", () => {
 
   game.oreChunks = [new Ore(ARENA.cx + 50, ARENA.cy, 0, 0)]
   assert.ok(Math.abs(game.nearestOre(from).distance - 50) < 1e-9)
+})
+
+// ---- weights ---------------------------------------------------------------
+
+test("what an entry weighs follows its own fields and nothing else", () => {
+  const entry = { fromSector: 5, weightPerSector: 2, weightCap: 8 }
+  assert.equal(weightAt(entry, 4), 0, "not in the running before its sector")
+  assert.equal(weightAt(entry, 5), 1, "and weighs the default once it is")
+  assert.equal(weightAt(entry, 7), 5, "growing by weightPerSector each sector after")
+  assert.equal(weightAt(entry, 20), 8, "up to the cap and no further")
+  assert.equal(weightAt({ weight: 4 }, 0), 4, "a stated weight is taken as it stands")
+  assert.equal(weightAt({}, 0), 1, "and an entry that states nothing weighs one")
+})
+
+test("a hazard's share can be worked out rather than sampled", () => {
+  // The point of weighing them: the share is one weight over the total, so it is
+  // arithmetic. It used to be whatever was left after the rolls before it, which
+  // could only be recovered by running the rolls.
+  const game = liveGame()
+  const label = (t) =>
+    [t.explosive && "explosive", t.gun && "gun", t.shield && "shield"].filter(Boolean).join("+")
+  for (const sector of [5, 8, 20]) {
+    const total = HAZARD_TRAITS.reduce((sum, h) => sum + weightAt(h, sector), 0)
+    const counts = new Map()
+    const rolls = 20000
+    seeded(sector * 1000 + 7, () => {
+      for (let i = 0; i < rolls; i++) {
+        const key = label(game.rollHazardTraits(sector))
+        counts.set(key, (counts.get(key) || 0) + 1)
+      }
+    })
+    for (const hazard of HAZARD_TRAITS) {
+      const want = weightAt(hazard, sector) / total
+      const got = (counts.get(label(hazard.traits)) || 0) / rolls
+      assert.ok(
+        Math.abs(want - got) < 0.02,
+        `sector ${sector} ${label(hazard.traits)}: weights say ${want.toFixed(3)}, rolled ${got.toFixed(3)}`,
+      )
+    }
+  }
 })
 
 // ---- who shoots at whom ----------------------------------------------------
