@@ -1545,6 +1545,9 @@ const SHIP_DESIGNS = {
     colour: PALETTE.ore.body,
     mass: 0.48, // the bare hull: its loadout adds 0.32 on top, see ladenMass
     armour: 1.2,
+    // Its shape and its thrusters would have it coming about faster than the player, which
+    // is not a dart's job: it is quick in a straight line and has to commit to a turn.
+    handling: 0.8,
     lifeTime: [26, 36],
     hardpoints: [
       { local: [18, 0], role: "nose" },
@@ -1577,8 +1580,9 @@ const SHIP_DESIGNS = {
     hunts: true,
     // A dart lines up, fires and leaves rather than closing to a knife fight it cannot win.
     // Half its own beam's reach is close enough, and it will not sit in front of a ship that
-    // is pointed at it inside the reach of a charged one.
-    breakOff: { near: 210, facing: 0.55, aimedWithin: 520, hold: 1.3 },
+    // is pointed at it inside the reach of a charged one. `turn` is what it manages while it
+    // is going: an arc out, rather than spinning on the spot and running the other way.
+    breakOff: { near: 210, facing: 0.55, aimedWithin: 520, hold: 1.3, turn: 0.5 },
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 260, ring: 19, shake: 10 },
     killScore: 420,
@@ -1884,6 +1888,7 @@ const SHIP_DESIGNS = {
     warp: { radius: 66, strength: 0.28, wave: 0.05 },
     mass: 0.47, // bare hull; laden it matches the seeker at 0.8
     armour: 1.2,
+    handling: 0.8, // as its rival counterpart: quick in a line, committed in a turn
     lifeTime: [26, 36],
     hardpoints: [
       { local: [4, 0], role: "nose" },
@@ -1915,8 +1920,9 @@ const SHIP_DESIGNS = {
     hunts: true,
     // A dart lines up, fires and leaves rather than closing to a knife fight it cannot win.
     // Half its own beam's reach is close enough, and it will not sit in front of a ship that
-    // is pointed at it inside the reach of a charged one.
-    breakOff: { near: 210, facing: 0.55, aimedWithin: 520, hold: 1.3 },
+    // is pointed at it inside the reach of a charged one. `turn` is what it manages while it
+    // is going: an arc out, rather than spinning on the spot and running the other way.
+    breakOff: { near: 210, facing: 0.55, aimedWithin: 520, hold: 1.3, turn: 0.5 },
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 260, ring: 19, shake: 10 },
     killScore: 420,

@@ -2493,6 +2493,39 @@ test("the edge a cut leaves on a surviving hull burns", () => {
   assert.ok(drawn.includes(PALETTE.fx.fire), "the raw edge glows")
 })
 
+test("a dart commits to the arc it breaks off along", () => {
+  // Turning slower on the way out is what makes it an arc rather than a spin on the spot
+  // followed by a straight run: the whole point of a dart is that it has to commit.
+  const seeker = SHIP_TYPES.seeker
+  assert.ok(seeker.breakOff.turn < 1, "it manages less than its full rate while going")
+  assert.ok(seeker.turnRate <= 3.25, "and no better than the player at its best")
+
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ vertices: square(-900, -900, 40), spin: 0 })]
+  beSolid(game.player)
+  game.player.takeDamage = () => {}
+  game.player.x = 500
+  game.player.y = 320
+  game.player.angle = 0
+  const rival = plainRival(600, 320, "seeker") // well inside its break-off range
+  rival.angle = Math.PI
+  game.rivals = [rival]
+
+  let most = 0
+  for (let i = 0; i < 30; i++) {
+    const was = rival.angle
+    game.player.x = 500
+    game.player.y = 320
+    rival.update(1 / 60, game)
+    most = Math.max(most, Math.abs(shortestTurn(was, rival.angle)) * 60)
+  }
+  assert.ok(rival.breaking > 0, "it is on its way out")
+  assert.ok(
+    most <= seeker.turnRate * seeker.breakOff.turn + 1e-6,
+    `while going it turned at ${most.toFixed(2)}, over its ${(seeker.turnRate * seeker.breakOff.turn).toFixed(2)}`,
+  )
+})
+
 test("a small hull is finished by any cut at all, however light", () => {
   // The other half of the rule, and what keeps the existing behaviour: the whole of a
   // scout is a fraction of the smallest piece its plating holds together in, so there is
@@ -5716,8 +5749,13 @@ test("the ship stats follow from the shape, the numbers and what is fitted", () 
     assert.equal(t.laden, laden, `${name} reports what it weighs`)
     assert.ok(Math.abs(t.accel - thrust / laden) < 1e-9, `${name} accel`)
     assert.ok(Math.abs(t.maxSpeed - t.accel * k.speedPerAccel) < 1e-9, `${name} maxSpeed`)
+    // `handling` is the one sanctioned trim, a plain multiplier on the turn the shape
+    // implies: the darts state 0.8, so they come about like the player rather than better.
     assert.ok(
-      Math.abs(t.turnRate - (torqueOf(t) * k.turnPerReach) / (laden * reach(t.outline))) < 1e-9,
+      Math.abs(
+        t.turnRate -
+          (torqueOf(t) * k.turnPerReach * (t.handling ?? 1)) / (laden * reach(t.outline)),
+      ) < 1e-9,
       `${name} turnRate`,
     )
     assert.ok(Math.abs(t.drag - (1 - k.dragPerMass / laden)) < 1e-9, `${name} drag`)

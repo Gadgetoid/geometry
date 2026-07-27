@@ -2838,8 +2838,13 @@ export class RivalShip extends Ship {
           ? this.#awayFrom(prey.target)
           : { x: prey.target.x, y: prey.target.y }
         : target || this.#wanderGoal()
+    // A hull breaking off is committing to an arc out, not snapping round on the spot: what
+    // it can manage while it does is the type's business, and a hull that says nothing turns
+    // as it always does.
+    const spec = this.type.breakOff
+    const rate = this.breaking > 0 && spec && spec.turn ? this.turnRate * spec.turn : this.turnRate
     const turn = shortestTurn(this.angle, bearingTo(this, goal))
-    this.angle += clamp(turn, -this.turnRate * dt, this.turnRate * dt)
+    this.angle += clamp(turn, -rate * dt, rate * dt)
     this.vx += Math.cos(this.angle) * this.accel * dt
     this.vy += Math.sin(this.angle) * this.accel * dt
     const speed = Math.hypot(this.vx, this.vy)
