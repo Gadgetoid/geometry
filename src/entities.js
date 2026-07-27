@@ -1306,7 +1306,7 @@ export class PlayerShip extends Ship {
     this.applyLoadout(PLAYER_TYPE.loadout)
     this.fitEquipment(game)
     this.nose = this.hardpointByRole("nose")
-    this.aux = this.hardpointByRole("aux") // defense turret slot, filled by an upgrade
+    this.aux = this.hardpointByRole("aux") // the turret's mount, filled from EQUIPMENT
     this.mainWeapon = this.nose.module
     this.energyMax = game.maxEnergy()
     this.energy = this.energyMax
@@ -1555,33 +1555,8 @@ export class PlayerShip extends Ship {
     }
   }
 
-  // Mount the module an upgrade pays for, as declared in PLAYER_TYPE.fittings.
   // Fitting something already fitted is ignored, so buying twice or resuming a
   // run does not reset a weapon mid-reload.
-  // A purchased fitting takes its hardpoint, replacing whatever else was on it.
-  // That is how an upgrade can be a better piece of equipment instead of a flag:
-  // REVERSE THRUST fits a drive with vanes in place of the one the hull came with.
-  // Fitting what is already there is left alone, so buying twice does not swap in
-  // a fresh module and reset its reload.
-  fit(id) {
-    const entry = this.type.fittings && this.type.fittings[id]
-    const hp = entry && this.hardpoints[entry.hp]
-    if (!hp) {
-      return
-    }
-    if (entry.slot) {
-      this.applyLoadout([entry]) // the core refuses a repeat of what it already has
-      return
-    }
-    const wanted = entry.weapon || entry.shield || entry.engine || entry.radar
-    if (hp.module && hp.module.typeName === wanted) {
-      return
-    }
-    this.applyLoadout([entry])
-  }
-
-  // Mount everything the run has already bought. A resumed run rebuilds the ship
-  // from scratch, so without this a fitting bought last session would be lost.
   // Mount whatever the run has fitted in each equipment slot, replacing what was
   // there. The drive decides how hard the ship accelerates, so that follows.
   fitEquipment(game) {
@@ -1612,6 +1587,12 @@ export class PlayerShip extends Ship {
     this.refreshDrive()
   }
 
+  // Is a turret fitted? Asked of the mount rather than of an upgrade flag, so it is
+  // true exactly when there is a gun there to aim and to draw.
+  hasTurret() {
+    return !!(this.aux && this.aux.module && this.aux.module.kind === "weapon")
+  }
+
   // What the fitted engines add up to, which is what the ship accelerates on.
   refreshDrive() {
     let thrust = 0
@@ -1621,14 +1602,6 @@ export class PlayerShip extends Ship {
       }
     }
     this.accel = thrust / (this.type.mass ?? 1)
-  }
-
-  fitPurchased(upgrades) {
-    for (const id of Object.keys(this.type.fittings || {})) {
-      if (upgrades[id]) {
-        this.fit(id)
-      }
-    }
   }
 
   #toWorld(lx, ly) {
@@ -1746,7 +1719,7 @@ export class PlayerShip extends Ship {
     // cooldown with no input it reverts to auto-targeting.
     this.turretManual = Math.max(0, this.turretManual - dt)
     this.turretFiring = false
-    if (canControl && game.upgrades.turret) {
+    if (canControl && this.hasTurret()) {
       let active = false
       if (pad.turretAim !== null) {
         this.turretAim = pad.turretAim
@@ -2093,7 +2066,7 @@ export class PlayerShip extends Ship {
       )
     }
 
-    if (game.upgrades.turret && this.aux) {
+    if (this.hasTurret()) {
       const aim = this.turretAim || 0
       const mount = this.mountWorld(this.aux.local)
       const barrels = this.aux.module ? this.aux.module.barrels : 1

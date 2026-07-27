@@ -1668,30 +1668,45 @@ test("damage taken is recorded even when the shield absorbs it", () => {
   assert.equal(game.stats.damage, 50, "the hit is still counted")
 })
 
-test("buying a fitting mounts what the registry declares for it", () => {
+test("buying a turret mounts the one that was chosen, and owning both allows a swap", () => {
   const game = liveGame()
   const aux = game.player.hardpointByRole("aux")
-  assert.equal(aux.module, null, "the slot starts empty")
-  const turret = SHOP.find((item) => item.id === "turret")
-  turret.apply(game)
-  assert.equal(game.upgrades.turret, true)
-  assert.equal(aux.module.typeName, PLAYER_TYPE.fittings.turret.weapon)
-  // buying it again must not swap in a fresh module mid-reload
+  assert.equal(aux.module, null, "the mount starts empty: a turret is bought, not issued")
+  assert.equal(game.player.hasTurret(), false)
+
+  game.oreBalance = 500
+  const [blaster, flak] = EQUIPMENT.turret.options
+  game.equipmentRows("turret")[0].action(game)
+  assert.equal(aux.module.typeName, blaster.id)
+  assert.equal(game.player.hasTurret(), true)
+
+  // fitting what is already there leaves the module alone, so a reload is not reset
   const mounted = aux.module
-  turret.apply(game)
+  game.equipmentRows("turret")[0].action(game)
   assert.equal(aux.module, mounted)
+
+  // neither is a step up from the other, so both are offered at once and swapping
+  // between them costs nothing
+  assert.ok(!EQUIPMENT.turret.ladder, "the two guns are a choice, not a ladder")
+  const ore = game.oreBalance
+  game.equipmentRows("turret")[1].action(game)
+  assert.equal(aux.module.typeName, flak.id)
+  assert.equal(game.oreBalance, ore - flak.cost, "the second one is bought")
+  game.equipmentRows("turret")[0].action(game)
+  assert.equal(aux.module.typeName, blaster.id, "and swapping back is free")
+  assert.equal(game.oreBalance, ore - flak.cost)
 })
 
-test("a resumed run re-mounts the fittings it had already bought", () => {
+test("a resumed run re-mounts the turret it had already bought", () => {
   const game = liveGame()
-  game.upgrades.turret = true
+  withEquipment(game, "turret", EQUIPMENT.turret.options[1].id)
   game.level = 5
   game.enterShop()
   const resumed = new Game()
   resumed.savedRun = game.savedRun
   resumed.resumeRun()
-  assert.equal(resumed.upgrades.turret, true)
-  assert.ok(resumed.player.hardpointByRole("aux").module, "the turret must come back with the run")
+  assert.equal(resumed.fittedEquipment("turret"), EQUIPMENT.turret.options[1].id)
+  assert.ok(resumed.player.hasTurret(), "the turret must come back with the run")
 })
 
 test("the accuracy bonus is withheld when nothing was fired", () => {
@@ -2652,8 +2667,7 @@ test("the defense turret holds fire in stealth, but still answers the player's h
   const armed = (hidden, manual) => {
     const game = liveGame()
     const player = game.player
-    game.upgrades.turret = true
-    player.fit("turret")
+    withEquipment(game, "turret", "defenseBlaster")
     player.x = 400
     player.y = 320
     player.energy = player.energyMax
@@ -4199,8 +4213,7 @@ test("sector plans follow PROGRESSION", () => {
 
 // The player's nose turret, fitted from the shop.
 function withTurret(game) {
-  game.upgrades.turret = true
-  game.player.fit("turret")
+  withEquipment(game, "turret", "defenseBlaster")
   const hp = game.player.hardpoints.find(
     (entry) => entry.module && entry.module.kind === "weapon" && entry.role === "aux",
   )
@@ -4761,7 +4774,7 @@ test("resume closes the menu", () => {
 test("the shop records the run, and the title carries on from it", () => {
   const game = liveGame()
   game.upgrades.core = 2
-  game.upgrades.turret = true
+  withEquipment(game, "turret", "defenseBlaster")
   game.oreBalance = 137
   game.score = 9001
   game.lives = 2

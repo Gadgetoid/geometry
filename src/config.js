@@ -521,6 +521,19 @@ export const WEAPON_TYPES = {
     speed: 420,
     colour: PALETTE.player.turret,
   },
+  // The turret's other option: a stream of light rounds instead of single heavy
+  // ones. It comes out ahead on damage a second and gives most of its reach away
+  // for it, so it is a choice about how close the fight is rather than an upgrade.
+  // Its rate needs three barrels to cycle, and it is drawn with them.
+  defenseFlak: {
+    kind: "projectile",
+    damage: 14,
+    energy: 2,
+    reload: 0.1,
+    range: 240,
+    speed: 380,
+    colour: PALETTE.player.turret,
+  },
   // The player's cutting beam, in the marks the shop sells. Each states the whole
   // gun rather than a multiplier on the one below, so what a mark does is read off
   // its own entry instead of out of four tables indexed in parallel.
@@ -1210,14 +1223,6 @@ const PLAYER_DESIGN = {
   // magnet is here rather than in the shop because a ship that cannot pick ore up
   // is not a ship: it can be ejected, which is a choice, not a starting state.
   startingSpecials: ["oreMagnet"],
-  // Modules the shop bolts on after the fact, keyed by the upgrade that pays for
-  // them. Each entry is an ordinary loadout entry, mounted the same way a spawn
-  // loadout is, and re-mounted when a saved run is resumed. A one-off fitting in
-  // SHOP needs no `apply` of its own to reach this. A levelled upgrade reaches it
-  // from its own `apply`, and mounts at level 1.
-  fittings: {
-    turret: { hp: 2, weapon: "defenseBlaster", controller: "defense" },
-  },
 }
 
 export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
@@ -1275,6 +1280,30 @@ export const EQUIPMENT = {
         name: "SHIELD MK IV",
         desc: "0.64 a point: the cell goes three times as far against fire as Mk I.",
         cost: 175,
+      },
+    ],
+  },
+  // Two guns for the aux mount, at the same price: neither is the better one, so
+  // there is no ladder to climb. Nothing is owned to begin with, so a run starts
+  // without a turret at all.
+  turret: {
+    label: "TURRET",
+    desc: "A gun that minds the ship on its own while the laser is busy elsewhere.",
+    hp: 2,
+    mount: "weapon",
+    controller: "defense",
+    options: [
+      {
+        id: "defenseBlaster",
+        name: "BLASTER",
+        desc: "Single heavy rounds out to 340. Reaches a rival before it reaches you.",
+        cost: 85,
+      },
+      {
+        id: "defenseFlak",
+        name: "FLAK",
+        desc: "A stream of light rounds, harder hitting but only out to 240.",
+        cost: 85,
       },
     ],
   },
@@ -1522,7 +1551,7 @@ export const SPECIAL_IDS = Object.keys(SPECIAL_TYPES)
 export const MAX_SLOTS = 4
 
 export function freshUpgrades() {
-  return { core: 0, turret: false, ...freshEquipment() }
+  return { core: 0, ...freshEquipment() }
 }
 
 // Sizes the in-game HUD can be drawn at, in menu order. The menus themselves are
@@ -1644,25 +1673,6 @@ const equipmentRow = (slot) => ({
   maxed: (g) => g.ownsEveryOption(slot),
 })
 
-// A one-off fitting. Buying it sets the flag and mounts whatever PLAYER_TYPE
-// declares for that id, so an upgrade that only bolts a module on needs nothing
-// but this entry.
-const fitting = (id, name, desc, price, apply) => ({
-  id,
-  name,
-  desc,
-  cost: () => price,
-  info: (g) => (g.upgrades[id] ? "INSTALLED" : "-"),
-  maxed: (g) => g.upgrades[id],
-  apply: (g) => {
-    g.upgrades[id] = true
-    g.fitUpgrade(id)
-    if (apply) {
-      apply(g)
-    }
-  },
-})
-
 export const SHOP = [
   // A spare ship and the specials already carried are not part of the loadout the
   // rest of the page sells, so they head the list as their own group.
@@ -1694,7 +1704,7 @@ export const SHOP = [
   ),
   equipmentRow("shield"),
   equipmentRow("laser"),
-  fitting("turret", "TURRET", "Auto-fires on rivals that come close, while the laser is busy.", 85),
+  equipmentRow("turret"),
   equipmentRow("engine"),
 ]
 

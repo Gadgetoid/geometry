@@ -369,11 +369,6 @@ export class Game {
   }
   // Mount the module an upgrade pays for, if the ship exists yet. The shop can be
   // reached before one does (the dev shop), so this is where the check lives.
-  fitUpgrade(id) {
-    if (this.player) {
-      this.player.fit(id)
-    }
-  }
   showToast(text) {
     this.toast = { text, life: CONFIG.TOAST_TIME }
   }
@@ -1990,7 +1985,6 @@ export class Game {
     this.upgrades = { ...freshUpgrades(), ...run.upgrades, ...this.#restoredEquipment(run) }
     this.level = run.level
     this.player = new PlayerShip(this)
-    this.player.fitPurchased(this.upgrades)
     // Anything the registry no longer knows is dropped, so an old save cannot put
     // a special that has since been removed into a slot or onto the shop's shelf.
     ;(run.items || []).forEach((id, slot) => {

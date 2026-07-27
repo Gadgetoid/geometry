@@ -171,8 +171,10 @@ test("holding the trigger charges and releasing it fires", () => {
 
 test("the right stick aims the turret and the bumper fires it", () => {
   const game = liveGame()
-  game.upgrades.turret = true
-  game.player.fit("turret")
+  // The turret is equipment now, owned and fitted rather than flagged on.
+  game.upgrades.owned.turret = ["defenseBlaster"]
+  game.upgrades.fitted.turret = "defenseBlaster"
+  game.player.fitEquipment(game)
   const input = new GamepadInput(game)
   input.apply(
     readPad(pad({ axes: { [A.turretX]: 0, [A.turretY]: -1 }, buttons: { [D.turretFire]: 1 } })),
