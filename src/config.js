@@ -619,6 +619,61 @@ export const SHIELD_TYPES = {
 }
 
 // ---------------------------------------------------------------------------
+// ENGINE TYPES - what pushes a hull along. An engine is a module like a weapon or
+// a shield: it mounts on a hardpoint, so how hard a ship accelerates follows from
+// what is bolted to it and where, not from a number on the type.
+//
+//   thrust  what one of these puts out
+//   plume   the exhaust it draws. `rate` is plumes a second, `speed` how hard
+//           they are thrown back (which is also how long each streak draws),
+//           `life` how long they linger, `spread` how much they fan out and
+//           `width` how wide the throat is, which spreads where a plume starts
+//           rather than where it goes: a wide nozzle is already broad where it
+//           leaves the hull. Omit `width` for a point emitter.
+//   colour  the plume's colour
+//
+// A main engine pushes along the hull's facing and cannot reverse, so a hull
+// driven by these alone sweeps through a turn instead of pivoting in place.
+// Turning on the spot is a maneuvering thruster's job, which is core equipment;
+// see ROADMAP.md. Nothing models that yet, and until it does `turnRate` stands in
+// for it.
+// ---------------------------------------------------------------------------
+export const ENGINE_TYPES = {
+  // One broad nozzle, thrown wide and slow: a dart that scoots.
+  pulseDrive: {
+    thrust: 100,
+    plume: { rate: 26, speed: 55, life: 0.4, spread: 20 },
+    colour: PALETTE.rival.hull,
+  },
+  // A tight pair, cycling fast and barely fanning at all, so the seeker reads as
+  // driven rather than blown along.
+  ionDrive: {
+    thrust: 75,
+    plume: { rate: 40, speed: 30, life: 0.48, spread: 4 },
+    colour: PALETTE.rival.hull,
+  },
+  // A long heavy plume: a single small stream read far too light for a hull the
+  // size of a frigate.
+  siegeDrive: {
+    thrust: 100,
+    plume: { rate: 44, speed: 150, life: 0.62, spread: 26, width: 9 },
+    colour: PALETTE.rival.hull,
+  },
+}
+
+// What a design's engines add up to, which is what pushes it. A hull with none
+// mounted does not move under its own power.
+export function thrustOf(type) {
+  let total = 0
+  for (const entry of type.loadout || []) {
+    if (entry.engine) {
+      total += ENGINE_TYPES[entry.engine].thrust
+    }
+  }
+  return total
+}
+
+// ---------------------------------------------------------------------------
 // FACTIONS - who shoots at whom. One entry per side, listing the sides it is
 // hostile to, and Game.hostileTarget is the only thing that reads it: every gun
 // and every hull that steers at something asks that one question, so no
@@ -643,11 +698,12 @@ export const FACTIONS = {
 //
 // An outline is in world units, as a rock's vertices are, so how big a hull is
 // can be read off its own coordinates and two hulls can be compared by looking
-// at them. A type then states three numbers a person can hold in their head:
+// at them. A type then states two numbers a person can hold in their head:
 //
 //   mass    how heavy the hull is, on the scale a rock's mass is on
-//   power   engine output, in units of `thrustPerPower` below
 //   armour  plating quality, as hull points per unit of hull area
+//
+// and bolts engines to it, which is where its thrust comes from.
 //
 // How it flies and how much it can take then follow from those and from the
 // outline itself, through the relationships below. That is the point of keeping
@@ -665,7 +721,6 @@ export const FACTIONS = {
 // shape and mass dictate.
 // ---------------------------------------------------------------------------
 export const SHIP_SCALARS = {
-  thrustPerPower: 100, // accel = power * this / mass
   speedPerAccel: 1.37, // top speed, as a multiple of acceleration
   // turnRate = thrust * this / (mass * reach): thrusters at the hull's edge give a
   // torque proportional to its reach, against a spin inertia that grows with mass
@@ -719,7 +774,7 @@ function hullShape(type) {
 export function deriveShipStats(type) {
   const k = SHIP_SCALARS
   const stated = (field, value) => (type[field] !== undefined ? type[field] : value)
-  const thrust = type.power * k.thrustPerPower
+  const thrust = thrustOf(type)
   const reach = outlineReach(type.outline)
   const hullArea = outlineArea(type.outline)
   const accel = stated("accel", thrust / type.mass)
@@ -833,18 +888,7 @@ const SHIP_DESIGNS = {
     ],
     colour: PALETTE.ore.body,
     mass: 0.8,
-    power: 1.5,
     armour: 1.2,
-    exhaust: {
-      mounts: [
-        [-10.8, 6],
-        [-10.8, -6],
-      ],
-      rate: 40,
-      speed: 30,
-      life: 0.48,
-      spread: 4,
-    },
     lifeTime: [26, 36],
     energyMax: 300,
     regen: 34,
@@ -852,11 +896,15 @@ const SHIP_DESIGNS = {
       { local: [18, 0], role: "nose" },
       { local: [-5.4, 0], role: "gun" },
       { local: [-0.6, 0], role: "core" },
+      { local: [-10.8, 6], role: "engine" },
+      { local: [-10.8, -6], role: "engine" },
     ],
     loadout: [
       // `hunter` is the behaviour, not the ship: line up, wind up briefly, fire.
       { hp: 0, weapon: "seekerLaser", controller: "hunter" },
       { hp: 2, shield: "deflector" },
+      { hp: 3, engine: "ionDrive" },
+      { hp: 4, engine: "ionDrive" },
     ],
     arms: {
       gun: {
@@ -884,9 +932,7 @@ const SHIP_DESIGNS = {
     ],
     colour: PALETTE.rival.hull,
     mass: 0.7, // a light dart
-    power: 1,
     armour: 1,
-    exhaust: { mounts: [[-14.04, 0]], rate: 26, speed: 55, life: 0.4, spread: 20 },
     lifeTime: [16, 26],
     energyMax: 90,
     regen: 22,
@@ -894,8 +940,12 @@ const SHIP_DESIGNS = {
       { local: [16.8, 0], role: "nose" },
       { local: [2.4, 0], role: "gun" },
       { local: [0, 0], role: "core" },
+      { local: [-14.04, 0], role: "engine" },
     ],
-    loadout: [{ hp: 0, weapon: "minerLaser", controller: "miner" }], // always has a mining laser
+    loadout: [
+      { hp: 0, weapon: "minerLaser", controller: "miner" }, // always has a mining laser
+      { hp: 3, engine: "pulseDrive" },
+    ],
     arms: {
       gun: {
         hp: 1,
@@ -917,20 +967,7 @@ const SHIP_DESIGNS = {
     outline: FRIGATE_SHAPE,
     colour: PALETTE.rival.frigateHull,
     mass: 6, // a slab: heavy, hard to turn, and thin-skinned for its size
-    power: 2,
     armour: 0.6,
-    // twin nozzles set either side of the tail, throwing a long heavy plume: a
-    // single small stream read far too light for a hull this size
-    exhaust: {
-      mounts: [
-        [-71.2, -14.4],
-        [-71.2, 14.4],
-      ],
-      rate: 44,
-      speed: 150,
-      life: 0.62,
-      spread: 26,
-    },
     lifeTime: [34, 50],
     energyMax: 260,
     regen: 30,
@@ -941,6 +978,10 @@ const SHIP_DESIGNS = {
       { local: [45.2, 21.2], role: "gun" },
       { local: [-45.2, 21.2], role: "gun" },
       { local: [0, 0], role: "core" },
+      // set either side of the tail, so the pair sweeps the hull round rather
+      // than pivoting it
+      { local: [-71.2, -14.4], role: "engine" },
+      { local: [-71.2, 14.4], role: "engine" },
     ],
     loadout: [
       { hp: 0, weapon: "cannonLaser", controller: "hunter" },
@@ -949,6 +990,8 @@ const SHIP_DESIGNS = {
       { hp: 3, weapon: "autocannon", controller: "turret" },
       { hp: 4, weapon: "autocannon", controller: "turret" },
       { hp: 5, shield: "standard" },
+      { hp: 6, engine: "siegeDrive" },
+      { hp: 7, engine: "siegeDrive" },
     ],
     spawn: { fromSector: 6, weight: 2, maxConcurrent: 1 },
     hunts: true, // steers for the player rather than for ore and rocks

@@ -48,6 +48,7 @@ import {
   VIEW_H,
   WEAPON_TYPES,
   SHIP_TYPES,
+  thrustOf,
   barrelCount,
   deriveShipStats,
 } from "../src/config.js"
@@ -3843,9 +3844,9 @@ test("the volume row still adjusts, on the page that has it", () => {
   assert.ok(game.settings.volume < before, "left turned it down")
 })
 
-// ---- a ship is a shape and three numbers ----------------------------------
+// ---- a ship is a shape, two numbers and what is bolted to it ---------------
 
-test("every ship type states only its shape and its three stats", () => {
+test("every ship type states only its shape, its two stats and its loadout", () => {
   // The derived settings must not be written down as well, or the relationships
   // stop being the thing that decides them and quietly become decoration.
   const derived = [
@@ -3860,9 +3861,12 @@ test("every ship type states only its shape and its three stats", () => {
     "rockContact",
   ]
   for (const [name, type] of Object.entries(SHIP_TYPES)) {
-    for (const field of ["mass", "power", "armour"]) {
+    for (const field of ["mass", "armour"]) {
       assert.equal(typeof type[field], "number", `${name} must state ${field}`)
     }
+    // Thrust is not a number on the type any more: it is whatever is bolted on.
+    assert.equal(type.power, undefined, `${name} must not state its own thrust`)
+    assert.ok(thrustOf(type) > 0, `${name} must have an engine to push it`)
     for (const field of derived) {
       assert.equal(typeof type[field], "number", `${name} must end up with ${field}`)
       assert.ok(Number.isFinite(type[field]), `${name}.${field} is ${type[field]}`)
@@ -3870,11 +3874,11 @@ test("every ship type states only its shape and its three stats", () => {
   }
 })
 
-test("the ship stats follow from the shape and the three numbers", () => {
+test("the ship stats follow from the shape, the numbers and the engines", () => {
   const k = SHIP_SCALARS
   const reach = (outline) => Math.max(...outline.map(([x, y]) => Math.hypot(x, y)))
   for (const [name, t] of Object.entries(SHIP_TYPES)) {
-    const thrust = t.power * k.thrustPerPower
+    const thrust = thrustOf(t)
     assert.ok(Math.abs(t.accel - thrust / t.mass) < 1e-9, `${name} accel`)
     assert.ok(Math.abs(t.maxSpeed - t.accel * k.speedPerAccel) < 1e-9, `${name} maxSpeed`)
     assert.ok(
@@ -3891,7 +3895,7 @@ test("the ship stats follow from the shape and the three numbers", () => {
   }
 })
 
-test("a new ship needs a shape and three numbers, and nothing else", () => {
+test("a new ship needs a shape, two numbers and an engine, and nothing else", () => {
   // Same machinery the shipped types go through, so this cannot pass by way of
   // a value written down somewhere.
   const design = {
@@ -3903,10 +3907,12 @@ test("a new ship needs a shape and three numbers, and nothing else", () => {
     ],
     colour: PALETTE.rival.hull,
     mass: 2,
-    power: 1.5,
     armour: 0.8,
-    hardpoints: [{ local: [0, 0], role: "core" }],
-    loadout: [],
+    hardpoints: [
+      { local: [0, 0], role: "core" },
+      { local: [-20, 0], role: "engine" },
+    ],
+    loadout: [{ hp: 1, engine: "pulseDrive" }],
     spawn: { fromSector: 5, chance: 0.5, maxConcurrent: 1 },
     lifeTime: [20, 30],
     energyMax: 120,
@@ -3941,13 +3947,13 @@ test("a new ship needs a shape and three numbers, and nothing else", () => {
 })
 
 test("stating a setting on a type keeps it, for tuning one ship", () => {
-  const design = { ...SHIP_TYPES.scout, mass: 0.7, power: 1, armour: 1, drag: 0.123, hull: 99 }
+  const design = { ...SHIP_TYPES.scout, mass: 0.7, armour: 1, drag: 0.123, hull: 99 }
   delete design.accel
   const tuned = deriveShipStats(design)
   assert.equal(tuned.drag, 0.123, "a stated value wins")
   assert.equal(tuned.hull, 99)
   assert.ok(
-    Math.abs(tuned.accel - (1 * SHIP_SCALARS.thrustPerPower) / 0.7) < 1e-9,
+    Math.abs(tuned.accel - thrustOf(SHIP_TYPES.scout) / 0.7) < 1e-9,
     "the rest still derives",
   )
 })

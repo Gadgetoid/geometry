@@ -39,6 +39,7 @@ import {
   CONFIG,
   WEAPON_TYPES,
   SHIELD_TYPES,
+  ENGINE_TYPES,
   SHIP_TYPES,
   PLAYER_TYPE,
   AST_SHAPE,
@@ -741,6 +742,49 @@ export const WEAPON_CONTROLLERS = {
 }
 
 // ---------------------------------------------------------------------------
+// Engine module: what pushes the hull along, and the plume that says so. Each
+// keeps its own backlog, so two engines cycle independently instead of flickering
+// between one stream and the other.
+// ---------------------------------------------------------------------------
+export class Engine {
+  constructor(typeName) {
+    this.kind = "engine"
+    this.typeName = typeName
+    this.type = ENGINE_TYPES[typeName]
+    this.backlog = 0 // fractional plumes carried between frames
+  }
+
+  // Throw plumes back from `world` along the bearing `back`, at this engine's own
+  // rate, counted through the backlog so it does not vary with the frame rate.
+  //
+  // `width` spreads where a plume starts, across the nozzle rather than out of a
+  // point, so a wide throat reads as a plume that is already broad where it leaves
+  // the hull. `spread` scatters where it goes. A nozzle of no width is a point
+  // emitter, which is what a plume that only states `spread` gets.
+  emit(dt, game, world, back) {
+    const plume = this.type.plume
+    this.backlog += plume.rate * dt
+    const bx = Math.cos(back),
+      by = Math.sin(back)
+    const acrossX = -by,
+      acrossY = bx
+    while (this.backlog >= 1) {
+      this.backlog -= 1
+      const spread = plume.spread ?? 20
+      const off = plume.width ? randRange(-plume.width / 2, plume.width / 2) : 0
+      game.emit(
+        world.x + acrossX * off,
+        world.y + acrossY * off,
+        bx * plume.speed + randRange(-spread, spread),
+        by * plume.speed + randRange(-spread, spread),
+        plume.life,
+        this.type.colour,
+      )
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Shield module: converts blocked damage into energy drain (handled in
 // Entity.takeDamage). Draws a pulsing regular polygon whose alpha tracks the
 // host's remaining energy.
@@ -1026,6 +1070,8 @@ export class Ship extends Entity {
         hp.module = new Weapon(entry.weapon, entry.controller)
       } else if (entry.shield) {
         hp.module = new Shield(entry.shield)
+      } else if (entry.engine) {
+        hp.module = new Engine(entry.engine)
       }
     }
   }
@@ -1899,7 +1945,6 @@ export class RivalShip extends Ship {
     this.maxSpeed = type.maxSpeed
     this.turnRate = type.turnRate
     this.drag = type.drag
-    this.exhaustBacklog = 0 // fractional plumes carried between frames
     this.energyMax = type.energyMax
     this.energy = type.energyMax
     this.regen = type.regen
@@ -2031,32 +2076,13 @@ export class RivalShip extends Ship {
     }
   }
 
-  // Thruster plumes, one stream per mount in the type's `exhaust`. Every mount
-  // emits on every tick, so a ship with two nozzles shows two continuous streams
-  // rather than one that flickers between them. `rate` is plumes a second per
-  // stream, counted through a backlog so it does not vary with the frame rate.
+  // Every engine draws its own plume from its own hardpoint, so a hull with two
+  // nozzles shows two streams and one that has lost an engine stops showing its.
   #thrust(dt, game) {
-    const spec = this.type.exhaust
-    if (!spec) {
-      return
-    }
-    this.exhaustBacklog += spec.rate * dt
     const back = this.angle + Math.PI
-    const bx = Math.cos(back),
-      by = Math.sin(back)
-    while (this.exhaustBacklog >= 1) {
-      this.exhaustBacklog -= 1
-      for (const mount of spec.mounts) {
-        const world = this.mountWorld(mount)
-        const spread = spec.spread ?? 20
-        game.emit(
-          world.x,
-          world.y,
-          bx * spec.speed + randRange(-spread, spread),
-          by * spec.speed + randRange(-spread, spread),
-          spec.life,
-          PALETTE.rival.hull,
-        )
+    for (const hp of this.hardpoints) {
+      if (hp.module && hp.module.kind === "engine") {
+        hp.module.emit(dt, game, this.mountWorld(hp.local), back)
       }
     }
   }

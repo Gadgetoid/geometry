@@ -50,6 +50,25 @@ be killed.
 It is drawn as a direct offset outline of the ship itself, with convex regions
 smoothed out, so the shape of the shield is the shape of the ship.
 
+## Equipment, and handling that comes out of it
+
+A hull is an outline with things bolted to it, and how it flies should follow from
+what is bolted where. Engines are modules now. The rest follows:
+
+- A core hardpoint takes what a ship runs on: an energy generator, a shield, a
+  radar, maneuvering thrusters. Energy capacity and regen stop being numbers on
+  the type and become the generator's.
+- Main engines push along the facing and cannot reverse. A hull driven by those
+  alone sweeps through a long arc; it cannot pivot. Turning on the spot is what
+  maneuvering thrusters buy, so a frigate with big engines and little else should
+  never out-turn the player, whatever its thrust. `turnRate` stands in for this
+  until it is modelled.
+- Equipment carries its own mass, so fitting more costs handling.
+
+The player's ship becomes an ordinary hull that is simply never spawned, and its
+upgrades become progression levels on the same mountable equipment, so a rival
+could turn up carrying what the player bought.
+
 ## Length and difficulty
 
 Stretch the content to fill around 30 sectors and tune the ramp across them. The
