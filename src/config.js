@@ -1397,7 +1397,7 @@ export const EQUIPMENT = {
       {
         id: "playerLaserMk5",
         name: "BEAM MK V",
-        desc: "Overdrive: hold past full charge to wind up a shot that shatters a rock outright.",
+        desc: "Overdrive: hold past full charge to wind up a shot that shatters a rock.",
         cost: 180,
       },
     ],
@@ -1411,13 +1411,13 @@ export const EQUIPMENT = {
       {
         id: "minerDrive",
         name: "MINER DRIVE",
-        desc: "The yard's own. Pushes one way, and hard.",
+        desc: "The yard's own. Pushes one way, hard.",
         cost: 0,
       },
       {
         id: "vectoredDrive",
         name: "VECTORED DRIVE",
-        desc: "Backs away under DOWN or S, and accelerates less hard for the privilege.",
+        desc: "Backs away under DOWN or S, and accelerates less hard.",
         cost: 55,
       },
     ],
