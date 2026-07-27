@@ -283,14 +283,15 @@
       // A reference sheet for the game's numbers, built by asking the game's own
       // modules rather than by restating them: every registry is walked for
       // whatever keys it happens to have, and anything the game works out at
-      // runtime is worked out here by calling the same code. Adding a weapon, a
-      // special, a ship or a tuning value shows up here without this file
-      // changing.
+      // runtime is worked out here by calling the same code. Adding a weapon, an
+      // engine, a core, a special, a ship or a tuning value shows up here without
+      // this file changing.
       //
       // Nothing in src/ is imported by this page in reverse: it reads, and writes
-      // nothing. A throwaway Game is built to answer questions (costs per level,
-      // a sector's plan, ore from a shattered rock); it is never stepped, drawn,
-      // or saved.
+      // nothing. A throwaway Game is built to answer questions (a sector's plan, the
+      // guns a sector arms a rock with, ore from a shattered rock); it is never
+      // stepped, drawn, or saved, and nothing here starts a run, since starting one
+      // would write over the player's own.
 
       const page = document.getElementById("page")
 
@@ -344,7 +345,8 @@
       }
 
       const isColour = (v) => typeof v === "string" && /^#[0-9a-f]{3,8}$/i.test(v)
-      const num = (v) => (Number.isInteger(v) ? String(v) : String(Number(v.toFixed(4))))
+      const num = (v) =>
+        Number.isInteger(v) || !Number.isFinite(v) ? String(v) : String(Number(v.toFixed(4)))
 
       // A value as text, whatever shape it is. A pair of numbers is a range, since
       // that is what the registries use one for.
@@ -512,14 +514,78 @@
         )
       }
 
+      function heading(text, ...content) {
+        return el("div", {}, el("h3", { textContent: text }), ...content)
+      }
+
+      // ---- modules ----------------------------------------------------------
+
+      // Which registry each kind of module lives in. The same map the config keeps
+      // for weighing a loadout, kept here because a page reading a loadout entry has
+      // the same question: given a field name, what is the thing it names?
+      const MODULE_KINDS = {
+        weapon: config.WEAPON_TYPES,
+        shield: config.SHIELD_TYPES,
+        engine: config.ENGINE_TYPES,
+        radar: config.RADAR_TYPES,
+        thruster: config.THRUSTER_TYPES,
+        core: config.CORE_TYPES,
+      }
+
+      // The kinds of module a loadout entry names, in the order the entry states
+      // them. `withFitted` takes in what a core it carries has in its slots, which
+      // is what the entry means on a hardpoint and not what it weighs: a core's own
+      // mass is its own, and each fitted module is weighed as an entry of its own.
+      function kindsOn(entry, withFitted = true) {
+        const found = []
+        for (const kind of Object.keys(MODULE_KINDS)) {
+          if (entry[kind]) {
+            found.push([kind, entry[kind]])
+          }
+        }
+        if (withFitted) {
+          for (const [slot, id] of Object.entries(entry.fitted || {})) {
+            found.push([slot, id])
+          }
+        }
+        return found
+      }
+
+      // A loadout entry as one line: what it mounts, and the settings the entry
+      // itself states on top of the module's own.
+      function moduleLabel(entry, withFitted = true) {
+        const parts = kindsOn(entry, withFitted).map(([kind, id]) => `${kind}: ${id}`)
+        if (entry.controller) {
+          parts.push(`fired by ${entry.controller}`)
+        }
+        if (entry.arc !== undefined) {
+          parts.push(`bears ${num(entry.arc)} rad`)
+        }
+        return parts.join(", ") || "-"
+      }
+
+      // The colour a hardpoint is drawn in: the module's own where it has one, so a
+      // silhouette reads the same way the ship does on screen.
+      function moduleColour(entry) {
+        for (const [kind, id] of kindsOn(entry)) {
+          const type = MODULE_KINDS[kind] && MODULE_KINDS[kind][id]
+          if (type && type.colour) {
+            return type.colour
+          }
+        }
+        return entry.core ? PALETTE.rival.core : PALETTE.text.muted
+      }
+
       // ---- shapes -----------------------------------------------------------
 
-      // An outline drawn to fit its box, with hardpoints and exhaust mounts on it.
-      // Local units throughout, which is how the config states them.
-      function hullSvg(type, width = 250, height = 130) {
+      // An outline drawn to fit its box, with its shield bubble and everything the
+      // loadout mounts marked on it. World units throughout, which is what an
+      // outline is in.
+      function hullSvg(type, width = 250, height = 150) {
         const points = type.outline
         const reach = Math.max(...points.map(([x, y]) => Math.max(Math.abs(x), Math.abs(y))), 0.1)
-        const scale = (Math.min(width, height) / (reach * 2)) * 0.86
+        const bubble = shieldRadius(type)
+        const scale = (Math.min(width, height) / (Math.max(reach, bubble) * 2)) * 0.9
         const at = ([x, y]) => [width / 2 + x * scale, height / 2 + y * scale]
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
         svg.setAttribute("viewBox", `0 0 ${width} ${height}`)
@@ -533,14 +599,14 @@
           svg.append(node)
           return node
         }
-        const bubble = (type.shieldScale || 0) * scale
+        const shield = shieldOn(type)
         if (bubble) {
           add("circle", {
             cx: width / 2,
             cy: height / 2,
-            r: bubble,
+            r: bubble * scale,
             fill: "none",
-            stroke: PALETTE.shield.standard,
+            stroke: shield ? config.SHIELD_TYPES[shield].colour : PALETTE.shield.standard,
             "stroke-opacity": 0.25,
             "stroke-dasharray": "5 4",
           })
@@ -551,37 +617,50 @@
           stroke: type.colour,
           "stroke-width": 1.6,
         })
-        for (const mount of (type.exhaust && type.exhaust.mounts) || []) {
-          const [x, y] = at(mount)
-          add("path", {
-            d: `M${x + 4} ${y - 4} L${x - 5} ${y} L${x + 4} ${y + 4}`,
-            fill: "none",
-            stroke: PALETTE.rival.hull,
-            "stroke-opacity": 0.8,
-          })
-        }
         for (const hp of type.hardpoints || []) {
           const [x, y] = at(hp.local)
-          add("circle", { cx: x, cy: y, r: 3.4, fill: "none", stroke: PALETTE.player.turret })
+          const entry = mountedAt(type, hp).entry
+          const colour = entry ? moduleColour(entry) : PALETTE.text.muted
+          if (entry && entry.engine) {
+            // A chevron pointing the way the plume goes, which is aft.
+            add("path", {
+              d: `M${x + 4} ${y - 4} L${x - 5} ${y} L${x + 4} ${y + 4}`,
+              fill: "none",
+              stroke: colour,
+              "stroke-opacity": 0.85,
+            })
+          } else if (entry && entry.core) {
+            add("rect", {
+              x: x - 3,
+              y: y - 3,
+              width: 6,
+              height: 6,
+              fill: "none",
+              stroke: colour,
+            })
+          } else if (entry) {
+            add("circle", { cx: x, cy: y, r: 3.4, fill: "none", stroke: colour })
+          } else {
+            add("circle", { cx: x, cy: y, r: 1.4, fill: PALETTE.ui.slotEmpty })
+          }
         }
         return svg
       }
 
-      // Every hull at true relative scale, so the sizes can be compared by eye.
-      // One scale for every hull, so the sizes can be compared by eye. Each is
-      // given a column wide enough for whichever is wider, its silhouette or its
-      // label, and the drawing is as wide as that comes to; the SVG then scales the
-      // lot to the space it has, which keeps the labels clear of each other however
-      // many hulls there are.
+      // Every hull at true relative scale, so the sizes can be compared by eye. One
+      // scale for every hull. Each is given a column wide enough for whichever is
+      // wider, its silhouette or its label, and the drawing is as wide as that comes
+      // to; the SVG then scales the lot to the space it has, which keeps the labels
+      // clear of each other however many hulls there are.
       function scaleSvg(hulls, scale = 1.4) {
         const FONT = 11
         const CHAR = FONT * 0.62 // monospace advance, near enough to reserve room
         // How far a hull reaches along each axis, rather than its bound radius: a
         // frigate's corner is three times as far as its flank, and reserving that
         // much height would leave the row mostly empty.
-        const spanX = (type) => Math.max(...type.outline.map(([x]) => Math.abs(x))) * type.size
-        const spanY = (type) => Math.max(...type.outline.map(([, y]) => Math.abs(y))) * type.size
-        const labelOf = ([name, type]) => `${name} - size ${type.size}`
+        const spanX = (type) => Math.max(...type.outline.map(([x]) => Math.abs(x)))
+        const spanY = (type) => Math.max(...type.outline.map(([, y]) => Math.abs(y)))
+        const labelOf = ([name, type]) => `${name} - reach ${num(type.boundRadius)}`
         const columns = hulls.map((entry) => ({
           entry,
           width: Math.max(spanX(entry[1]) * scale * 2 + 30, labelOf(entry).length * CHAR + 18),
@@ -609,10 +688,7 @@
           const centre = x + columnWidth / 2
           add("polygon", {
             points: type.outline
-              .map(
-                ([px, py]) =>
-                  `${centre + px * type.size * scale},${tallest + py * type.size * scale}`,
-              )
+              .map(([px, py]) => `${centre + px * scale},${tallest + py * scale}`)
               .join(" "),
             fill: `${type.colour}18`,
             stroke: type.colour,
@@ -637,12 +713,75 @@
 
       // ---- what mounts what -------------------------------------------------
 
+      // The bubble a design flies behind, whether that is mounted on the hull or
+      // fitted inside the core, and whichever a rolled arm would put there. Only for
+      // drawing one, so the first found answers.
+      function shieldOn(type) {
+        for (const entry of config.loadoutModules(type)) {
+          if (entry.shield) {
+            return entry.shield
+          }
+        }
+        for (const entry of Object.values(type.arms || {})) {
+          if (entry.shield) {
+            return entry.shield
+          }
+        }
+        return null
+      }
+
+      // Where the bubble sits, which is the shape's own margin unless the shield
+      // wants more room: a field that leans on what comes near it needs somewhere to
+      // lean in, and says so with `standoff`.
+      function shieldRadius(type) {
+        const shield = shieldOn(type)
+        const standoff = shield ? config.SHIELD_TYPES[shield].standoff : null
+        return (type.bubbleRadius || 0) * (standoff || 1)
+      }
+
+      // What a design carries and how it came by it: the loadout it always has, and
+      // the arms the spawner may roll onto it. An arm can share a hardpoint with
+      // something already there, since a rolled shield goes into the core's shield
+      // slot rather than onto a mount of its own.
+      function mountsOf(type) {
+        const all = []
+        for (const entry of type.loadout || []) {
+          all.push({ entry, when: "always" })
+        }
+        for (const [armName, entry] of Object.entries(type.arms || {})) {
+          all.push({
+            entry,
+            armName,
+            fitted: !!entry.slot,
+            when:
+              entry.chancePerSector !== undefined
+                ? `rolled as "${armName}", ${entry.chancePerSector}/sector past its spawn sector, up to ${entry.chanceCap}`
+                : `rolled as "${armName}"`,
+          })
+        }
+        return { all }
+      }
+
+      // What is on one hardpoint. The loadout wins over an arm, since an arm that
+      // names an occupied mount is going into a slot inside what is already there.
+      function mountedAt(type, hp) {
+        const index = (type.hardpoints || []).indexOf(hp)
+        const here = mountsOf(type).all.filter((mount) => mount.entry.hp === index)
+        return here.find((mount) => mount.when === "always") || here[0] || {}
+      }
+
       // Every place a module name is named, found by walking the registries, so a
-      // weapon's card can say who carries it without a list to maintain.
+      // weapon's card can say who carries it without a list to maintain. The player's
+      // is a special case only in that what it carries is bought: EQUIPMENT is walked
+      // for the slot a module could be fitted in, and the hull itself for what it
+      // came with.
       function mountedBy(kind, name) {
         const found = []
         const check = (entry, where) => {
           if (entry && entry[kind] === name) {
+            found.push(where)
+          }
+          if (entry && entry.fitted && entry.fitted[kind] === name) {
             found.push(where)
           }
         }
@@ -650,11 +789,21 @@
           for (const entry of type.loadout || []) {
             check(entry, label)
           }
-          for (const [armName, entry] of Object.entries(type.arms || type.fittings || {})) {
-            check(entry, `${label} (${armName})`)
+          for (const [armName, entry] of Object.entries(type.arms || {})) {
+            check(entry, `${label} (rolled as "${armName}")`)
           }
         }
         walkShip("player", config.PLAYER_TYPE)
+        for (const spec of Object.values(config.EQUIPMENT)) {
+          if (spec.mount !== kind) {
+            continue
+          }
+          for (const option of spec.options) {
+            if (option.id === name) {
+              found.push(`player (${spec.label}: ${option.name})`)
+            }
+          }
+        }
         for (const [shipName, type] of Object.entries(config.SHIP_TYPES)) {
           walkShip(shipName, type)
         }
@@ -674,131 +823,207 @@
         return [...new Set(found)]
       }
 
-      function tags(list) {
+      // The hulls flying with a named module, as [name, type] so the caller can read
+      // whatever the hull worked out with it aboard.
+      function carriers(kind, name) {
+        return hulls.filter(([, type]) => {
+          for (const entry of config.loadoutModules(type)) {
+            if (entry[kind] === name) {
+              return true
+            }
+          }
+          return false
+        })
+      }
+
+      function tags(list, empty = "nothing mounts it") {
         return el(
           "div",
           {},
           list.length
             ? list.map((text) => el("span", { className: "tag", textContent: text }))
-            : el("span", { className: "no", textContent: "nothing mounts it" }),
+            : el("span", { className: "no", textContent: empty }),
         )
+      }
+
+      // ---- the player's ship, as the shop leaves it -------------------------
+
+      // The loadout the player flies with for a given set of fitted equipment. This
+      // is what PlayerShip.fitEquipment does to the hull, in the shape a type states
+      // a loadout in, so the same deriveShipStats that works out a rival answers for
+      // the player too.
+      function playerLoadout(fitted) {
+        const loadout = (config.PLAYER_TYPE.loadout || []).map((entry) => ({ ...entry }))
+        const core = loadout.find((entry) => entry.core)
+        for (const [slot, spec] of Object.entries(config.EQUIPMENT)) {
+          const id = fitted[slot]
+          if (!id) {
+            continue
+          }
+          if (spec.slot) {
+            if (core) {
+              core.fitted = { ...(core.fitted || {}), [spec.slot]: id }
+            }
+            continue
+          }
+          const entry = { hp: spec.hp, [spec.mount]: id }
+          if (spec.controller) {
+            entry.controller = spec.controller
+          }
+          loadout.push(entry)
+        }
+        return loadout
+      }
+
+      // The player's hull with a set of equipment aboard, worked out the way a rival's
+      // type is. The cell is the one exception: the player's core is levelled, so its
+      // capacity depends on what has been bought and is asked of coreAt instead.
+      function playerAsFitted(fitted, coreLevel = 0) {
+        const design = { ...config.PLAYER_TYPE, loadout: playerLoadout(fitted) }
+        const core = config.coreAt(config.CORE_TYPES[playerCoreName()], coreLevel)
+        return {
+          ...config.deriveShipStats(design),
+          energyMax: core ? core.energy : 0,
+          regen: core ? core.regen : 0,
+        }
+      }
+
+      function playerCoreName() {
+        for (const entry of config.PLAYER_TYPE.loadout || []) {
+          if (entry.core) {
+            return entry.core
+          }
+        }
+        return null
+      }
+
+      const FRESH_EQUIPMENT = config.freshEquipment().fitted
+      const PLAYER_FITTED = playerAsFitted(FRESH_EQUIPMENT)
+
+      // The equipment slot that would fit a given module, if the shop sells one.
+      function playerSlotFor(kind, id) {
+        for (const [slot, spec] of Object.entries(config.EQUIPMENT)) {
+          if (spec.mount === kind && spec.options.some((option) => option.id === id)) {
+            return slot
+          }
+        }
+        return null
       }
 
       // ---- hulls ------------------------------------------------------------
 
-      // Which of a type's settings deriveShipStats worked out, and which the design
-      // stated for itself: recompute from the shape and the three numbers, and
-      // anything that differs was stated.
+      // What deriveShipStats fills in, and where each one comes from. A type may
+      // state a flight setting for itself, and `flightOverrides` is the record of
+      // which: that is the one distinction the simulation itself has to make, since a
+      // ship refitted mid-run recomputes what was derived and leaves the rest alone.
       const DERIVED_FIELDS = [
-        "accel",
-        "maxSpeed",
-        "turnRate",
-        "drag",
-        "hull",
-        "rockContact",
-        "shieldScale",
-        "hullWidth",
+        ["laden", "the bare hull plus everything fitted"],
+        ["hull", "armour over the area the outline encloses"],
+        ["accel", "thrust over laden mass"],
+        ["maxSpeed", "acceleration, times speedPerAccel"],
+        ["turnRate", "thruster torque over mass and reach"],
+        ["drag", "from laden mass"],
+        ["rockContact", "hull points over top speed"],
+        ["energyMax", "the core fitted"],
+        ["regen", "the core fitted"],
+        ["boundRadius", "how far the outline reaches"],
+        ["bubbleRadius", "reach, times shieldClearance"],
+        ["hullWidth", "reach, from hullWidthBase"],
       ]
 
-      function derivedFor(type) {
-        if (type.power === undefined || type.armour === undefined) {
-          return null
-        }
-        return config.deriveShipStats({
-          outline: type.outline,
-          size: type.size,
-          mass: type.mass,
-          power: type.power,
-          armour: type.armour,
-        })
+      function derivedRows(type) {
+        return DERIVED_FIELDS.filter(([field]) => type[field] !== undefined).map(
+          ([field, from]) => [
+            field,
+            num(type[field]),
+            (type.flightOverrides || {})[field] !== undefined ? "stated by the design" : from,
+          ],
+        )
       }
 
-      function hullCard(name, type) {
-        const base = derivedFor(type)
-        const derivedRows = DERIVED_FIELDS.filter((field) => type[field] !== undefined).map(
-          (field) => {
-            const stated = base && Math.abs(base[field] - type[field]) > 1e-9
-            return [
-              field,
-              num(type[field]),
-              base ? (stated ? "stated by the design" : "derived") : "from the shape",
-            ]
-          },
-        )
-        const mounts = new Map()
-        for (const entry of type.loadout || []) {
-          mounts.set(entry.hp, entry)
+      function massRows(type) {
+        const rows = [["bare hull", num(type.mass)]]
+        for (const entry of config.loadoutModules(type)) {
+          const mass = config.moduleMass(entry)
+          if (mass) {
+            rows.push([moduleLabel(entry, false), num(mass)])
+          }
         }
-        const rolled = new Map()
-        for (const [armName, entry] of Object.entries(type.arms || type.fittings || {})) {
-          rolled.set(entry.hp, { armName, entry })
-        }
-        const hardpointRows = (type.hardpoints || []).map((hp, i) => {
-          const mount = mounts.get(i)
-          const roll = rolled.get(i)
-          const module = mount || (roll && roll.entry)
-          const what = !module
-            ? "-"
-            : module.weapon
-              ? `${module.weapon} / ${module.controller || "no controller"}`
-              : `shield: ${module.shield}`
-          const how = mount
-            ? "always"
-            : roll
-              ? roll.entry.chancePerSector !== undefined
-                ? `rolled as "${roll.armName}", ${roll.entry.chancePerSector}/sector up to ${roll.entry.chanceCap}`
-                : `fitting "${roll.armName}"`
-              : "empty"
-          return [i, hp.role || "-", `${num(hp.local[0])}, ${num(hp.local[1])}`, what, how]
+        rows.push(["laden", num(config.ladenMass(type))])
+        return rows
+      }
+
+      function hardpointRows(type) {
+        const mounts = mountsOf(type).all
+        const rows = []
+        ;(type.hardpoints || []).forEach((hp, i) => {
+          const here = mounts.filter((mount) => mount.entry.hp === i)
+          if (!here.length) {
+            rows.push([i, hp.role || "-", `${num(hp.local[0])}, ${num(hp.local[1])}`, "-", "empty"])
+            return
+          }
+          here.forEach((mount, k) => {
+            rows.push([
+              k ? "" : i,
+              k ? "" : hp.role || "-",
+              k ? "" : `${num(hp.local[0])}, ${num(hp.local[1])}`,
+              moduleLabel(mount.entry),
+              mount.fitted ? `${mount.when}, into the core's ${mount.entry.slot} slot` : mount.when,
+            ])
+          })
         })
-        const shown = [
-          "outline",
-          "hardpoints",
-          "loadout",
-          "arms",
-          "fittings",
-          "colour",
-          "exhaust",
-          ...DERIVED_FIELDS,
-        ]
+        return rows
+      }
+
+      // The fields shown their own way above, so the catch-all pairs below only has
+      // what a design says about itself: what it is for, not what it is made of.
+      const HULL_SHOWN = [
+        "outline",
+        "hardpoints",
+        "loadout",
+        "arms",
+        "colour",
+        "flightOverrides",
+        "mass",
+        ...DERIVED_FIELDS.map(([field]) => field),
+      ]
+
+      function hullCard(name, type) {
         return card(
           name,
           type.colour,
           hullSvg(type),
           el("div", { className: "note", style: "margin:6px 0 8px" }, [
             document.createTextNode(
-              `bound radius ${num(Math.max(...type.outline.map(([x, y]) => Math.hypot(x, y))) * type.size)} world units, ` +
-                `hull area ${Math.round(mathlib.polygonArea(type.outline.map(([x, y]) => ({ x, y }))) * type.size * type.size)}, ` +
-                `shield radius ${num(type.size * (type.shieldScale || 0))}`,
+              `hull area ${Math.round(mathlib.polygonArea(type.outline.map(([x, y]) => ({ x, y }))))} square units, ` +
+                `thrust ${num(config.thrustOf(type))}, torque ${num(config.torqueOf(type))}` +
+                (shieldRadius(type) !== type.bubbleRadius
+                  ? `, and a shield that stands off to ${num(shieldRadius(type))}`
+                  : ""),
             ),
           ]),
-          pairs(type, shown),
-          derivedRows.length
-            ? el(
-                "div",
-                {},
-                el("h3", { textContent: "SETTINGS" }),
-                dataTable(["field", "value", "where from"], derivedRows),
-              )
-            : null,
-          el("h3", { textContent: "HARDPOINTS" }),
-          dataTable(["#", "role", "local", "module", "when"], hardpointRows),
-          type.exhaust
-            ? el("div", {}, el("h3", { textContent: "EXHAUST" }), pairs(type.exhaust))
-            : null,
+          pairs(type, HULL_SHOWN),
+          heading("SETTINGS", dataTable(["field", "value", "where from"], derivedRows(type))),
+          heading("WHAT IT WEIGHS", dataTable(["part", "mass"], massRows(type))),
+          heading(
+            "HARDPOINTS",
+            dataTable(["#", "role", "local", "carries", "when"], hardpointRows(type)),
+          ),
         )
       }
 
-      const hulls = [["player", config.PLAYER_TYPE], ...Object.entries(config.SHIP_TYPES)]
+      const hulls = [["player", PLAYER_FITTED], ...Object.entries(config.SHIP_TYPES)]
 
       section(
         "hulls",
         "HULLS",
         "One card per ship the game knows about: the player's, and every entry in SHIP_TYPES. " +
-          "A ship states a shape and three numbers (mass, power, armour) and deriveShipStats works " +
-          "the rest out; the SETTINGS table says which of them came out of that and which the " +
-          "design stated for itself. Outlines are drawn from the real ones, with hardpoints as " +
-          "rings and exhaust mounts as arrows.",
+          "A design states an outline in world units and two numbers (mass, armour), bolts engines " +
+          "and thrusters to it, and deriveShipStats works the rest out; the SETTINGS table says " +
+          "where each of them came from. The player's is shown as the yard leaves it, with the " +
+          "equipment a run starts with aboard - what the shop can change is under UPGRADES. " +
+          "Outlines are drawn from the real ones, with the shield bubble dashed, weapons as rings, " +
+          "engines as chevrons, cores as squares and empty mounts as dots.",
         el(
           "div",
           { className: "cards" },
@@ -818,7 +1043,8 @@
         "WEAPONS",
         "Every entry in WEAPON_TYPES, whatever fields it carries. Rate, damage and energy per " +
           "second are worked out from `reload` here; barrels come from barrelCount(), the same " +
-          "call the view makes when it draws a turret.",
+          "call the view makes when it draws a turret. `arc` is how far a mount can bear off the " +
+          "hull's facing, and a loadout entry may state its own in place of the weapon's.",
         el(
           "div",
           { className: "cards" },
@@ -830,19 +1056,20 @@
               name,
               type.colour,
               pairs(type),
-              el("h3", { textContent: "WORKED OUT" }),
-              el("div", { className: "pairs" }, [
-                el("b", { textContent: "barrels" }),
-                el("span", {}, show(config.barrelCount(type))),
-                el("b", { textContent: "shots/sec" }),
-                el("span", {}, document.createTextNode(perSecond(1))),
-                el("b", { textContent: "damage/sec" }),
-                el("span", {}, document.createTextNode(perSecond(type.damage || 0))),
-                el("b", { textContent: "energy/sec" }),
-                el("span", {}, document.createTextNode(perSecond(type.energy || 0))),
-              ]),
-              el("h3", { textContent: "MOUNTED BY" }),
-              tags(mountedBy("weapon", name)),
+              heading(
+                "WORKED OUT",
+                el("div", { className: "pairs" }, [
+                  el("b", { textContent: "barrels" }),
+                  el("span", {}, show(config.barrelCount(type))),
+                  el("b", { textContent: "shots/sec" }),
+                  el("span", {}, document.createTextNode(perSecond(1))),
+                  el("b", { textContent: "damage/sec" }),
+                  el("span", {}, document.createTextNode(perSecond(type.damage || 0))),
+                  el("b", { textContent: "energy/sec" }),
+                  el("span", {}, document.createTextNode(perSecond(type.energy || 0))),
+                ]),
+              ),
+              heading("MOUNTED BY", tags(mountedBy("weapon", name))),
             )
           }),
         ),
@@ -852,8 +1079,11 @@
         "shields",
         "SHIELDS",
         "A shield turns damage of the channels it blocks into energy drain, at `efficiency` " +
-          "energy per point. It drops when energy falls to `dropAt` of capacity and returns once " +
-          "`recoverDelay` has passed and energy is back to `recoverAt`.",
+          "energy per point, which may be one number for every channel or one per channel. It " +
+          "drops when energy falls to `dropAt` of capacity and returns once `recoverDelay` has " +
+          "passed and energy is back to `recoverAt`. A shield with `repel` is a field rather than " +
+          "a bubble: it pays per push for what it holds off, and `solid: false` means it leans on " +
+          "what it meets instead of stopping it dead.",
         el(
           "div",
           { className: "cards" },
@@ -862,8 +1092,192 @@
               name,
               type.colour,
               pairs(type),
-              el("h3", { textContent: "WORN BY" }),
-              tags(mountedBy("shield", name)),
+              heading("WORN BY", tags(mountedBy("shield", name))),
+            ),
+          ),
+        ),
+      )
+
+      // ---- what drives and turns a hull -------------------------------------
+
+      section(
+        "engines",
+        "ENGINES",
+        "What pushes a hull along. An engine is a module like a weapon: how hard a ship " +
+          "accelerates follows from what is bolted to it, so thrustOf() adds up the mounts and " +
+          "flightStats divides by what the ship weighs. Every engine mounted emits, so two of " +
+          "them read as two streams. `reverseAmount` is what one manages backwards, as a fraction " +
+          "of its thrust; without one it pushes only forward.",
+        el(
+          "div",
+          { className: "cards" },
+          Object.entries(config.ENGINE_TYPES).map(([name, type]) =>
+            card(
+              name,
+              type.colour,
+              pairs(type),
+              heading(
+                "WORKED OUT",
+                el("div", { className: "pairs" }, [
+                  el("b", { textContent: "reverse thrust" }),
+                  el("span", {}, show(type.thrust * (type.reverseAmount ?? 0))),
+                ]),
+              ),
+              heading("MOUNTED BY", tags(mountedBy("engine", name))),
+            ),
+          ),
+        ),
+      )
+
+      // Every hull that flies with a given set, at the rate it actually turns at. The
+      // player is asked for whichever sets the shop will fit, since a run may choose
+      // any of them, and taken off the carriers list so it appears once.
+      function thrusterRows(name) {
+        const rows = carriers("thruster", name)
+          .filter(([hullName]) => hullName !== "player")
+          .map(([hullName, type]) => [hullName, type])
+        const slot = playerSlotFor("thruster", name)
+        if (slot) {
+          rows.push(["player", playerAsFitted({ ...FRESH_EQUIPMENT, [slot]: name })])
+        }
+        return rows.map(([hullName, type]) => [
+          hullName,
+          num(type.turnRate),
+          num(config.TAU / type.turnRate),
+        ])
+      }
+
+      section(
+        "thrusters",
+        "MANEUVERING THRUSTERS",
+        "The nozzles that bring a hull about, which are core equipment and nothing to do with " +
+          "the drive: a hull with plenty of thrust and a light set sweeps through a turn. What a " +
+          "set's torque becomes in radians a second is the hull's business, through " +
+          "SHIP_SCALARS.turnPerReach, so the same nozzles turn a dart smartly and barely trouble " +
+          "a slab. The rates below are the ones the hulls carrying each set fly at, with the mass " +
+          "of the set itself in what they weigh.",
+        el(
+          "div",
+          { className: "cards" },
+          Object.entries(config.THRUSTER_TYPES).map(([name, type]) =>
+            card(
+              name,
+              null,
+              pairs(type),
+              heading(
+                "WHAT IT TURNS",
+                dataTable(["hull", "rad/sec", "seconds a full turn"], thrusterRows(name)),
+              ),
+              heading("FITTED BY", tags(mountedBy("thruster", name))),
+            ),
+          ),
+        ),
+      )
+
+      // ---- cores ------------------------------------------------------------
+
+      // A levelled core's shop price, taken from the SHOP row that sells it rather
+      // than restated: the row states the cost of the step up from each level.
+      function coreLevelCost(coreName) {
+        const row = config.SHOP.find(
+          (entry) => entry.levels && entry.levels === config.CORE_TYPES[coreName].levels,
+        )
+        return row ? row.levelCost : null
+      }
+
+      section(
+        "cores",
+        "POWER CORES",
+        "The plant a hull is built around, and the room it has for what runs off it. Energy is " +
+          "not one of the slots: a hull without a cell does not work, so a core supplies one by " +
+          "being fitted. The named slots are what is optional. A core with `levels` is one the " +
+          "shop can improve, each level stating the whole plant; every other hull's is what it is.",
+        el(
+          "div",
+          { className: "cards" },
+          Object.entries(config.CORE_TYPES).map(([name, type]) => {
+            const cost = type.levels ? coreLevelCost(name) : null
+            return card(
+              name,
+              PALETTE.rival.core,
+              pairs(type, ["levels"]),
+              type.levels
+                ? heading(
+                    "LEVELS",
+                    dataTable(
+                      ["level", "name", "energy", "regen", "special slots", "next costs"],
+                      type.levels.map((level, i) => {
+                        const at = config.coreAt(type, i)
+                        return [
+                          `lv ${i}`,
+                          level.name,
+                          num(at.energy),
+                          num(at.regen),
+                          `${Math.min(at.special ?? 0, config.MAX_SLOTS)} of ${config.MAX_SLOTS}`,
+                          i < type.levels.length - 1 && cost
+                            ? `${cost(i)} ore for lv ${i + 1}`
+                            : "the last one",
+                        ]
+                      }),
+                    ),
+                    el(
+                      "details",
+                      {},
+                      el("summary", { textContent: "WHAT EACH LEVEL SAYS FOR ITSELF" }),
+                      el("pre", {
+                        textContent: type.levels
+                          .map((level) => `${level.name}\n  ${level.desc}`)
+                          .join("\n"),
+                      }),
+                    ),
+                  )
+                : null,
+              heading("FITTED BY", tags(mountedBy("core", name))),
+            )
+          }),
+        ),
+      )
+
+      section(
+        "radar",
+        "RADAR",
+        `What a hull knows about the sector it is in. \`sees\` is an effective range per kind of ` +
+          `thing, and a kind left out is one the set cannot pick up beyond the floor: every hull ` +
+          `sees whatever is within SENSOR_FLOOR (${CONFIG.SENSOR_FLOOR}) of it, radar or not, so a ` +
+          `set is only worth carrying for what it finds past that. A range is what the hull knows, ` +
+          `not what it can shoot.`,
+        el(
+          "div",
+          { className: "cards" },
+          Object.entries(config.RADAR_TYPES).map(([name, type]) =>
+            card(name, null, pairs(type), heading("FITTED BY", tags(mountedBy("radar", name)))),
+          ),
+        ),
+      )
+
+      section(
+        "factions",
+        "FACTIONS",
+        "Who shoots at whom. Game.hostileTarget is the only thing that reads this, so every gun " +
+          "and every hull that steers at something asks one question and no behaviour has to know " +
+          "which sides exist. A ship type states its own `faction` and is a rival without one; " +
+          "`hazard` is what everything else is, which is a rock and the wreckage cut off a hull.",
+        el(
+          "div",
+          { className: "cards" },
+          card(
+            "WHO IS HOSTILE TO WHOM",
+            null,
+            dataTable(
+              ["side", "shoots at", "hulls flying for it"],
+              Object.entries(config.FACTIONS).map(([side, hostile]) => [
+                side,
+                hostile.join(", "),
+                hulls
+                  .filter(([, type]) => (type.faction ?? "rival") === side)
+                  .map(([name]) => name)
+                  .join(", ") || "-",
+              ]),
             ),
           ),
         ),
@@ -876,9 +1290,11 @@
       section(
         "specials",
         "SPECIALS",
-        "Every entry in SPECIAL_TYPES. `mode` says how it is used: a pulse fires once per press, " +
-          "a toggle runs while it is on and drains, a timed one lasts `seconds`, a single is spent. " +
-          "The fields below the divider are what the simulation reads off an active one, so a new " +
+        "Every entry in SPECIAL_TYPES. `mode` says how it is used: a passive is always on while " +
+          "it is fitted, a pulse fires once per press, a toggle runs while it is on and drains, a " +
+          "timed one lasts `seconds`, a single is spent. `energy` and `drain` are fractions of the " +
+          "cell rather than amounts, since the cell quadruples across the core's levels. The " +
+          "fields below the divider are what the simulation reads off an active one, so a new " +
           "field appears here as soon as a special carries it. What a sell fetches comes from " +
           "Game.specialSellValue.",
         el(
@@ -894,6 +1310,13 @@
                     el("b", { textContent: "sells for" }),
                     el("span", {}, document.createTextNode(`${probe.specialSellValue(name)} ore`)),
                   ])
+                : null,
+              config.PLAYER_TYPE.startingSpecials.includes(name)
+                ? el("p", {
+                    className: "note",
+                    style: "margin:6px 0 0",
+                    textContent: "The ship leaves the yard with this one fitted.",
+                  })
                 : null,
               type.apply
                 ? el(
@@ -911,17 +1334,95 @@
         ),
       )
 
+      // ---- equipment --------------------------------------------------------
+
+      // What one option does to the hull, with everything else left as the yard
+      // fitted it: the same ship put through the same deriveShipStats, so a heavier
+      // mark costing acceleration shows up as the number it costs.
+      function optionEffect(slot, id) {
+        return playerAsFitted({ ...FRESH_EQUIPMENT, [slot]: id })
+      }
+
+      const EQUIPMENT_EFFECTS = [
+        ["laden", "laden mass"],
+        ["accel", "accel"],
+        ["maxSpeed", "top speed"],
+        ["turnRate", "turn"],
+        ["drag", "drag"],
+      ]
+
+      section(
+        "equipment",
+        "EQUIPMENT",
+        "What the shop fits to the player's ship, slot by slot. Buying an option is permanent " +
+          "and swapping between what a run owns is free, so ore buys capability and never a " +
+          "decision. A `ladder` slot is climbed in order, since each mark is the one below it and " +
+          "more; the rest are a straight choice. A `removable` slot may be flown empty. The right " +
+          "of each table is the hull with that option aboard and everything else as the yard left " +
+          "it, so what a mark costs in handling can be read off it.",
+        el(
+          "div",
+          { className: "cards" },
+          Object.entries(config.EQUIPMENT).map(([slot, spec]) =>
+            card(
+              spec.label,
+              null,
+              el("p", { className: "note", style: "margin:0 0 8px", textContent: spec.desc }),
+              pairs(spec, ["label", "desc", "options"]),
+              heading(
+                "OPTIONS",
+                dataTable(
+                  ["option", "id", "cost", ...EQUIPMENT_EFFECTS.map(([, label]) => label)],
+                  spec.options.map((option) => {
+                    const fitted = optionEffect(slot, option.id)
+                    return [
+                      option.name,
+                      option.id,
+                      option.cost ? `${option.cost} ore` : "the yard's",
+                      ...EQUIPMENT_EFFECTS.map(([field]) => num(fitted[field])),
+                    ]
+                  }),
+                ),
+              ),
+              spec.removable
+                ? heading(
+                    "FLOWN WITHOUT ONE",
+                    dataTable(
+                      EQUIPMENT_EFFECTS.map(([, label]) => label),
+                      [
+                        EQUIPMENT_EFFECTS.map(([field]) =>
+                          num(playerAsFitted({ ...FRESH_EQUIPMENT, [slot]: null })[field]),
+                        ),
+                      ],
+                    ),
+                  )
+                : null,
+              el(
+                "details",
+                {},
+                el("summary", { textContent: "WHAT EACH OPTION SAYS FOR ITSELF" }),
+                el("pre", {
+                  textContent: spec.options
+                    .map((option) => `${option.name}\n  ${option.desc}`)
+                    .join("\n"),
+                }),
+              ),
+            ),
+          ),
+        ),
+      )
+
       // ---- shop -------------------------------------------------------------
 
-      // Prices come from the shop's own cost(), asked once per level with the
-      // throwaway game set to that level, so the curve is the one a player pays.
-      function shopRows(entry) {
-        if (!probe || entry.max === undefined) {
+      // A row's price and state, asked of the row itself with the throwaway game set
+      // to each level in turn, so the curve is the one a player pays.
+      function levelRows(entry) {
+        if (!probe || !entry.levels) {
           return null
         }
         const before = probe.upgrades[entry.id]
         const rows = []
-        for (let level = 0; level <= entry.max; level++) {
+        for (let level = 0; level < entry.levels.length; level++) {
           probe.upgrades[entry.id] = level
           const maxed = entry.maxed(probe)
           rows.push([
@@ -934,157 +1435,91 @@
         return dataTable(["at", "next costs", ""], rows)
       }
 
-      // The tables in CONFIG an upgrade indexes, matched by name: an upgrade's
-      // levels and its effect table are the same length, and the table is named
-      // after it. Nothing is inferred beyond that, so a table that stops matching
-      // simply stops being shown.
-      function effectTables(entry) {
-        if (entry.max === undefined) {
-          return []
-        }
-        const prefix = entry.id.toUpperCase()
-        return Object.entries(CONFIG).filter(
-          ([key, value]) =>
-            Array.isArray(value) &&
-            value.length === entry.max + 1 &&
-            (key.startsWith(prefix) ||
-              key.startsWith(`PLAYER_${prefix}`) ||
-              prefix.startsWith(key.split("_")[0])),
-        )
-      }
-
-      // Where the game itself will answer what a level is worth, ask it instead of
-      // reading a table: the energy cap comes from Game.maxEnergy, which is what
-      // the ship is actually given.
-      const MEASURED_EFFECTS = {
-        core: (level) => {
-          probe.upgrades.core = level
-          return `${probe.maxEnergy()} energy`
-        },
-      }
-
-      function measuredEffect(entry) {
-        const measure = MEASURED_EFFECTS[entry.id]
-        if (!probe || !measure || entry.max === undefined) {
-          return null
-        }
-        const before = probe.upgrades[entry.id]
-        const rows = []
-        for (let level = 0; level <= entry.max; level++) {
-          rows.push([`lv ${level}`, measure(level)])
-        }
-        probe.upgrades[entry.id] = before
-        return el(
-          "div",
-          {},
-          el("h3", { textContent: "ASKED OF THE GAME" }),
-          dataTable(["level", "capacity"], rows),
-        )
-      }
-
-      const shopCards = config.SHOP.map((entry) => {
-        const levels = shopRows(entry)
-        const effects = effectTables(entry)
-        return card(
+      const shopCards = config.SHOP.map((entry) =>
+        card(
           entry.name,
           null,
           el("p", { className: "note", style: "margin:0 0 8px", textContent: entry.desc }),
           el("div", { className: "pairs" }, [
             el("b", { textContent: "id" }),
             el("span", {}, document.createTextNode(entry.id)),
-            el("b", { textContent: "levels" }),
-            el("span", {}, show(entry.max === undefined ? "not levelled" : entry.max)),
+            el("b", { textContent: "what it sells" }),
+            el(
+              "span",
+              {},
+              document.createTextNode(
+                entry.equipment
+                  ? `the ${config.EQUIPMENT[entry.equipment].label} slot, in a pop-over`
+                  : entry.levels
+                    ? `${entry.levels.length} levels, in a pop-over`
+                    : "one purchase, from the row",
+              ),
+            ),
+            ...(entry.inset
+              ? [
+                  el("b", { textContent: "grouped" }),
+                  el(
+                    "span",
+                    {},
+                    document.createTextNode(
+                      `inset by ${config.SHOP_LAYOUT.insetBy}, under what carries it`,
+                    ),
+                  ),
+                ]
+              : []),
             ...(probe
               ? [
                   el("b", { textContent: "at a fresh run" }),
                   el("span", {}, document.createTextNode(entry.info(probe))),
+                  el("b", { textContent: "nothing left to buy" }),
+                  el("span", {}, show(entry.maxed(probe))),
                 ]
               : []),
-            ...(probe && entry.max === undefined
+            ...(probe && !entry.levels && !entry.equipment
               ? [
                   el("b", { textContent: "cost" }),
                   el("span", {}, document.createTextNode(`${entry.cost(probe)} ore`)),
                 ]
               : []),
           ]),
-          levels,
-          measuredEffect(entry),
-          effects.length
-            ? el(
-                "div",
-                {},
-                el("h3", { textContent: "EFFECT PER LEVEL" }),
-                dataTable(
-                  ["table", ...CONFIG[effects[0][0]].map((_, i) => `lv ${i}`)],
-                  effects.map(([key, value]) => [
-                    key,
-                    ...value.map((v) => (typeof v === "boolean" ? (v ? "YES" : "no") : num(v))),
-                  ]),
-                ),
-              )
+          levelRows(entry),
+          entry.equipment
+            ? el("p", {
+                className: "note",
+                style: "margin:8px 0 0",
+                textContent: `What the slot can hold, and what each option costs, is under EQUIPMENT.`,
+              })
             : null,
-        )
-      })
-
-      // Slots are not sold from the shop rows but from the pop-over on a slot, so
-      // their price comes from Game.slotUnlockCost with the count set.
-      const slotRows = []
-      if (probe) {
-        const before = probe.upgrades.slots
-        for (let slots = 1; slots < config.MAX_SLOTS; slots++) {
-          probe.upgrades.slots = slots
-          slotRows.push([
-            `${slots} of ${config.MAX_SLOTS}`,
-            `${probe.slotUnlockCost()} ore`,
-            `unlocks slot ${slots + 1}`,
-          ])
-        }
-        probe.upgrades.slots = before
-        shopCards.push(
-          card(
-            "SPECIAL SLOT",
-            null,
-            el("p", {
-              className: "note",
-              style: "margin:0 0 8px",
-              textContent:
-                "Bought from the pop-over on an empty slot, not from the shop's own rows.",
-            }),
-            dataTable(["carrying", "next costs", ""], slotRows),
-          ),
-        )
-      }
-
-      // Every CONFIG array long enough to be a per-level table, listed whole so a
-      // table the name match above does not reach is still here.
-      const levelTables = Object.entries(CONFIG).filter(
-        ([, value]) => Array.isArray(value) && value.length >= 3,
+        ),
       )
-      const widest = Math.max(...levelTables.map(([, value]) => value.length))
+
+      // Special slots are not a shop row: they come with the power core, since a slot
+      // without the cell to run it is not worth selling. What the pop-over on one
+      // offers comes from SLOT_MENU.
       shopCards.push(
         card(
-          "EVERY LEVEL-INDEXED TABLE",
+          "SPECIAL SLOTS",
           null,
           el("p", {
             className: "note",
-            style: "margin:0 0 6px",
+            style: "margin:0 0 8px",
             textContent:
-              "All of them, whichever upgrade reads them, since a card above only shows the ones its name reaches.",
+              "Not sold on their own. A core level earns a slot, so buying room and buying the " +
+              "cell to spend through it are the same purchase. The pop-over on a slot sells and " +
+              "fills it.",
           }),
           dataTable(
-            ["table", ...Array.from({ length: widest }, (_, i) => `lv ${i}`)],
-            levelTables.map(([key, value]) => [
-              key,
-              ...Array.from({ length: widest }, (_, i) =>
-                i < value.length
-                  ? typeof value[i] === "boolean"
-                    ? value[i]
-                      ? "YES"
-                      : "no"
-                    : num(value[i])
-                  : "-",
-              ),
-            ]),
+            ["core level", "slots", "what a slot's pop-over offers"],
+            (config.CORE_TYPES[playerCoreName()].levels || []).map((_, i) => {
+              const at = config.coreAt(config.CORE_TYPES[playerCoreName()], i)
+              return [
+                `lv ${i}`,
+                `${Math.min(at.special ?? 0, config.MAX_SLOTS)} of ${config.MAX_SLOTS}`,
+                config.SLOT_MENU.map((row) => row.name || "one row per special it could hold").join(
+                  ", ",
+                ),
+              ]
+            }),
           ),
         ),
       )
@@ -1092,10 +1527,10 @@
       section(
         "shop",
         "UPGRADES AND THE SHOP",
-        "One card per SHOP row, in menu order. Prices are read from each row's own cost() with " +
-          "the upgrade set to that level, so the curve is exactly what a player is charged. Effect " +
-          "tables are the CONFIG arrays of matching length whose names line up with the upgrade, " +
-          "and the last card lists every level-indexed table so nothing is left out.",
+        "One card per SHOP row, in menu order. A row either buys one thing outright, steps a " +
+          "levelled upgrade, or opens onto an equipment slot; what it reports and what it charges " +
+          "are read from the row's own info() and cost() with the throwaway game set to each " +
+          "level, so the curve is exactly what a player is charged.",
         el("div", { className: "cards" }, shopCards),
       )
 
@@ -1231,7 +1666,7 @@
               className: "note",
               style: "margin:0 0 6px",
               textContent:
-                "A hazard trait joins the roll at its own sector. `weightPerSector` adds an entry per sector past that, up to `weightCap`, so a trait can come to crowd the others out.",
+                "A hazard trait joins the roll at its own sector and is weighed against its siblings by weightAt, like every other pool. `weightPerSector` makes an entry heavier for each sector past that, up to `weightCap`, so a trait can come to crowd the others out.",
             }),
             dataTable(
               ["trait", "from sector", "weight growth", "cap"],
@@ -1260,6 +1695,14 @@
       // true to the code even if the formula behind them changes.
       const SECTOR_SAMPLES = 600
       const LAST_SECTOR = 24
+
+      // The trait combinations HAZARD_TRAITS offers, as the labels a measured mix is
+      // counted under, so a new hazard appears in the table without being named here.
+      const HAZARD_LABELS = [
+        ...new Set(
+          config.HAZARD_TRAITS.map((hazard) => Object.keys(hazard.traits).sort().join(" + ")),
+        ),
+      ]
 
       function sectorRows() {
         const rows = []
@@ -1299,7 +1742,7 @@
           ])
           mixes.push([
             sector,
-            ...["explosive", "shield", "gun", "gun + shield"].map((kind) =>
+            ...HAZARD_LABELS.map((kind) =>
               hazardous ? `${Math.round(((mix.get(kind) || 0) / hazardous) * 100)}%` : "-",
             ),
           ])
@@ -1307,8 +1750,29 @@
         return { rows, mixes }
       }
 
+      // Which hull a sector's arrivals are rolled from, as the share each takes of
+      // whatever is eligible there. Weighed with weightAt, the same call the spawner
+      // makes; `maxConcurrent` is left out, since that depends on what is already in
+      // the sector rather than on the sector.
+      function arrivalRows() {
+        const names = Object.keys(config.SHIP_TYPES)
+        const rows = []
+        for (let sector = 1; sector <= LAST_SECTOR; sector++) {
+          const weights = names.map((name) =>
+            config.weightAt(config.SHIP_TYPES[name].spawn, sector),
+          )
+          const total = weights.reduce((sum, weight) => sum + weight, 0)
+          rows.push([
+            sector,
+            ...weights.map((weight) => (total ? `${Math.round((weight / total) * 100)}%` : "-")),
+          ])
+        }
+        return { names, rows }
+      }
+
       if (probe) {
         const { rows, mixes } = sectorRows()
+        const arrivals = arrivalRows()
         section(
           "sectors",
           "SECTOR BY SECTOR",
@@ -1321,21 +1785,51 @@
               "sector",
               "rocks",
               "hazard chance",
-              "rivals at once",
+              "hulls at once",
               "arrival gap",
               "specials",
               "rock guns",
             ],
             rows,
           ),
-          el("h3", { textContent: "WHICH HAZARD, WHEN ONE IS ROLLED" }),
-          dataTable(["sector", "explosive", "shielded", "armed", "armed + shielded"], mixes),
+          heading(
+            "WHICH HAZARD, WHEN ONE IS ROLLED",
+            dataTable(["sector", ...HAZARD_LABELS], mixes),
+          ),
+          heading(
+            "WHICH HULL ARRIVES",
+            el("p", {
+              className: "note",
+              style: "margin:0 0 6px",
+              textContent:
+                "Each type's share of a sector's arrivals, from weightAt over the eligible types. A type is out of the running while as many as its `maxConcurrent` are already alive, which is not in these shares because it depends on the sector's state rather than its number.",
+            }),
+            dataTable(["sector", ...arrivals.names], arrivals.rows),
+          ),
         )
       }
 
       // ---- controls ---------------------------------------------------------
 
-      const keyName = (code) => String(code).replace(/^(Key|Digit|Numpad|Arrow)/, "") || code
+      // A key code as a player would name it. The numpad keeps its own name, since a
+      // pad digit and a row digit are two different keys and both are bound.
+      const keyName = (code) =>
+        String(code)
+          .replace(/^Numpad/, "NUM ")
+          .replace(/^(Key|Digit|Arrow)/, "") || code
+
+      // A default binding as the device names it. A pad button is given its face
+      // label where it has one, since that is what the HUD shows.
+      function bindingText(device, value) {
+        if (value === undefined) {
+          return "-"
+        }
+        if (device.id === "keys") {
+          return value.map(keyName).join(" or ")
+        }
+        const label = config.GAMEPAD.slotLabels[value]
+        return `button ${value}${label ? ` (${label})` : ""}`
+      }
 
       section(
         "controls",
@@ -1344,14 +1838,18 @@
           "action with no entry for a device does not appear in that device's section: a pad steers " +
           "with a stick, so there is nothing to bind for turning.",
         dataTable(
-          ["action", "name", "keyboard", "gamepad", "special slot"],
+          [
+            "action",
+            "name",
+            ...config.BINDING_DEVICES.map((device) => device.name.toLowerCase()),
+            "special slot",
+          ],
           config.BINDABLE_CONTROLS.map((action) => [
             action.id,
             action.name,
-            (action.defaults.keys || []).map(keyName).join(" or ") || "-",
-            action.defaults.buttons !== undefined
-              ? `button ${action.defaults.buttons}${config.GAMEPAD.slotLabels[action.defaults.buttons] ? ` (${config.GAMEPAD.slotLabels[action.defaults.buttons]})` : ""}`
-              : "-",
+            ...config.BINDING_DEVICES.map((device) =>
+              bindingText(device, action.defaults[device.id]),
+            ),
             action.slot !== undefined ? action.slot + 1 : "-",
           ]),
         ),
@@ -1374,9 +1872,13 @@
             ]),
           ),
           card(
-            "HUD SCALES",
+            "DEVICES AND HUD SCALES",
             null,
             el("div", { className: "pairs" }, [
+              ...config.BINDING_DEVICES.flatMap((device) => [
+                el("b", { textContent: device.id }),
+                el("span", {}, document.createTextNode(`${device.name} - "${device.prompt}"`)),
+              ]),
               el("b", { textContent: "UI_SCALES" }),
               el("span", {}, show(config.UI_SCALES)),
             ]),
@@ -1397,13 +1899,19 @@
       section(
         "scalars",
         "HOW A SHIP'S SETTINGS ARE WORKED OUT",
-        "The relationships deriveShipStats applies, and the material a hull is made of. A design " +
-          "states a shape, mass, power and armour; these turn that into how it flies and how much " +
-          "it can take.",
+        "The relationships that turn a design into a ship, and the material a hull is made of. A " +
+          "design states an outline, mass and armour and bolts modules to it; these turn that into " +
+          "how it flies and how much it can take. flightStats is called again whenever what is " +
+          "aboard changes, so a hull refitted in the shop and one that turned up carrying an extra " +
+          "gun are worked out the same way.",
         el("div", { className: "cards" }, [
           card("SHIP_SCALARS", null, pairs(config.SHIP_SCALARS)),
           card("SHIP_PLATING", null, pairs(config.SHIP_PLATING)),
+          card("flightStats", null, el("pre", { textContent: source(config.flightStats) })),
           card("deriveShipStats", null, el("pre", { textContent: source(config.deriveShipStats) })),
+          card("hullPoints", null, el("pre", { textContent: source(config.hullPoints) })),
+          card("ladenMass", null, el("pre", { textContent: source(config.ladenMass) })),
+          card("weightAt", null, el("pre", { textContent: source(config.weightAt) })),
         ]),
       )
 
