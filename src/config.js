@@ -663,7 +663,7 @@ export const WEAPON_TYPES = {
     // What one costs, spent over the wind-up rather than at the shot. There is no reload
     // behind it: the cell is the limit, so how often one can be thrown is how fast the
     // cell fills, and everything else the cell pays for goes short while one is held.
-    energy: 190,
+    energy: 380,
     // It drifts rather than flies, slow enough to be outrun by anything with a drive, so
     // it is a place to be away from rather than a thing to duck. And it stays: long enough
     // that a sector with two of them in it has to be flown around rather than through.

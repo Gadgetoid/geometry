@@ -954,6 +954,12 @@ export class Weapon {
       radius: spec.radius,
       include: ["projectiles"],
       visit: (shot, { dir, falloff }) => {
+        // Loose shot, not other wells. A ship that has overtaken its own well was towing
+        // it along at twice its speed, which is not what drawing in what is loose means:
+        // a well is the thing being made rather than raw material for it.
+        if (shot.type && shot.type.well) {
+          return
+        }
         shot.vx -= dir.x * pull * falloff * dt
         shot.vy -= dir.y * pull * falloff * dt
       },
@@ -1406,6 +1412,11 @@ export class Shield {
       this.flash = Math.max(0, this.flash - dt)
     }
     if (this.up) {
+      // Whatever emptied the cell, not only a hit that emptied it. A bubble was checked
+      // when it was shot at and when it shoved something, so a hull that spent its cell
+      // on a gun instead kept a bubble it could not pay for: drawn, and paying nothing,
+      // while every hit went through to the hull.
+      this.checkOverload(host)
       return
     }
     this.downTimer = Math.max(0, this.downTimer - dt)
@@ -1920,6 +1931,20 @@ export class Ship extends Entity {
     this.hardpoints = list.map((hp) => ({ local: hp.local, role: hp.role, module: null }))
   }
 
+  // How big the guns on this hull are drawn. A turret is one fixed size in world units,
+  // which on a hull five times the length of the player's is a speck: a pincer read as
+  // carrying none at all. It grows with the hull it is bolted to instead, so a gun is
+  // legible whatever it is on.
+  get turretScale() {
+    return clamp(this.boundRadius / 20, 1, 3)
+  }
+
+  // What the guns on this hull are drawn in. Whose they are, rather than what they are:
+  // a hull ringed with guns should read as its faction's from across the sector.
+  get turretColour() {
+    return this.type && this.type.faction === "alien" ? PALETTE.alien.turret : PALETTE.weapon.gun
+  }
+
   hardpointByRole(role) {
     return this.hardpoints.find((hp) => hp.role === role) || null
   }
@@ -2006,7 +2031,11 @@ export class Ship extends Entity {
       if (m.type.kind === "projectile") {
         // pointed where the controller points it, so a heavy turret is legible
         const aim = trackedAim(seen, hp, w, this.angle)
-        drawTurret(renderer, w.x, w.y, aim, m.barrels, PALETTE.weapon.gun, { length: 8 })
+        const scale = this.turretScale
+        drawTurret(renderer, w.x, w.y, aim, m.barrels, this.turretColour, {
+          length: 8 * scale,
+          scale,
+        })
       } else if (hp.role === "nose") {
         renderer.line(w.x, w.y, w.x + Math.cos(this.angle) * 8, w.y + Math.sin(this.angle) * 8, {
           color: m.type.colour,
@@ -2071,6 +2100,14 @@ export class PlayerShip extends Ship {
     this.warp = 1
     this.warpTarget = 1
     this.warpHold = 0 // beat to wait before an arrival starts
+  }
+
+  // Whoever is flying it decides the side, not the hull. A dev build can put the player
+  // in a rival's hull or an alien's, and a hull that reported its own faction made the
+  // player one of them: their own guns looked for a target on the side they were now on
+  // and found nothing, and an alien field treated alien fire as friendly.
+  get faction() {
+    return "player"
   }
 
   // Losing the hull costs a life and a respawn, so the player's is never cut into
@@ -3803,6 +3840,12 @@ export class Singularity extends Projectile {
       include: ["projectiles"],
       skip: this,
       visit: (shot, { dir, falloff }) => {
+        // Loose shot, not other wells. Two of them inside each other's reach pull each
+        // other, and nothing takes that energy back out: a field with several in it wound
+        // them up to 4,400 units a second, which is fifty times what one is thrown at.
+        if (shot.type && shot.type.well) {
+          return
+        }
         shot.vx -= dir.x * well.pull * grown * falloff * dt
         shot.vy -= dir.y * well.pull * grown * falloff * dt
       },

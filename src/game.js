@@ -3119,10 +3119,14 @@ export class Game {
     if (!this.paused) {
       return
     }
+    // Back one page, not all the way out: the dev pages hang off the dev page, which
+    // hangs off the options. Backing out of SPAWN landed on the options, which is two
+    // steps and the wrong one.
+    const behind = { devSpawn: "dev", devShip: "dev", dev: "root", controls: "root" }
     if (this.pausePage === "root") {
       this.toggleOptions()
     } else {
-      this.openPausePage("root")
+      this.openPausePage(behind[this.pausePage] ?? "root")
     }
   }
 

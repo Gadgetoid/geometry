@@ -4084,10 +4084,15 @@ test("a gun that winds up is paid for while it winds, and let go of to fire", ()
   const armed = () => {
     const game = liveGame()
     beSolid(game.player)
+    // A well costs more than a stock cell holds, which is the gate on carrying one: the
+    // hulls that come with the gun bring the plant for it.
+    game.upgrades.core = shopRow(game, "core").levels.length - 1
     game.upgrades.owned.laser.push("singularityGun")
     game.fitEquipment("laser", "singularityGun")
     game.player.mainWeapon.cooldown = 0 // a gun just fitted is on its reload
+    game.player.energyMax = game.maxEnergy()
     game.player.energy = game.player.energyMax
+    assert.ok(game.player.energyMax > spec.energy, "the cell must be able to pay for one")
     return game
   }
 
@@ -4192,6 +4197,85 @@ test("an alien beam bends the space along it, and an honest one bends nothing", 
   const ours = lensesAfterFiring("playerLaserMk1")
   assert.equal(ours.shots, 1)
   assert.equal(ours.lenses.length, 0, "nothing of ours bends space")
+})
+
+test("a well pulls what is loose, and not other wells", () => {
+  // Two of them inside each other's reach pull each other, and nothing takes that energy
+  // back out again: a sector the player had thrown several into wound one up to 4,400
+  // units a second against the 80 the gun throws them at. The same goes for a wind-up
+  // drawing things in, which is why a ship that had overtaken its own well towed it.
+  const game = liveGame()
+  beSolid(game.player)
+  game.player.x = -9000
+  game.player.y = -9000
+  const spec = WEAPON_TYPES.singularityGun
+  const wells = [0, 60, 120].map(
+    (offset) => new Singularity(400 + offset, 320, spec.speed, 0, 0, null, spec),
+  )
+  game.projectiles.push(...wells)
+  let peak = 0
+  for (let frame = 0; frame < 180; frame++) {
+    game.advance(1 / 60)
+    for (const well of wells) {
+      if (!well.dead) {
+        peak = Math.max(peak, Math.hypot(well.vx, well.vy))
+      }
+    }
+  }
+  assert.ok(
+    peak <= spec.speed + 1,
+    `three of them together stay at the speed they were thrown, got ${peak.toFixed(0)}`,
+  )
+})
+
+test("whoever is flying it decides the side, not the hull", () => {
+  // A hull reported its own faction, so flying a rival's made the player one: their own
+  // guns went looking for a target on the side they were now on and found none, and an
+  // alien field would have treated alien fire as friendly.
+  const game = liveGame()
+  beSolid(game.player)
+  game.asteroids = [new Asteroid({ x: 100, y: 100, radius: 40 })] // so the sector stays live
+  game.openDevMenu()
+  game.openPausePage("devShip")
+  game
+    .pauseMenu()
+    .find((row) => row.name === "FRIGATE")
+    .action(game)
+  game.paused = false
+  const player = beSolid(game.player)
+  assert.equal(player.faction, "player", "still the player, in someone else's hull")
+
+  const mark = plainRival(700, 320, "scout")
+  mark.arrived = true
+  game.rivals = [mark]
+  let fired = 0
+  for (let frame = 0; frame < 300; frame++) {
+    mark.x = 700
+    mark.y = 320
+    mark.hull = 1e9
+    player.x = 400
+    player.y = 320
+    player.angle = 0
+    player.energy = player.energyMax
+    const before = game.projectiles.length
+    game.advance(1 / 60)
+    fired += game.projectiles.length > before ? 1 : 0
+  }
+  assert.ok(fired > 0, "the hull's own guns fire at what the player is hostile to")
+})
+
+test("a bubble the cell cannot pay for goes down, whatever emptied the cell", () => {
+  // It was checked when it was shot at and when it shoved something, so a hull that spent
+  // its cell on a gun kept a bubble it could not afford: drawn, costing nothing, and
+  // every hit going through to the hull behind it.
+  const game = liveGame()
+  const player = beSolid(game.player)
+  withShield(game)
+  const shield = player.shieldModule()
+  assert.ok(shield && shield.up, "it starts up")
+  player.energy = shield.type.dropAt * player.energyMax * 0.5 // spent on something else
+  shield.tick(1 / 60, player)
+  assert.equal(shield.up, false, "and goes down when the cell cannot hold it up")
 })
 
 test("a hull's rolled arms are found with it, not only what it always carries", () => {
