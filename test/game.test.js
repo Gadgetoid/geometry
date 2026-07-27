@@ -2368,6 +2368,40 @@ test("a cut takes the mounts that were on the part it took, and no others", () =
   assert.equal([...pincer.modules()].filter((m) => m.kind === "engine").length, 2)
 })
 
+test("the edge a cut leaves on a surviving hull burns", () => {
+  // The piece that came off burns, because a rock made of plating does. The ship it came
+  // off is made of the same stuff and had the same face left raw, and was showing nothing.
+  const light = grazeHull("frigate", 0.5)
+  assert.equal(light.dead, false)
+  assert.ok(light.ship.burn > 0, "the fresh edge is alight")
+  assert.ok(light.ship.burnFaces.length > 0, "along the face the beam left")
+
+  const fire = () =>
+    light.game.particles.filter((p) => p.color === PALETTE.fx.fire || p.color === PALETTE.fx.ember)
+      .length
+  const before = fire()
+  for (let i = 0; i < 60; i++) {
+    light.game.advance(1 / 60)
+  }
+  assert.ok(fire() > before, "and it throws fire while it flies")
+
+  // It burns out, rather than smoking for the rest of the run.
+  for (let i = 0; i < 60 * 12; i++) {
+    light.game.advance(1 / 60)
+  }
+  assert.equal(light.ship.burn, 0, "and then it is out")
+
+  // The face is drawn too, in the same colour the wreckage burns.
+  const cut = grazeHull("frigate", 0.5)
+  const drawn = []
+  const renderer = new Proxy(
+    { line: (x1, y1, x2, y2, opts) => drawn.push(opts && opts.color) },
+    { get: (target, key) => (key in target ? target[key] : () => {}) },
+  )
+  cut.ship.draw(renderer, cut.game)
+  assert.ok(drawn.includes(PALETTE.fx.fire), "the raw edge glows")
+})
+
 test("a small hull is finished by any cut at all, however light", () => {
   // The other half of the rule, and what keeps the existing behaviour: the whole of a
   // scout is a fraction of the smallest piece its plating holds together in, so there is

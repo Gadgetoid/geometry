@@ -73,6 +73,76 @@ export function oreFromFragment(area) {
   return clamp(Math.round(area / CONFIG.ORE_PER_FRAGMENT_AREA) + 1, 1, 4)
 }
 
+// ---------------------------------------------------------------------------
+// A raw face left by a cut, and the fire off it. Shared, because a piece cut off a hull
+// and the hull it was cut from both have a face along the same line, and both burn if
+// what they are made of does.
+// ---------------------------------------------------------------------------
+// Which edges of a world outline lie along a cut, as index pairs so they follow the
+// outline as it drifts and turns.
+export function facesOnLine(vertices, point, normal) {
+  const onLine = (p) =>
+    Math.abs((p.x - point.x) * normal.x + (p.y - point.y) * normal.y) < CONFIG.CUT_EDGE_TOLERANCE
+  const edges = []
+  for (let i = 0; i < vertices.length; i++) {
+    const j = (i + 1) % vertices.length
+    if (onLine(vertices[i]) && onLine(vertices[j])) {
+      edges.push([i, j])
+    }
+  }
+  return edges
+}
+
+// Fire licking off those faces, thinning out as the heat goes. `carry` is the fractional
+// particle held between frames, and the new one is returned.
+export function emitBurn(game, body, vertices, faces, spec, heat, carry, dt) {
+  let backlog = carry + spec.rate * heat * dt
+  const centre = body.center || body
+  while (backlog >= 1) {
+    backlog -= 1
+    const [i, j] = faces[randInt(0, faces.length - 1)]
+    const a = vertices[i],
+      b = vertices[j]
+    const along = Math.random()
+    const px = a.x + (b.x - a.x) * along,
+      py = a.y + (b.y - a.y) * along
+    // face outward, away from the body behind the face
+    let nx = -(b.y - a.y),
+      ny = b.x - a.x
+    const len = Math.hypot(nx, ny) || 1
+    nx /= len
+    ny /= len
+    if ((px - centre.x) * nx + (py - centre.y) * ny < 0) {
+      nx = -nx
+      ny = -ny
+    }
+    const speed = randRange(18, 62) * (0.45 + 0.55 * heat)
+    game.emit(
+      px,
+      py,
+      body.vx + nx * speed + randRange(-16, 16),
+      body.vy + ny * speed + randRange(-16, 16),
+      randRange(0.16, 0.38),
+      Math.random() < 0.35 ? PALETTE.fx.ember : PALETTE.fx.fire,
+    )
+  }
+  return backlog
+}
+
+// The raw face itself, still glowing and cooling as it goes out.
+export function drawBurnFaces(renderer, vertices, faces, heat) {
+  for (const [i, j] of faces) {
+    const a = vertices[i],
+      b = vertices[j]
+    renderer.line(a.x, a.y, b.x, b.y, {
+      color: PALETTE.fx.fire,
+      width: 1.6 + 1.8 * heat,
+      glow: 10 + 16 * heat,
+      alpha: 0.35 + 0.55 * heat,
+    })
+  }
+}
+
 // Contact between two bodies. A body presents one of two surfaces: a disc, when
 // a shield is raised over it, or its real outline as a list of convex parts that
 // tile it. Callers reject on the enclosing circles first. Returns the push `b`
@@ -347,6 +417,11 @@ export class Entity {
     // What is left of the hull, as a fraction: a ship cut down to a piece of itself weighs
     // and handles as that piece. See Ship.reshape.
     this.massScale = 1
+    // A raw face left by a cut that did not finish the hull, and the fire off it. Faces are
+    // vertex index pairs into the outline, so they turn with the ship.
+    this.burn = 0
+    this.burnFaces = []
+    this.burnBacklog = 0
     this.fxCooldown = 0 // throttles repeated hit particles (e.g. asteroid grind)
   }
 
@@ -545,6 +620,9 @@ export class Entity {
   updateShield(dt, game) {
     if (this.fxCooldown > 0) {
       this.fxCooldown -= dt
+    }
+    if (game && this.updateBurn) {
+      this.updateBurn(dt, game)
     }
     const shield = this.shieldModule()
     if (shield) {
@@ -1522,7 +1600,7 @@ export class Ship extends Entity {
   // grazed slab is lighter, quicker to come about, and closer to being finished. Anything
   // that was mounted on the part that came off goes with it: a gun on a severed corner is
   // on the corner.
-  reshape(worldPart, removedParts = []) {
+  reshape(worldPart, removedParts = [], cut = null) {
     const areaOf = (outline) => polygonArea(outline.map(([x, y]) => ({ x, y })))
     const before = areaOf(this.outlineLocal)
     // Mounts are placed against the hull, and some sit a little outside it on purpose: a
@@ -1556,8 +1634,48 @@ export class Ship extends Entity {
     for (const hp of going) {
       hp.module = null
     }
+    // The edge the beam left is raw, and burns if the hull is made of something that
+    // burns: the same face, the same fire and the same cooling as the piece that came off.
+    const spec = this.burnSpec
+    if (cut && spec) {
+      const lit = facesOnLine(this.worldOutline(), cut.point, cut.normal)
+      if (lit.length) {
+        this.burnFaces = lit
+        this.burn = spec.seconds
+      }
+    }
     this.refreshFitting()
     return kept
+  }
+
+  // What the hull is made of, when it is made of anything that burns.
+  get burnSpec() {
+    return (this.type.debrisMaterial && this.type.debrisMaterial.burn) || null
+  }
+
+  // How hot the cut faces still are, 1 just after the cut down to 0 when out.
+  get heat() {
+    const spec = this.burnSpec
+    return spec && this.burn > 0 ? this.burn / spec.seconds : 0
+  }
+
+  // Fire off whatever the last cut left raw. Ticked wherever the shield is, so a hull that
+  // is still flying is still smoking.
+  updateBurn(dt, game) {
+    if (this.burn <= 0) {
+      return
+    }
+    this.burn = Math.max(0, this.burn - dt)
+    this.burnBacklog = emitBurn(
+      game,
+      this,
+      this.worldOutline(),
+      this.burnFaces,
+      this.burnSpec,
+      this.heat,
+      this.burnBacklog,
+      dt,
+    )
   }
 
   // What is fitted, and what the hull does with it. One method for every ship, so a
@@ -1695,6 +1813,9 @@ export class Ship extends Entity {
   drawShip(renderer, game, hullWidth) {
     this.drawFlames(renderer)
     renderer.strokePoly(this.worldOutline(), { color: this.colour, width: hullWidth, glow: 12 })
+    if (this.burn > 0) {
+      drawBurnFaces(renderer, this.worldOutline(), this.burnFaces, this.heat)
+    }
     const shield = this.shieldModule()
     if (shield && shield.up) {
       shield.draw(
@@ -2882,7 +3003,7 @@ export class Asteroid extends Entity {
     this.burnFaces = []
     this.burnBacklog = 0
     if (this.burnSpec && opts.burnFrom) {
-      this.burnFaces = this.#facesOnLine(opts.burnFrom.point, opts.burnFrom.normal)
+      this.burnFaces = facesOnLine(this.vertices, opts.burnFrom.point, opts.burnFrom.normal)
       if (this.burnFaces.length) {
         this.burn = this.burnSpec.seconds
       }
@@ -3015,19 +3136,6 @@ export class Asteroid extends Entity {
 
   // Edges with both ends sitting on the given line: the faces a cut opened up,
   // as opposed to the piece's share of the original hull.
-  #facesOnLine(point, normal) {
-    const onLine = (p) =>
-      Math.abs((p.x - point.x) * normal.x + (p.y - point.y) * normal.y) < CONFIG.CUT_EDGE_TOLERANCE
-    const edges = []
-    for (let i = 0; i < this.vertices.length; i++) {
-      const j = (i + 1) % this.vertices.length
-      if (onLine(this.vertices[i]) && onLine(this.vertices[j])) {
-        edges.push([i, j])
-      }
-    }
-    return edges
-  }
-
   // Smallest fragment of this material that survives a cut; below it, ore.
   get minArea() {
     return (this.material && this.material.minArea) || CONFIG.AST_MIN_AREA
@@ -3042,39 +3150,18 @@ export class Asteroid extends Entity {
     return this.burnSpec && this.burn > 0 ? this.burn / this.burnSpec.seconds : 0
   }
 
-  // Fire licking off the raw faces, thinning out as the piece burns itself out.
   #burnFaces(dt, game) {
     this.burn = Math.max(0, this.burn - dt)
-    const heat = this.heat
-    this.burnBacklog += this.burnSpec.rate * heat * dt
-    while (this.burnBacklog >= 1) {
-      this.burnBacklog -= 1
-      const [i, j] = this.burnFaces[randInt(0, this.burnFaces.length - 1)]
-      const a = this.vertices[i],
-        b = this.vertices[j]
-      const along = Math.random()
-      const px = a.x + (b.x - a.x) * along,
-        py = a.y + (b.y - a.y) * along
-      // face outward, away from the body of the piece
-      let nx = -(b.y - a.y),
-        ny = b.x - a.x
-      const len = Math.hypot(nx, ny) || 1
-      nx /= len
-      ny /= len
-      if ((px - this.center.x) * nx + (py - this.center.y) * ny < 0) {
-        nx = -nx
-        ny = -ny
-      }
-      const speed = randRange(18, 62) * (0.45 + 0.55 * heat)
-      game.emit(
-        px,
-        py,
-        this.vx + nx * speed + randRange(-16, 16),
-        this.vy + ny * speed + randRange(-16, 16),
-        randRange(0.16, 0.38),
-        Math.random() < 0.35 ? PALETTE.fx.ember : PALETTE.fx.fire,
-      )
-    }
+    this.burnBacklog = emitBurn(
+      game,
+      this,
+      this.vertices,
+      this.burnFaces,
+      this.burnSpec,
+      this.heat,
+      this.burnBacklog,
+      dt,
+    )
   }
 
   // Move the whole rock: outline, mounted hardpoints and centre together.
@@ -3376,18 +3463,7 @@ export class Asteroid extends Entity {
   draw(renderer, game) {
     renderer.strokePoly(this.vertices, { color: this.colour(), width: 1.7, glow: 11 })
     if (this.burn > 0) {
-      // the raw face still glowing, cooling as it burns out
-      const heat = this.heat
-      for (const [i, j] of this.burnFaces) {
-        const a = this.vertices[i],
-          b = this.vertices[j]
-        renderer.line(a.x, a.y, b.x, b.y, {
-          color: PALETTE.fx.fire,
-          width: 1.6 + 1.8 * heat,
-          glow: 10 + 16 * heat,
-          alpha: 0.35 + 0.55 * heat,
-        })
-      }
+      drawBurnFaces(renderer, this.vertices, this.burnFaces, this.heat)
     }
     if (this.explosive) {
       const pulse = 0.5 + 0.5 * Math.sin(game.gameTime * 6)

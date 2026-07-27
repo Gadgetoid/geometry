@@ -943,6 +943,7 @@ export class Game {
       ship.reshape(
         biggest,
         parts.filter((part) => part !== biggest),
+        { point: beam.a, normal: cutNormal },
       )
       return true
     }
