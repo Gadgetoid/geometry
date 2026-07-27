@@ -4024,6 +4024,30 @@ test("the player can fire anything its nose will hold", () => {
   }
 })
 
+test("holding the trigger on a gun that does not charge keeps the cell a number", () => {
+  // The wind-up reads chargeMax, chargeRate and chargeCost, and a found gun has none of
+  // them. Winding one up put NaN through the cell, and everything that reads off the
+  // cell went with it: the shield bubble drawn at NaN alpha is an opaque white ring
+  // round the ship, which is how this was reported.
+  for (const id of ["warpNeedle", "cannonLaser", "singularityGun"]) {
+    const game = liveGame()
+    beSolid(game.player)
+    game.upgrades.owned.laser.push(id)
+    game.fitEquipment("laser", id)
+    for (let frame = 0; frame < 30; frame++) {
+      game.pressedKeys.add("Space") // what "fire" is bound to, which is what holding reads
+      game.player.update(1 / 60, game)
+    }
+    const player = game.player
+    assert.ok(Number.isFinite(player.energy), `${id} leaves the cell a number`)
+    assert.ok(Number.isFinite(player.mainWeapon.charge), `${id} leaves the charge a number`)
+    assert.ok(
+      Number.isFinite(player.energy / player.energyMax),
+      `${id} leaves the fraction the shield is drawn from a number`,
+    )
+  }
+})
+
 test("a hull's rolled arms are found with it, not only what it always carries", () => {
   // A dart's gun is an arm rather than part of its loadout, and it is as much the hull's
   // own for that: flying one hands over everything it flies with.

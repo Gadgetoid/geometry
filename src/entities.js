@@ -2555,7 +2555,14 @@ export class PlayerShip extends Ship {
     const w = this.mainWeapon
     const holding = canControl && (game.holding("fire") || pad.charging)
     const freeShot = this.buffField("freeCharge", false)
-    if (holding) {
+    // A gun that does not charge has no `chargeMax`, `chargeRate` or `chargeCost`, and
+    // winding one up puts NaN through the cell: the energy bar, the charge bar and the
+    // shield bubble all read off it, and a bubble drawn at NaN alpha is an opaque white
+    // ring round the ship. It fires on its own cooldown for as long as the trigger is
+    // held instead, which is how every other hull fires one.
+    if (holding && !w.type.chargeable) {
+      this.fireLaser(game)
+    } else if (holding) {
       const rate = w.type.chargeRate
       const cost = w.type.chargeCost
       if (this.energy > 4 || freeShot) {
