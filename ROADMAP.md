@@ -32,18 +32,26 @@ never spawned. Its outline, cell, drive, thrusters, shield, radar and guns are a
 fitted equipment read through the same relationships as any rival's; what is left
 on CONFIG is drag, which is a control aid rather than a property of the hull.
 
+Around that sits a run of 40 sectors that is still getting harder at the end of it
+(see Length and difficulty), and a run ends when the ore does rather than when the
+ships do: the last ship lost offers another at the shop's price for one, as often
+as what was mined will pay for it.
+
 ## Aliens
 
 A third faction, hostile to the player and to the rivals alike, held back to the
-last stretch of a run: nothing before sector 20 sees one. All three hulls are in,
-one per rival tier, so the spawn tables and the controllers carried over and being
-alien is a faction, a colour and how it is drawn. They fight rivals as readily as
-the player, since every gun asks one question of the faction table.
+last stretch of a run: the scout from sector 20, the seeker from 25 and the pincer
+from 30, each rare on arrival and common by 40. All three hulls are in, one per
+rival tier, so the spawn tables and the controllers carried over and being alien is
+a faction, a colour and how it is drawn. They fight rivals as readily as the
+player, since every gun asks one question of the faction table.
 
 What is there: the shapes, green, the pincer's jaw guns held to the front by a mount
 arc, the singularity it holds in them, drives that burn green with a rounded plume,
-a permanent faint ripple in the space each one occupies, and `ALIEN_PLATING`, so a
-cut alien burns and smokes in their own colour. What is not:
+a permanent faint ripple in the space each one occupies, `ALIEN_PLATING`, so a cut
+alien burns and smokes in their own colour, and a sky that turns over to them as the
+run does: about half the planets behind a sector 40 fight are theirs, sickly green
+and pulsing. What is not:
 
 - **The glitch over them.** They bend space around themselves, but the tearing that
   is meant to go with it only happens where their shots land. Over a hull it wants
@@ -120,12 +128,24 @@ smoothed out, so the shape of the shield is the shape of the ship.
 
 ## Length and difficulty
 
-Stretch the content to fill around 30 sectors and tune the ramp across them. The
-curve is spread over `SPAWN`, `HAZARD_TRAITS` and each ship's own `spawn` block,
-so it is worth asking whether difficulty can be visualised before it is tuned.
+A run is 40 sectors and the ramp is spread across all of them: hulls arrive a tier
+at a time (scout 2, seeker 8, frigate 14, alien scout 20, alien seeker 25, alien
+pincer 30), each fading in from a small share rather than appearing at full weight,
+and the rock count, the share of rocks armed, the number of rivals alive and the
+gap between arrivals are all still moving at sector 40. timeline.html is where the
+curve is read; the tests hold its shape rather than its numbers.
 
-Prices want a pass with it. The radar marks and the thrusters were priced to be
-reachable rather than to be right.
+What is left of it:
+
+- **Prices.** The radar marks and the thrusters were priced to be reachable rather
+  than to be right, and nothing has been repriced against a run twice as long as
+  the one they were set for.
+- **The specials pool.** They arrive one kind at a time now, but which kind is worth
+  meeting when is a first guess: repel 5, refuel 8, ore magnet 11, booster 15, multi
+  19, stealth 25.
+- **What a sector pays.** Ore per rock and the kill and clear bonuses were set
+  against a run that was effectively over by sector 15. Whether 40 sectors of them
+  buys too much, or not enough, is a question for play rather than for a table.
 
 ## A boss
 
@@ -147,6 +167,10 @@ Small things, none of them load-bearing.
   cannot answer.
 - **Guns the player picks.** The nose is a mount like any other, so the beam could
   become a slot with alternatives in it rather than a ladder of one gun.
+- **A continue that gets dearer.** Buying back into a run costs the shop's flat
+  price for a ship every time. Charging more for each one in a row would make a
+  hoard finite in a way a flat price does not, at the cost of a second number
+  saying what a life is worth.
 
 ## Specials
 
