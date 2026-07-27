@@ -4,6 +4,7 @@
 // read / mutate its public fields; nothing here reaches for module globals.
 
 import {
+  SHIP_SCALARS,
   DEV_MENU,
   VIEW_W,
   VIEW_H,
@@ -859,11 +860,22 @@ export class Game {
         guns.push({ x: w.x, y: w.y, module: m })
       }
     }
+    // Does it survive being cut? The piece it would keep is the biggest one, and it stays
+    // a ship if that is most of what it was and is still bigger than the smallest piece its
+    // material holds together in. The second half is what keeps this off the small hulls:
+    // the whole of a scout is a fraction of that area, so any cut at all still finishes one.
+    const whole = polygonArea(ship.worldOutline())
+    const biggest = parts.reduce((best, p) => (polygonArea(p) > polygonArea(best) ? p : best))
+    const keptArea = polygonArea(biggest)
+    const survives = keptArea >= whole * SHIP_SCALARS.cutSurvival && keptArea >= debrisMinArea
     // Sort the pieces before anything is spawned, so "did this hull leave any
     // wreckage?" is answered over the whole cut rather than one piece at a time.
     const wreckage = []
     const slivers = []
     for (const partVerts of parts) {
+      if (survives && partVerts === biggest) {
+        continue // this piece is still the ship
+      }
       const centre = polygonCentroid(partVerts)
       const side = dot(subtract(centre, beam.a), cutNormal) > 0 ? 1 : -1
       const drift = {
@@ -883,7 +895,7 @@ export class Game {
       }
     }
 
-    if (!wreckage.length) {
+    if (!survives && !wreckage.length) {
       // Too small to leave anything: destroyed outright, and worth what shooting
       // it down was worth.
       ship.destroy(this, fromPlayer ? ship.type.killScore : 0)
@@ -923,6 +935,12 @@ export class Game {
     this.ring(ship.x, ship.y, 16, PALETTE.fx.flash, 190, 0.6)
     this.screenShake = Math.max(this.screenShake, 9)
     Sound.explode()
+    if (survives) {
+      // Still flying, with a flat edge where the corner used to be. Nothing is paid for a
+      // graze: the ship is still there to be shot at.
+      ship.reshape(biggest)
+      return true
+    }
     if (fromPlayer) {
       this.score += ship.type.blastScore
     }

@@ -1263,6 +1263,14 @@ export const SHIP_SCALARS = {
   // anything interesting: at 1 a scout does not survive a single ram and a
   // rival's median life falls from 24s to 5s.
   ramSurvivability: 0.7,
+  // How much of itself a hull has to keep to survive being cut. Under this it comes apart
+  // as it always did; over it, the piece that was taken off drifts away burning and the
+  // ship carries on with a flat edge where it used to be.
+  //
+  // The other half of the test is that what is left is still bigger than the smallest
+  // piece its own material holds together in, which is what keeps this off the small
+  // hulls: the whole of a scout is a sixth of that, so any cut at all still finishes one.
+  cutSurvival: 0.72,
   // And a ceiling for the hulls that are tough or slow enough that a ram cannot
   // threaten them anyway, which the formula would otherwise put on the player's
   // full rate. The player is the one hull meant to fear a rock.

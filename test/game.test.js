@@ -2251,31 +2251,64 @@ test("a graze through an armed scout leaves the piece holding the gun, still fir
   }
 })
 
-test("the same graze on a frigate takes a piece off and leaves the rest", () => {
+// Cut a hull along its flank at `fraction` of its half-height, and report what is left.
+function grazeHull(name, fraction) {
   const game = liveGame()
-  const player = game.player
-  player.angle = 0
-  player.x = 100
-  player.y = 320
+  game.player.angle = 0
+  game.player.x = 100
+  game.player.y = 320
   // Unshielded, since a bubble is what stops a beam reaching a hull to cut it.
-  const frigate = plainRival(500, 320, "frigate", withoutShield(SHIP_TYPES.frigate.loadout))
-  frigate.angle = 0
-  game.rivals = [frigate]
-  // along the frigate's flank, inside its half-height so it passes through
-  const halfHeight = Math.max(...SHIP_TYPES.frigate.outline.map(([, y]) => Math.abs(y)))
-  const offset = halfHeight * (2 / 3)
-  const beam = {
-    a: { x: 100, y: 320 + offset },
-    dir: { x: 1, y: 0 },
-    b: { x: 1100, y: 320 + offset },
+  const ship = plainRival(500, 320, name, withoutShield(SHIP_TYPES[name].loadout))
+  ship.angle = 0
+  game.rivals = [ship]
+  const half = Math.max(...SHIP_TYPES[name].outline.map(([, y]) => Math.abs(y)))
+  const y = 320 + half * fraction
+  const beam = { a: { x: 100, y }, dir: { x: 1, y: 0 }, b: { x: 1100, y } }
+  const area = polygonArea(ship.worldOutline())
+  assert.ok(countBeamCrossings(beam, ship.worldOutline()) >= 2, "the shot must pass through")
+  game.applyBeam(beam, game.player, playerWeapon)
+  return {
+    game,
+    ship,
+    dead: ship.dead,
+    kept: ship.dead ? 0 : polygonArea(ship.worldOutline()) / area,
+    wreckage: game.asteroids.length,
+    ore: game.oreChunks.length,
   }
-  assert.ok(countBeamCrossings(beam, frigate.worldOutline()) >= 2, "the shot must pass through")
-  game.applyBeam(beam, player, playerWeapon)
-  assert.equal(frigate.dead, true)
+}
+
+test("a graze takes a corner off a big hull and leaves it flying", () => {
+  const light = grazeHull("frigate", 0.75)
+  assert.equal(light.dead, false, "a slab does not come apart over a corner")
+  assert.ok(light.kept > 0.85, `it keeps most of itself, kept ${(light.kept * 100).toFixed(0)}%`)
+  assert.ok(light.wreckage + light.ore > 0, "and the corner comes off it")
+  // The wreckage burns, which is the material's business and not the cut's.
+  const burning = light.game.asteroids.filter((rock) => rock.burn > 0)
   assert.ok(
-    game.asteroids.length >= 1,
-    "a frigate is big enough that a graze leaves wreckage behind",
+    light.wreckage === 0 || burning.length > 0,
+    "a piece big enough to drift drifts away burning",
   )
+
+  // What it lost, it lost: less hull to lose, less mass to carry, and quicker round for it.
+  assert.ok(light.ship.hull < SHIP_TYPES.frigate.hull, "it has less left to lose")
+  assert.ok(light.ship.mass < SHIP_TYPES.frigate.laden, "and less to carry")
+  assert.ok(light.ship.turnRate > SHIP_TYPES.frigate.turnRate, "so it comes about quicker")
+
+  // A cut through the middle still finishes it: what decides is how much is left.
+  const deep = grazeHull("frigate", 0.2)
+  assert.equal(deep.dead, true, "a cut through the body is still a cut through the body")
+})
+
+test("a small hull is finished by any cut at all, however light", () => {
+  // The other half of the rule, and what keeps the existing behaviour: the whole of a
+  // scout is a fraction of the smallest piece its plating holds together in, so there is
+  // no corner it can lose and still be a ship. Grazed or halved, it comes apart.
+  for (const name of ["scout", "seeker", "alienScout"]) {
+    for (const fraction of [0.9, 0.5, 0]) {
+      const cut = grazeHull(name, fraction)
+      assert.equal(cut.dead, true, `a ${name} grazed at ${fraction} of its half-height`)
+    }
+  }
 })
 
 test("a raised shield is what stops a beam", () => {

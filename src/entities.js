@@ -343,6 +343,9 @@ export class Entity {
     this.regen = 0
     this.hardpoints = []
     this.carried = 0 // mass of everything fitted, added to the hull's own
+    // What is left of the hull, as a fraction: a ship cut down to a piece of itself weighs
+    // and handles as that piece. See Ship.reshape.
+    this.massScale = 1
     this.fxCooldown = 0 // throttles repeated hit particles (e.g. asteroid grind)
   }
 
@@ -1507,7 +1510,39 @@ export class Ship extends Entity {
   // everything fitted to it, so a laden ship shoulders a rock aside the way its
   // weight says it should.
   get mass() {
-    return (this.type.mass ?? 1) + this.carried
+    return (this.type.mass ?? 1) * this.massScale + this.carried
+  }
+
+  // Take a cut without coming apart: what is left of the hull becomes its outline. The
+  // piece is handed over in world space, since that is where a beam cut it, and comes back
+  // into the hull's own space here.
+  //
+  // What it weighs and what it has left to lose both follow the material it lost, so a
+  // grazed slab is lighter, quicker to come about, and closer to being finished. Anything
+  // that was mounted on the part that came off goes with it: a gun on a severed corner is
+  // on the corner.
+  reshape(worldPart) {
+    const areaOf = (outline) => polygonArea(outline.map(([x, y]) => ({ x, y })))
+    const before = areaOf(this.outlineLocal)
+    const cos = Math.cos(-this.angle),
+      sin = Math.sin(-this.angle)
+    const local = worldPart.map((p) => {
+      const dx = p.x - this.x,
+        dy = p.y - this.y
+      return [dx * cos - dy * sin, dx * sin + dy * cos]
+    })
+    this.setOutline(local)
+    const kept = before > 0 ? clamp(areaOf(local) / before, 0.05, 1) : 1
+    this.hull = Math.max(1, Math.round(this.hull * kept))
+    this.massScale *= kept
+    const ring = local.map(([x, y]) => ({ x, y }))
+    for (const hp of this.hardpoints) {
+      if (hp.module && !pointInPolygon({ x: hp.local[0], y: hp.local[1] }, ring)) {
+        hp.module = null
+      }
+    }
+    this.refreshFitting()
+    return kept
   }
 
   // What is fitted, and what the hull does with it. One method for every ship, so a
