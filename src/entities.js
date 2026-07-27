@@ -818,6 +818,9 @@ export class Weapon {
       width: this.type.width,
       glow: this.type.glow,
       life: this.type.shotLife || 0.4,
+      // What the shot does to the space along it, for the view to bend: an alien beam
+      // cuts by warping what it crosses rather than by burning it.
+      warp: this.type.warp,
     })
     this.cooldown = this.rollReload()
     Sound[this.type.sound || "fire"]()
@@ -2378,6 +2381,12 @@ export class PlayerShip extends Ship {
     // reads fields such a gun does not have, and a beam of NaN length is drawn as a
     // white disc over half the screen.
     if (!w.type.chargeable) {
+      // A gun that winds up is fired by the wind-up finishing and the trigger coming up,
+      // which the update loop does. Firing one from here would hand over a finished well
+      // for a tap, since the key going up is a release like any other.
+      if (w.type.chargeTime && !w.wound) {
+        return
+      }
       const mount = this.mountWorld(this.nose.local)
       game.stats.shots++
       w.fire(game, this, mount.x, mount.y, this.angle, w.rollLength())

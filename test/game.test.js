@@ -4001,6 +4001,8 @@ test("the player can fire anything its nose will hold", () => {
     const gun = game.player.mainWeapon
     gun.charge = WEAPON_TYPES[option.id].chargeMax ?? 0
     gun.cooldown = 0
+    // A gun that winds up is fired by the wind-up, not by the trigger, so pose it wound.
+    gun.wound = !!WEAPON_TYPES[option.id].chargeTime
     game.player.energyMax = 4000
     game.player.energy = 4000
     game.laserShots.length = 0
@@ -4053,6 +4055,20 @@ test("a gun that winds up is paid for while it winds, and let go of to fire", ()
   // thrown is how fast the cell fills, and everything else the cell pays for goes short
   // while one is being held.
   const spec = WEAPON_TYPES.singularityGun
+  // A tap is a press and a release, and the release is what fires a held charge: a well
+  // has to be wound before either means anything, or it is handed over for nothing.
+  const tapped = liveGame()
+  beSolid(tapped.player)
+  tapped.upgrades.owned.laser.push("singularityGun")
+  tapped.fitEquipment("laser", "singularityGun")
+  tapped.player.mainWeapon.cooldown = 0
+  tapped.pressedKeys.add("Space")
+  tapped.player.update(1 / 60, tapped)
+  tapped.pressedKeys.delete("Space")
+  tapped.releaseFire()
+  tapped.player.update(1 / 60, tapped)
+  assert.equal(tapped.projectiles.length, 0, "a tap throws nothing")
+
   const hold = (game, frames) => {
     for (let f = 0; f < frames; f++) {
       game.pressedKeys.add("Space")
@@ -4108,6 +4124,55 @@ test("a gun that winds up is paid for while it winds, and let go of to fire", ()
   assert.equal(early.projectiles.length, 0, "nothing is thrown")
   assert.ok(early.particles.length > 0, "it comes apart where it was being held")
   assert.ok(before - early.player.energy > 0, "and what it cost is gone")
+})
+
+test("an alien beam bends the space along it, and an honest one bends nothing", () => {
+  // It cuts by warping what it crosses, so the bend belongs to the whole length of the
+  // shot rather than to a point on it.
+  const lensesAfterFiring = (id) => {
+    const game = liveGame()
+    beSolid(game.player)
+    game.player.angle = 0
+    game.upgrades.owned.laser.push(id)
+    game.fitEquipment("laser", id)
+    const gun = game.player.mainWeapon
+    gun.cooldown = 0
+    game.player.energy = game.player.energyMax
+    for (let f = 0; f < 30; f++) {
+      game.pressedKeys.add("Space")
+      game.player.update(1 / 60, game)
+    }
+    // The order the browser reports it in: the key comes up, which fires a held charge,
+    // and the loop carries on, which is what lets go of a wound one.
+    game.pressedKeys.delete("Space")
+    game.releaseFire()
+    game.player.update(1 / 60, game)
+    let held = []
+    const renderer = new Proxy(
+      { setLenses: (list) => (held = list) },
+      { get: (target, key) => (key in target ? target[key] : () => {}) },
+    )
+    new GameView(renderer).render(game)
+    return { shots: game.laserShots.length, lenses: held }
+  }
+
+  const alien = lensesAfterFiring("warpNeedle")
+  assert.equal(alien.shots, 1, "the needle fired")
+  const along = alien.lenses.filter(
+    (lens) => lens.endX !== undefined && (lens.endX !== lens.x || lens.endY !== lens.y),
+  )
+  assert.equal(along.length, 1, "one source, laid along the shot")
+  assert.ok(
+    Math.abs(along[0].endX - along[0].x) > 0.1,
+    "the two ends are the two ends of the beam, not a point",
+  )
+  assert.ok(along[0].radius < 0.06, `close in, got ${along[0].radius.toFixed(3)} of the width`)
+  assert.ok(along[0].strength < 0.3, `and gentle, got ${along[0].strength.toFixed(2)}`)
+
+  // The yard's own laser burns rather than bending, and states no warp.
+  const ours = lensesAfterFiring("playerLaserMk1")
+  assert.equal(ours.shots, 1)
+  assert.equal(ours.lenses.length, 0, "nothing of ours bends space")
 })
 
 test("a hull's rolled arms are found with it, not only what it always carries", () => {

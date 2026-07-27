@@ -364,6 +364,19 @@ export class GameView {
         }
       }
     }
+    // A beam that warps bends the space along its whole length rather than around a
+    // point: one source per beam, as a line, fading with the shot that made it.
+    for (const shot of game.laserShots) {
+      if (!shot.warp) {
+        continue
+      }
+      const left = clamp(1 - shot.age / shot.life, 0, 1)
+      for (const beam of shot.beams) {
+        const from = source(beam.a.x, beam.a.y, shot.warp.radius, shot.warp.strength * left)
+        const to = source(beam.b.x, beam.b.y, 0, 0)
+        lenses.push({ ...from, endX: to.x, endY: to.y })
+      }
+    }
     for (const shot of game.projectiles) {
       const warp = shot.type && shot.type.warp
       if (warp) {

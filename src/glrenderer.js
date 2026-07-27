@@ -372,6 +372,10 @@ const COMPOSITE_FS = `#version 300 es
   const int LENSES = 8;
   const int TEARS = 6;
   uniform vec4 uLens[LENSES];
+  // The far end of each source. A hull bends space round a point, so its end is its
+  // centre; a beam bends it along a line, so the region is a capsule about that line and
+  // the same falloff serves both.
+  uniform vec2 uLensEnd[LENSES];
   // How much each source ripples as well as pulls: 0 is a smooth bend, above that puts
   // standing waves through the region, which is what a singularity does to the space it
   // is sitting in.
@@ -392,8 +396,13 @@ const COMPOSITE_FS = `#version 300 es
     for (int i = 0; i < LENSES; i++) {
       if (i >= uLensCount) { break; }
       vec4 l = uLens[i];
-      vec2 d = uv - l.xy;
-      d.x *= uAspect;
+      vec2 pa = uv - l.xy;
+      vec2 ba = uLensEnd[i] - l.xy;
+      pa.x *= uAspect;
+      ba.x *= uAspect;
+      float span = dot(ba, ba);
+      float along = span > 1e-9 ? clamp(dot(pa, ba) / span, 0.0, 1.0) : 0.0;
+      vec2 d = pa - ba * along;
       float dist = length(d);
       if (dist >= l.w) { continue; }
       float fall = 1.0 - dist / l.w;
@@ -558,6 +567,7 @@ export class WebGLRenderer extends Renderer {
     this.warp = [0, 0, 0] // ripple centre in uv plus strength
     // Space bent and space torn, packed as vec4s for the composite pass.
     this.lensData = new Float32Array(LENS_LIMIT * 4)
+    this.lensEnd = new Float32Array(LENS_LIMIT * 2)
     this.lensWave = new Float32Array(LENS_LIMIT)
     this.lensCount = 0
     this.tearData = new Float32Array(TEAR_LIMIT * 4)
@@ -1309,6 +1319,7 @@ export class WebGLRenderer extends Renderer {
     gl.uniform1i(this.#uniform(prog, "uLensCount"), this.lensCount)
     if (this.lensCount > 0) {
       gl.uniform4fv(this.#uniform(prog, "uLens"), this.lensData)
+      gl.uniform2fv(this.#uniform(prog, "uLensEnd"), this.lensEnd)
       gl.uniform1fv(this.#uniform(prog, "uLensWave"), this.lensWave)
     }
     gl.uniform1i(this.#uniform(prog, "uTearCount"), this.tearCount)
@@ -1343,6 +1354,10 @@ export class WebGLRenderer extends Renderer {
     this.lensCount = this.#packSources(list, this.lensData, LENS_LIMIT)
     for (let i = 0; i < this.lensCount; i++) {
       this.lensWave[i] = list[i].wave || 0
+      // A source with no far end bends space round its own centre, which is a line of
+      // no length and the same maths.
+      this.lensEnd[i * 2] = list[i].endX ?? list[i].x
+      this.lensEnd[i * 2 + 1] = list[i].endY ?? list[i].y
     }
   }
 
