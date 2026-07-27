@@ -2554,9 +2554,10 @@ test("nothing hunting the player can see a stealthed ship", () => {
 })
 
 test("a hunting rival steers for the player only while it can see one", () => {
-  // With nothing else in the sector a rival that cannot see the player makes for
-  // the arena centre, so the player is parked out near the wall with the rival
-  // between the two: closing on the player means turning away from the centre.
+  // The player is parked out near the wall with the rival between it and the
+  // centre, so closing on the player means turning outward. A rival that cannot see
+  // the player searches, and a search may wander toward it as easily as away, so
+  // the blind case is a tendency measured over several of them rather than one run.
   const closingSpeed = (hidden) => {
     const game = liveGame()
     const player = game.player
@@ -2580,7 +2581,14 @@ test("a hunting rival steers for the player only while it can see one", () => {
     return before - Math.hypot(rival.x - player.x, rival.y - player.y)
   }
   assert.ok(closingSpeed(false) > 0, "it closes on a ship it can see")
-  assert.ok(closingSpeed(true) <= 0, "and does not chase one it cannot")
+  const blind = [13, 29, 47, 61, 79, 97, 113, 131].map((seed) =>
+    seeded(seed, () => closingSpeed(true)),
+  )
+  const mean = blind.reduce((sum, closed) => sum + closed, 0) / blind.length
+  assert.ok(
+    mean < 40,
+    `hidden, it closed a mean of ${mean.toFixed(0)} of 160: ${blind.map((b) => b.toFixed(0)).join(", ")}`,
+  )
 })
 
 test("firing the main laser gives a stealthed ship away", () => {
@@ -3599,6 +3607,32 @@ test("a blast leaves alone what is already wreckage", () => {
   const before = game.score
   bomb.detonate(game)
   assert.equal(game.score, before, "a hull already gone must not be killed again")
+})
+
+test("dev mode walks the sector only from the row that shows it", () => {
+  const game = liveGame()
+  game.devMode = true
+  game.enterShop()
+  const sector = game.shopSector
+
+  // anywhere but the launch line, a sideways press must leave it alone
+  game.shopSelection = 0
+  game.menuAdjust(1)
+  game.menuAdjust(-1)
+  assert.equal(game.shopSector, sector, "a press on another row must not move the sector")
+
+  game.shopSelection = game.launchRow
+  game.menuAdjust(1)
+  assert.equal(game.shopSector, sector + 1, "and from the launch line it does")
+  game.menuAdjust(-1)
+  assert.equal(game.shopSector, sector)
+
+  // at the floor the press is not swallowed, so OPTIONS is still reachable
+  game.shopSector = 1
+  game.shopSelection = game.launchRow
+  game.menuAdjust(-1)
+  assert.equal(game.shopSector, 1, "it cannot go below the first sector")
+  assert.equal(game.shopSelection, game.optionsRow, "and the press walks to OPTIONS instead")
 })
 
 // ---- control bindings -----------------------------------------------------

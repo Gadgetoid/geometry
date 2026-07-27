@@ -36,7 +36,6 @@ export const SHIELD_SPARK = PALETTE.shield.spark // ring colour when a shield ta
 export const CONFIG = {
   // player movement / feel
   ROT: 3.2,
-  ACCEL: 270,
   MAX_SPEED: 340,
   SPEED_DRAG: 0.85,
   THRUST_COST: 21, // energy/sec while thrusting

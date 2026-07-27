@@ -2265,11 +2265,22 @@ export class Game {
 
   // Dev-only sector jump from the shop. Returns whether it handled the input, so
   // a caller can stop rather than also moving the cursor.
+  // Dev mode walks the sector to launch to. Only from the row that shows it: a
+  // sideways press anywhere else in the shop was quietly moving it, so the number
+  // on the launch line changed while the cursor was somewhere else entirely.
+  //
+  // A press that would not move it is declined rather than swallowed, which is
+  // what leaves LAUNCH's own left press free to reach OPTIONS beside it once the
+  // sector is already at the floor.
   devSectorStep(step) {
-    if (this.phase !== "shop" || !this.devMode) {
+    if (this.phase !== "shop" || !this.devMode || this.shopSelection !== this.launchRow) {
       return false
     }
-    this.shopSector = Math.max(1, this.shopSector + step)
+    const next = Math.max(1, this.shopSector + step)
+    if (next === this.shopSector) {
+      return false
+    }
+    this.shopSector = next
     return true
   }
 

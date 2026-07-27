@@ -357,6 +357,8 @@ test("the dpad steps the dev sector, and only in the dev shop", () => {
   game.enterShop()
   const input = new GamepadInput(game)
   const sector = game.shopSector
+  // The sector only steps from the row that shows it, which is the launch line.
+  game.shopSelection = game.launchRow
   input.apply(readPad(pad({ buttons: { [B.dpadRight]: 1 } })))
   assert.equal(game.shopSector, sector, "not offered outside dev mode")
   game.devMode = true
