@@ -1953,6 +1953,64 @@ test("an alien plant is deep enough to run a field through a crossfire", () => {
   assert.ok(late > 5, `but not so few that it is over at once, needed ${late}`)
 })
 
+test("a field bounces its own side's fire and pushes against everything else", () => {
+  const orbAt = (ownerType) => {
+    const game = liveGame()
+    game.player.x = -9000
+    game.player.y = -9000
+    game.asteroids = [new Asteroid({ vertices: square(-900, -900, 40), spin: 0 })]
+    const target = plainRival(900, 320, "alienFrigate")
+    const owner = ownerType ? plainRival(300, 320, ownerType) : null
+    game.rivals = owner ? [owner, target] : [target]
+    const orb = new Projectile(
+      600,
+      320,
+      WEAPON_TYPES.warpOrb.speed,
+      0,
+      10,
+      owner,
+      WEAPON_TYPES.warpOrb,
+    )
+    game.projectiles = [orb]
+    let near = Infinity
+    for (let i = 0; i < 200 && !orb.dead; i++) {
+      target.x = 900
+      target.y = 320
+      target.vx = 0
+      target.vy = 0
+      if (owner) {
+        owner.x = 300
+        owner.y = 320
+        owner.vx = 0
+        owner.vy = 0
+      }
+      game.advance(1 / 60)
+      near = Math.min(near, Math.hypot(orb.x - target.x, orb.y - target.y))
+    }
+    return {
+      near,
+      orb,
+      lost: SHIP_TYPES.alienFrigate.hull - target.hull,
+      field: target.shieldRadius(),
+    }
+  }
+
+  // Its own side's ordnance comes straight back off the surface, at the speed it arrived.
+  const friendly = orbAt("alienFrigate")
+  assert.ok(friendly.near > friendly.field * 0.95, "it bounces at the surface of the field")
+  assert.ok(friendly.orb.vx < 0, "and goes back the way it came")
+  assert.ok(
+    Math.abs(Math.hypot(friendly.orb.vx, friendly.orb.vy) - WEAPON_TYPES.warpOrb.speed) < 1,
+    "with nothing taken off it",
+  )
+  assert.equal(friendly.lost, 0, "so a sector of aliens is never one where they shoot each other")
+
+  // A rival's is pushed against instead, which is a slower business and gets further in.
+  const hostile = orbAt("frigate")
+  assert.ok(hostile.near < friendly.near, "an enemy round gets closer than a friendly one")
+  assert.equal(hostile.lost, 0, "though still not to the hull")
+})
+
 test("the field turns shot away, so a stream of it cannot take a pincer apart", () => {
   // What a flak turret was doing before the field repelled shot: taking a pincer to
   // pieces. A round now has to push through a field that leans harder the closer it

@@ -1232,6 +1232,18 @@ export class Shield {
           if (body.owner === host) {
             return
           }
+          // Its own side's fire it simply bounces, and pays nothing for: a field knows the
+          // ordnance it was built alongside, so a sector with three aliens in it is never a
+          // sector where they shoot each other. Anything else it has to push against, which
+          // is what the force and the cost below are for.
+          if (body.owner && body.owner.faction === host.faction) {
+            const inward = -(body.vx * dir.x + body.vy * dir.y)
+            if (inward > 0) {
+              body.vx += 2 * inward * dir.x
+              body.vy += 2 * inward * dir.y
+            }
+            return
+          }
           const push = force * falloff * dt
           const mass = body.mass ?? 1
           body.vx += (dir.x * push) / mass
