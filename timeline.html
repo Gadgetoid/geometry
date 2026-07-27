@@ -541,27 +541,18 @@
 
       const SPECIAL_IDS = config.SPECIAL_IDS
 
-      // Which specials a sector can drop, measured by asking for some: the picker is
-      // the game's, and it weighs the pool by sector like every other roll, so a
-      // special given a `fromSector` would show up here as a row that starts late.
-      function measureSpecialKinds(sector) {
-        const counts = new Map()
-        const before = probe.specialPickups.length
-        const level = probe.level
-        probe.level = sector
-        for (let i = 0; i < SPECIAL_SAMPLES; i++) {
-          probe.spawnSpecial()
-          const last = probe.specialPickups[probe.specialPickups.length - 1]
-          if (last) {
-            counts.set(last.type, (counts.get(last.type) || 0) + 1)
-          }
-        }
-        probe.level = level
-        probe.specialPickups.length = before
-        const total = [...counts.values()].reduce((a, b) => a + b, 0)
-        return Object.fromEntries(
-          SPECIAL_IDS.map((id) => [id, total ? (counts.get(id) || 0) / total : 0]),
-        )
+      // Which specials a sector can drop. The picker weighs the pool by sector like
+      // every other roll in the game, so a share is one weight over the total of what
+      // is eligible: worked out with the same weightAt it weighs by rather than
+      // sampled, as the arrivals are. A sampled share of a flat pool wobbles by a
+      // point a sector and reads as a curve where there is none.
+      //
+      // A special given a `fromSector` shows up here as a row that starts late, and
+      // one given `weightPerSector` as a row that grows.
+      function specialShares(sector) {
+        const weights = SPECIAL_IDS.map((id) => config.weightAt(config.SPECIAL_TYPES[id], sector))
+        const total = weights.reduce((sum, weight) => sum + weight, 0)
+        return Object.fromEntries(SPECIAL_IDS.map((id, i) => [id, total ? weights[i] / total : 0]))
       }
 
       function surveySector(sector) {
@@ -681,7 +672,7 @@
                 probe.gunsForSector(h.traits.gun, sector).some((entry) => entry.weapon === weapon),
               ),
           ),
-          specialKinds: plan.specials ? measureSpecialKinds(sector) : null,
+          specialKinds: plan.specials ? specialShares(sector) : null,
           nebula,
           planets,
         }
@@ -1450,11 +1441,12 @@
         section(
           "specials",
           "SPECIALS",
-          `Whether a sector drops them at all, and which. The kind is picked by the game's own ` +
-            `picker with the run set to that sector, measured over ${SPECIAL_SAMPLES} drops a ` +
-            `sector, so a special given a sector to start from would show up here as a row that ` +
-            `begins late. At most ${config.PROGRESSION.specials.maxOnField} are on the field at ` +
-            `once.`,
+          `Whether a sector drops them at all, and which. The pool is weighed by sector like ` +
+            `every other roll, so a kind's share is its own weight over the total of what is ` +
+            `eligible there, worked out rather than sampled. Nothing states a sector to start ` +
+            `from or a weight that grows, so the shares are even and stay even; one that did ` +
+            `would show up here as a row that begins late or climbs. At most ` +
+            `${config.PROGRESSION.specials.maxOnField} are on the field at once.`,
           heatGrid(sectors, [{ label: "specials drop", key: "specials", emphasis: true }], {
             valueOf: (row, entry) => (entry.specials ? 1 : 0),
             format: (v) => (v ? "yes" : "no"),
