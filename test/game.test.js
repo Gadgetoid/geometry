@@ -4102,18 +4102,37 @@ test("a gun that winds up is paid for while it winds, and let go of to fire", ()
   )
   assert.equal(game.projectiles.length, 0, "and nothing has been thrown yet")
 
-  // Wound, held, and still drawing: the ship is vulnerable for as long as it holds one.
-  hold(game, Math.round(60 * spec.chargeTime))
+  // Wound, and it holds there rather than firing itself.
+  hold(game, Math.round(60 * spec.chargeTime * 0.6))
   assert.equal(game.player.mainWeapon.wound, true, "it is ready")
   assert.equal(game.projectiles.length, 0, "and holds there rather than firing itself")
-  const held = game.player.energy
-  hold(game, 30)
-  assert.ok(game.player.energy < held, "holding it keeps drawing on the cell")
 
   // Let go of, and it goes.
   letGo(game)
   assert.equal(game.projectiles.length, 1, "the release is what fires it")
   assert.equal(game.player.mainWeapon.wound, false)
+
+  // A hold that cannot start anything must not stall the cell. Holding the trigger
+  // through a reload used to skip the regen and do nothing else, so the wait for the
+  // next one got longer for having asked.
+  const waitingOut = armed()
+  waitingOut.player.mainWeapon.cooldown = 3
+  waitingOut.player.energy = 40
+  hold(waitingOut, 60)
+  assert.ok(
+    waitingOut.player.energy > 40,
+    `the cell fills while the gun is unavailable, got ${waitingOut.player.energy.toFixed(0)}`,
+  )
+  assert.equal(waitingOut.projectiles.length, 0, "and nothing is thrown by asking")
+
+  // Holding a wound one keeps drawing on the cell, which is what makes the ship
+  // vulnerable while it holds one: the shield reads the same cell.
+  const waiting = armed()
+  hold(waiting, Math.round(60 * spec.chargeTime) + 2)
+  assert.equal(waiting.player.mainWeapon.wound, true)
+  const held = waiting.player.energy
+  hold(waiting, 20)
+  assert.ok(waiting.player.energy < held, "holding it keeps drawing on the cell")
 
   // Let go of early and it comes apart where it was held: the cost is spent either way.
   const early = armed()

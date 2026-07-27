@@ -764,8 +764,13 @@ export class Weapon {
     return Math.abs(shortestTurn(host.angle, bearing)) <= this.arc
   }
 
+  // How long before it can fire again. A gun that states no reload has none: what limits
+  // it is somewhere else, which for a gun that winds up is the cell it winds up out of.
   rollReload() {
     const r = this.type.reload
+    if (r === undefined) {
+      return 0
+    }
     return Array.isArray(r) ? randRange(r[0], r[1]) : r
   }
   rollLength() {
@@ -2622,8 +2627,11 @@ export class PlayerShip extends Ship {
     // A gun that winds up rather than charging keeps its own clock, and pays as it runs.
     // It is held wound once the clock is out, and let go of on the release, which is how
     // the main laser is fired: the trigger means the same thing whatever is on the nose.
+    // Only while something is actually happening. A hold that cannot start a wind-up,
+    // because the gun is still on a reload, must fall through to the cell below: holding
+    // the trigger through one used to stall the regen and do nothing else.
     const winds = !w.type.chargeable && w.type.chargeTime
-    if (winds && (holding || w.wound || w.charging > 0)) {
+    if (winds && (w.wound || w.charging > 0 || (holding && w.ready))) {
       if (!holding) {
         if (w.wound) {
           this.fireLaser(game) // let go of, so it goes
@@ -2658,9 +2666,9 @@ export class PlayerShip extends Ship {
         w.chargeDuration = w.charging
         Sound.charge(w.chargeDuration)
       }
-    } else if (holding && !w.type.chargeable) {
+    } else if (holding && !w.type.chargeable && !winds) {
       this.fireLaser(game)
-    } else if (holding) {
+    } else if (holding && w.type.chargeable) {
       const rate = w.type.chargeRate
       const cost = w.type.chargeCost
       if (this.energy > 4 || freeShot) {
