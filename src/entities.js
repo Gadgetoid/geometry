@@ -44,6 +44,7 @@ import {
   CORE_TYPES,
   SHIP_TYPES,
   PLAYER_TYPE,
+  EQUIPMENT,
   AST_SHAPE,
   SPECIAL_TYPES,
   MAX_SLOTS,
@@ -1303,6 +1304,7 @@ export class PlayerShip extends Ship {
     this.colour = PLAYER_TYPE.colour
     this.buildHardpoints(PLAYER_TYPE.hardpoints)
     this.applyLoadout(PLAYER_TYPE.loadout)
+    this.fitEquipment(game)
     this.nose = this.hardpointByRole("nose")
     this.aux = this.hardpointByRole("aux") // defense turret slot, filled by an upgrade
     this.mainWeapon = this.nose.module
@@ -1583,6 +1585,37 @@ export class PlayerShip extends Ship {
 
   // Mount everything the run has already bought. A resumed run rebuilds the ship
   // from scratch, so without this a fitting bought last session would be lost.
+  // Mount whatever the run has fitted in each equipment slot, replacing what was
+  // there. The drive decides how hard the ship accelerates, so that follows.
+  fitEquipment(game) {
+    for (const [slot, spec] of Object.entries(EQUIPMENT)) {
+      const id = game.fittedEquipment(slot)
+      const hp = this.hardpoints[spec.hp]
+      if (!id || !hp) {
+        continue
+      }
+      if (spec.slot) {
+        if (hp.module && hp.module.kind === "core") {
+          hp.module.equip(spec.slot, { [spec.slot]: id })
+        }
+      } else if (!hp.module || hp.module.typeName !== id) {
+        this.applyLoadout([{ hp: spec.hp, engine: id }])
+      }
+    }
+    this.refreshDrive()
+  }
+
+  // What the fitted engines add up to, which is what the ship accelerates on.
+  refreshDrive() {
+    let thrust = 0
+    for (const module of this.modules()) {
+      if (module.kind === "engine") {
+        thrust += module.type.thrust
+      }
+    }
+    this.accel = thrust / (this.type.mass ?? 1)
+  }
+
   fitPurchased(upgrades) {
     for (const id of Object.keys(this.type.fittings || {})) {
       if (upgrades[id]) {
@@ -1731,8 +1764,8 @@ export class PlayerShip extends Ship {
     }
 
     if (this.thrusting) {
-      this.vx += Math.cos(this.angle) * CONFIG.ACCEL * dt
-      this.vy += Math.sin(this.angle) * CONFIG.ACCEL * dt
+      this.vx += Math.cos(this.angle) * this.accel * dt
+      this.vy += Math.sin(this.angle) * this.accel * dt
       if (this.energy > 0) {
         this.energy -= CONFIG.THRUST_COST * dt
       }
@@ -1784,8 +1817,8 @@ export class PlayerShip extends Ship {
     this.reversing =
       canControl && reverseAmount > 0 && !this.thrusting && (game.holding("reverse") || pad.reverse)
     if (this.reversing) {
-      this.vx -= Math.cos(this.angle) * CONFIG.ACCEL * reverseAmount * dt
-      this.vy -= Math.sin(this.angle) * CONFIG.ACCEL * reverseAmount * dt
+      this.vx -= Math.cos(this.angle) * this.accel * reverseAmount * dt
+      this.vy -= Math.sin(this.angle) * this.accel * reverseAmount * dt
       if (this.energy > 0) {
         this.energy -= CONFIG.THRUST_COST * dt
       }

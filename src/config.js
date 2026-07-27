@@ -669,12 +669,11 @@ export const ENGINE_TYPES = {
     plume: { rate: 30, speed: 60, life: 0.4, spread: 18, width: 4 },
     colour: PALETTE.player.exhaust,
   },
-  // What REVERSE THRUST buys: the same push with vanes that can turn it around.
-  // The upgrade fits this in place of the miner drive rather than flipping a flag
-  // on the old one, so reversing is a property of equipment and a rival could turn
-  // up carrying it.
+  // Vanes that can turn the thrust around, at the cost of some of it: the plumbing
+  // to point a nozzle backwards is mass and volume that is not making thrust. That
+  // is the trade, and it is in the numbers rather than in a rule.
   vectoredDrive: {
-    thrust: 270,
+    thrust: 225,
     reverseAmount: 0.6,
     plume: { rate: 30, speed: 60, life: 0.4, spread: 18, width: 4 },
     colour: PALETTE.player.exhaust,
@@ -1175,11 +1174,61 @@ const PLAYER_DESIGN = {
   fittings: {
     shield: { hp: 1, slot: "shield", shield: "player" },
     turret: { hp: 2, weapon: "defenseBlaster", controller: "defense" },
-    reverse: { hp: 3, engine: "vectoredDrive" },
   },
 }
 
 export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
+
+// ---------------------------------------------------------------------------
+// EQUIPMENT - what the shop fits to the player's ship, slot by slot.
+//
+// A slot lists what can go in it. Buying an option is permanent and swapping
+// between what the run already owns is free, so ore buys capability and never a
+// decision: a drive bought for one sector is still there to swap back to in the
+// next. That is the difference between this and a levelled upgrade, where the
+// level below the one you bought stops existing.
+//
+//   label   what the shop calls the slot
+//   hp      the hardpoint it mounts on, in PLAYER_DESIGN's list
+//   slot    for equipment the core carries, the core slot it goes in
+//   options in the order the shop lists them:
+//             id    the registry entry it fits
+//             name  what the shop calls it
+//             desc  what it does, in a line, shown against the selected row
+//             cost  ore. Zero is what the hull came with, so it is owned from the
+//                   start and is what a swap falls back to.
+// ---------------------------------------------------------------------------
+export const EQUIPMENT = {
+  engine: {
+    label: "ENGINE",
+    hp: 3,
+    options: [
+      {
+        id: "minerDrive",
+        name: "MINER DRIVE",
+        desc: "The yard's own. Pushes one way, and hard.",
+        cost: 0,
+      },
+      {
+        id: "vectoredDrive",
+        name: "VECTORED DRIVE",
+        desc: "Backs away under DOWN or S, and accelerates less hard for the privilege.",
+        cost: 55,
+      },
+    ],
+  },
+}
+
+// What a run owns to begin with: everything that costs nothing.
+export function freshEquipment() {
+  const owned = {}
+  const fitted = {}
+  for (const [slot, spec] of Object.entries(EQUIPMENT)) {
+    owned[slot] = spec.options.filter((option) => !option.cost).map((option) => option.id)
+    fitted[slot] = owned[slot][0] ?? null
+  }
+  return { owned, fitted }
+}
 
 // ---------------------------------------------------------------------------
 // SPECIAL TYPES - one entry per collectable. Fields:
@@ -1354,7 +1403,7 @@ export const SPECIAL_IDS = Object.keys(SPECIAL_TYPES)
 export const MAX_SLOTS = 4
 
 export function freshUpgrades() {
-  return { core: 0, shield: 0, laser: 0, turret: false, reverse: false }
+  return { core: 0, shield: 0, laser: 0, turret: false, ...freshEquipment() }
 }
 
 // Sizes the in-game HUD can be drawn at, in menu order. The menus themselves are
@@ -1467,6 +1516,19 @@ const levelled = (id, name, desc, max, cost, apply, fitted = false) => ({
   },
 })
 
+// A slot whose options are owned rather than levelled: the row reports what is
+// fitted and opens a pop-over of everything that could be. Buying and swapping
+// both happen in there, so the row itself has no action of its own.
+const equipmentRow = (slot) => ({
+  id: slot,
+  equipment: slot,
+  name: EQUIPMENT[slot].label,
+  desc: EQUIPMENT[slot].desc,
+  info: (g) => g.equipmentName(slot),
+  cost: () => 0,
+  maxed: (g) => g.ownsEveryOption(slot),
+})
+
 // A one-off fitting. Buying it sets the flag and mounts whatever PLAYER_TYPE
 // declares for that id, so an upgrade that only bolts a module on needs nothing
 // but this entry.
@@ -1535,7 +1597,7 @@ export const SHOP = [
     "A nose blaster that auto-fires on rivals that come close.",
     85,
   ),
-  fitting("reverse", "REVERSE THRUST", "Forward thrusters: hold DOWN or S to back away.", 55),
+  equipmentRow("engine"),
 ]
 
 // Where the shop's own rows sit among the purchases: the special slots follow

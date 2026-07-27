@@ -18,6 +18,7 @@ import {
   PAUSE_MENU,
   SHOP,
   SHOP_LAYOUT,
+  EQUIPMENT,
   SLOT_MENU,
   SPECIAL_TYPES,
   SPECIAL_IDS,
@@ -31,6 +32,7 @@ import {
   RESERVED_BUTTONS,
   freshBindings,
   freshUpgrades,
+  freshEquipment,
 } from "./config.js"
 import {
   randRange,
@@ -269,6 +271,87 @@ export class Game {
     const core = this.playerCore()
     return core ? core.energy : 0
   }
+  // ---- equipment -------------------------------------------------------
+  // What a slot holds, what the run owns for it, and what it would cost to own
+  // the rest. Buying is permanent and swapping between what is owned is free, so
+  // these are two different questions and stay two different methods.
+  equipmentOption(slot, id) {
+    return EQUIPMENT[slot].options.find((option) => option.id === id) ?? null
+  }
+  fittedEquipment(slot) {
+    return this.upgrades.fitted[slot] ?? null
+  }
+  equipmentName(slot) {
+    const option = this.equipmentOption(slot, this.fittedEquipment(slot))
+    return option ? option.name : "-"
+  }
+  ownsEquipment(slot, id) {
+    return (this.upgrades.owned[slot] ?? []).includes(id)
+  }
+  ownsEveryOption(slot) {
+    return EQUIPMENT[slot].options.every((option) => this.ownsEquipment(slot, option.id))
+  }
+
+  // Fit something the run already owns. Free, and it re-mounts the module.
+  fitEquipment(slot, id) {
+    if (!this.ownsEquipment(slot, id) || this.fittedEquipment(slot) === id) {
+      return
+    }
+    this.upgrades.fitted[slot] = id
+    if (this.player) {
+      this.player.fitEquipment(this)
+    }
+    this.rememberRun()
+    Sound.power()
+  }
+
+  // Buy one, which also fits it: nobody buys a drive to leave in the hold.
+  buyEquipment(slot, id) {
+    const option = this.equipmentOption(slot, id)
+    if (!option || this.ownsEquipment(slot, id)) {
+      return
+    }
+    if (!this.devMode) {
+      if (this.oreBalance < option.cost) {
+        Sound.hit()
+        return
+      }
+      this.oreBalance -= option.cost
+    }
+    this.upgrades.owned[slot].push(id)
+    this.upgrades.fitted[slot] = id
+    if (this.player) {
+      this.player.fitEquipment(this)
+    }
+    this.rememberRun()
+    Sound.power()
+  }
+
+  // The pop-over's rows for an equipment slot: everything it could hold, with what
+  // it costs, or that it is already owned or already in.
+  equipmentRows(slot) {
+    return EQUIPMENT[slot].options.map((option) => ({
+      name: option.name,
+      desc: option.desc,
+      value: (g) => {
+        if (g.fittedEquipment(slot) === option.id) {
+          return "FITTED"
+        }
+        if (g.ownsEquipment(slot, option.id)) {
+          return "SWAP"
+        }
+        return g.devMode ? "FREE" : `${option.cost} ore`
+      },
+      action: (g) => {
+        if (g.ownsEquipment(slot, option.id)) {
+          g.fitEquipment(slot, option.id)
+        } else {
+          g.buyEquipment(slot, option.id)
+        }
+      },
+    }))
+  }
+
   // How many specials the ship has room for, which the power core decides.
   specialSlots() {
     const core = this.playerCore()
@@ -1074,7 +1157,13 @@ export class Game {
   // The pop-over's rows for one slot: what can be done with what is in it, then
   // what could be put in it. An entry that declares `rows` stands in for a list
   // that is not known until the run has found something.
+  // The rows the pop-over shows. A shop row naming an equipment slot lists that
+  // slot's options; the specials row lists what a special slot can do.
   slotMenuRows(slot) {
+    const equipment = this.slotMenu && this.slotMenu.equipment
+    if (equipment) {
+      return this.equipmentRows(equipment)
+    }
     const rows = []
     for (const entry of SLOT_MENU) {
       if (entry.rows) {
@@ -1091,6 +1180,11 @@ export class Game {
       return
     }
     this.slotMenu = { slot, selection: 0 }
+  }
+
+  // Open the pop-over on an equipment slot rather than on a special slot.
+  openEquipmentMenu(slot) {
+    this.slotMenu = { slot: 0, equipment: slot, selection: 0 }
   }
 
   closeSlotMenu() {
@@ -1124,6 +1218,12 @@ export class Game {
       return
     }
     const item = this.shopItem(this.shopSelection)
+    // An equipment row has nothing to buy of its own: it opens on what its slot
+    // could hold, and the buying and swapping happen in there.
+    if (item.equipment) {
+      this.openEquipmentMenu(item.equipment)
+      return
+    }
     if (item.maxed(this)) {
       return
     }
@@ -1717,7 +1817,15 @@ export class Game {
       lives: this.lives,
       oreBalance: this.oreBalance,
       rivalScore: this.rivalScore,
-      upgrades: { ...this.upgrades },
+      upgrades: {
+        ...this.upgrades,
+        // Copied rather than shared: a shallow spread would leave the saved run
+        // pointing at the live tables and drifting with them.
+        owned: Object.fromEntries(
+          Object.entries(this.upgrades.owned).map(([slot, ids]) => [slot, ids.slice()]),
+        ),
+        fitted: { ...this.upgrades.fitted },
+      },
       // Carried specials are part of the loadout the shop sends you out with, so
       // they survive a session the way the upgrades do. So does the record of
       // what the run has found, which is what the shop will sell.
@@ -1747,6 +1855,27 @@ export class Game {
 
   // Pick up where a previous session left off, at the shop before the sector that
   // was next. Falls back to a fresh run if there is nothing to resume.
+  // What a saved run owns and has fitted, checked against the registry: a slot
+  // added since the save keeps its defaults, and an option removed since is
+  // dropped rather than mounted.
+  #restoredEquipment(run) {
+    const fresh = freshEquipment()
+    const saved = run.upgrades || {}
+    for (const slot of Object.keys(EQUIPMENT)) {
+      const known = (id) => !!this.equipmentOption(slot, id)
+      for (const id of (saved.owned && saved.owned[slot]) || []) {
+        if (known(id) && !fresh.owned[slot].includes(id)) {
+          fresh.owned[slot].push(id)
+        }
+      }
+      const wanted = saved.fitted && saved.fitted[slot]
+      if (known(wanted) && fresh.owned[slot].includes(wanted)) {
+        fresh.fitted[slot] = wanted
+      }
+    }
+    return fresh
+  }
+
   resumeRun() {
     const run = this.savedRun
     if (!run) {
@@ -1757,7 +1886,7 @@ export class Game {
     this.rivalScore = run.rivalScore || 0
     this.lives = run.lives
     this.oreBalance = run.oreBalance
-    this.upgrades = { ...freshUpgrades(), ...run.upgrades }
+    this.upgrades = { ...freshUpgrades(), ...run.upgrades, ...this.#restoredEquipment(run) }
     this.level = run.level
     this.player = new PlayerShip(this)
     this.player.fitPurchased(this.upgrades)
