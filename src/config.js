@@ -731,11 +731,12 @@ export const CORE_TYPES = {
   minerCore: {
     shield: 1,
     radar: 1,
+    // One level per slot, so every purchase earns room as well as cell. A fifth
+    // level would be energy alone, which is the shape this replaced.
     levels: [
       { energy: 320, regen: 32, special: 1 },
-      { energy: 520, regen: 53, special: 2 },
-      { energy: 760, regen: 74, special: 3 },
-      { energy: 1000, regen: 95, special: 4 },
+      { energy: 630, regen: 60, special: 2 },
+      { energy: 950, regen: 88, special: 3 },
       { energy: 1260, regen: 116, special: 4 },
     ],
   },
@@ -1446,13 +1447,17 @@ export const PAUSE_MENU = [
 // A levelled upgrade takes its cap from the effect table it indexes, so adding
 // a level means extending that array and nothing else.
 // ---------------------------------------------------------------------------
-const levelled = (id, name, desc, max, cost, apply) => ({
+// `fitted` marks an upgrade whose first level is what the ship already has rather
+// than something not yet bought, so it reads from 1 instead of 0. The power core
+// is the one: a hull without a cell does not fly, so there is no level 0 of it,
+// while a shield genuinely starts absent.
+const levelled = (id, name, desc, max, cost, apply, fitted = false) => ({
   id,
   name,
   desc,
   max,
   cost: (g) => cost(g.upgrades[id]),
-  info: (g) => `LV ${g.upgrades[id]} / ${max}`,
+  info: (g) => `LV ${g.upgrades[id] + (fitted ? 1 : 0)} / ${max + (fitted ? 1 : 0)}`,
   maxed: (g) => g.upgrades[id] >= max,
   apply: (g) => {
     g.upgrades[id]++
@@ -1507,6 +1512,7 @@ export const SHOP = [
         g.player.energy = g.player.energyMax
       }
     },
+    true, // the hull comes with one, so it reads from LV 1
   ),
   levelled(
     "shield",

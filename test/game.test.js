@@ -1909,7 +1909,9 @@ test("every level the shop offers is one every table it indexes can answer", () 
   for (const [id, indexed] of Object.entries(tables)) {
     const item = SHOP.find((entry) => entry.id === id)
     assert.ok(item, `${id} should be on sale`)
-    assert.equal(item.max, 4, `${id} should offer four levels`)
+    assert.ok(item.max >= 1, `${id} should offer levels to buy`)
+    // How many an upgrade offers is its own business; that every table it indexes
+    // can answer the top one is not.
     for (const table of indexed) {
       assert.equal(table.length, item.max + 1, `a ${id} table is short of level ${item.max}`)
     }
@@ -2393,11 +2395,13 @@ test("a slot comes with the power core, along with the cell to run it", () => {
   assert.equal(game.maxEnergy(), core[1].energy, "and the cell to spend through it")
   assert.equal(game.player.energyMax, core[1].energy, "the fitted hull knows about it")
   assert.equal(game.oreBalance, ore - cost)
-  // every level grants at least as much of both as the one below it
+  // Every level earns both, so none of them is energy on its own: that was the
+  // shape where the last purchase bought a cell with nowhere to spend it.
   for (let i = 1; i < core.length; i++) {
     assert.ok(core[i].energy > core[i - 1].energy, `level ${i} must hold more`)
-    assert.ok(core[i].special >= core[i - 1].special, `level ${i} must not lose a slot`)
+    assert.ok(core[i].special > core[i - 1].special, `level ${i} must earn a slot`)
   }
+  assert.equal(core[core.length - 1].special, MAX_SLOTS, "the last level fills the ship")
 })
 
 test("a slot the core does not provide is inert, and the next level opens it", () => {
