@@ -1334,9 +1334,6 @@ export class PlayerShip extends Ship {
     this.warpHold = 0 // beat to wait before an arrival starts
   }
 
-  damageResist() {
-    return CONFIG.SHIELD_EFFICIENCY[this.game.upgrades.shield]
-  }
   // Losing the hull costs a life and a respawn, so the player's is never cut into
   // wreckage the way a rival's is.
   get severable() {

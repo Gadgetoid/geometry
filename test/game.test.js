@@ -115,13 +115,7 @@ function withoutShield(loadout) {
 // Fit a laser mark, owning it first the way buying it would. Marks are a ladder, so
 // everything below it comes too.
 function withLaser(game, id) {
-  const options = EQUIPMENT.laser.options
-  const wanted = options.findIndex((option) => option.id === id)
-  assert.ok(wanted >= 0, `no laser mark called ${id}`)
-  game.upgrades.owned.laser = options.slice(0, wanted + 1).map((option) => option.id)
-  game.upgrades.fitted.laser = id
-  game.player.fitEquipment(game)
-  return game
+  return withEquipment(game, "laser", id)
 }
 
 // The first mark that has a field, and the one below it, for a test that wants to
@@ -152,12 +146,29 @@ function clearSlots(game) {
   return game
 }
 
-// A shield is bought, not issued: a run starts without one. A test about a
-// shield fits it the way the shop does.
-function withShield(game, level = 1) {
-  game.upgrades.shield = level
-  game.fitUpgrade("shield")
+// Fit an equipment option, owning it the way buying it would. A ladder brings
+// everything below it too, since that is what climbing one leaves behind.
+function withEquipment(game, slot, id) {
+  const options = EQUIPMENT[slot].options
+  const wanted = options.findIndex((option) => option.id === id)
+  assert.ok(wanted >= 0, `no ${slot} option called ${id}`)
+  const owned = EQUIPMENT[slot].ladder ? options.slice(0, wanted + 1) : [options[wanted]]
+  game.upgrades.owned[slot] = owned.map((option) => option.id)
+  game.upgrades.fitted[slot] = id
+  game.player.fitEquipment(game)
   return game
+}
+
+// The mark of an option at `index` in a slot, for a test that wants the first or
+// the last of a ladder without naming it.
+function optionAt(slot, index) {
+  const options = EQUIPMENT[slot].options
+  return options[index < 0 ? options.length + index : index].id
+}
+
+// A shield is bought, not issued: a run starts without one.
+function withShield(game, mark = optionAt("shield", 0)) {
+  return withEquipment(game, "shield", mark)
 }
 
 // The ship arrives by warping in, and is intangible until it lands.
@@ -1879,34 +1890,36 @@ test("what rock contact costs a hull is the type's business, not the code's", ()
 
 // ---- the shop sells the loadout --------------------------------------------
 
-test("a run starts with no shield, and the first level of plating fits one", () => {
+test("a run starts with no shield, and the first mark of plating fits one", () => {
   const game = liveGame()
-  assert.equal(game.upgrades.shield, 0, "nothing is issued with the ship")
+  assert.deepEqual(game.upgrades.owned.shield, [], "nothing is issued with the ship")
+  assert.equal(game.fittedEquipment("shield"), null)
   assert.equal(game.player.shieldModule(), null, "and there is no bubble to hide behind")
 
   game.oreBalance = 999
-  game.phase = "shop"
-  game.shopSelection = [...Array(SHOP.length + 1).keys()].find(
-    (row) => game.shopItem(row) && game.shopItem(row).id === "shield",
-  )
-  game.doShopAction()
-  assert.equal(game.upgrades.shield, 1)
+  game.enterShop()
+  game.shopSelection = equipmentRowIndex(game, "shield")
+  game.doShopAction() // opens on the marks
+  game.menuConfirm() // buys the first
+  assert.equal(game.fittedEquipment("shield"), optionAt("shield", 0))
   const shield = game.player.shieldModule()
-  assert.ok(shield && shield.up, "level 1 mounts a shield, raised")
+  assert.ok(shield && shield.up, "the first mark mounts a bubble, raised")
 
-  // and the levels above it are what they always were: a cheaper hit
-  const drain = (level) => {
-    const g = withShield(liveGame(), level)
+  // and the marks above it are what the levels were: a cheaper hit
+  const drain = (mark) => {
+    const g = withShield(liveGame(), mark)
     g.player.takeDamage(100, g, "projectile", 0, { x: g.player.x + 5, y: g.player.y })
     return g.player.energyMax - g.player.energy
   }
-  const top = CONFIG.SHIELD_EFFICIENCY.length - 1
-  assert.ok(drain(top) < drain(1), "the top level drains less than the first")
+  assert.ok(
+    drain(optionAt("shield", -1)) < drain(optionAt("shield", 0)),
+    "the top mark drains less than the first",
+  )
 })
 
 test("a resumed run re-mounts the shield it had bought", () => {
   const game = liveGame()
-  game.upgrades.shield = 2
+  withShield(game, optionAt("shield", 1))
   game.level = 4
   game.enterShop()
   const resumed = new Game()
@@ -1918,11 +1931,10 @@ test("a resumed run re-mounts the shield it had bought", () => {
 // Every levelled upgrade indexes one or more tables by the same level, so a table
 // left one entry short is a level the shop can reach and the game cannot answer.
 test("every level the shop offers is one every table it indexes can answer", () => {
-  // Only what is still levelled. The laser is a slot of marks now, each stating
-  // its own gun, so there is no table left to run short.
+  // Only what is still levelled. The laser and the shield are slots of marks now,
+  // each stating its own gun or bubble, so there is no table left to run short.
   const tables = {
     core: [CORE_TYPES.minerCore.levels],
-    shield: [CONFIG.SHIELD_EFFICIENCY],
   }
   for (const [id, indexed] of Object.entries(tables)) {
     const item = SHOP.find((entry) => entry.id === id)

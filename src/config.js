@@ -178,11 +178,6 @@ export const CONFIG = {
   // hard it is about to fire.
   BARREL_CYCLE_RATE: 4,
 
-  // upgrade effects, indexed by upgrade level
-  // Shield plating: level 1 fits the shield, and each level above it drains less
-  // energy per point of damage. Level 0 flies without one, so its entry is never
-  // read.
-  SHIELD_EFFICIENCY: [2, 2, 1.44, 1, 0.64],
   // Overdrive: on a mark that has it, a beam held past full charge winds up over
   // LASER_OVERDRIVE_TIME seconds, drawing LASER_OVERDRIVE_COST energy a second as
   // it does. The charge glow fades from green to red across the wind-up and pulses
@@ -617,15 +612,30 @@ export const SHIELD_TYPES = {
     recoverAt: 0.35,
     recoverDelay: 1,
   },
-  player: {
-    efficiency: 1,
+  // The player's, in the marks the shop sells. `efficiency` is energy drained per
+  // point of damage, so a lower one is a better bubble; each mark states its own
+  // rather than a table of multipliers being applied on top.
+  ...playerShields({
+    playerShieldMk1: { efficiency: 2 },
+    playerShieldMk2: { efficiency: 1.44 },
+    playerShieldMk3: { efficiency: 1 },
+    playerShieldMk4: { efficiency: 0.64 },
+  }),
+}
+
+// One mark of the player's bubble: the shared shield with its own efficiency.
+function playerShields(marks) {
+  const base = {
     blocks: ["laser", "projectile"],
     sides: 6,
     colour: PALETTE.shield.standard,
     dropAt: 0.15,
     recoverAt: 0.35,
     recoverDelay: 1.2,
-  },
+  }
+  return Object.fromEntries(
+    Object.entries(marks).map(([name, mark]) => [name, { ...base, ...mark }]),
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -1182,7 +1192,6 @@ const PLAYER_DESIGN = {
   // SHOP needs no `apply` of its own to reach this. A levelled upgrade reaches it
   // from its own `apply`, and mounts at level 1.
   fittings: {
-    shield: { hp: 1, slot: "shield", shield: "player" },
     turret: { hp: 2, weapon: "defenseBlaster", controller: "defense" },
   },
 }
@@ -1209,6 +1218,41 @@ export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
 //                   start and is what a swap falls back to.
 // ---------------------------------------------------------------------------
 export const EQUIPMENT = {
+  // No mark costs nothing, so a run starts with the slot empty: a shield is bought,
+  // not issued. It sits in the core, which is what carries it.
+  shield: {
+    label: "SHIELD",
+    hp: 1,
+    mount: "shield",
+    slot: "shield",
+    ladder: true,
+    options: [
+      {
+        id: "playerShieldMk1",
+        name: "PLATING MK I",
+        desc: "A bubble at last. Turns damage into energy drain until the cell gives out.",
+        cost: 40,
+      },
+      {
+        id: "playerShieldMk2",
+        name: "PLATING MK II",
+        desc: "Drains 1.44 energy a point instead of 2, so the same cell soaks more.",
+        cost: 85,
+      },
+      {
+        id: "playerShieldMk3",
+        name: "PLATING MK III",
+        desc: "A point of damage costs a point of energy.",
+        cost: 130,
+      },
+      {
+        id: "playerShieldMk4",
+        name: "PLATING MK IV",
+        desc: "0.64 a point: the cell goes three times as far against fire as Mk I.",
+        cost: 175,
+      },
+    ],
+  },
   laser: {
     label: "LASER",
     hp: 0,
@@ -1451,7 +1495,7 @@ export const SPECIAL_IDS = Object.keys(SPECIAL_TYPES)
 export const MAX_SLOTS = 4
 
 export function freshUpgrades() {
-  return { core: 0, shield: 0, turret: false, ...freshEquipment() }
+  return { core: 0, turret: false, ...freshEquipment() }
 }
 
 // Sizes the in-game HUD can be drawn at, in menu order. The menus themselves are
@@ -1624,14 +1668,7 @@ export const SHOP = [
     },
     true, // the hull comes with one, so it reads from LV 1
   ),
-  levelled(
-    "shield",
-    "SHIELD PLATING",
-    "Lv1 fits a shield, every level after drains less energy per hit.",
-    CONFIG.SHIELD_EFFICIENCY.length - 1,
-    (level) => 40 + level * 45,
-    (g) => g.fitUpgrade("shield"),
-  ),
+  equipmentRow("shield"),
   equipmentRow("laser"),
   fitting(
     "turret",
