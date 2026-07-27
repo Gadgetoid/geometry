@@ -624,6 +624,7 @@
           title: "SHAPE AND THREE NUMBERS",
           fields: [
             { path: "mass", label: "MASS", step: 0.1 },
+            { path: "handling", label: "HANDLING", step: 0.05, kinds: ["rival"] },
             { path: "armour", label: "ARMOUR", step: 0.1, kinds: ["rival"] },
           ],
         },
@@ -669,9 +670,11 @@
         },
       ]
 
-      // What deriveShipStats works out from the shape and the three numbers. Each
-      // can be overridden, which states it on the design and keeps that value; the
-      // player's design states none of them, so only the two shape fields show.
+      // What deriveShipStats works out from the shape, the numbers and the engines.
+      // Shown and not edited: a design that states one of these keeps that value and
+      // stops answering to its own shape, so the editor does not offer to write one.
+      // The sanctioned trim is HANDLING, which is stated rather than derived and sits
+      // with the numbers above.
       const DERIVED_FIELDS = [
         { path: "accel", label: "ACCEL", step: 1, kinds: ["rival"] },
         { path: "maxSpeed", label: "MAX SPEED", step: 1, kinds: ["rival"] },
@@ -701,7 +704,7 @@
           ],
           mass: 1,
           armour: 1,
-          overrides: {},
+          handling: 1,
           energyMax: 90,
           regen: 22,
           lifeTime: [16, 26],
@@ -735,19 +738,13 @@
         const out = {
           outline: state.outline.map((p) => p.slice()),
           mass: Number(state.mass),
-          // The loadout goes in because thrust is the sum of the engines on it.
-          // Leaving it out made every hull derive an acceleration of zero, which
-          // then differed from what the registry stated and froze the lot as
-          // overrides the moment a preset was loaded.
+          // The loadout goes in because thrust is the sum of the engines on it, and
+          // without it every hull derives an acceleration of zero.
           loadout: mountedEntries(state).map(({ entry }) => entry),
         }
         if (state.kind === "rival") {
           out.armour = Number(state.armour)
-        }
-        for (const [path, value] of Object.entries(state.overrides || {})) {
-          if (value !== null && value !== undefined) {
-            out[path] = Number(value)
-          }
+          out.handling = Number(state.handling) || 1
         }
         return out
       }
@@ -808,14 +805,7 @@
             }
           }
         }
-        ship.overrides = {}
-        const base = derived(ship)
-        for (const field of DERIVED_FIELDS) {
-          const stated = type[field.path]
-          if (stated !== undefined && base && Math.abs(stated - base[field.path]) > 1e-9) {
-            ship.overrides[field.path] = stated
-          }
-        }
+        ship.handling = type.handling ?? 1
         ship.hardpoints = (type.hardpoints || []).map((hp) => ({
           local: hp.local.slice(),
           role: hp.role || "",
@@ -2416,45 +2406,15 @@
           if (field.kinds && !field.kinds.includes(ship.kind)) {
             continue
           }
-          const overridden = ship.overrides[field.path] !== undefined
           const wrap = document.createElement("div")
-          const head = document.createElement("div")
-          head.className = "inline"
-          head.style.marginBottom = "2px"
           const text = document.createElement("label")
           text.textContent = field.label
-          head.append(text)
-          // The player's shape settings are spread over its design, so stating one
-          // there would have no effect and the switch is not offered.
-          if (ship.kind !== "player") {
-            const toggle = document.createElement("input")
-            toggle.type = "checkbox"
-            toggle.checked = overridden
-            toggle.title = "state this value on the design instead of deriving it"
-            toggle.addEventListener("change", () => {
-              pushUndo()
-              if (toggle.checked) {
-                ship.overrides[field.path] = round(stats[field.path])
-              } else {
-                delete ship.overrides[field.path]
-              }
-              rebuild()
-            })
-            head.append(toggle)
-          }
           const input = document.createElement("input")
           input.type = "number"
-          input.step = field.step ?? 1
           input.value = round(stats[field.path])
-          input.disabled = !overridden
-          input.addEventListener("focus", pushUndo)
-          input.addEventListener("input", () => {
-            ship.overrides[field.path] = Number(input.value)
-            refreshFacts()
-            refreshOutput()
-            save()
-          })
-          wrap.append(head, input)
+          input.disabled = true
+          input.title = "worked out from the shape, the numbers and the engines"
+          wrap.append(text, input)
           row.append(wrap)
         }
         host.append(row)
@@ -2867,12 +2827,9 @@
         push(`mass: ${round(ship.mass)},`)
         if (ship.kind === "rival") {
           push(`armour: ${round(ship.armour)},`)
-          // Anything stated here is kept in place of what the shape would give.
-          for (const field of DERIVED_FIELDS) {
-            const value = ship.overrides[field.path]
-            if (value !== undefined) {
-              push(`${field.path}: ${round(value)},`)
-            }
+          // Only when it says something: a handling of 1 is what the shape implies.
+          if (Number(ship.handling) !== 1) {
+            push(`handling: ${round(ship.handling)},`)
           }
           push(`lifeTime: [${round(ship.lifeTime[0])}, ${round(ship.lifeTime[1])}],`)
           push(`energyMax: ${round(ship.energyMax)},`)
