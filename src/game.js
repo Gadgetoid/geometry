@@ -33,6 +33,7 @@ import {
   freshBindings,
   freshUpgrades,
   freshEquipment,
+  PLAYER_TYPE,
 } from "./config.js"
 import {
   randRange,
@@ -1497,6 +1498,7 @@ export class Game {
     p.vx = 0
     p.vy = 0
     p.energy = this.maxEnergy() * 0.6
+    p.hull = PLAYER_TYPE.hull // a fresh ship, as the lives count says
     p.invincible = CONFIG.INVIN_TIME
     p.mainWeapon.release()
     p.beginWarpIn(CONFIG.RESPAWN_PAUSE)

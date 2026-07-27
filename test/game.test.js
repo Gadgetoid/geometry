@@ -2317,6 +2317,47 @@ test("every alien hull carries alien guns", () => {
   }
 })
 
+test("a bump against a rock costs the player hull, not the run", () => {
+  // Touching a rock in the first sector used to end a life outright: the player was the
+  // one hull in the game with no hull points, so anything a bubble did not take was
+  // fatal, and a run starts with no bubble.
+  const bump = (speed) => {
+    const game = liveGame()
+    beSolid(game.player)
+    game.player.x = 400
+    game.player.y = 320
+    game.player.vx = speed
+    game.player.vy = 0
+    game.player.angle = 0
+    game.asteroids = [new Asteroid({ vertices: square(500, 320, 50), vx: 0, vy: 0, spin: 0 })]
+    const lives = game.lives
+    for (let i = 0; i < 40 && game.lives === lives; i++) {
+      game.advance(1 / 60)
+    }
+    return { alive: game.lives === lives, left: game.player.hull / PLAYER_TYPE.hull }
+  }
+  assert.ok(PLAYER_TYPE.hull > 0, "the player has hull, like every other ship")
+  assert.equal(
+    liveGame().fittedEquipment("shield"),
+    null,
+    "and starts a run with nothing in the shield slot, so the hull is all there is",
+  )
+
+  const gentle = bump(30)
+  assert.ok(gentle.alive, "a gentle bump is survived")
+  assert.ok(gentle.left > 0.9, "at little or no cost")
+
+  const hard = bump(340)
+  assert.ok(hard.alive, "so is a ram at full speed, once")
+  // Which is the relationship's own promise: a full-speed ram takes about
+  // `ramSurvivability` of the hull, whatever ship is doing the ramming.
+  assert.ok(
+    Math.abs(1 - hard.left - SHIP_SCALARS.ramSurvivability) < 0.1,
+    `a full ram should cost about ${SHIP_SCALARS.ramSurvivability} of the hull, cost ${(1 - hard.left).toFixed(2)}`,
+  )
+  assert.ok(bump(30).left > bump(150).left, "and what it costs follows how hard it was")
+})
+
 test("a piece hit harder than it holds together comes apart, and otherwise is shoved", () => {
   // One rule, priced in closing speed, so nothing here knows what wreckage is: a hull
   // fragment still carrying its ship's momentum bursts on the first thing it meets, the
@@ -2365,14 +2406,17 @@ test("a rock costs a rival hull, as it costs the player energy", () => {
 })
 
 test("what rock contact costs a hull is the type's business, not the code's", () => {
-  // Same contact, same code path: only the registry entry differs.
+  // Same contact, same code path: only the registry entry differs. Stated and re-derived
+  // rather than poked onto the type afterwards, because a ship prices rock contact off
+  // its own hull and speed when it is fitted out, and a value written down has to be
+  // remembered as written down to survive that.
   const cost = (scale) => {
-    const original = SHIP_TYPES.scout.rockContact
-    SHIP_TYPES.scout.rockContact = scale
+    const original = SHIP_TYPES.scout
+    SHIP_TYPES.scout = deriveShipStats({ ...original, rockContact: scale })
     try {
       return ramARock("scout")
     } finally {
-      SHIP_TYPES.scout.rockContact = original
+      SHIP_TYPES.scout = original
     }
   }
   assert.equal(cost(0), 0, "a type that declares no susceptibility takes nothing")

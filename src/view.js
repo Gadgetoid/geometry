@@ -13,6 +13,7 @@ import {
   SHOP,
   SHOP_LAYOUT,
   MAX_SLOTS,
+  PLAYER_TYPE,
   SPECIAL_TYPES,
 } from "./config.js"
 import { randRange, clamp, lerp } from "./math.js"
@@ -548,6 +549,25 @@ export class GameView {
       size: 9 * ui,
       color: PALETTE.text.faint,
     })
+
+    // Hull, under the cell: what is left of the ship itself once a hit has got past
+    // whatever bubble was up. Slimmer than the energy bar because it moves far less
+    // often, and the only thing on screen that does not come back on its own.
+    if (game.player) {
+      const hullH = 5 * ui
+      const hullY = barY + barH + 3 * ui
+      const left = clamp(game.player.hull / PLAYER_TYPE.hull, 0, 1)
+      const hurt = left < 0.35
+      r.rect(barX, hullY, barW, hullH, { stroke: PALETTE.ui.edge, width: 1 * ui })
+      r.rect(barX + ui, hullY + ui, Math.max(0, barW * left - 2 * ui), hullH - 2 * ui, {
+        fill: hurt ? PALETTE.ui.warn : PALETTE.player.turret,
+        glow: hurt ? 10 : 6,
+      })
+      r.text("HULL", barX + 100 * ui, barY - 4 * ui, {
+        size: 9 * ui,
+        color: hurt ? PALETTE.ui.warn : PALETTE.text.faint,
+      })
+    }
 
     // Shield: mark the offline / recovery energy levels and show online state.
     const shield = game.player ? game.player.shieldModule() : null

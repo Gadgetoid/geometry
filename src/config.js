@@ -1272,39 +1272,57 @@ export function ladenMass(type) {
 // Everything here divides by mass, so this is where equipment is felt: a hull is its
 // own mass plus everything fitted, and fitting more costs acceleration, top speed,
 // turn and bite in that order.
-export function flightStats({ mass, reach, thrust, torque, handling = 1, stated = {} }) {
+export function flightStats({ mass, reach, thrust, torque, handling = 1, hull = 0, stated = {} }) {
   const k = SHIP_SCALARS
   const given = (field, value) => (stated[field] !== undefined ? stated[field] : value)
   const accel = given("accel", thrust / mass)
+  const maxSpeed = given("maxSpeed", accel * k.speedPerAccel)
   return {
     accel,
-    maxSpeed: given("maxSpeed", accel * k.speedPerAccel),
+    maxSpeed,
     turnRate: given("turnRate", (torque * k.turnPerReach * handling) / (mass * reach)),
     drag: given("drag", clamp(1 - k.dragPerMass / mass, 0.05, 0.98)),
+    // What a rock costs the hull, which follows from how much hull there is and how
+    // fast it can arrive: a full-speed ram takes about `ramSurvivability` of it,
+    // whatever the ship. It belongs here because it moves when either does, so a hull
+    // refitted with a faster drive learns to fear a rock more.
+    rockContact: given(
+      "rockContact",
+      clamp(
+        (k.ramSurvivability * hull) / (maxSpeed * CONFIG.ROCK_IMPACT_DAMAGE),
+        0.05,
+        k.maxRockContact,
+      ),
+    ),
   }
 }
 
 // The flight settings, which a design may stand in front of by stating one.
-const FLIGHT_FIELDS = ["accel", "maxSpeed", "turnRate", "drag"]
+const FLIGHT_FIELDS = ["accel", "maxSpeed", "turnRate", "drag", "rockContact"]
+
+// Hull points: armour over the area the outline encloses, so a bigger hull of the same
+// stuff takes more killing. Shared, because the player is a hull like any other and its
+// own is worked out from its own shape.
+export function hullPoints(type) {
+  return Math.round(type.armour * outlineArea(type.outline) * SHIP_SCALARS.hullPerArea)
+}
 
 // Fill in everything a type has not stated for itself.
 export function deriveShipStats(type) {
-  const k = SHIP_SCALARS
   const stated = (field, value) => (type[field] !== undefined ? type[field] : value)
   const reach = outlineReach(type.outline)
-  const hullArea = outlineArea(type.outline)
   const core = coreOf(type)
   const laden = ladenMass(type)
+  const hull = stated("hull", hullPoints(type))
   const flight = flightStats({
     mass: laden,
     reach,
     thrust: thrustOf(type),
     torque: torqueOf(type),
     handling: type.handling ?? 1,
+    hull,
     stated: type,
   })
-  const maxSpeed = flight.maxSpeed
-  const hull = stated("hull", Math.round(type.armour * hullArea * k.hullPerArea))
   const shape = hullShape(type)
   // Which of the flight settings this design wrote down for itself. Kept apart
   // because a derived type and a design that stated the same value are otherwise
@@ -1329,14 +1347,6 @@ export function deriveShipStats(type) {
     boundRadius: shape.boundRadius,
     bubbleRadius: stated("bubbleRadius", shape.bubbleRadius),
     hullWidth: stated("hullWidth", shape.hullWidth),
-    rockContact: stated(
-      "rockContact",
-      clamp(
-        (k.ramSurvivability * hull) / (maxSpeed * CONFIG.ROCK_IMPACT_DAMAGE),
-        0.05,
-        k.maxRockContact,
-      ),
-    ),
   }
 }
 
@@ -1799,6 +1809,11 @@ const PLAYER_DESIGN = {
   ],
   colour: PALETTE.player.hull,
   faction: "player",
+  // Hull, like any other ship: what a hit that no bubble took gets through to. 70 points
+  // off 253 of outline, which is a rock bump survived with care, a beam hit survived
+  // once and a rival's autocannon round still fatal, so a shield stays the first thing
+  // worth buying. See hullPoints.
+  armour: 2.5,
   // The bare hull. What the shop fits adds 0.17 at launch, which puts the ship at
   // the 1 every other hull's mass is quoted against, and a fully fitted one a
   // little over it.
@@ -1824,7 +1839,11 @@ const PLAYER_DESIGN = {
   startingSpecials: ["oreMagnet"],
 }
 
-export const PLAYER_TYPE = { ...PLAYER_DESIGN, ...hullShape(PLAYER_DESIGN) }
+export const PLAYER_TYPE = {
+  ...PLAYER_DESIGN,
+  ...hullShape(PLAYER_DESIGN),
+  hull: hullPoints(PLAYER_DESIGN),
+}
 
 // ---------------------------------------------------------------------------
 // EQUIPMENT - what the shop fits to the player's ship, slot by slot.

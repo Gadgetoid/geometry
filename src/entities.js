@@ -1369,7 +1369,7 @@ export class Ship extends Entity {
   // `rockContact` on the type scales it: a hull that shoulders rocks aside for a
   // living is not in the same weight class as one that should be avoiding them.
   chargeRockContact(dt, game, closingSpeed, impact) {
-    const scale = this.type.rockContact ?? 1
+    const scale = this.rockContact ?? this.type.rockContact ?? 1
     if (scale <= 0) {
       return
     }
@@ -1452,6 +1452,9 @@ export class Ship extends Entity {
         thrust,
         torque,
         handling: this.type.handling ?? 1,
+        // Rock contact is priced off the hull it has to protect and the speed it can
+        // arrive at, both of which a refit can move.
+        hull: this.hull ?? this.type.hull ?? 0,
         stated: this.type.flightOverrides ?? {},
       }),
     )
@@ -1630,6 +1633,9 @@ export class PlayerShip extends Ship {
     this.colour = PLAYER_TYPE.colour
     this.buildHardpoints(PLAYER_TYPE.hardpoints)
     this.applyLoadout(PLAYER_TYPE.loadout)
+    // Before the equipment goes on, because what a rock costs is priced off the hull it
+    // has to get through.
+    this.hull = PLAYER_TYPE.hull
     this.fitEquipment(game)
     this.nose = this.hardpointByRole("nose")
     this.aux = this.hardpointByRole("aux") // the turret's mount, filled from EQUIPMENT
@@ -1687,8 +1693,20 @@ export class PlayerShip extends Ship {
     game.stats.damage += amount
     return super.takeDamage(amount, game, channel, scoreOnKill, impact)
   }
-  onHull() {
-    this.game.playerLoseLife()
+  // A hit no bubble took reaches the hull, as it does on any other ship: it costs hull
+  // points, and a life only when there are none left. Which is what makes a gentle bump
+  // against a rock something to fly away from rather than the end of the run.
+  onHull(amount, game) {
+    this.hull -= amount
+    if (this.hull <= 0) {
+      this.hull = 0
+      this.game.playerLoseLife()
+      return
+    }
+    if (this.fxCooldown <= 0) {
+      ;(game || this.game).burst(this.x, this.y, 5, PALETTE.player.lowEnergy, 40, 150, 0.4)
+      this.fxCooldown = 0.12
+    }
   }
 
   // Dissolve out of the sector, or fade back in after `delay` seconds.
