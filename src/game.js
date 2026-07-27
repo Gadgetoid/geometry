@@ -1310,6 +1310,21 @@ export class Game {
   }
 
   // Work the open pop-over: move the cursor, or run the highlighted row.
+  // Move the open pop-over to the box beside it. A slot with nothing to offer is
+  // stepped over rather than opened empty, and running out of boxes leaves it where it
+  // is: the row is a row of boxes, not a loop.
+  #slotMenuAcross(step) {
+    const direction = Math.sign(step)
+    for (let slot = this.shopSlot + direction; slot >= 0 && slot < MAX_SLOTS; slot += direction) {
+      if (this.slotMenuRows(slot).length) {
+        this.shopSlot = slot
+        this.slotMenu = { slot, selection: 0 }
+        Sound.bump()
+        return
+      }
+    }
+  }
+
   #slotMenuMove(delta) {
     const rows = this.slotMenuRows(this.slotMenu.slot).length
     this.slotMenu.selection = (this.slotMenu.selection + delta + rows) % rows
@@ -2294,7 +2309,14 @@ export class Game {
   // shop it steps the sector. Returns whether it did anything, so a caller can stop.
   menuAdjust(step) {
     if (this.slotMenu) {
-      return true // one column of rows, and the shop behind it must not move
+      // On a special slot, sideways walks to the next box and the pop-over follows,
+      // so the four can be worked through without closing and reopening it. A menu
+      // opened from a shop row has nothing beside it, and the shop behind it must not
+      // move either way.
+      if (!this.slotMenu.equipment && !this.slotMenu.levels) {
+        this.#slotMenuAcross(step)
+      }
+      return true
     }
     if (this.paused) {
       if (this.rebinding) {

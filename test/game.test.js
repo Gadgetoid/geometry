@@ -3842,6 +3842,52 @@ test("the laser and the drive cannot be taken off", () => {
   }
 })
 
+test("with a special slot open, sideways walks the pop-over to the next box", () => {
+  // Working through four slots meant closing the pop-over, stepping along and opening
+  // it again. It follows the cursor instead.
+  const game = liveGame()
+  withSlots(game, 3)
+  game.findSpecial("repel")
+  game.player.equip(1, "repel")
+  game.oreBalance = 400
+  game.enterShop()
+  game.shopSelection = game.slotsRow
+  game.shopSlot = 0
+  game.doShopAction()
+  assert.equal(game.slotMenuTitle(), SPECIAL_TYPES.oreMagnet.label, "opened on the first box")
+
+  game.menuAdjust(1)
+  assert.ok(game.slotMenu, "still open")
+  assert.equal(game.shopSlot, 1)
+  assert.equal(game.slotMenuTitle(), SPECIAL_TYPES.repel.label, "and showing the next box")
+  assert.equal(game.slotMenu.selection, 0, "starting at the top of the new list")
+
+  // it stops at the end rather than wrapping: the row is a row of boxes, not a loop
+  game.menuAdjust(1)
+  assert.equal(game.shopSlot, 2)
+  game.menuAdjust(1)
+  assert.equal(game.shopSlot, 2, "the last box is the last one")
+  game.menuAdjust(-1)
+  assert.equal(game.shopSlot, 1)
+
+  // and the shop behind it must not move while it is open
+  const row = game.shopSelection
+  game.menuAdjust(1)
+  assert.equal(game.shopSelection, row)
+})
+
+test("a fly-out opened from a shop row has nothing beside it to walk to", () => {
+  const game = liveGame()
+  game.enterShop()
+  game.shopSelection = equipmentRowIndex(game, "engine")
+  game.doShopAction()
+  const before = { ...game.slotMenu }
+  game.menuAdjust(1)
+  game.menuAdjust(-1)
+  assert.deepEqual({ ...game.slotMenu }, before, "sideways does nothing on an equipment menu")
+  assert.equal(game.shopSelection, equipmentRowIndex(game, "engine"), "and the shop stays put")
+})
+
 // ---- control bindings -----------------------------------------------------
 
 test("the default bindings are the controls the game shipped with", () => {
