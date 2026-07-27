@@ -345,15 +345,22 @@ export function freshBindings() {
 // PROGRESSION - how a sector's contents are derived from its number. These
 // drive Game.planLevel, so the whole difficulty curve is tunable here without
 // reading gameplay code.
+//
+// A run is 40 sectors long and everything here is paced to reach its ceiling at the far
+// end of that rather than in the first ten: the rock field fills, the share of rocks
+// carrying something climbs, and both the number of rivals alive and how fast they
+// arrive keep moving the whole way. What arrives is paced by each type's own `spawn`
+// block and what it carries by its `arms`, so timeline.html is the place to read the
+// curve as a whole.
 // ---------------------------------------------------------------------------
 export const PROGRESSION = {
   // rock count: base + perSector * sector, rounded up, capped at max
-  rocks: { base: 1, perSector: 0.9, max: 11 },
+  rocks: { base: 2, perSector: 0.3, max: 14 }, // the cap lands on sector 40, not before it
   // chance a rock carries a hazard trait, ramping from `fromSector`
-  hazards: { fromSector: 3, base: 0.14, perSector: 0.07, max: 0.6 },
+  hazards: { fromSector: 3, base: 0.1, perSector: 0.014, max: 0.62 },
   // rivals alive at once: one from RIVALS_FROM_SECTOR, then one more every
   // `perSectors`. The gap between arrivals shortens as sectors advance.
-  rivals: { perSectors: 3, max: 3, intervalBase: 28, intervalPerSector: 1.4, intervalMin: 9 },
+  rivals: { perSectors: 9, max: 4, intervalBase: 30, intervalPerSector: 0.55, intervalMin: 10 },
   // where a sector's rocks start, and how fast
   spawn: {
     edgeMargin: 120, // keep a new rock this far inside the boundary
@@ -363,7 +370,7 @@ export const PROGRESSION = {
     speed: [30, 74],
     spin: [-0.6, 0.6],
   },
-  specials: { fromSector: 3, firstDelay: [6, 10], interval: [12, 20], maxOnField: 2 },
+  specials: { fromSector: 5, firstDelay: [6, 10], interval: [12, 20], maxOnField: 2 },
 }
 
 // ---------------------------------------------------------------------------
@@ -391,8 +398,11 @@ export function weightAt(entry, sector) {
   return Math.min((entry.weight ?? 1) + growth, entry.weightCap ?? Infinity)
 }
 
-// Hazard traits a rock can spawn with. Armed rocks at a cap of 5 are still three
-// quarters of what a late sector rolls, against 95% and rising without one.
+// Hazard traits a rock can spawn with, spread across a run: something to blow up from
+// sector 3, something that shrugs off a shot from 6, something that shoots back from 10,
+// and both at once from 16. Armed rocks grow to a cap of 4, which is a little over half
+// of what sector 40 rolls, and the share of rocks carrying anything at all is ramped
+// separately by PROGRESSION.hazards.
 //
 // `gun` and `shield` name the modules to mount, so arming a rock differently is
 // an edit here rather than in the Asteroid constructor. `explosive` is a property
@@ -417,8 +427,24 @@ export function weightAt(entry, sector) {
 const ROCK_TURRETS = {
   guns: [
     { weapon: "blaster", controller: "turret" },
-    { weapon: "autocannon", controller: "turret", fromSector: 15 },
-    { weapon: "flakCannon", controller: "turret", fromSector: 15 },
+    {
+      weapon: "autocannon",
+      controller: "turret",
+      fromSector: 15,
+      weight: 0.4,
+      weightPerSector: 0.04,
+      weightCap: 1.4,
+    },
+    // A flak rock throws a stream, and a field of them is a wall rather than a hazard,
+    // so it joins late and stays the rarest of the three however far a run goes.
+    {
+      weapon: "flakCannon",
+      controller: "turret",
+      fromSector: 20,
+      weight: 0.15,
+      weightPerSector: 0.015,
+      weightCap: 0.45,
+    },
   ],
   count: [1, 3],
   jitter: 0.3,
@@ -428,9 +454,9 @@ const ROCK_SHIELD = { shield: "standard" }
 
 export const HAZARD_TRAITS = [
   { traits: { explosive: true }, fromSector: 3 },
-  { traits: { shield: ROCK_SHIELD }, fromSector: 4 },
-  { traits: { gun: ROCK_TURRETS }, fromSector: 5, weightPerSector: 1, weightCap: 5 },
-  { traits: { gun: ROCK_TURRETS, shield: ROCK_SHIELD }, fromSector: 6 },
+  { traits: { shield: ROCK_SHIELD }, fromSector: 6 },
+  { traits: { gun: ROCK_TURRETS }, fromSector: 10, weightPerSector: 0.12, weightCap: 4 },
+  { traits: { gun: ROCK_TURRETS, shield: ROCK_SHIELD }, fromSector: 16 },
 ]
 
 // What to call a rock carrying each trait, for the dev page that offers one of each: a
@@ -1599,11 +1625,11 @@ const SHIP_DESIGNS = {
         hp: 1,
         weapon: "autocannon",
         controller: "turret",
-        chancePerSector: 0.15,
+        chancePerSector: 0.05,
         chanceCap: 0.85,
       },
     },
-    spawn: { fromSector: 4, weight: 2, maxConcurrent: 1 },
+    spawn: { fromSector: 8, weight: 1, weightPerSector: 0.3, weightCap: 4, maxConcurrent: 1 },
     hunts: true,
     // A dart lines up, fires and leaves rather than closing to a knife fight it cannot win.
     // Half its own beam's reach is close enough, and it will not sit in front of a ship that
@@ -1649,18 +1675,18 @@ const SHIP_DESIGNS = {
         hp: 1,
         weapon: "autocannon",
         controller: "turret",
-        chancePerSector: 0.15,
+        chancePerSector: 0.05,
         chanceCap: 0.85,
       },
       shield: {
         hp: 2,
         slot: "shield",
         shield: "standard",
-        chancePerSector: 0.12,
+        chancePerSector: 0.04,
         chanceCap: 0.8,
       },
     },
-    spawn: { fromSector: 4, weight: 6 }, // the common one, and the one always available
+    spawn: { fromSector: 2, weight: 6 }, // the common one, and the one always available
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
     killScore: 400,
@@ -1706,7 +1732,7 @@ const SHIP_DESIGNS = {
         fitted: { shield: "bulwark", radar: "huntingArray", thruster: "siegeJets" },
       },
     ],
-    spawn: { fromSector: 6, weight: 2, maxConcurrent: 1 },
+    spawn: { fromSector: 14, weight: 0.8, weightPerSector: 0.25, weightCap: 3, maxConcurrent: 1 },
     hunts: true, // steers for the player rather than for ore and rocks
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
@@ -1815,7 +1841,7 @@ const SHIP_DESIGNS = {
         fitted: { shield: "alienField", radar: "huntingArray", thruster: "siegeJets" },
       },
     ],
-    spawn: { fromSector: 22, weight: 2, maxConcurrent: 1 },
+    spawn: { fromSector: 30, weight: 0.3, weightPerSector: 0.15, weightCap: 2.5, maxConcurrent: 1 },
     hunts: true,
     debrisMaterial: ALIEN_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
@@ -1872,18 +1898,18 @@ const SHIP_DESIGNS = {
         hp: 1,
         weapon: "warpOrb",
         controller: "turret",
-        chancePerSector: 0.15,
+        chancePerSector: 0.08,
         chanceCap: 0.85,
       },
       shield: {
         hp: 2,
         slot: "shield",
         shield: "alienField",
-        chancePerSector: 0.12,
+        chancePerSector: 0.06,
         chanceCap: 0.8,
       },
     },
-    spawn: { fromSector: 20, weight: 6, maxConcurrent: 2 },
+    spawn: { fromSector: 20, weight: 0.6, weightPerSector: 0.2, weightCap: 4, maxConcurrent: 2 },
     debrisMaterial: ALIEN_PLATING,
     debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
     killScore: 400,
@@ -1938,11 +1964,11 @@ const SHIP_DESIGNS = {
         hp: 1,
         weapon: "warpOrb",
         controller: "turret",
-        chancePerSector: 0.15,
+        chancePerSector: 0.08,
         chanceCap: 0.85,
       },
     },
-    spawn: { fromSector: 20, weight: 2, maxConcurrent: 1 },
+    spawn: { fromSector: 25, weight: 0.4, weightPerSector: 0.18, weightCap: 3, maxConcurrent: 1 },
     hunts: true,
     // A dart lines up, fires and leaves rather than closing to a knife fight it cannot win.
     // Half its own beam's reach is close enough, and it will not sit in front of a ship that
@@ -2282,6 +2308,7 @@ export const SPECIAL_TYPES = {
   // neighbourhood, so it is a way out of a squeeze and not a way to sweep the
   // sector; a rock counts as in range when its surface is.
   repel: {
+    fromSector: 5,
     label: "REPEL",
     icon: "R",
     colour: PALETTE.special.repel,
@@ -2322,6 +2349,7 @@ export const SPECIAL_TYPES = {
   // The one special that cannot be paid for in energy, being made of it, so it is
   // spent instead: a full cell once, and the slot is empty again.
   refuel: {
+    fromSector: 8,
     label: "REFUEL",
     icon: "F",
     colour: PALETTE.special.refuel,
@@ -2335,6 +2363,7 @@ export const SPECIAL_TYPES = {
     },
   },
   booster: {
+    fromSector: 15,
     label: "BOOSTER",
     short: "BOOST",
     icon: "B",
@@ -2354,6 +2383,7 @@ export const SPECIAL_TYPES = {
     },
   },
   multi: {
+    fromSector: 19,
     label: "MULTI-LASER",
     short: "MULTI",
     icon: "L",
@@ -2370,6 +2400,7 @@ export const SPECIAL_TYPES = {
   // makes it worth keeping in a slot that could hold something louder; ejecting it
   // for a stealth field is a real trade rather than an obvious one.
   oreMagnet: {
+    fromSector: 11,
     label: "ORE MAGNET",
     short: "MAGNET",
     icon: "M",
@@ -2383,6 +2414,7 @@ export const SPECIAL_TYPES = {
   // Held on rather than triggered: it costs energy for as long as it runs, and
   // firing the main laser gives the position away and drops it.
   stealth: {
+    fromSector: 25,
     label: "STEALTH",
     icon: "S",
     colour: PALETTE.special.stealth,

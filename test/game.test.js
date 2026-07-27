@@ -6648,8 +6648,10 @@ test("a gun joins the pool at its own sector, and the rocks are no more armed fo
     })
     return armed / 4000
   }
+  // Either side of the sector it joins, since the trait's own weight grows across a run
+  // and measuring further apart would be measuring that instead.
   const before = armedShare(late.fromSector - 1),
-    after = armedShare(late.fromSector + 5)
+    after = armedShare(late.fromSector)
   assert.ok(
     Math.abs(after - before) < 0.05,
     `armed share went ${(before * 100).toFixed(1)}% to ${(after * 100).toFixed(1)}%`,
@@ -6746,8 +6748,12 @@ test("no hazard survives to a late sector only to be crowded out of it", () => {
   // nobody meets any more.
   const game = new Game()
   const key = (traits) => Object.keys(traits).sort().join("+") || "none"
-  const expected = new Set(HAZARD_TRAITS.map((h) => key(h.traits)))
   for (const sector of [10, 20, 40, 80]) {
+    // Whatever is in the roll by then, since a hazard that has not joined yet is absent
+    // by design and only one that has can be crowded out.
+    const expected = new Set(
+      HAZARD_TRAITS.filter((h) => weightAt(h, sector) > 0).map((h) => key(h.traits)),
+    )
     const tally = {}
     seeded(1234, () => {
       for (let i = 0; i < 4000; i++) {
@@ -6780,8 +6786,129 @@ test("an armed rock still comes to dominate the roll", () => {
     })
     return armed / 4000
   }
-  assert.ok(armedShare(6) < armedShare(12), "armed rocks become more common with depth")
-  assert.ok(armedShare(20) > 0.6, `late sectors are mostly armed (${armedShare(20).toFixed(2)})`)
+  assert.ok(armedShare(12) < armedShare(20), "armed rocks become more common with depth")
+  assert.ok(armedShare(40) > 0.5, `late sectors are mostly armed (${armedShare(40).toFixed(2)})`)
+})
+
+// ---- the shape of a 40 sector run ------------------------------------------
+// A run is paced to reach its ceiling at sector 40. These hold the shape of that curve
+// rather than any number in it, so it can be retuned without rewriting them; read
+// timeline.html for the curve itself.
+
+const RUN_LENGTH = 40
+
+test("a run introduces its hulls a tier at a time, rivals before aliens", () => {
+  const from = (name) => SHIP_TYPES[name].spawn.fromSector
+  assert.ok(from("scout") < from("seeker"), "the scout is what a run opens with")
+  assert.ok(from("seeker") < from("frigate"), "then the dart, then the slab")
+  assert.ok(from("frigate") < from("alienScout"), "and every rival before any alien")
+  assert.ok(from("alienScout") < from("alienSeeker"), "the aliens arrive in the same order")
+  assert.ok(from("alienSeeker") < from("alienFrigate"))
+  assert.ok(from("alienFrigate") <= RUN_LENGTH - 8, "with a run's end left to fight them in")
+
+  // Rare when they join: an alien arriving should be a thing that happened, not the
+  // sector's new normal.
+  const share = (name, sector) => {
+    const weights = Object.keys(SHIP_TYPES).map((n) => weightAt(SHIP_TYPES[n].spawn, sector))
+    const total = weights.reduce((a, b) => a + b, 0)
+    return weightAt(SHIP_TYPES[name].spawn, sector) / total
+  }
+  for (const name of ["alienScout", "alienSeeker", "alienFrigate"]) {
+    const joins = share(name, from(name))
+    assert.ok(joins < 0.1, `${name} is one arrival in ten at most when it joins, got ${joins}`)
+    assert.ok(share(name, RUN_LENGTH) > joins * 2, `${name} becomes common by the end`)
+  }
+})
+
+test("the difficulty curve is still climbing at the end of a run", () => {
+  // The point of a 40 sector run is that something changes across all of it. Anything
+  // that reaches its ceiling by the middle leaves the second half flat.
+  const game = new Game()
+  const at = (sector) => {
+    const plan = game.planLevel(sector)
+    const { hazards } = PROGRESSION
+    return {
+      rocks: plan.spawns.length,
+      rivals: plan.rivals,
+      interval: plan.rivalInterval,
+      hazard: Math.min(
+        Math.max(hazards.base + (sector - hazards.fromSector) * hazards.perSector, 0),
+        hazards.max,
+      ),
+    }
+  }
+  const early = at(10),
+    middle = at(25),
+    late = at(RUN_LENGTH)
+  assert.ok(early.rocks < middle.rocks && middle.rocks < late.rocks, "the field keeps filling")
+  assert.ok(early.hazard < middle.hazard && middle.hazard < late.hazard, "and keeps arming")
+  assert.ok(early.rivals < late.rivals, "more of them are alive at once by the end")
+  assert.ok(late.interval < early.interval, "and they arrive quicker")
+  assert.ok(at(RUN_LENGTH - 5).rocks < late.rocks, "with the last five sectors still moving")
+})
+
+test("what a hull carries is rolled up over the run, not switched on at its sector", () => {
+  // An arm that reaches its cap five sectors after the hull joins makes the hull's
+  // introduction the only step there is.
+  for (const [name, type] of Object.entries(SHIP_TYPES)) {
+    for (const [armName, arm] of Object.entries(type.arms || {})) {
+      const sectorsToCap = arm.chanceCap / arm.chancePerSector
+      assert.ok(
+        sectorsToCap >= 10,
+        `${name}'s ${armName} caps ${sectorsToCap.toFixed(0)} sectors in, which is a step`,
+      )
+      assert.ok(
+        type.spawn.fromSector + sectorsToCap <= RUN_LENGTH + 2,
+        `${name}'s ${armName} never reaches its cap within a run`,
+      )
+    }
+  }
+})
+
+test("specials are handed out a kind at a time, stealth last", () => {
+  const from = (id) => SPECIAL_TYPES[id].fromSector ?? 0
+  assert.ok(
+    PROGRESSION.specials.fromSector >= 5,
+    "nothing drifts in while the player is still learning to fly",
+  )
+  for (const id of SPECIAL_IDS) {
+    assert.ok(from(id) >= PROGRESSION.specials.fromSector, `${id} cannot drop before drops start`)
+  }
+  const gates = SPECIAL_IDS.map(from)
+  assert.equal(new Set(gates).size, gates.length, "each kind arrives on its own sector")
+  assert.ok(
+    from("stealth") === Math.max(...gates) && from("stealth") >= 25,
+    "stealth arrives last, once there is something worth hiding from",
+  )
+  // The shop only sells what the run has found, so the drop gate is the whole gate.
+  const game = liveGame()
+  assert.ok(!game.buyableSpecials().includes("stealth"), "and cannot be bought before then")
+})
+
+test("rock flak is the rarest gun a rock can carry, and a late one", () => {
+  // A flak rock throws a stream: a field of them is a wall. It joins late and stays the
+  // thinnest slice of the pool however far a run goes.
+  const game = new Game()
+  const pool = HAZARD_TRAITS.find((entry) => entry.traits.gun).traits.gun
+  const flak = pool.guns.find((gun) => gun.weapon === "flakCannon")
+  assert.ok(flak.fromSector >= 20, "not before the run's last half")
+  const shareAt = (sector) => {
+    const live = game.gunsForSector(pool, sector)
+    const total = live.reduce((sum, gun) => sum + gun.weight, 0)
+    const mine = live.find((gun) => gun.weapon === "flakCannon")
+    return mine ? mine.weight / total : 0
+  }
+  assert.equal(shareAt(flak.fromSector - 1), 0)
+  for (const sector of [flak.fromSector, 30, RUN_LENGTH]) {
+    const live = game.gunsForSector(pool, sector)
+    const mine = live.find((gun) => gun.weapon === "flakCannon")
+    assert.ok(
+      live.every((gun) => gun.weapon === "flakCannon" || gun.weight > mine.weight),
+      `at sector ${sector} flak must weigh less than every other gun`,
+    )
+  }
+  assert.ok(shareAt(RUN_LENGTH) > shareAt(flak.fromSector), "it does grow, slowly")
+  assert.ok(shareAt(RUN_LENGTH) < 0.25, "but is never a quarter of what a rock mounts")
 })
 
 // ---- pause menu, settings and the saved run --------------------------------
