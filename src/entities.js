@@ -26,6 +26,7 @@ import {
   boundaryDistance,
   perpendicular,
   slicePolygon,
+  segmentCircleEntry,
   convexContact,
   supportDistance,
   bearingTo,
@@ -2726,6 +2727,39 @@ export class Asteroid extends Entity {
     }
   }
 
+  // A gun coming apart at its mount: a flash, fire out of it and embers falling off
+  // the debris. Shared, so a gun shot off a rock and a gun lost to a cut through it
+  // go the same way. The sound is the caller's, since several can go at once.
+  turretLost(hp, game) {
+    game.burst(hp.x, hp.y, randInt(14, 20), PALETTE.fx.fire, 60, 230, 0.5)
+    game.burst(hp.x, hp.y, randInt(6, 10), PALETTE.fx.ember, 30, 150, 0.75)
+    game.ring(hp.x, hp.y, 9, PALETTE.fx.flash, 230, 0.4)
+  }
+
+  // Shoot the guns off. A mount within AST_TURRET_HITBOX of the beam is taken out,
+  // whether or not the shot goes on to cut the rock underneath it, so a turret can
+  // be picked off a boulder too big to cut apart. Returns how many were lost, and
+  // the rock's cell shrinks with them.
+  strikeTurrets(beam, halfWidth, game) {
+    const reach = CONFIG.AST_TURRET_HITBOX + halfWidth
+    const struck = this.hardpoints.filter(
+      (hp) =>
+        hp.module &&
+        hp.module.kind === "weapon" &&
+        segmentCircleEntry(beam.a, beam.b, hp, reach) !== null,
+    )
+    if (!struck.length) {
+      return 0
+    }
+    this.hardpoints = this.hardpoints.filter((hp) => !struck.includes(hp))
+    for (const hp of struck) {
+      this.turretLost(hp, game)
+    }
+    Sound.explode() // once, however many went with the shot
+    this.refreshEnergy(this.energy)
+    return struck.length
+  }
+
   // Split by a beam, distributing hardpoints to whichever piece they fall on.
   // A concave fragment can yield more than two pieces; all are handled.
   splitBy(beam, game) {
@@ -2733,6 +2767,20 @@ export class Asteroid extends Entity {
     const parts = slicePolygon(this.vertices, beam.a, cutNormal)
     if (parts.length < 2) {
       return null
+    }
+    // A gun the cut passes through goes with it. Distance to the cut line rather
+    // than to the piece's outline, since the cut is the only edge that is new: a
+    // turret was inside the parent, so the cut is the only thing that can leave it
+    // hanging off an edge. A shield sits at the centre and is the rock's rather than
+    // any one piece's, so it is not held to this.
+    const lostToCut = (hp) =>
+      hp.module &&
+      hp.module.kind === "weapon" &&
+      Math.abs(dot(subtract(hp, beam.a), cutNormal)) < CONFIG.AST_TURRET_CLEARANCE
+    for (const hp of this.hardpoints) {
+      if (lostToCut(hp)) {
+        this.turretLost(hp, game)
+      }
     }
     const fragments = []
     for (const partVerts of parts) {
@@ -2759,8 +2807,9 @@ export class Asteroid extends Entity {
         continue
       }
       // keep the gun/shield hardpoints that fall inside this piece (containment
-      // is correct even when a concave cut produces more than two pieces)
-      const mine = this.hardpoints.filter((hp) => pointInPolygon(hp, partVerts))
+      // is correct even when a concave cut produces more than two pieces) and clear
+      // of the cut itself
+      const mine = this.hardpoints.filter((hp) => pointInPolygon(hp, partVerts) && !lostToCut(hp))
       const frag = new Asteroid({
         vertices: partVerts,
         vx: this.vx + ix,

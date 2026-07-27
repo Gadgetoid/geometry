@@ -92,6 +92,16 @@ export const CONFIG = {
   AST_REGEN: 12, // shielded/armed rocks recover energy slowly
   AST_ENERGY_SHIELD: 100,
   AST_ENERGY_GUN: 50,
+  // A gun mounted on a rock is a target in its own right, and a forgiving one: a
+  // beam passing within this of the mount takes it off, against a nub the view
+  // draws at 3.4 with a barrel 10 long. Otherwise the only way to strip a rock's
+  // guns was to cut it into pieces small enough to shatter, so a shot lined up
+  // straight through a turret left it firing.
+  AST_TURRET_HITBOX: 12,
+  // And how far clear of a cut a mount has to be to ride on it. Inside this the nub
+  // straddles the cut line, so it goes with it rather than surviving on the piece
+  // its centre happened to fall on.
+  AST_TURRET_CLEARANCE: 4,
   // Contact resolution between bodies: overlap below CONTACT_SLOP is left alone
   // so resting pairs do not jitter, and only CONTACT_BIAS of the rest is undone
   // each frame so a contact eases apart instead of snapping. The solver runs

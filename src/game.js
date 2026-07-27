@@ -690,6 +690,14 @@ export class Game {
       // view draws around it is what the shot has to reach. An unshielded one has
       // to be passed through to be cut, which is the crossing rule.
       const bubble = asteroid.blockingRadius("laser")
+      // The guns first, and on their own terms: a mount near the beam is taken out
+      // whether or not the shot passes through the rock, which is what makes a
+      // turret on a boulder something that can be shot at rather than something
+      // that has to be cut apart. A raised shield covers them as it covers the rock.
+      if (bubble <= 0 && asteroid.strikeTurrets(beam, halfWidth, this)) {
+        this.screenShake = Math.max(this.screenShake, 3)
+        didHit = true
+      }
       const reached =
         bubble > 0
           ? segmentCircleEntry(beam.a, beam.b, asteroid.center, bubble + halfWidth) !== null

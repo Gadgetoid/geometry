@@ -4626,6 +4626,81 @@ test("a rock's turrets are spread around it, not stacked on one bearing", () => 
   )
 })
 
+// A rock at the middle of the sector carrying one gun at a known place, so a shot
+// can be aimed at the gun or away from it.
+function rockWithGunAt(game, local) {
+  const trait = HAZARD_TRAITS.map((h) => h.traits.gun).find(Boolean)
+  const rock = new Asteroid({
+    x: 500,
+    y: 340,
+    radius: 90,
+    traits: { gun: { ...trait, count: [1, 1] } },
+  })
+  const gun = rock.hardpoints.find((hp) => hp.module && hp.module.kind === "weapon")
+  gun.x = rock.center.x + local[0]
+  gun.y = rock.center.y + local[1]
+  game.asteroids = [rock]
+  return { rock, gun }
+}
+
+const gunsOn = (game) =>
+  game.asteroids.reduce(
+    (total, rock) =>
+      total + rock.hardpoints.filter((hp) => hp.module && hp.module.kind === "weapon").length,
+    0,
+  )
+
+// A beam of `length` along +x, passing through (500, y).
+const beamAcross = (y, length = 900) => ({
+  a: { x: 500 - length / 2, y },
+  b: { x: 500 + length / 2, y },
+  dir: { x: 1, y: 0 },
+})
+
+test("a shot lined up through a rock's turret takes it off", () => {
+  const game = liveGame()
+  const weapon = game.player.mainWeapon
+
+  // Dead on. This used to cut the rock and leave the gun firing on whichever piece
+  // its centre landed in, so a turret on a boulder could only be dealt with by
+  // cutting the boulder down to fragments small enough to shatter.
+  const { gun } = rockWithGunAt(game, [0, -40])
+  assert.equal(gunsOn(game), 1, "the rock starts armed")
+  game.applyBeam(beamAcross(gun.y), game.player, weapon)
+  assert.equal(gunsOn(game), 0, "a shot through the mount leaves no gun on any piece")
+
+  // Forgiving, but not unlimited: past the hitbox the gun rides on.
+  for (const [offset, expected] of [
+    [CONFIG.AST_TURRET_HITBOX - 3, 0],
+    [CONFIG.AST_TURRET_HITBOX + 12, 1],
+  ]) {
+    const fresh = liveGame()
+    const placed = rockWithGunAt(fresh, [0, -40])
+    fresh.applyBeam(beamAcross(placed.gun.y + offset), fresh.player, weapon)
+    assert.equal(gunsOn(fresh), expected, `a beam ${offset} off the mount`)
+  }
+})
+
+test("a turret the cut passes through does not ride on either piece", () => {
+  // The hitbox covers a beam that reaches the mount. This is the other way a gun
+  // ends up on the edge of a piece: a cut close enough to leave the nub hanging off
+  // it, which containment alone was happy to let survive.
+  // Both cuts run through the rock's middle, which is a cut it is certain to come
+  // apart on; what differs is how far the mount sits from that line.
+  const clear = liveGame()
+  const wide = rockWithGunAt(clear, [0, -40])
+  const parts = wide.rock.splitBy(beamAcross(wide.rock.center.y), clear)
+  assert.ok(parts && parts.length >= 2, "the rock came apart")
+  clear.asteroids = parts
+  assert.equal(gunsOn(clear), 1, "a gun well clear of the cut survives on its own piece")
+
+  const near = liveGame()
+  const close = rockWithGunAt(near, [0, -(CONFIG.AST_TURRET_CLEARANCE - 1)])
+  near.asteroids = close.rock.splitBy(beamAcross(close.rock.center.y), near)
+  assert.ok(near.asteroids.length >= 2, "and so did this one")
+  assert.equal(gunsOn(near), 0, "one the cut goes through does not")
+})
+
 test("hazard traits are gated by sector", () => {
   const game = new Game()
   for (let trial = 0; trial < 200; trial++) {
