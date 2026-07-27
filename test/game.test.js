@@ -4336,6 +4336,35 @@ test("whoever is flying it decides the side, not the hull", () => {
   assert.ok(fired > 0, "the hull's own guns fire at what the player is hostile to")
 })
 
+test("the energy bar's length is the reading, whatever it is doing to be noticed", () => {
+  // A low cell pulsed by having its bar drawn 15% shorter and longer twice a second,
+  // which reads as the pool itself swinging about exactly when the player is watching it
+  // hardest. It pulses in how brightly it burns instead.
+  const game = liveGame()
+  const player = beSolid(game.player)
+  player.energy = player.energyMax * 0.1
+  const widths = new Set()
+  const alphas = new Set()
+  for (let frame = 0; frame < 40; frame++) {
+    const rects = []
+    const renderer = new Proxy(
+      {
+        rect: (x, y, w, h, opts) =>
+          rects.push({ w, h, fill: opts && opts.fill, alpha: opts && opts.alpha }),
+      },
+      { get: (target, key) => (key in target ? target[key] : () => {}) },
+    )
+    new GameView(renderer).render(game)
+    const bar = rects.filter((rect) => rect.fill && rect.h === 10).pop()
+    assert.ok(bar, "the cell is drawn")
+    widths.add(bar.w.toFixed(2))
+    alphas.add((bar.alpha ?? 1).toFixed(2))
+    game.gameTime += 1 / 60
+  }
+  assert.equal(widths.size, 1, `the bar holds its length, got ${[...widths].join(", ")}`)
+  assert.ok(alphas.size > 4, "and pulses in brightness so a low cell is still noticed")
+})
+
 test("a bubble the cell cannot pay for goes down, whatever emptied the cell", () => {
   // It was checked when it was shot at and when it shoved something, so a hull that spent
   // its cell on a gun kept a bubble it could not afford: drawn, costing nothing, and

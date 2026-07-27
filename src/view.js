@@ -698,18 +698,22 @@ export class GameView {
       barY = VIEW_H - 26 * ui,
       barH = 12 * ui
     r.rect(barX, barY, barW, barH, { stroke: PALETTE.ui.edge, width: 1 * ui })
-    const fraction = game.player ? game.player.energy / game.maxEnergy() : 0
+    // Against the cell the ship actually has, which is the hull's own rather than the
+    // one the shop would fit: a dev build can put the player in a hull with its own plant.
+    const cell = game.player ? game.player.energyMax : 0
+    const fraction = game.player && cell > 0 ? game.player.energy / cell : 0
     const low = fraction < 0.22
-    let fillW = barW * fraction
-    if (low) {
-      fillW = barW * fraction * (0.85 + 0.15 * Math.sin(game.gameTime * 10))
-    }
     // a special that tints the ship tints its energy bar to match
     const tint = game.player ? game.player.buffWith("tintsShip") : null
     const barColour = tint ? tint.colour : low ? PALETTE.ui.warn : PALETTE.player.hull
-    r.rect(barX + ui, barY + ui, Math.max(0, fillW - 2 * ui), barH - 2 * ui, {
+    // A low cell pulses to be noticed, in how brightly it burns rather than in how long
+    // it is: the length is the reading, and a reading that swings 15% either way twice a
+    // second is a bar that lies about what is left exactly when it matters most.
+    const pulse = low ? 0.7 + 0.3 * Math.sin(game.gameTime * 10) : 1
+    r.rect(barX + ui, barY + ui, Math.max(0, barW * fraction - 2 * ui), barH - 2 * ui, {
       fill: barColour,
       glow: 10,
+      alpha: pulse,
     })
     r.text("ENERGY", barX + 2 * ui, barY - 4 * ui, {
       size: 9 * ui,
