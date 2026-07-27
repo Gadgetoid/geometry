@@ -593,7 +593,9 @@ export class GameView {
       const rb = { x: mx + Math.cos(ang - 2.5) * size, y: my + Math.sin(ang - 2.5) * size }
       r.strokePoly([tip, la, rb], { color, width: 1.6, glow: 8, alpha, closed: true })
     }
-    const sees = (what) => player.sensorRange(what)
+    // What the set picks out, rather than what the hull can make out for itself: a marker
+    // is what a radar is for, and the sensor floor reaches past the edges of the screen.
+    const sees = (what) => player.radarRange(what)
     for (const chunk of game.oreChunks) {
       mark(chunk.x, chunk.y, PALETTE.ore.body, 6, sees("ore"))
     }

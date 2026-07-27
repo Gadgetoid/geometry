@@ -553,7 +553,16 @@ export class Entity {
   // screen, and a fitted radar set reaches past it for the kinds it covers. So a
   // hull with nothing fitted is not blind, it is just short-sighted.
   sensorRange(what) {
-    let reach = CONFIG.SENSOR_FLOOR
+    return Math.max(CONFIG.SENSOR_FLOOR, this.radarRange(what))
+  }
+
+  // How far a fitted set picks `what` out, with no floor under it. What the hull knows
+  // and what its radar tells it are two questions: the floor is there so a hull with
+  // nothing fitted is short-sighted rather than blind, and it reaches past the screen
+  // edges, so answering the second question with it puts a marker on the page for
+  // everything a set was never bought to find.
+  radarRange(what) {
+    let reach = 0
     for (const module of this.modules()) {
       if (module.kind === "radar") {
         reach = Math.max(reach, module.reach(what))

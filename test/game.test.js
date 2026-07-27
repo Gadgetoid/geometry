@@ -4273,6 +4273,52 @@ test("every gun a flown hull carries is drawn on it", () => {
   )
 })
 
+test("an edge arrow is what the radar found, not what the hull can make out", () => {
+  // The floor under every hull's senses reaches past the edges of the screen, so reading
+  // the markers off it put an arrow on the page for ore and for hulls that the set fitted
+  // was never bought to find.
+  const arrowsWith = (mark) => {
+    const game = liveGame()
+    const player = beSolid(game.player)
+    game.upgrades.owned.radar = EQUIPMENT.radar.options.map((option) => option.id)
+    game.fitEquipment("radar", mark)
+    // One of each, off the top of the screen but well inside the sensor floor.
+    game.asteroids = [new Asteroid({ x: player.x, y: player.y - 450, radius: 40 })]
+    game.oreChunks = [new Ore(player.x + 40, player.y - 450, 0, 0)]
+    const rival = plainRival(player.x - 40, player.y - 450, "scout")
+    rival.arrived = true
+    game.rivals = [rival]
+    const found = []
+    const renderer = new Proxy(
+      {
+        strokePoly: (points, opts) => {
+          if (points.length === 3 && opts && opts.closed) {
+            found.push(opts.color)
+          }
+        },
+      },
+      { get: (target, key) => (key in target ? target[key] : () => {}) },
+    )
+    new GameView(renderer).render(game)
+    return {
+      rock: found.includes(PALETTE.rock.gun),
+      ore: found.includes(PALETTE.ore.body),
+      ship: found.includes(PALETTE.rival.hull),
+    }
+  }
+
+  // Each mark adds a kind, and marks nothing it does not cover.
+  assert.deepEqual(arrowsWith("surveyMk1"), { rock: true, ore: false, ship: false })
+  assert.deepEqual(arrowsWith("surveyMk2"), { rock: true, ore: true, ship: false })
+  assert.deepEqual(arrowsWith("surveyMk3"), { rock: true, ore: true, ship: true })
+
+  // The floor is still there for what the hull itself notices, which is how a ship with
+  // no set fitted is short-sighted rather than blind.
+  const game = liveGame()
+  assert.ok(game.player.sensorRange("ore") >= CONFIG.SENSOR_FLOOR, "the floor holds")
+  assert.equal(game.player.radarRange("ore"), 0, "and is not what the set reports")
+})
+
 test("the nose gun is the player's own, whatever the hull had it doing", () => {
   // A hull out of the dev page brings its own controller with it, and a nose still set to
   // hunt or to mine fires itself: an alien scout arrived shooting on its own.
