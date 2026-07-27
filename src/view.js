@@ -970,10 +970,11 @@ export class GameView {
     const titleOffset = 26
     const listHeight =
       (SHOP.length + 1) * rowHeight + SHOP_LAYOUT.groupGap * SHOP_LAYOUT.groupsEndAt.length
-    // Clear of the hint that sits under the list, since the two were close enough to read
-    // as one block. LAUNCH sits on the first of these lines and OPTIONS on the second.
-    const launchOffset = headerHeight + listHeight + 62
-    const optionsOffset = launchOffset + 30
+    // LAUNCH sits on the first of these lines and OPTIONS on the second, both centred on
+    // the page under the title rather than over the list: what the page is for, and the
+    // way out of it, belong to the page.
+    const launchOffset = headerHeight + listHeight + 44
+    const optionsOffset = launchOffset + 34
     const lastOffset = optionsOffset + (game.devMode ? 26 : 0)
     const blockTop = Math.max(24, Math.round((VIEW_H - titleOffset - lastOffset) / 2))
 
@@ -1140,30 +1141,50 @@ export class GameView {
       launchSelected = game.shopSelection === game.launchRow,
       optionsSelected = game.shopSelection === game.optionsRow
     const rowWidth = rightX - leftX + 24
+    const bandX = VIEW_W / 2 - rowWidth / 2
     if (launchSelected) {
-      r.rect(leftX - 16, launchY - 19, rowWidth, 28, { fill: "rgba(87,227,154,.16)" })
+      r.rect(bandX, launchY - 22, rowWidth, 32, { fill: "rgba(87,227,154,.16)" })
     }
     if (optionsSelected) {
-      r.rect(leftX - 16, optionsY - 17, rowWidth, 26, { fill: "rgba(95,215,255,.12)" })
+      r.rect(bandX, optionsY - 17, rowWidth, 26, { fill: "rgba(95,215,255,.12)" })
     }
-    // Where the item names above start, once their own two-space placeholder is counted.
-    const labelX = leftX + 17 * 0.45 * 2
+    // Centred on the page rather than set with the item names: these two are what the
+    // page is for and the way out of it, not two more things to buy. The cursor is placed
+    // against the label's own width, since a leading space inside it would be a different
+    // width at each of their two sizes and would move the text as well as marking it.
+    const launchLabel = `LAUNCH TO SECTOR ${game.shopSector}`
+    const launchSize = 24,
+      optionsSize = 16
+    const cursorAt = (label, size) => VIEW_W / 2 - textWidth(label, size) / 2 - size * 0.75
     if (launchSelected) {
-      r.text(">", leftX, launchY, { size: 18, bold: true, color: PALETTE.ui.goodBright })
+      r.text(">", cursorAt(launchLabel, launchSize), launchY, {
+        size: launchSize,
+        bold: true,
+        color: PALETTE.ui.goodBright,
+      })
     }
-    r.text(`LAUNCH TO SECTOR ${game.shopSector}`, labelX, launchY, {
-      size: 18,
+    r.text(launchLabel, VIEW_W / 2, launchY, {
+      size: launchSize,
       bold: true,
-      color: PALETTE.ui.goodBright,
-      glow: launchSelected ? 16 : 8,
+      // Lit when the cursor is on it, as every other row is. It was drawn in the bright
+      // green whether it was selected or not, so the one line the page is for looked the
+      // same in both states and read as permanently highlighted.
+      color: launchSelected ? PALETTE.ui.goodBright : PALETTE.ui.good,
+      align: "center",
+      glow: launchSelected ? 18 : 6,
     })
     if (optionsSelected) {
-      r.text(">", leftX, optionsY, { size: 15, bold: true, color: PALETTE.text.bright })
+      r.text(">", cursorAt("OPTIONS", optionsSize), optionsY, {
+        size: optionsSize,
+        bold: true,
+        color: PALETTE.text.bright,
+      })
     }
-    r.text("OPTIONS", labelX, optionsY, {
-      size: 15,
+    r.text("OPTIONS", VIEW_W / 2, optionsY, {
+      size: optionsSize,
       bold: optionsSelected,
       color: optionsSelected ? PALETTE.text.bright : PALETTE.text.normal,
+      align: "center",
     })
     // The dev line stays: free purchases and a sector you can walk to are not things
     // a player would look for, and the x10 modifier is not visible anywhere else.

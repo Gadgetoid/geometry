@@ -3647,7 +3647,7 @@ test("a saved run drops a special the registry no longer knows", () => {
   assert.deepEqual(carried(resumed), ["repel"])
 })
 
-test("launch sits above options, both starting where the item names do", () => {
+test("launch sits above options, both centred under the list", () => {
   const game = liveGame()
   game.enterShop()
   const drawn = []
@@ -3665,17 +3665,34 @@ test("launch sits above options, both starting where the item names do", () => {
   const hint = drawn.find((row) => row.text.startsWith("Patch the hull"))
   assert.ok(launch && options && hint, "all three are drawn")
   assert.ok(launch.y < options.y, "launch is the line above")
-  // Left-aligned together, and to the same pixel: they are set at different sizes, and a
-  // leading space is proportional to its size, so a placeholder inside the label put the
-  // smaller of them a couple of pixels to the left of the larger.
-  assert.equal(options.x, launch.x, "and starts in the same column")
+  // Centred on the same axis, and on the list they sit under rather than on the page:
+  // these two are what the page is for and the way out of it, not two more purchases.
+  assert.equal(options.x, launch.x, "and on the same axis")
   const names = drawn.filter((row) => row.size === 17 && /^(TURRET|ENGINE)$/.test(row.text))
   assert.ok(names.length, "the item rows are drawn")
-  assert.ok(
-    Math.abs(names[0].x + 17 * 0.45 * 2 - launch.x) < 0.01,
-    "which is where the item names begin, once their own placeholder is counted",
-  )
-  assert.ok(launch.y - hint.y > 40, "and clear of the hint above them")
+  assert.ok(launch.x > names[0].x, "which is not where the item names start")
+  // The bigger of the two, since it is the one the page is for.
+  assert.ok(launch.size > options.size, "and launch is the larger")
+
+  // Lit when the cursor is on it, as every other row is: it was drawn in the bright
+  // green either way, so the one line the page is for looked permanently highlighted.
+  const launchColour = () => {
+    const found = []
+    const renderer = new Proxy(
+      {
+        text: (text, x, y, opts) =>
+          found.push({ text: String(text).trim(), colour: opts && opts.color }),
+      },
+      { get: (target, key) => (key in target ? target[key] : () => {}) },
+    )
+    new GameView(renderer).render(game)
+    return found.find((row) => row.text.startsWith("LAUNCH TO SECTOR")).colour
+  }
+  game.shopSelection = 0
+  const resting = launchColour()
+  game.shopSelection = game.launchRow
+  assert.notEqual(launchColour(), resting, "it lifts when the cursor lands on it")
+  assert.equal(launchColour(), PALETTE.ui.goodBright)
 })
 
 test("a repair costs what is missing, against the price of a spare ship", () => {
