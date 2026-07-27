@@ -6397,6 +6397,49 @@ function polysDrawn(entity, game) {
   return polys
 }
 
+test("exhaust comes out of every nozzle, on the player's hull as on any other", () => {
+  // The player threw one plume from the middle of the hull while the flames were drawn
+  // at the nozzles, which on a hull with a pair of them is a stream from between them.
+  const game = liveGame()
+  const player = game.player
+  beSolid(player)
+  player.angle = 0 // exhaust runs back along -x, so the nozzles are told apart by y
+  const startsAcross = (ship) => {
+    game.particles.length = 0
+    for (let i = 0; i < 40; i++) {
+      ship.thrustPlume(1 / 60, game)
+    }
+    return new Set(game.particles.map((q) => Math.round(q.y - ship.y)))
+  }
+  const single = startsAcross(player)
+  assert.ok(single.size > 0, "the one nozzle throws something")
+
+  // A hull with two of them throws from both, in two groups either side of the middle.
+  game.openDevMenu()
+  game.openPausePage("devShip")
+  game
+    .pauseMenu()
+    .find((row) => row.name === "FRIGATE")
+    .action(game)
+  game.paused = false
+  const pair = game.player
+  pair.angle = 0
+  const nozzles = pair.hardpoints.filter((hp) => hp.module && hp.module.kind === "engine")
+  assert.equal(nozzles.length, 2, "the hull for this test must have a pair")
+  const offsets = [...startsAcross(pair)]
+  for (const hp of nozzles) {
+    const at = pair.mountWorld(hp.local).y - pair.y
+    assert.ok(
+      offsets.some((off) => Math.abs(off - at) <= 4),
+      `a plume starts at the nozzle ${at.toFixed(0)} across, got ${offsets.join(", ")}`,
+    )
+  }
+  assert.ok(
+    !offsets.some((off) => Math.abs(off) <= 2),
+    "and none from between them, where the hull has no nozzle",
+  )
+})
+
 test("the thruster flame is the engine's, so any hull with one burns", () => {
   const game = liveGame()
   const flameOf = (entity) => {

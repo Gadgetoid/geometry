@@ -1748,6 +1748,18 @@ export class Ship extends Entity {
     )
   }
 
+  // Exhaust, from every nozzle the hull has: each engine throws its own at its own
+  // rate, so a hull with a pair of them leaves two streams and one with a wide throat
+  // leaves a broad one. The flame at the throat is drawn from the same mounts.
+  thrustPlume(dt, game) {
+    const back = this.angle + Math.PI
+    for (const hp of this.hardpoints) {
+      if (hp.module && hp.module.kind === "engine") {
+        hp.module.emit(dt, game, this.mountWorld(hp.local), back)
+      }
+    }
+  }
+
   // What is fitted, and what the hull does with it. One method for every ship, so a
   // rival that turned up carrying an extra gun and a player who has just bought one
   // are worked out the same way, through the relationships in flightStats. Called
@@ -2446,14 +2458,7 @@ export class PlayerShip extends Ship {
         this.energy -= CONFIG.THRUST_COST * dt
       }
       const back = this.angle + Math.PI
-      game.emit(
-        this.x + Math.cos(back) * this.radius,
-        this.y + Math.sin(back) * this.radius,
-        Math.cos(back) * randRange(60, 140) + randRange(-30, 30),
-        Math.sin(back) * randRange(60, 140) + randRange(-30, 30),
-        0.35,
-        PALETTE.player.exhaust,
-      )
+      this.thrustPlume(dt, game)
       // exhaust wash gently shoves rocks caught behind the thruster away
       const bx = Math.cos(back),
         by = Math.sin(back)
@@ -2917,7 +2922,7 @@ export class RivalShip extends Ship {
     this.vy *= Math.pow(this.drag, dt)
     this.integrate(dt)
 
-    this.#thrust(dt, game)
+    this.thrustPlume(dt, game)
 
     for (let i = game.oreChunks.length - 1; i >= 0; i--) {
       if (
@@ -3002,15 +3007,6 @@ export class RivalShip extends Ship {
   #awayFrom(body) {
     const out = bearingTo(body, this)
     return { x: this.x + Math.cos(out) * 400, y: this.y + Math.sin(out) * 400 }
-  }
-
-  #thrust(dt, game) {
-    const back = this.angle + Math.PI
-    for (const hp of this.hardpoints) {
-      if (hp.module && hp.module.kind === "engine") {
-        hp.module.emit(dt, game, this.mountWorld(hp.local), back)
-      }
-    }
   }
 
   // Rivals are solid: they shoulder rocks aside instead of flying through them.
