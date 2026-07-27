@@ -4199,32 +4199,70 @@ test("an alien beam bends the space along it, and an honest one bends nothing", 
   assert.equal(ours.lenses.length, 0, "nothing of ours bends space")
 })
 
-test("a well pulls what is loose, and not other wells", () => {
-  // Two of them inside each other's reach pull each other, and nothing takes that energy
-  // back out again: a sector the player had thrown several into wound one up to 4,400
-  // units a second against the 80 the gun throws them at. The same goes for a wind-up
-  // drawing things in, which is why a ship that had overtaken its own well towed it.
+test("wells fall toward each other, and cannot wind each other up past a limit", () => {
+  // Two inside each other's reach pull each other, which is worth watching. Nothing in
+  // the sector takes that energy back out again, so left unbounded they wound each other
+  // up to 4,400 units a second: fifty times what one is thrown at, and far past anything
+  // the player can fly away from.
+  const spec = WEAPON_TYPES.singularityGun
   const game = liveGame()
   beSolid(game.player)
   game.player.x = -9000
   game.player.y = -9000
-  const spec = WEAPON_TYPES.singularityGun
-  const wells = [0, 60, 120].map(
-    (offset) => new Singularity(400 + offset, 320, spec.speed, 0, 0, null, spec),
-  )
-  game.projectiles.push(...wells)
+  game.asteroids = [new Asteroid({ x: 60, y: 60, radius: 30 })] // so the sector stays live
+  const pair = [0, 160].map((offset) => new Singularity(400 + offset, 320, 0, 0, 0, null, spec))
+  game.projectiles.push(...pair)
+  const apartAt = () => Math.abs(pair[1].x - pair[0].x)
+  const started = apartAt()
+  let closest = started
   let peak = 0
   for (let frame = 0; frame < 180; frame++) {
     game.advance(1 / 60)
-    for (const well of wells) {
-      if (!well.dead) {
-        peak = Math.max(peak, Math.hypot(well.vx, well.vy))
-      }
+    if (pair.every((well) => !well.dead)) {
+      closest = Math.min(closest, apartAt())
+      peak = Math.max(peak, ...pair.map((well) => Math.hypot(well.vx, well.vy)))
     }
   }
+  assert.ok(closest < started * 0.6, `they fall together, ${started} apart down to ${closest}`)
+  assert.ok(peak > 0, "which means they are moving at all")
   assert.ok(
-    peak <= spec.speed + 1,
-    `three of them together stay at the speed they were thrown, got ${peak.toFixed(0)}`,
+    peak <= spec.well.terminal + 20,
+    `and neither outruns the ship watching them, got ${peak.toFixed(0)}`,
+  )
+})
+
+test("every gun a flown hull carries is drawn on it", () => {
+  // The player's draw path drew the one mount the shop fits, so a hull flown out of the
+  // dev page fired from four mounts with nothing on any of them.
+  const drawnTurrets = (game) => {
+    const nubs = []
+    const renderer = new Proxy(
+      { circle: (x, y, r, opts) => nubs.push({ r, stroke: opts && opts.stroke }) },
+      { get: (target, key) => (key in target ? target[key] : () => {}) },
+    )
+    new GameView(renderer).render(game)
+    return nubs.filter((nub) => Math.abs(nub.r - 3.4) < 0.01)
+  }
+  const game = liveGame()
+  beSolid(game.player)
+  game.asteroids = [new Asteroid({ x: 60, y: 60, radius: 30 })] // so the sector stays live
+  game.openDevMenu()
+  game.openPausePage("devShip")
+  game
+    .pauseMenu()
+    .find((row) => row.name === "ALIEN FRIGATE")
+    .action(game)
+  game.paused = false
+  const player = beSolid(game.player)
+  const guns = player.hardpoints.filter(
+    (hp) => hp.module && hp.module.kind === "weapon" && hp.role !== "nose",
+  )
+  assert.equal(guns.length, 4, "the hull for this test carries four")
+  const drawn = drawnTurrets(game)
+  assert.equal(drawn.length, guns.length, "one drawn per gun on the hull")
+  assert.ok(
+    drawn.every((nub) => nub.stroke === PALETTE.alien.turret),
+    "in the colour of whoever's hull it is",
   )
 })
 

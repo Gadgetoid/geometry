@@ -682,6 +682,11 @@ export const WEAPON_TYPES = {
     // It arrives as a point and opens out over `grow` seconds, so what it does grows with
     // it: a well is at its worst once it is fully there.
     well: {
+      // The fastest one is ever seen to move. They pull each other, which is worth
+      // watching, and left unbounded they wind each other up past anything the player
+      // can fly away from: three times the speed one is thrown at is quick enough to
+      // read as falling together and slow enough to still be a place to be away from.
+      terminal: 240,
       radius: 210,
       bite: 120,
       pull: 340,

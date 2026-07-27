@@ -954,12 +954,6 @@ export class Weapon {
       radius: spec.radius,
       include: ["projectiles"],
       visit: (shot, { dir, falloff }) => {
-        // Loose shot, not other wells. A ship that has overtaken its own well was towing
-        // it along at twice its speed, which is not what drawing in what is loose means:
-        // a well is the thing being made rather than raw material for it.
-        if (shot.type && shot.type.well) {
-          return
-        }
         shot.vx -= dir.x * pull * falloff * dt
         shot.vy -= dir.y * pull * falloff * dt
       },
@@ -1931,18 +1925,13 @@ export class Ship extends Entity {
     this.hardpoints = list.map((hp) => ({ local: hp.local, role: hp.role, module: null }))
   }
 
-  // How big the guns on this hull are drawn. A turret is one fixed size in world units,
-  // which on a hull five times the length of the player's is a speck: a pincer read as
-  // carrying none at all. It grows with the hull it is bolted to instead, so a gun is
-  // legible whatever it is on.
-  get turretScale() {
-    return clamp(this.boundRadius / 20, 1, 3)
-  }
-
   // What the guns on this hull are drawn in. Whose they are, rather than what they are:
   // a hull ringed with guns should read as its faction's from across the sector.
   get turretColour() {
-    return this.type && this.type.faction === "alien" ? PALETTE.alien.turret : PALETTE.weapon.gun
+    if (this.type && this.type.faction === "alien") {
+      return PALETTE.alien.turret
+    }
+    return this.type && this.type.faction === "player" ? PALETTE.player.turret : PALETTE.weapon.gun
   }
 
   hardpointByRole(role) {
@@ -2031,11 +2020,7 @@ export class Ship extends Entity {
       if (m.type.kind === "projectile") {
         // pointed where the controller points it, so a heavy turret is legible
         const aim = trackedAim(seen, hp, w, this.angle)
-        const scale = this.turretScale
-        drawTurret(renderer, w.x, w.y, aim, m.barrels, this.turretColour, {
-          length: 8 * scale,
-          scale,
-        })
+        drawTurret(renderer, w.x, w.y, aim, m.barrels, this.turretColour, { length: 8 })
       } else if (hp.role === "nose") {
         renderer.line(w.x, w.y, w.x + Math.cos(this.angle) * 8, w.y + Math.sin(this.angle) * 8, {
           color: m.type.colour,
@@ -2928,11 +2913,20 @@ export class PlayerShip extends Ship {
       )
     }
 
-    if (this.hasTurret()) {
-      const aim = this.turretAim || 0
-      const mount = this.mountWorld(this.aux.local)
-      const barrels = this.aux.module ? this.aux.module.barrels : 1
-      drawTurret(renderer, mount.x, mount.y, aim, barrels, PALETTE.player.turret, {
+    // Every gun the hull carries that is not the one on its nose, rather than only the
+    // one the shop fitted: a hull flown out of the dev page brings its own, and they were
+    // firing from mounts with nothing drawn on them.
+    for (const hp of this.hardpoints) {
+      const gun = hp.module
+      if (!gun || gun.kind !== "weapon" || hp.role === "nose") {
+        continue
+      }
+      // The one under the player's own hand points where they are aiming; the hull's own
+      // point where their controller has them pointed.
+      const own = hp === this.aux
+      const aim = own ? this.turretAim || 0 : (hp.aim ?? this.angle)
+      const mount = this.mountWorld(hp.local)
+      drawTurret(renderer, mount.x, mount.y, aim, gun.barrels, this.turretColour, {
         length: 12,
         alpha: fade,
       })
@@ -3829,6 +3823,19 @@ export class Singularity extends Projectile {
     this.life -= dt
     this.age += dt
     this.steer(dt, game) // it leans after its target, as the orbs do
+    // Two of them inside each other's reach pull each other, and nothing in the sector
+    // takes that energy back out again: left alone they wind each other up past 4,000
+    // units a second, which is fifty times what one is thrown at. They still fall
+    // together, which is worth watching; they simply cannot outrun the ship doing the
+    // watching. `terminal` is the fastest one is ever seen to move.
+    const limit = this.type.well.terminal
+    if (limit) {
+      const speed = Math.hypot(this.vx, this.vy)
+      if (speed > limit) {
+        this.vx = (this.vx / speed) * limit
+        this.vy = (this.vy / speed) * limit
+      }
+    }
     this.integrate(dt)
     const well = this.type.well
     const grown = this.grown
@@ -3840,12 +3847,6 @@ export class Singularity extends Projectile {
       include: ["projectiles"],
       skip: this,
       visit: (shot, { dir, falloff }) => {
-        // Loose shot, not other wells. Two of them inside each other's reach pull each
-        // other, and nothing takes that energy back out: a field with several in it wound
-        // them up to 4,400 units a second, which is fifty times what one is thrown at.
-        if (shot.type && shot.type.well) {
-          return
-        }
         shot.vx -= dir.x * well.pull * grown * falloff * dt
         shot.vy -= dir.y * well.pull * grown * falloff * dt
       },
