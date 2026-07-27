@@ -577,6 +577,16 @@ export const WEAPON_TYPES = {
     // takes four seconds to come about, and it does not live that long.
     homing: { turn: 0.8, reach: 700 },
     shot: { radius: 5.5, streak: 0, pulse: 9 },
+    // It lands like something with weight behind it: a shower of green off the point of
+    // contact, a ring going out with it and a good shove of the screen. A round that
+    // reaches nothing still comes apart, rather than winking out of existence.
+    impact: {
+      particles: 26,
+      colour: PALETTE.alien.shot,
+      speed: [70, 280],
+      ring: { count: 14, speed: 210 },
+      shake: 13,
+    },
     colour: PALETTE.alien.shot,
     survivesDebris: true,
   },
@@ -739,7 +749,13 @@ export const SHIELD_TYPES = {
     solid: false,
     efficiency: { laser: 1.15 },
     blocks: ["laser"],
-    repel: { force: 900, energyPerPush: 0.02 },
+    repel: {
+      // Rock is leant on, shot is turned away before it can arrive, and a hull is held
+      // off: enough that the last stretch of an approach has to be earned, not enough
+      // that it cannot be flown at all.
+      force: { asteroids: 900, projectiles: 3600, player: 800, rivals: 800 },
+      energyPerPush: 0.02,
+    },
     // It stands well clear of the hull, because a field that pushes needs somewhere to
     // push in: at the bubble's own radius the pincer had 30 units of standoff against a
     // hull reaching 92, and a rock was through it before it had leant on anything.

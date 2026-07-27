@@ -1062,20 +1062,27 @@ export class Shield {
       return
     }
     let spent = 0
-    game.applyRadialForce({
-      centre: host,
-      radius,
-      include: ["asteroids", "projectiles"],
-      toSurface: true,
-      skip: host,
-      visit: (body, { dir, falloff }) => {
-        const push = spec.force * falloff * dt
-        const mass = body.mass ?? 1
-        body.vx += (dir.x * push) / mass
-        body.vy += (dir.y * push) / mass
-        spent += push
-      },
-    })
+    // A force per kind of thing, because the intent differs: a boulder is leant on, a
+    // round has to be turned aside before it arrives, and a hull is held off without
+    // being made unable to close at all. Cost is the momentum turned away whichever it
+    // is, so the round that takes the most force to deflect is also the one that costs
+    // the most to deflect.
+    for (const [include, force] of Object.entries(spec.force)) {
+      game.applyRadialForce({
+        centre: host,
+        radius,
+        include: [include],
+        toSurface: true,
+        skip: host,
+        visit: (body, { dir, falloff }) => {
+          const push = force * falloff * dt
+          const mass = body.mass ?? 1
+          body.vx += (dir.x * push) / mass
+          body.vy += (dir.y * push) / mass
+          spent += push
+        },
+      })
+    }
     if (spent > 0) {
       host.energy = Math.max(0, host.energy - spent * spec.energyPerPush)
       this.checkOverload(host)
@@ -1161,37 +1168,84 @@ export class Projectile extends Entity {
       this.life <= 0 ||
       Math.hypot(this.x - ARENA.cx, this.y - ARENA.cy) > ARENA.radius + CONFIG.BULLET_ESCAPE_MARGIN
     ) {
-      this.dead = true
+      this.#expire(game)
       return
     }
     // The player is hit against its outline, as every other ship is: a circle
     // of `radius` is twice the hull's area and still leaves the nose outside it.
     const player = game.player
     if (player && this.owner !== player && player.inPlay() && this.#reaches(player)) {
-      this.dead = true
-      game.burst(this.x, this.y, 8, PALETTE.weapon.bulletImpact, 40, 140, 0.4)
-      game.screenShake = Math.max(game.screenShake, 5)
-      Sound.hit()
-      player.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
+      this.#strike(game, player, PALETTE.weapon.bulletImpact, 8)
       return
     }
     for (const rival of game.rivals) {
       if (rival === this.owner || !rival.inPlay() || !this.#reaches(rival)) {
         continue
       }
-      this.dead = true
-      game.burst(this.x, this.y, 6, PALETTE.rival.hull, 40, 130, 0.4)
-      rival.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
+      this.#strike(game, rival, PALETTE.rival.hull, 6)
       return
     }
     for (const asteroid of game.asteroids) {
       if (asteroid === this.owner || !this.#reaches(asteroid)) {
         continue
       }
-      this.dead = true
-      game.burst(this.x, this.y, 5, PALETTE.rock.impact, 30, 110, 0.3)
-      asteroid.takeDamage(this.damage, game, "projectile", 0, { x: this.x, y: this.y })
+      this.#strike(game, asteroid, PALETTE.rock.impact, 5)
       return
+    }
+  }
+
+  // What a round is worth where it lands. `impact` is the gun's: how much comes off it,
+  // how hard the screen moves and whether the ring goes with it. A gun that says nothing
+  // gets what every gun always got, which is a handful of sparks in the struck body's
+  // own colour and a shake only the player feels.
+  //
+  // One place for it, because a shot dies in four and the loud ones have to be loud
+  // wherever that happens.
+  #strike(game, body, colour, sparks) {
+    this.dead = true
+    const impact = (this.type && this.type.impact) || null
+    const at = { x: this.x, y: this.y }
+    const hitPlayer = body === game.player
+    if (impact) {
+      const [slow, fast] = impact.speed
+      game.burst(at.x, at.y, impact.particles, impact.colour, slow, fast, 0.6)
+      if (impact.ring) {
+        game.ring(at.x, at.y, impact.ring.count, impact.colour, impact.ring.speed, 0.5)
+      }
+      // The shake is what the shot weighs, and it is the player's screen: a round
+      // landing on something else across the sector does not move it.
+      if (hitPlayer && impact.shake) {
+        game.screenShake = Math.max(game.screenShake, impact.shake)
+      }
+    } else {
+      game.burst(at.x, at.y, sparks, colour, 40, 140, 0.4)
+      if (hitPlayer) {
+        game.screenShake = Math.max(game.screenShake, 5)
+      }
+    }
+    if (hitPlayer) {
+      Sound.hit()
+    }
+    body.takeDamage(this.damage, game, "projectile", 0, at)
+  }
+
+  // Run out of life, or left the arena. A round that says how it lands comes apart the
+  // same way here: an orb that has failed to reach anything still goes off, rather than
+  // winking out of existence.
+  #expire(game) {
+    this.dead = true
+    const impact = this.type && this.type.impact
+    if (impact) {
+      const [slow, fast] = impact.speed
+      game.burst(
+        this.x,
+        this.y,
+        Math.round(impact.particles * 0.6),
+        impact.colour,
+        slow * 0.7,
+        fast * 0.7,
+        0.5,
+      )
     }
   }
 

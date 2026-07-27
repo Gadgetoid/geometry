@@ -1312,16 +1312,21 @@ test("the alien field leans on what comes near it and pays for what it turns awa
   }
   assert.equal(alone.energy, held, "in open space it costs nothing at all")
 
-  // And the more there is to lean on, the faster it goes.
+  // And the more there is to lean on, the faster it goes. The core alone, so what is
+  // measured is the field and nothing else: a hull spends from the same cell every time
+  // one of its guns goes off, and one orb costs more than a rock in the field does.
+  const fieldOnly = SHIP_TYPES.alienFrigate.loadout.filter((entry) => entry.core)
   const drain = (rocks) => {
     const g = liveGame()
     g.player.x = -9000
     g.player.y = -9000
-    const host = plainRival(500, 320, "alienFrigate")
+    const host = plainRival(500, 320, "alienFrigate", fieldOnly)
     host.regen = 0
     g.rivals = [host]
+    // Rocks that do not turn, so a corner cannot rotate in and out of the field and
+    // make the same arrangement cost a different amount twice.
     g.asteroids = rocks.map(
-      ([dx, dy]) => new Asteroid({ vertices: square(500 + dx, 320 + dy, 45) }),
+      ([dx, dy]) => new Asteroid({ vertices: square(500 + dx, 320 + dy, 45), spin: 0 }),
     )
     const before = host.energy
     for (let i = 0; i < 60; i++) {
@@ -1374,30 +1379,56 @@ test("the alien field is not a wall: it is passed through by what pushes hard en
   assert.equal(alien.blockingRadius("projectile"), 0, "and shot is not blocked, but repelled")
 })
 
-test("a slow orb is turned away where a fast round gets through", () => {
-  const closest = (gun) => {
+test("the field turns shot away, so a stream of it cannot take a pincer apart", () => {
+  // What a flak turret was doing before the field repelled shot: taking a pincer to
+  // pieces. A round now has to push through a field that leans harder the closer it
+  // comes, and what matters is whether it arrives at all.
+  const fireAt = (gun, rounds) => {
     const game = liveGame()
     game.player.x = -9000
     game.player.y = -9000
-    const alien = plainRival(500, 320, "alienFrigate")
+    game.asteroids = [new Asteroid({ vertices: square(-600, -600, 40), spin: 0 })]
+    // The core alone: what is being measured is what reaches the hull, not what the
+    // hull's own guns spend holding the field up.
+    const alien = plainRival(
+      500,
+      320,
+      "alienFrigate",
+      SHIP_TYPES.alienFrigate.loadout.filter((entry) => entry.core),
+    )
     game.rivals = [alien]
     const type = WEAPON_TYPES[gun]
-    const shot = new Projectile(700, 320, -type.speed, 0, 10, null, type)
-    game.projectiles = [shot]
-    let near = Infinity
-    for (let i = 0; i < 180 && !shot.dead; i++) {
-      game.advance(1 / 60)
-      near = Math.min(near, Math.hypot(shot.x - alien.x, shot.y - alien.y))
+    const full = alien.hull
+    let lowest = alien.energy
+    for (let shot = 0; shot < rounds; shot++) {
+      const round = new Projectile(900, 320, -type.speed, 0, type.damage, null, type)
+      game.projectiles = [round]
+      for (let i = 0; i < 200 && !round.dead; i++) {
+        alien.x = 500
+        alien.y = 320
+        alien.vx = 0
+        alien.vy = 0
+        game.advance(1 / 60)
+        lowest = Math.min(lowest, alien.energy)
+      }
     }
-    return near
+    // The lowest the cell got, not where it ended: a round is turned away in a fraction
+    // of a second and the core refills between them, so the cost only shows while it is
+    // being paid.
+    return { lost: full - alien.hull, lowest }
   }
-  const slow = closest("warpOrb")
-  const fast = closest("autocannon")
+
+  const flak = fireAt("defenseFlak", 12)
+  assert.equal(flak.lost, 0, "twelve flak rounds must not take a single point of hull")
   assert.ok(
-    fast < slow,
-    `a fast round reaches ${fast.toFixed(0)}, a slow orb only ${slow.toFixed(0)}`,
+    flak.lowest < SHIP_TYPES.alienFrigate.energyMax,
+    "and turning them away cost the field while it was doing it",
   )
-  assert.ok(fast < SHIP_TYPES.alienFrigate.boundRadius, "the fast one reaches the hull")
+
+  // The beam is the answer instead, which is a channel the field absorbs rather than
+  // repels: it pays energy for that and cannot be shot to pieces around it.
+  const orbs = fireAt("warpOrb", 6)
+  assert.equal(orbs.lost, 0, "nor do its own orbs, fired back at it")
 })
 
 test("the frigate's cell soaks far more shot than beam", () => {
@@ -2215,6 +2246,55 @@ test("an alien orb leans after what it was fired at", () => {
     game.advance(1 / 60)
   }
   assert.equal(heading(), held, "a ball with nothing behind it flies on as it was")
+})
+
+test("an orb lands with weight, and comes apart even if it reaches nothing", () => {
+  const shoot = (gun, place) => {
+    const game = liveGame()
+    beSolid(game.player)
+    // Shielded, so the round is absorbed: an unshielded player loses a life to anything
+    // that lands, and the shake of dying is louder than the shake being measured.
+    withEquipment(game, "shield", "playerShieldMk4")
+    game.player.x = 500
+    game.player.y = 320
+    // One rock, well out of the way. An empty field is a cleared sector, and a cleared
+    // sector sends the run to the shop and empties the projectile list part way through
+    // the measurement.
+    game.asteroids = [new Asteroid({ vertices: square(200, 620, 40), spin: 0 })]
+    const type = WEAPON_TYPES[gun]
+    const shot = new Projectile(place.x, place.y, place.vx, 0, 10, null, type)
+    game.projectiles = [shot]
+    game.screenShake = 0
+    for (let i = 0; i < 300 && !shot.dead; i++) {
+      game.player.x = 500
+      game.player.y = 320
+      game.advance(1 / 60)
+    }
+    // Counted by colour: the sector is full of particles the ship's own drive is
+    // throwing, and what is being measured is what came off the round.
+    const colour = (type.impact && type.impact.colour) || PALETTE.weapon.bulletImpact
+    const made = game.particles.filter((p) => p.color === colour).length
+    return { shot, made, shake: game.screenShake }
+  }
+
+  // On the hull: much more comes off it than off an ordinary round, and the screen
+  // moves for it.
+  const orb = shoot("warpOrb", { x: 620, y: 320, vx: -WEAPON_TYPES.warpOrb.speed })
+  const round = shoot("autocannon", { x: 620, y: 320, vx: -WEAPON_TYPES.autocannon.speed })
+  assert.ok(orb.shot.dead && round.shot.dead, "both landed")
+  assert.ok(
+    orb.made > round.made * 2,
+    `an orb should throw far more than a round: ${orb.made} against ${round.made}`,
+  )
+  assert.ok(
+    orb.shake > round.shake,
+    `and shake the screen harder: ${orb.shake} against ${round.shake}`,
+  )
+
+  // And one that reaches nothing at all still goes off where it ran out.
+  const spent = shoot("warpOrb", { x: 500, y: 320, vx: 0 })
+  assert.ok(spent.shot.dead, "it expired")
+  assert.ok(spent.made > 0, "leaving something behind rather than winking out")
 })
 
 test("every alien hull carries alien guns", () => {
