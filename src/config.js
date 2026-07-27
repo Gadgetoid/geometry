@@ -1438,9 +1438,10 @@ const SHIP_DESIGNS = {
   // over: a hull is still a shape, two numbers and what is bolted to it, and being
   // alien is a faction, a colour and (to come) how it is drawn.
   //
-  // They arrive later than their rival counterparts because they share the rivals'
-  // arrival budget until they have one of their own, so an alien turning up is a
-  // rival that did not. `fromSector` is the one dial for that, per hull.
+  // They are held back to the last stretch of the run, from sector 20: the sectors
+  // before that are the game the player has learnt, and they also share the rivals'
+  // arrival budget until they have one of their own, so an alien turning up is a rival
+  // that did not. `fromSector` is the one dial for both, per hull.
   // ---------------------------------------------------------------------------
   // A pincer, the same length as a frigate and three times as wide, with its mouth
   // facing forward and a spike down the middle of it. Nothing about the shape is
@@ -1526,7 +1527,7 @@ const SHIP_DESIGNS = {
         fitted: { shield: "bulwark", radar: "huntingArray", thruster: "siegeJets" },
       },
     ],
-    spawn: { fromSector: 14, weight: 2, maxConcurrent: 1 },
+    spawn: { fromSector: 22, weight: 2, maxConcurrent: 1 },
     hunts: true,
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
@@ -1585,7 +1586,7 @@ const SHIP_DESIGNS = {
       },
       shield: { hp: 2, slot: "shield", shield: "standard", chancePerSector: 0.12, chanceCap: 0.8 },
     },
-    spawn: { fromSector: 12, weight: 6, maxConcurrent: 2 },
+    spawn: { fromSector: 20, weight: 6, maxConcurrent: 2 },
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
     killScore: 400,
@@ -1642,7 +1643,7 @@ const SHIP_DESIGNS = {
         chanceCap: 0.85,
       },
     },
-    spawn: { fromSector: 12, weight: 2, maxConcurrent: 1 },
+    spawn: { fromSector: 20, weight: 2, maxConcurrent: 1 },
     hunts: true,
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 260, ring: 19, shake: 10 },
