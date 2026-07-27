@@ -968,7 +968,8 @@ export class GameView {
     const rowHeight = 36
     const headerHeight = 114 // the title, the stats and the ore, above the first row
     const titleOffset = 26
-    const listHeight = (SHOP.length + 1) * rowHeight + SHOP_LAYOUT.groupGap
+    const listHeight =
+      (SHOP.length + 1) * rowHeight + SHOP_LAYOUT.groupGap * SHOP_LAYOUT.groupsEndAt.length
     // Clear of the hint that sits under the list, since the two were close enough to read
     // as one block. LAUNCH sits on the first of these lines and OPTIONS on the second.
     const launchOffset = headerHeight + listHeight + 62
@@ -1029,13 +1030,16 @@ export class GameView {
           fill: "rgba(95,215,255,.12)",
         })
       }
+      // A gap under the last row of a group, so the page reads as what a run needs, then
+      // the core and what it carries, then what is bolted to the hull outside it.
+      const gap = SHOP_LAYOUT.groupsEndAt.includes(row) ? SHOP_LAYOUT.groupGap : 0
       const item = game.shopItem(row)
       if (!item) {
         slotsY = y
         // The specials row is the last of what the core carries, so it is inset with
         // the shield and the radar and the gap falls under the group.
         this.#shopSlots(game, leftX + SHOP_LAYOUT.insetBy, infoX, y, selected)
-        y += rowHeight + SHOP_LAYOUT.groupGap
+        y += rowHeight + gap
         continue
       }
       const maxed = item.maxed(game),
@@ -1107,7 +1111,7 @@ export class GameView {
                 : PALETTE.text.disabled,
         align: "right",
       })
-      y += rowHeight
+      y += rowHeight + gap
     }
 
     // What the cursor is on says what it does, and a slot with something in it speaks

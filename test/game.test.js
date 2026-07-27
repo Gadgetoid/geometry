@@ -47,6 +47,7 @@ import {
   SHIP_PLATING,
   SHIP_SCALARS,
   SHOP,
+  SHOP_LAYOUT,
   OVER_MENU,
   UI_SCALES,
   VIEW_W,
@@ -3661,7 +3662,7 @@ test("launch sits above options, both starting where the item names do", () => {
   const find = (match) => drawn.find((row) => match.test(row.text))
   const launch = find(/^LAUNCH TO SECTOR/)
   const options = find(/^OPTIONS$/)
-  const hint = drawn.find((row) => row.text === "One more spare ship.")
+  const hint = drawn.find((row) => row.text.startsWith("Patch the hull"))
   assert.ok(launch && options && hint, "all three are drawn")
   assert.ok(launch.y < options.y, "launch is the line above")
   // Left-aligned together, and to the same pixel: they are set at different sizes, and a
@@ -3677,10 +3678,53 @@ test("launch sits above options, both starting where the item names do", () => {
   assert.ok(launch.y - hint.y > 40, "and clear of the hint above them")
 })
 
+test("a repair costs what is missing, against the price of a spare ship", () => {
+  // Damage carries between sectors and nothing else puts a hull back, so the yard sells
+  // it: patching one to whole is worth what losing it would have cost, and a scratch is
+  // worth a scratch.
+  const game = liveGame()
+  const player = beSolid(game.player)
+  game.enterShop()
+  const repair = game.shopRowById("repair")
+  const life = game.shopRowById("life")
+
+  assert.equal(repair.maxed(game), true, "an unmarked hull has nothing to buy")
+  assert.equal(repair.cost(game), 0)
+
+  player.hull = player.type.hull / 2
+  assert.equal(repair.maxed(game), false)
+  assert.equal(repair.cost(game), Math.ceil(life.cost(game) / 2), "half a hull, half a ship")
+  player.hull = 1
+  assert.ok(
+    repair.cost(game) > life.cost(game) * 0.95,
+    "and a wreck is worth about the whole of one",
+  )
+
+  // Bought, it puts the hull back and takes the ore for it.
+  player.hull = player.type.hull * 0.25
+  const price = repair.cost(game)
+  game.oreBalance = price + 10
+  game.shopSelection = SHOP.findIndex((row) => row.id === "repair")
+  game.doShopAction()
+  assert.equal(player.hull, player.type.hull, "whole again")
+  assert.equal(game.oreBalance, 10, "and paid for")
+  assert.equal(repair.maxed(game), true, "with nothing left to buy")
+})
+
+test("hull damage is the player's to carry between sectors", () => {
+  // The thing the repair row exists for: a sector does not hand the hull back.
+  const game = liveGame()
+  game.player.hull = 20
+  game.enterShop()
+  assert.equal(game.player.hull, 20, "the shop does not patch it")
+  game.startLevel(2)
+  assert.equal(game.player.hull, 20, "and neither does launching")
+})
+
 test("the shop calls the spare ships LIVES", () => {
   const game = liveGame()
   game.enterShop()
-  assert.equal(game.shopItem(0).name, "LIVES")
+  assert.equal(game.shopRowById("life").name, "LIVES")
 })
 
 test("a dev build offers its tools first, and a testing arena opens on them", () => {
@@ -4800,7 +4844,7 @@ test("the shop draws the ship beside the list, not over it", () => {
   }
 
   // The row's own description is in the panel with the ship, not centred under the list.
-  const hint = drawn.text.find((t) => t.text.startsWith("One more spare ship"))
+  const hint = drawn.text.find((t) => t.text.startsWith("Patch the hull"))
   assert.ok(hint, "the selected row says what it does")
   assert.ok(hint.x > shipLeft - 120, "beside the ship rather than under the list")
 })
@@ -4877,9 +4921,10 @@ test("the shop says what the ship is worth, and how much of it was bought", () =
 test("the shop sits what the core carries under it, and the loadout below", () => {
   const game = liveGame()
   game.enterShop()
-  assert.equal(SHOP[0].id, "life", "a spare ship heads the page")
+  assert.equal(SHOP[0].id, "repair", "patching the hull heads the page")
+  assert.equal(SHOP[1].id, "life", "with a spare ship under it")
 
-  // The page reads as three groups: the spare ship, then the core and everything it
+  // The page reads as three groups: what a run needs, then the core and everything it
   // carries, then what is bolted to the hull outside it.
   const order = []
   for (let row = 0; row <= SHOP.length; row++) {
@@ -4887,6 +4932,7 @@ test("the shop sits what the core carries under it, and the loadout below", () =
     order.push(item ? item.id : "specials")
   }
   assert.deepEqual(order, [
+    "repair",
     "life",
     "core",
     "shield",
@@ -4897,6 +4943,12 @@ test("the shop sits what the core carries under it, and the loadout below", () =
     "turret",
     "engine",
   ])
+  // And a gap falls under the last row of each of the first two, so they read as groups
+  // rather than as one list.
+  assert.deepEqual(
+    SHOP_LAYOUT.groupsEndAt.map((row) => order[row]),
+    ["life", "specials"],
+  )
 
   // and what the core carries is inset, which is how the page says so
   const inset = order.filter((id) => {

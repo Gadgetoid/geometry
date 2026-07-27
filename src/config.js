@@ -2875,15 +2875,34 @@ const equipmentRow = (slot, inset = false) => ({
   maxed: (g) => g.ownsEveryOption(slot),
 })
 
+// What a spare ship costs. A repair is priced against it: patching a hull back to
+// whole is worth what it would have cost to lose it, and half a hull is half of that.
+const LIFE_COST = 60
+
 export const SHOP = [
-  // A spare ship and the specials already carried are not part of the loadout the
-  // rest of the page sells, so they head the list as their own group.
+  // Patching the hull and buying a spare ship are what a run needs rather than what it
+  // is fitted with, so they head the page as their own group. Damage carries between
+  // sectors: nothing puts a hull back but this.
+  {
+    id: "repair",
+    name: "REPAIR",
+    desc: "Patch the hull back to whole. What it costs is how much of it is gone.",
+    info: (g) => (g.player ? `${Math.round(g.player.hull)} / ${g.player.type.hull}` : "-"),
+    cost: (g) => (g.player ? Math.ceil(LIFE_COST * g.hullMissing()) : 0),
+    maxed: (g) => !g.player || g.hullMissing() <= 0,
+    apply: (g) => {
+      if (g.player) {
+        g.player.hull = g.player.type.hull
+        g.player.hullShown = g.player.hull
+      }
+    },
+  },
   {
     id: "life",
     name: "LIVES",
     desc: "One more spare ship.",
     info: (g) => `${g.lives} / ${CONFIG.MAX_LIVES}`,
-    cost: () => 60,
+    cost: () => LIFE_COST,
     maxed: (g) => g.lives >= CONFIG.MAX_LIVES,
     apply: (g) => {
       g.lives++
@@ -2916,7 +2935,10 @@ export const SHOP = [
 // The specials row is the last thing the core carries, so it follows the shield, the
 // radar and the thrusters under it, and `groupGap` sets that group apart from the
 // loadout below. Adding another core slot to SHOP moves this down with it.
-export const SHOP_LAYOUT = { slotsRow: 5, groupGap: 14, insetBy: 18 }
+// `slotsRow` is where the specials row is inserted into the list SHOP describes, and
+// `groupsEndAt` the rows a gap falls after: what a run needs, then the core and what it
+// carries, then what is bolted to the hull outside it.
+export const SHOP_LAYOUT = { slotsRow: 6, groupGap: 14, groupsEndAt: [1, 6], insetBy: 18 }
 
 // ---------------------------------------------------------------------------
 // SLOT MENU - the pop-over that opens on a special slot in the shop. One entry

@@ -1403,6 +1403,16 @@ export class Game {
     return item.id === "core" ? core() : []
   }
 
+  // How much of the hull is gone, 0 whole and 1 nothing left. What a repair is priced
+  // against, so a scratch costs a scratch and a wreck costs what losing it would have.
+  hullMissing() {
+    const player = this.player
+    if (!player || !player.type.hull) {
+      return 0
+    }
+    return clamp(1 - player.hull / player.type.hull, 0, 1)
+  }
+
   // What is held in a special slot, or null for an empty one.
   slotItem(slot) {
     return (this.player && this.player.items[slot]) || null
