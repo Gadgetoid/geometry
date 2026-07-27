@@ -919,7 +919,6 @@ export class Projectile extends Entity {
 export class Ship extends Entity {
   constructor(x, y) {
     super(x, y)
-    this.size = 12
     this.outlineLocal = []
     this.boundRadius = 0
     this.colour = PALETTE.white
@@ -953,15 +952,14 @@ export class Ship extends Entity {
   // player and the scout are darts with a notched tail, the frigate has a
   // waist), so the outline is partitioned into convex parts that tile it
   // exactly. Contacts then match the hull that is drawn, at any angle.
-  setOutline(outlineLocal, size) {
-    this.outlineLocal = outlineLocal
-    this.size = size
+  setOutline(outline) {
+    this.outlineLocal = outline
     let furthest = 0
-    for (const p of outlineLocal) {
+    for (const p of outline) {
       furthest = Math.max(furthest, Math.hypot(p[0], p[1]))
     }
-    this.boundRadius = furthest * size
-    this.collisionParts = convexPartition(outlineLocal.map(([x, y]) => ({ x, y })))
+    this.boundRadius = furthest
+    this.collisionParts = convexPartition(outline.map(([x, y]) => ({ x, y })))
   }
 
   // The hull in world space as convex parts, for bodyContact.
@@ -1005,9 +1003,9 @@ export class Ship extends Entity {
   }
 
   // The bubble sits clear of the hull by the type's own margin, so a long ship
-  // does not wear a shield that clips through it.
+  // does not wear a shield that clips through it. In world units, as the outline is.
   shieldRadius() {
-    return this.size * (this.type.shieldScale ?? 1.9)
+    return this.type.bubbleRadius ?? this.boundRadius * 1.33
   }
 
   buildHardpoints(list) {
@@ -1036,8 +1034,8 @@ export class Ship extends Entity {
     const c = Math.cos(this.angle),
       s = Math.sin(this.angle)
     return this.outlineLocal.map((p) => ({
-      x: this.x + (p[0] * c - p[1] * s) * this.size,
-      y: this.y + (p[0] * s + p[1] * c) * this.size,
+      x: this.x + (p[0] * c - p[1] * s),
+      y: this.y + (p[0] * s + p[1] * c),
     }))
   }
 
@@ -1049,8 +1047,8 @@ export class Ship extends Entity {
     const c = Math.cos(this.angle),
       s = Math.sin(this.angle)
     return {
-      x: this.x + (local[0] * c - local[1] * s) * this.size,
-      y: this.y + (local[0] * s + local[1] * c) * this.size,
+      x: this.x + (local[0] * c - local[1] * s),
+      y: this.y + (local[0] * s + local[1] * c),
     }
   }
 
@@ -1124,8 +1122,8 @@ export class PlayerShip extends Ship {
     this.game = game
     this.angle = -Math.PI / 2
     this.type = PLAYER_TYPE
-    this.radius = PLAYER_TYPE.size
-    this.setOutline(PLAYER_TYPE.outline, PLAYER_TYPE.size)
+    this.radius = PLAYER_TYPE.confineRadius
+    this.setOutline(PLAYER_TYPE.outline)
     this.colour = PLAYER_TYPE.colour
     this.buildHardpoints(PLAYER_TYPE.hardpoints)
     this.applyLoadout(PLAYER_TYPE.loadout)
@@ -1768,7 +1766,7 @@ export class PlayerShip extends Ship {
     }
     const c = Math.cos(this.angle),
       s = Math.sin(this.angle)
-    const scale = this.size * (0.3 + 0.7 * t)
+    const scale = 0.3 + 0.7 * t // the hull swelling into place, at its own size
     const hull = this.outlineLocal.map((p) => ({
       x: this.x + (p[0] * c - p[1] * s) * scale,
       y: this.y + (p[0] * s + p[1] * c) * scale,
@@ -1895,7 +1893,7 @@ export class RivalShip extends Ship {
     const type = SHIP_TYPES[typeName]
     this.type = type
     this.typeName = typeName
-    this.setOutline(type.outline, type.size)
+    this.setOutline(type.outline)
     this.colour = type.colour
     this.accel = type.accel
     this.maxSpeed = type.maxSpeed

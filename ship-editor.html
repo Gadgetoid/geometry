@@ -395,8 +395,9 @@
       // uses, and writes nothing: the output is a snippet to paste into config.js.
       //
       // Coordinates are the config's own: outline points, hardpoint `local` and
-      // exhaust `mounts` are in local units, multiplied by the type's `size` to
-      // reach world units, with +y downward as the game draws it.
+      // exhaust `mounts` are in world units, with +y downward as the game draws
+      // it. What you see is the size the ship is, and two hulls can be compared
+      // by looking at them.
 
       // A snapshot, used only when the modules cannot be loaded (opening this file
       // straight off disk without --allow-file-access-from-files). Enough to keep
@@ -419,18 +420,18 @@
         shipTypes: {},
         playerType: {
           outline: [
-            [1.4, 0],
-            [-0.8, -0.85],
-            [-0.4, 0],
-            [-0.8, 0.85],
+            [18.2, 0],
+            [-10.4, -11.05],
+            [-5.2, 0],
+            [-10.4, 11.05],
           ],
-          size: 13,
           mass: 1,
-          shieldScale: 1.9,
+          boundRadius: 18.2,
+          bubbleRadius: 24.206,
           hardpoints: [
-            { local: [1.4, 0], role: "nose" },
+            { local: [18.2, 0], role: "nose" },
             { local: [0, 0], role: "core" },
-            { local: [0.2, 0], role: "aux" },
+            { local: [2.6, 0], role: "aux" },
           ],
           loadout: [
             { hp: 0, weapon: "playerLaser", controller: "manual" },
@@ -598,7 +599,7 @@
       // ---- state -----------------------------------------------------------
 
       const ROLES = ["nose", "gun", "core", "aux"]
-      const GRID_STEPS = [0.5, 0.25, 0.2, 0.1, 0.05, 0.025, 0.01]
+      const GRID_STEPS = [10, 5, 2, 1, 0.5, 0.25, 0.1]
 
       // The stated fields of a ship design, in the order config.js writes them, so
       // the sidebar and the snippet are driven from one list. `kinds` says which
@@ -608,7 +609,6 @@
         {
           title: "SHAPE AND THREE NUMBERS",
           fields: [
-            { path: "size", label: "SIZE", step: 1 },
             { path: "mass", label: "MASS", step: 0.1 },
             { path: "power", label: "POWER", step: 0.1, kinds: ["rival"] },
             { path: "armour", label: "ARMOUR", step: 0.1, kinds: ["rival"] },
@@ -681,7 +681,7 @@
         { path: "drag", label: "DRAG", step: 0.01, kinds: ["rival"] },
         { path: "hull", label: "HULL HP", step: 10, kinds: ["rival"] },
         { path: "rockContact", label: "ROCK CONTACT", step: 0.05, kinds: ["rival"] },
-        { path: "shieldScale", label: "SHIELD SCALE", step: 0.05 },
+        { path: "bubbleRadius", label: "SHIELD RADIUS", step: 0.5 },
         { path: "hullWidth", label: "HULL WIDTH", step: 0.1 },
       ]
 
@@ -691,17 +691,16 @@
           key: "newship",
           colour: "rival.hull",
           outline: [
-            [1.3, 0],
-            [-0.8, -0.9],
-            [-0.45, 0],
-            [-0.8, 0.9],
+            [18.2, 0],
+            [-11.2, -12.6],
+            [-6.3, 0],
+            [-11.2, 12.6],
           ],
           hardpoints: [
-            { local: [1.3, 0], role: "nose", mount: freshMount() },
+            { local: [18.2, 0], role: "nose", mount: freshMount() },
             { local: [0, 0], role: "core", mount: freshMount() },
           ],
-          exhaust: { mounts: [[-1.1, 0]], rate: 26, speed: 55, life: 0.4, spread: 20 },
-          size: 14,
+          exhaust: { mounts: [[-15.4, 0]], rate: 26, speed: 55, life: 0.4, spread: 20 },
           mass: 1,
           power: 1,
           armour: 1,
@@ -737,7 +736,6 @@
       function design(state = ship) {
         const out = {
           outline: state.outline.map((p) => p.slice()),
-          size: Number(state.size),
           mass: Number(state.mass),
         }
         if (state.kind === "rival") {
@@ -761,8 +759,9 @@
         const spec = design(state)
         const reach = spec.outline.reduce((far, [x, y]) => Math.max(far, Math.hypot(x, y)), 0)
         const shape = {
-          shieldScale: reach * SHIP_SCALARS.shieldClearance,
-          hullWidth: SHIP_SCALARS.hullWidthBase + spec.size * SHIP_SCALARS.hullWidthPerSize,
+          boundRadius: reach,
+          bubbleRadius: reach * SHIP_SCALARS.shieldClearance,
+          hullWidth: SHIP_SCALARS.hullWidthBase + reach * SHIP_SCALARS.hullWidthPerUnit,
         }
         if (state.kind === "player" || !deriveShipStats) {
           return { ...shape, ...spec }
@@ -892,7 +891,7 @@
       let tool = "select"
       const options = {
         snap: true,
-        grid: 0.05,
+        grid: 1,
         ghost: "origin",
         parts: false,
         shield: true,
@@ -967,8 +966,9 @@
       const screenW = () => canvas.clientWidth
       const screenH = () => canvas.clientHeight
 
-      // local units -> world units -> screen pixels
-      const worldOf = (local) => [local[0] * ship.size, local[1] * ship.size]
+      // An outline is already in world units, so the only transform left is the
+      // camera. `worldOf` stays as the name for that step being nothing.
+      const worldOf = (local) => local
       const toScreen = (world) => [
         screenW() / 2 + (world[0] - view.x) * view.scale,
         screenH() / 2 + (world[1] - view.y) * view.scale,
@@ -978,10 +978,7 @@
         (sx - screenW() / 2) / view.scale + view.x,
         (sy - screenH() / 2) / view.scale + view.y,
       ]
-      const screenToLocal = (sx, sy) => {
-        const world = screenToWorld(sx, sy)
-        return [world[0] / ship.size, world[1] / ship.size]
-      }
+      const screenToLocal = (sx, sy) => screenToWorld(sx, sy)
 
       function snap(local, force) {
         if (!options.snap || force) {
@@ -1000,14 +997,14 @@
         for (const p of points) {
           reach = Math.max(reach, Math.abs(p[0]), Math.abs(p[1]))
         }
-        const world = Math.max(1, reach * ship.size * 2.6)
+        const world = Math.max(1, reach * 2.6)
         view.x = 0
         view.y = 0
         view.scale = Math.min(screenW(), screenH()) / world
       }
 
       function drawGrid() {
-        const stepWorld = options.grid * ship.size
+        const stepWorld = options.grid
         const [left, top] = screenToWorld(0, 0)
         const [right, bottom] = screenToWorld(screenW(), screenH())
         const lines = (spacing, colour, width) => {
@@ -1032,7 +1029,7 @@
           ctx.stroke()
         }
         lines(stepWorld, "#0c1626", 1)
-        lines(ship.size, "#16273f", 1)
+        lines(stepWorld * 10, "#16273f", 1)
 
         // the axes the local coordinates are measured from
         ctx.strokeStyle = "#28405f"
@@ -1097,18 +1094,29 @@
         if (options.ghost === "off" || !PLAYER_TYPE.outline) {
           return
         }
-        const size = PLAYER_TYPE.size
+        // The ghost is drawn at the player's real dimensions, which is the point
+        // of it: it is the scale reference every other hull is judged against.
+        const reachOf = (o, axis) => o.reduce((m, p) => Math.max(m, Math.abs(p[axis])), 0)
+        const player = reachOf(PLAYER_TYPE.outline, 1)
         let offset = [0, 0]
         if (options.ghost === "beside") {
-          const reach = ship.outline.reduce((m, p) => Math.max(m, Math.abs(p[1])), 0) * ship.size
-          offset = [0, reach + size * 2.2]
+          offset = [0, reachOf(ship.outline, 1) + player * 2.2]
         }
         const points = PLAYER_TYPE.outline.map((p) =>
-          toScreen([p[0] * size + offset[0], p[1] * size + offset[1]]),
+          toScreen([p[0] + offset[0], p[1] + offset[1]]),
         )
         strokePath(points, "rgba(95, 215, 255, 0.45)", 1.2, 0, [4, 3])
-        const tail = toScreen([-1.1 * size + offset[0], offset[1] + size * 0.1])
-        label("PLAYER (SIZE " + size + ")", tail[0] - 30, tail[1] + 14, "rgba(95, 215, 255, 0.5)")
+        const tail = toScreen([
+          -reachOf(PLAYER_TYPE.outline, 0) + offset[0],
+          offset[1] + player * 0.2,
+        ])
+        const across = Math.round(reachOf(PLAYER_TYPE.outline, 0) * 2)
+        label(
+          "PLAYER (" + across + " ACROSS)",
+          tail[0] - 30,
+          tail[1] + 14,
+          "rgba(95, 215, 255, 0.5)",
+        )
       }
 
       function drawParts() {
@@ -1138,13 +1146,13 @@
         for (const p of ship.outline) {
           reach = Math.max(reach, Math.hypot(p[0], p[1]))
         }
-        circle(origin[0], origin[1], reach * ship.size * view.scale, {
+        circle(origin[0], origin[1], reach * view.scale, {
           stroke: "rgba(191, 208, 238, 0.22)",
           dash: [3, 4],
         })
         const stats = derived()
         if (stats) {
-          circle(origin[0], origin[1], ship.size * stats.shieldScale * view.scale, {
+          circle(origin[0], origin[1], stats.bubbleRadius * view.scale, {
             stroke: "rgba(159, 232, 255, 0.3)",
             dash: [6, 5],
           })
@@ -1715,8 +1723,7 @@
         }
         const local = screenToLocal(sx, sy)
         setStatus(
-          `LOCAL ${fmt(local[0])}, ${fmt(local[1])}   WORLD ${Math.round(local[0] * ship.size)}, ` +
-            `${Math.round(local[1] * ship.size)}   GRID ${options.grid}${options.snap ? "" : " (OFF)"}`,
+          `WORLD ${fmt(local[0])}, ${fmt(local[1])}   GRID ${options.grid}${options.snap ? "" : " (OFF)"}`,
         )
       })
 
@@ -2093,7 +2100,7 @@
           }
           input.addEventListener("input", () => {
             setPath(ship, field.path, Number(input.value))
-            buildDerived() // size, mass, power and armour all move the derived settings
+            buildDerived() // mass, power and armour all move the derived settings
             refreshFacts()
             refreshOutput()
             save()
@@ -2469,10 +2476,13 @@
         return Math.min(...sectors)
       }
 
+      // How far the outline spans on an axis, for reading a hull's real dimensions.
+      const extent = (outline, axis) =>
+        Math.max(...outline.map((p) => p[axis])) - Math.min(...outline.map((p) => p[axis]))
+
       function refreshFacts() {
         const facts = document.getElementById("facts")
-        const localArea = polygonArea(ship.outline)
-        const worldArea = localArea * ship.size * ship.size
+        const worldArea = polygonArea(ship.outline)
         let reach = 0
         for (const p of ship.outline) {
           reach = Math.max(reach, Math.hypot(p[0], p[1]))
@@ -2482,12 +2492,13 @@
         const stats = derived()
         const rows = [
           ["POINTS", `${ship.outline.length} outline, ${ship.hardpoints.length} hardpoints`],
-          ["AREA", `${round(localArea)} local, ${Math.round(worldArea)} world`],
-          ["BOUND RADIUS", `${round(reach * ship.size)} world (${round(reach)} local)`],
-          ["CENTROID", `${fmt(cx)}, ${fmt(cy)} local`],
+          ["AREA", `${Math.round(worldArea)}`],
+          ["BOUND RADIUS", `${round(reach)}`],
+          ["ACROSS", `${round(extent(ship.outline, 0))} by ${round(extent(ship.outline, 1))}`],
+          ["CENTROID", `${fmt(cx)}, ${fmt(cy)}`],
         ]
         if (stats) {
-          rows.push(["SHIELD RADIUS", `${round(ship.size * stats.shieldScale)} world`])
+          rows.push(["SHIELD RADIUS", `${round(stats.bubbleRadius)}`])
         }
         if (parts !== null) {
           rows.push(["CONVEX PARTS", String(parts)])
@@ -2625,7 +2636,6 @@
         const shared = sharedShapeName(ship.outline)
         push(`outline: ${shared || pointList(ship.outline, indent)},`)
         push(`colour: ${colourExpression()},`)
-        push(`size: ${round(ship.size)},`)
         push(`mass: ${round(ship.mass)},`)
         if (ship.kind === "rival") {
           push(`power: ${round(ship.power)},`)

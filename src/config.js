@@ -641,8 +641,9 @@ export const FACTIONS = {
 // ---------------------------------------------------------------------------
 // SHIP STATS - how a ship's settings come out of what the ship is.
 //
-// A type states its shape (`outline` and `size`) and three numbers a person can
-// hold in their head:
+// An outline is in world units, as a rock's vertices are, so how big a hull is
+// can be read off its own coordinates and two hulls can be compared by looking
+// at them. A type then states three numbers a person can hold in their head:
 //
 //   mass    how heavy the hull is, on the scale a rock's mass is on
 //   power   engine output, in units of `thrustPerPower` below
@@ -658,22 +659,22 @@ export const FACTIONS = {
 // Stating any derived field on a type keeps that value instead, for tuning one
 // ship without disturbing the relationships. Nothing ships with one.
 //
-// `size` is not derived. It belongs with the outline, which is drawn at unit
-// scale, and it cannot come out of mass without one of the ships moving a long
-// way: a scout packs 2.1x the mass into its area that a frigate does, so a
-// single density puts one of them 20% off whichever way it is fitted.
+// `handling` is the exception that is meant to be reached for: a plain multiplier
+// on the turn rate the shape implies, for a hull that should be more or less
+// nimble than its geometry says. Nothing states one, so every hull turns as its
+// shape and mass dictate.
 // ---------------------------------------------------------------------------
 export const SHIP_SCALARS = {
   thrustPerPower: 100, // accel = power * this / mass
   speedPerAccel: 1.37, // top speed, as a multiple of acceleration
-  // turnRate = thrust * this / (mass * size): thrusters at the hull's edge give a
+  // turnRate = thrust * this / (mass * reach): thrusters at the hull's edge give a
   // torque proportional to its reach, against a spin inertia that grows with mass
   // and with reach squared, so one power of the reach cancels.
-  turnPerThrust: 0.217,
+  turnPerReach: 0.3906,
   dragPerMass: 0.39, // drag = 1 - this / mass: a heavy hull coasts, a light one bites
   shieldClearance: 1.33, // the bubble, as a multiple of how far the outline reaches
-  hullWidthBase: 1.71, // outline weight, which grows a little with the hull
-  hullWidthPerSize: 0.0071,
+  hullWidthBase: 1.74, // outline weight, which grows a little with the hull
+  hullWidthPerUnit: 0.0036, // per world unit of reach
   hullPerArea: 0.11, // hull = armour * hull area * this
   // rockContact is set so a full-speed ram costs about this much of the hull.
   // Rivals steer for ore and rocks and shoulder them aside constantly, so
@@ -687,7 +688,8 @@ export const SHIP_SCALARS = {
   maxRockContact: 0.6,
 }
 
-// Area the outline encloses at unit scale, and how far it reaches from the origin.
+// Area the outline encloses, and how far it reaches from the origin. Both in world
+// units, since that is what an outline is in.
 const outlineArea = (outline) => {
   let twice = 0
   for (let i = 0; i < outline.length; i++) {
@@ -699,11 +701,17 @@ const outlineArea = (outline) => {
 }
 const outlineReach = (outline) => Math.max(...outline.map(([x, y]) => Math.hypot(x, y)))
 
-// What the shape alone decides, for any hull including the player's.
+// What the shape alone decides, for any hull including the player's. Both come out
+// in world units, so nothing downstream has a scale left to apply.
 function hullShape(type) {
+  const reach = outlineReach(type.outline)
   return {
-    shieldScale: outlineReach(type.outline) * SHIP_SCALARS.shieldClearance,
-    hullWidth: SHIP_SCALARS.hullWidthBase + type.size * SHIP_SCALARS.hullWidthPerSize,
+    // How far the hull reaches, which is how big the ship is. A hull can now be
+    // sized against another by reading this rather than by multiplying two
+    // numbers whose scales were not comparable.
+    boundRadius: reach,
+    bubbleRadius: reach * SHIP_SCALARS.shieldClearance,
+    hullWidth: SHIP_SCALARS.hullWidthBase + reach * SHIP_SCALARS.hullWidthPerUnit,
   }
 }
 
@@ -712,7 +720,8 @@ export function deriveShipStats(type) {
   const k = SHIP_SCALARS
   const stated = (field, value) => (type[field] !== undefined ? type[field] : value)
   const thrust = type.power * k.thrustPerPower
-  const hullArea = outlineArea(type.outline) * type.size * type.size
+  const reach = outlineReach(type.outline)
+  const hullArea = outlineArea(type.outline)
   const accel = stated("accel", thrust / type.mass)
   const maxSpeed = stated("maxSpeed", accel * k.speedPerAccel)
   const hull = stated("hull", Math.round(type.armour * hullArea * k.hullPerArea))
@@ -722,9 +731,13 @@ export function deriveShipStats(type) {
     accel,
     maxSpeed,
     hull,
-    turnRate: stated("turnRate", (thrust * k.turnPerThrust) / (type.mass * type.size)),
+    turnRate: stated(
+      "turnRate",
+      (thrust * k.turnPerReach * (type.handling ?? 1)) / (type.mass * reach),
+    ),
     drag: stated("drag", clamp(1 - k.dragPerMass / type.mass, 0.05, 0.98)),
-    shieldScale: stated("shieldScale", shape.shieldScale),
+    boundRadius: shape.boundRadius,
+    bubbleRadius: stated("bubbleRadius", shape.bubbleRadius),
     hullWidth: stated("hullWidth", shape.hullWidth),
     rockContact: stated(
       "rockContact",
@@ -780,53 +793,52 @@ export const SHIP_PLATING = {
 }
 // ---------------------------------------------------------------------------
 export const FRIGATE_SHAPE = [
-  [1.55, 0.4],
-  [1.5, 0.6],
-  [0.55, 0.6],
-  [0.45, 0.4],
-  [-0.45, 0.4],
-  [-0.55, 0.6],
-  [-1.7, 0.6],
-  [-1.7, 0.25],
-  [-1.6, 0.15],
-  [-1.6, -0.2],
-  [-1.7, -0.3],
-  [-1.7, -0.6],
-  [-0.55, -0.6],
-  [-0.45, -0.4],
-  [0.45, -0.4],
-  [0.55, -0.6],
-  [1.5, -0.6],
-  [1.55, -0.4],
-  [1.75, -0.35],
-  [1.75, 0.35],
+  [62, 16],
+  [60, 24],
+  [22, 24],
+  [18, 16],
+  [-18, 16],
+  [-22, 24],
+  [-68, 24],
+  [-68, 10],
+  [-64, 6],
+  [-64, -8],
+  [-68, -12],
+  [-68, -24],
+  [-22, -24],
+  [-18, -16],
+  [18, -16],
+  [22, -24],
+  [60, -24],
+  [62, -16],
+  [70, -14],
+  [70, 14],
 ]
 
 const SHIP_DESIGNS = {
   seeker: {
     outline: [
-      [1.5, 0],
-      [0, -0.4],
-      [-0.05, -0.6],
-      [-0.9, -0.6],
-      [-0.85, -0.4],
-      [-0.65, -0.4],
-      [-0.85, 0],
-      [-0.65, 0.4],
-      [-0.85, 0.4],
-      [-0.9, 0.6],
-      [-0.05, 0.6],
-      [0, 0.4],
+      [18, 0],
+      [0, -4.8],
+      [-0.6, -7.2],
+      [-10.8, -7.2],
+      [-10.2, -4.8],
+      [-7.8, -4.8],
+      [-10.2, 0],
+      [-7.8, 4.8],
+      [-10.2, 4.8],
+      [-10.8, 7.2],
+      [-0.6, 7.2],
+      [0, 4.8],
     ],
     colour: PALETTE.ore.body,
-    size: 12,
     mass: 0.8,
     power: 1.5,
     armour: 1.2,
     exhaust: {
       mounts: [
-        [-0.9, 0.5],
-        [-0.9, -0.5],
+        [-10.8, 6],
+        [-10.8, -6],
       ],
       rate: 40,
       speed: 30,
@@ -837,9 +849,9 @@ const SHIP_DESIGNS = {
     energyMax: 300,
     regen: 34,
     hardpoints: [
-      { local: [1.5, 0], role: "nose" },
-      { local: [-0.45, 0], role: "gun" },
-      { local: [-0.05, 0], role: "core" },
+      { local: [18, 0], role: "nose" },
+      { local: [-5.4, 0], role: "gun" },
+      { local: [-0.6, 0], role: "core" },
     ],
     loadout: [
       // `hunter` is the behaviour, not the ship: line up, wind up briefly, fire.
@@ -865,23 +877,22 @@ const SHIP_DESIGNS = {
   },
   scout: {
     outline: [
-      [1.4, 0],
-      [-0.9, -1.0],
-      [-0.5, 0],
-      [-0.9, 1.0],
+      [16.8, 0],
+      [-10.8, -12],
+      [-6, 0],
+      [-10.8, 12],
     ],
     colour: PALETTE.rival.hull,
-    size: 12,
     mass: 0.7, // a light dart
     power: 1,
     armour: 1,
-    exhaust: { mounts: [[-1.17, 0]], rate: 26, speed: 55, life: 0.4, spread: 20 },
+    exhaust: { mounts: [[-14.04, 0]], rate: 26, speed: 55, life: 0.4, spread: 20 },
     lifeTime: [16, 26],
     energyMax: 90,
     regen: 22,
     hardpoints: [
-      { local: [1.4, 0], role: "nose" },
-      { local: [0.2, 0], role: "gun" },
+      { local: [16.8, 0], role: "nose" },
+      { local: [2.4, 0], role: "gun" },
       { local: [0, 0], role: "core" },
     ],
     loadout: [{ hp: 0, weapon: "minerLaser", controller: "miner" }], // always has a mining laser
@@ -905,7 +916,6 @@ const SHIP_DESIGNS = {
   frigate: {
     outline: FRIGATE_SHAPE,
     colour: PALETTE.rival.frigateHull,
-    size: 40,
     mass: 6, // a slab: heavy, hard to turn, and thin-skinned for its size
     power: 2,
     armour: 0.6,
@@ -913,8 +923,8 @@ const SHIP_DESIGNS = {
     // single small stream read far too light for a hull this size
     exhaust: {
       mounts: [
-        [-1.78, -0.36],
-        [-1.78, 0.36],
+        [-71.2, -14.4],
+        [-71.2, 14.4],
       ],
       rate: 44,
       speed: 150,
@@ -925,11 +935,11 @@ const SHIP_DESIGNS = {
     energyMax: 260,
     regen: 30,
     hardpoints: [
-      { local: [1.7, 0], role: "nose" },
-      { local: [1.13, -0.53], role: "gun" },
-      { local: [-1.13, -0.53], role: "gun" },
-      { local: [1.13, 0.53], role: "gun" },
-      { local: [-1.13, 0.53], role: "gun" },
+      { local: [68, 0], role: "nose" },
+      { local: [45.2, -21.2], role: "gun" },
+      { local: [-45.2, -21.2], role: "gun" },
+      { local: [45.2, 21.2], role: "gun" },
+      { local: [-45.2, 21.2], role: "gun" },
       { local: [0, 0], role: "core" },
     ],
     loadout: [
@@ -960,19 +970,21 @@ export const SHIP_TYPES = Object.fromEntries(
 // bubble and the outline weight still come from the shape, as every hull's do.
 const PLAYER_DESIGN = {
   outline: [
-    [1.4, 0],
-    [-0.8, -0.85],
-    [-0.4, 0],
-    [-0.8, 0.85],
+    [18.2, 0],
+    [-10.4, -11.05],
+    [-5.2, 0],
+    [-10.4, 11.05],
   ],
   colour: PALETTE.player.hull,
   faction: "player",
-  size: 13,
   mass: 1, // the scale every other hull's mass is quoted against
+  // What the ship is confined by, which is less than the hull's own reach of 18.2:
+  // see KNOWN_ISSUES.md, "A hull crosses the drawn arena ring".
+  confineRadius: 13,
   hardpoints: [
-    { local: [1.4, 0], role: "nose" },
+    { local: [18.2, 0], role: "nose" },
     { local: [0, 0], role: "core" },
-    { local: [0.2, 0], role: "aux" }, // filled by a fitting, see below
+    { local: [2.6, 0], role: "aux" }, // filled by a fitting, see below
   ],
   loadout: [{ hp: 0, weapon: "playerLaser", controller: "manual" }],
   // Modules the shop bolts on after the fact, keyed by the upgrade that pays for

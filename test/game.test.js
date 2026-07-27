@@ -269,7 +269,7 @@ test("a shot through the empty space beside a bare hull misses", () => {
 })
 
 test("a shot is stopped by the shield bubble, on the same surface a beam is", () => {
-  const bubble = PLAYER_TYPE.size * PLAYER_TYPE.shieldScale
+  const bubble = PLAYER_TYPE.bubbleRadius
   const shootFrom = (offset) => {
     const game = withShield(liveGame())
     const player = game.player
@@ -859,7 +859,7 @@ test("a beam laid over a hull registers, rather than needing its centreline on i
 })
 
 test("a beam hits a shielded player on the bubble the view draws", () => {
-  const bubble = PLAYER_TYPE.size * PLAYER_TYPE.shieldScale
+  const bubble = PLAYER_TYPE.bubbleRadius
   for (const offset of [0, 8, 14, 18, 22, 24, 26, 34]) {
     const r = beamPastPlayer(offset, WEAPON_TYPES.minerLaser, { shielded: true })
     assert.equal(
@@ -1399,7 +1399,8 @@ test("the same graze on a frigate takes a piece off and leaves the rest", () => 
   frigate.angle = 0
   game.rivals = [frigate]
   // along the frigate's flank, inside its half-height so it passes through
-  const offset = SHIP_TYPES.frigate.size * 0.4
+  const halfHeight = Math.max(...SHIP_TYPES.frigate.outline.map(([, y]) => Math.abs(y)))
+  const offset = halfHeight * (2 / 3)
   const beam = {
     a: { x: 100, y: 320 + offset },
     dir: { x: 1, y: 0 },
@@ -1761,7 +1762,12 @@ function ramARock(typeName) {
   game.player.y = -9000
   const rockFace = 440
   const full = SHIP_TYPES[typeName].hull
-  const ship = new RivalShip(rockFace - SHIP_TYPES[typeName].size * 2 - 40, 320, typeName, [])
+  const ship = new RivalShip(
+    rockFace - SHIP_TYPES[typeName].boundRadius * 2 - 40,
+    320,
+    typeName,
+    [],
+  )
   ship.angle = 0
   game.rivals = [ship]
   game.asteroids = [new Asteroid({ vertices: square(rockFace + 80, 320, 80), vx: 0, vy: 0 })]
@@ -3848,12 +3854,13 @@ test("every ship type states only its shape and its three stats", () => {
     "turnRate",
     "drag",
     "hull",
-    "shieldScale",
+    "boundRadius",
+    "bubbleRadius",
     "hullWidth",
     "rockContact",
   ]
   for (const [name, type] of Object.entries(SHIP_TYPES)) {
-    for (const field of ["size", "mass", "power", "armour"]) {
+    for (const field of ["mass", "power", "armour"]) {
       assert.equal(typeof type[field], "number", `${name} must state ${field}`)
     }
     for (const field of derived) {
@@ -3871,16 +3878,16 @@ test("the ship stats follow from the shape and the three numbers", () => {
     assert.ok(Math.abs(t.accel - thrust / t.mass) < 1e-9, `${name} accel`)
     assert.ok(Math.abs(t.maxSpeed - t.accel * k.speedPerAccel) < 1e-9, `${name} maxSpeed`)
     assert.ok(
-      Math.abs(t.turnRate - (thrust * k.turnPerThrust) / (t.mass * t.size)) < 1e-9,
+      Math.abs(t.turnRate - (thrust * k.turnPerReach) / (t.mass * reach(t.outline))) < 1e-9,
       `${name} turnRate`,
     )
     assert.ok(Math.abs(t.drag - (1 - k.dragPerMass / t.mass)) < 1e-9, `${name} drag`)
     assert.ok(
-      Math.abs(t.shieldScale - reach(t.outline) * k.shieldClearance) < 1e-9,
-      `${name} shieldScale`,
+      Math.abs(t.bubbleRadius - reach(t.outline) * k.shieldClearance) < 1e-9,
+      `${name} bubbleRadius`,
     )
     // the bubble has to clear the hull it is drawn around, whatever the shape
-    assert.ok(t.shieldScale > reach(t.outline), `${name} bubble must stand clear of the outline`)
+    assert.ok(t.bubbleRadius > reach(t.outline), `${name} bubble must stand clear of the outline`)
   }
 })
 
@@ -3889,13 +3896,12 @@ test("a new ship needs a shape and three numbers, and nothing else", () => {
   // a value written down somewhere.
   const design = {
     outline: [
-      [1.5, 0],
-      [-1, -0.8],
-      [-0.6, 0],
-      [-1, 0.8],
+      [30, 0],
+      [-20, -16],
+      [-12, 0],
+      [-20, 16],
     ],
     colour: PALETTE.rival.hull,
-    size: 20,
     mass: 2,
     power: 1.5,
     armour: 0.8,
