@@ -407,7 +407,6 @@
 
       const LAST = 100
       const PLAN_SAMPLES = 800 // plans per sector, for what a plan rolls
-      const RIVAL_SAMPLES = 500 // arrivals per sector, for which type turns up
       const ARM_SAMPLES = 800 // loadout rolls per type per sector
 
       const HAZARD_KINDS = ["explosive", "shield", "gun", "gun + shield"]
@@ -458,21 +457,21 @@
           }
         }
 
-        // which rival arrives, asked of the spawner itself with the field empty, so
-        // the maxConcurrent test sees what it sees on a first arrival
+        // which rival arrives. Arrivals are weighed, so a share is one weight over
+        // the total of what is eligible: arithmetic, not a sample. The field is
+        // empty, which is what the maxConcurrent test sees on a first arrival.
         const arrivals = new Map()
         if (plan.rivals > 0) {
           const level = probe.level
           probe.level = sector
-          for (let i = 0; i < RIVAL_SAMPLES; i++) {
-            probe.rivals.length = 0
-            probe.spawnRival()
-            const ship = probe.rivals[probe.rivals.length - 1]
-            if (ship) {
-              arrivals.set(ship.typeName, (arrivals.get(ship.typeName) || 0) + 1)
+          probe.rivals.length = 0
+          const weights = RIVAL_NAMES.map((name) => [name, probe.spawnWeight(name)])
+          const total = weights.reduce((sum, [, weight]) => sum + weight, 0)
+          for (const [name, weight] of weights) {
+            if (weight > 0) {
+              arrivals.set(name, weight / total)
             }
           }
-          probe.rivals.length = 0
           probe.level = level
         }
 
@@ -527,10 +526,7 @@
             HAZARD_KINDS.map((kind) => [kind, rocks ? (mix.get(kind) || 0) / rocks : 0]),
           ),
           arrivals: Object.fromEntries(
-            RIVAL_NAMES.map((name) => [
-              name,
-              plan.rivals > 0 ? (arrivals.get(name) || 0) / RIVAL_SAMPLES : 0,
-            ]),
+            RIVAL_NAMES.map((name) => [name, plan.rivals > 0 ? arrivals.get(name) || 0 : 0]),
           ),
           arms: Object.fromEntries(
             RIVAL_NAMES.map((name) => [
@@ -1058,10 +1054,9 @@
         section(
           "rivals",
           "WHICH RIVAL ARRIVES",
-          `Asked of the spawner itself: with the field empty and the run set to that sector, ` +
-            `${RIVAL_SAMPLES} arrivals a sector, counted by type. The spawner rolls each gated ` +
-            `type in turn and falls back to the one type that claims that slot, so a type's share ` +
-            `is not its own chance alone but what is left after the ones rolled before it.`,
+          `Asked of the spawner itself, with the field empty and the run set to that sector. ` +
+            `Arrivals are weighed, so a type's share is its own weight over the total of ` +
+            `whatever else is eligible there, and this is worked out rather than sampled.`,
           heatGrid(
             sectors,
             RIVAL_NAMES.map((name) => ({ label: name, key: name })),
@@ -1193,7 +1188,7 @@
 
         status.textContent =
           `sectors ${from} to ${to} of 0 to ${LAST}, surveyed in ${elapsed}ms ` +
-          `(${PLAN_SAMPLES} plans and ${RIVAL_SAMPLES} arrivals a sector)`
+          `(${PLAN_SAMPLES} plans a sector; arrivals are exact)`
       }
 
       for (const input of ["from", "to"]) {

@@ -3004,6 +3004,52 @@ test("a hazard's share can be worked out rather than sampled", () => {
   }
 })
 
+test("a rival's share of arrivals is its own weight over the total", () => {
+  // It used to be whatever the types rolled before it left over, so the frigate's
+  // declared 0.3 arrived 23.8% of the time and the scout, which declared nothing
+  // at all, took 56%. timeline.html had to sample the spawner to say so.
+  const game = liveGame()
+  const names = Object.keys(SHIP_TYPES)
+  for (const sector of [4, 6, 12]) {
+    game.level = sector
+    const total = names.reduce((sum, name) => sum + game.spawnWeight(name), 0)
+    const counts = new Map()
+    const rolls = 20000
+    seeded(sector * 31 + 5, () => {
+      for (let i = 0; i < rolls; i++) {
+        game.rivals.length = 0
+        game.spawnRival()
+        const ship = game.rivals[0]
+        if (ship) {
+          counts.set(ship.typeName, (counts.get(ship.typeName) || 0) + 1)
+        }
+      }
+    })
+    game.rivals.length = 0
+    for (const name of names) {
+      const want = game.spawnWeight(name) / total
+      const got = (counts.get(name) || 0) / rolls
+      assert.ok(
+        Math.abs(want - got) < 0.02,
+        `sector ${sector} ${name}: weights say ${want.toFixed(3)}, arrived ${got.toFixed(3)}`,
+      )
+    }
+  }
+})
+
+test("a type already at its limit is out of the running, and something always is not", () => {
+  const game = liveGame()
+  game.level = 12
+  const capped = Object.keys(SHIP_TYPES).find((name) => SHIP_TYPES[name].spawn.maxConcurrent === 1)
+  assert.ok(game.spawnWeight(capped) > 0, "it must be in the running with the field empty")
+  game.rivals = [new RivalShip(ARENA.cx, ARENA.cy, capped, [])]
+  assert.equal(game.spawnWeight(capped), 0, "and out of it once one is already there")
+  // The fallback type is gone, so what guarantees an arrival is that one type
+  // states no limit at all. Without that a spawn could be silently lost.
+  const open = Object.keys(SHIP_TYPES).filter((name) => game.spawnWeight(name) > 0)
+  assert.ok(open.length > 0, "some type must always be available to arrive")
+})
+
 // ---- who shoots at whom ----------------------------------------------------
 
 // Hostility was hard-wired: every gun read visiblePlayer and the player's turret

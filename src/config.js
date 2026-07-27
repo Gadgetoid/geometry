@@ -744,9 +744,11 @@ export function deriveShipStats(type) {
 // optional modules the spawner rolls, each with a per-sector chance that ramps
 // from the type's spawn sector up to its cap.
 //
-// The spawner reads `spawn`: a type with a `chance` is rolled once its
-// `fromSector` is reached, up to `maxConcurrent` alive at a time; the type
-// marked `fallback` is spawned when nothing else is picked.
+// The spawner reads `spawn`, which is weighed like every other pool (see
+// WEIGHTS): a type joins the roll at its `fromSector` and takes a share of
+// arrivals equal to its `weight` over the total of whatever else is eligible.
+// `maxConcurrent` takes it out of the running while that many are already alive,
+// and a type without one is always available, so at least one always is.
 //
 // The rest is what a type does rather than what it is made of, so no code tests
 // a ship by name: `debris` sizes the explosion, `debrisMaterial` says what its
@@ -853,7 +855,7 @@ const SHIP_DESIGNS = {
         chanceCap: 0.85,
       },
     },
-    spawn: { fromSector: 4, chance: 0.2, maxConcurrent: 1 },
+    spawn: { fromSector: 4, weight: 2, maxConcurrent: 1 },
     hunts: true,
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 260, ring: 19, shake: 10 },
@@ -893,7 +895,7 @@ const SHIP_DESIGNS = {
       },
       shield: { hp: 2, shield: "standard", chancePerSector: 0.12, chanceCap: 0.8 },
     },
-    spawn: { fromSector: 4, fallback: true },
+    spawn: { fromSector: 4, weight: 6 }, // the common one, and the one always available
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
     killScore: 400,
@@ -938,7 +940,7 @@ const SHIP_DESIGNS = {
       { hp: 4, weapon: "autocannon", controller: "turret" },
       { hp: 5, shield: "standard" },
     ],
-    spawn: { fromSector: 6, chance: 0.3, maxConcurrent: 1 },
+    spawn: { fromSector: 6, weight: 2, maxConcurrent: 1 },
     hunts: true, // steers for the player rather than for ore and rocks
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },

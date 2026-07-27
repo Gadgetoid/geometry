@@ -392,25 +392,22 @@ export class Game {
     this.rivals.push(ship)
   }
 
-  spawnRival() {
-    const bearing = randRange(0, TAU)
-    // roll each gated ship type in turn, then fall back to the basic rival
-    let fallbackName = null
-    for (const [name, type] of Object.entries(SHIP_TYPES)) {
-      if (type.spawn.fallback) {
-        fallbackName = name
-        continue
-      }
-      if (
-        this.level >= type.spawn.fromSector &&
-        this.countRivals(name) < type.spawn.maxConcurrent &&
-        Math.random() < type.spawn.chance
-      ) {
-        this.#enterRival(name, bearing, this.rollLoadout(type))
-        return
-      }
+  // What a type weighs in this sector's arrivals: nothing while as many are
+  // already out there as it is allowed, and its weight at this sector otherwise.
+  spawnWeight(name) {
+    const { spawn } = SHIP_TYPES[name]
+    if (spawn.maxConcurrent !== undefined && this.countRivals(name) >= spawn.maxConcurrent) {
+      return 0
     }
-    this.#enterRival(fallbackName, bearing, this.rollLoadout(SHIP_TYPES[fallbackName]))
+    return weightAt(spawn, this.level)
+  }
+
+  spawnRival() {
+    const name = weightedPick(Object.keys(SHIP_TYPES), (n) => this.spawnWeight(n))
+    if (!name) {
+      return
+    }
+    this.#enterRival(name, randRange(0, TAU), this.rollLoadout(SHIP_TYPES[name]))
   }
 
   shatterToOre(asteroid) {
