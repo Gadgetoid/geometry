@@ -3850,6 +3850,25 @@ test("an open menu meets the box it belongs to, in that item's colour", () => {
   )
 })
 
+// Every outline drawn in one colour, for picking the ship out of a page that also draws
+// little ones for the lives.
+function polysDrawnBy(game, colour) {
+  const polys = []
+  const renderer = new Proxy(
+    {
+      strokePoly: (points, opts) => {
+        if (opts && opts.color === colour) {
+          polys.push(points)
+        }
+      },
+    },
+    { get: (target, key) => (key in target ? target[key] : () => {}) },
+  )
+  new GameView(renderer).render(game)
+  return polys
+}
+const spanY = (points) => Math.max(...points.map((p) => p.y)) - Math.min(...points.map((p) => p.y))
+
 test("the preview shows the turret that would be on the mount, facing forward", () => {
   // A turret is bought from a list of names, and a name says nothing about the size of
   // the thing that turns up on the ship. The mount the cursor is on shows it.
@@ -3880,6 +3899,18 @@ test("the preview shows the turret that would be on the mount, facing forward", 
   const shown = barrels()
   const gun = game.player.hardpointByRole("aux").module
   assert.equal(shown.length, gun.barrels, "one barrel drawn per barrel it has")
+
+  // At the hull's scale, since the point of showing it is how much of the ship it takes
+  // up: the two are measured against each other rather than either being a fixed size.
+  const hull = polysDrawnBy(game, game.player.colour).sort((a, b) => spanY(b) - spanY(a))[0]
+  const drawnHull = spanY(hull)
+  const drawnBarrel = Math.abs(shown[0].ay - shown[0].by)
+  const world = game.player.outlineLocal.map(([lx]) => lx)
+  const worldHull = Math.max(...world) - Math.min(...world)
+  assert.ok(
+    Math.abs(drawnBarrel / drawnHull - 12 / worldHull) < 0.05,
+    `the gun is drawn at the hull's scale, got ${(drawnBarrel / drawnHull).toFixed(2)} of it`,
+  )
   for (const line of shown) {
     assert.ok(line.by < line.ay, "pointing the way the hull does, which is up here")
     assert.ok(line.alpha < 1, "faintly: it is a preview, not the ship's own gun")
@@ -3888,6 +3919,28 @@ test("the preview shows the turret that would be on the mount, facing forward", 
   // And only while the turret is what is being looked at.
   game.shopSelection = 0
   assert.equal(barrels().length, 0)
+})
+
+test("a turret is fitted to a mount the hull actually has", () => {
+  // The rows drawn as boxes share one cursor and do not have the same number of boxes.
+  // A cursor left on the fourth special arrived at a turret row with one mount and
+  // fitted the gun to a mount that was not there, so nothing appeared on the ship.
+  for (let left = 0; left < MAX_SLOTS; left++) {
+    const game = liveGame()
+    game.devMode = true
+    game.enterShop()
+    game.shopSlot = left // where the specials row left it
+    for (let row = 0; row <= SHOP.length; row++) {
+      const item = game.shopItem(row)
+      if (item && item.equipment === "turret") {
+        game.shopSelection = row
+      }
+    }
+    game.doShopAction()
+    assert.equal(game.slotMenu.slot, 0, `one mount, so the menu is on it (cursor was ${left})`)
+    game.slotMenuRows(game.slotMenu.slot)[0].action(game, game.slotMenu.slot)
+    assert.ok(game.player.hasTurret(), `the gun is on the ship (cursor was ${left})`)
+  }
 })
 
 test("a special says what it does, wherever it is being looked at", () => {

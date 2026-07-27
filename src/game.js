@@ -335,6 +335,14 @@ export class Game {
     const spec = item && item.equipment ? EQUIPMENT[item.equipment] : null
     return spec && spec.perMount && this.player ? this.player.mountsForSlot(spec).length : 0
   }
+
+  // Which box the cursor is on in a row, which is never past the end of it. The rows
+  // drawn as boxes share one cursor and do not have the same number of boxes, so a
+  // cursor left on the fourth special arrived at a turret row with one mount and fitted
+  // the gun to a mount that was not there.
+  shopBox(row = this.shopSelection) {
+    return clamp(this.shopSlot, 0, Math.max(0, this.boxesOnRow(row) - 1))
+  }
   equipmentName(slot) {
     const option = this.equipmentOption(slot, this.fittedEquipment(slot))
     return option ? option.name : "-"
@@ -1319,7 +1327,7 @@ export class Game {
       if (!spec.perMount) {
         return mounts
       }
-      const at = mounts[Math.min(this.shopSlot, mounts.length - 1)]
+      const at = mounts[this.shopBox(row)]
       return at === undefined ? [] : [at]
     }
     return item.id === "core" ? core() : []
@@ -1577,7 +1585,7 @@ export class Game {
 
   doShopAction() {
     if (this.shopSelection === this.slotsRow) {
-      this.openSlotMenu(this.shopSlot)
+      this.openSlotMenu(this.shopBox())
       return
     }
     if (this.shopSelection === this.launchRow) {
@@ -1592,7 +1600,7 @@ export class Game {
     // An equipment row has nothing to buy of its own: it opens on what its slot
     // could hold, and the buying and swapping happen in there.
     if (item.equipment) {
-      this.openEquipmentMenu(item.equipment, this.shopSlot)
+      this.openEquipmentMenu(item.equipment, this.shopBox())
       return
     }
     if (item.levels) {
@@ -2954,7 +2962,7 @@ export class Game {
     }
     // Every box is reachable, fitted or not: an empty one is where the next slot
     // is bought, so the cursor has to be able to land on it.
-    this.shopSlot = clamp(this.shopSlot + Math.sign(step), 0, boxes - 1)
+    this.shopSlot = clamp(this.shopBox() + Math.sign(step), 0, boxes - 1)
     return true
   }
 

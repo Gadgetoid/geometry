@@ -1160,7 +1160,7 @@ export class GameView {
     // belongs to whichever it was opened on.
     const menu = game.slotMenu
     const open = !!(menu && menu.equipment === "turret")
-    const onCursor = selected ? game.shopSlot : -1
+    const onCursor = selected ? game.shopBox() : -1
     const mounts = player
       .mountsForSlot(EQUIPMENT.turret)
       .map((at) => ({ hp: player.hardpoints[at], at }))
@@ -1268,7 +1268,19 @@ export class GameView {
         // the thing that turns up on the ship.
         const gun = module && module.kind === "weapon" ? module : null
         if (gun && hp.role !== "nose") {
-          drawTurret(r, at.x, at.y, -Math.PI / 2, gun.barrels, PALETTE.player.turret, 18, 0.45)
+          // At the hull's own scale, since a turret is a real size on a real ship: the
+          // point of showing it is how much of the hull it takes up.
+          drawTurret(
+            r,
+            at.x,
+            at.y,
+            -Math.PI / 2,
+            gun.barrels,
+            PALETTE.player.turret,
+            12 * scale,
+            0.45,
+            scale,
+          )
         }
         // Named on a leader line, the way a special in the sector names itself: out from
         // the hull, a short run, and the label at the end of it.
@@ -1358,7 +1370,7 @@ export class GameView {
         boxY = y - size + 7
       const owned = index < game.specialSlots(),
         spec = game.slotType(index),
-        onCursor = selected && game.shopSlot === index
+        onCursor = selected && game.shopBox() === index
       const menu = game.slotMenu
       const opened = !!(menu && !menu.equipment && !menu.levels && menu.slot === index)
       if (opened) {

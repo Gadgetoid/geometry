@@ -693,9 +693,22 @@ function trackedAim(seen, hp, at, fallback) {
   return hp.aim ?? fallback
 }
 
-export function drawTurret(renderer, x, y, aim, barrels, colour, length = 10, alpha = 1) {
-  renderer.circle(x, y, 3.4, { stroke: colour, width: 1.6, glow: 8, alpha })
-  const across = 2.6 // barrel separation, across the line of fire
+// A gun on its mount: a nub with a barrel per shot it throws at once. `scale` draws the
+// whole thing larger or smaller without changing its proportions, for a diagram of a ship
+// drawn at some other size than the sector draws it at.
+export function drawTurret(
+  renderer,
+  x,
+  y,
+  aim,
+  barrels,
+  colour,
+  length = 10,
+  alpha = 1,
+  scale = 1,
+) {
+  renderer.circle(x, y, 3.4 * scale, { stroke: colour, width: 1.6 * scale, glow: 8, alpha })
+  const across = 2.6 * scale // barrel separation, across the line of fire
   const px = -Math.sin(aim) * across,
     py = Math.cos(aim) * across
   for (let i = 0; i < barrels; i++) {
@@ -704,7 +717,7 @@ export function drawTurret(renderer, x, y, aim, barrels, colour, length = 10, al
       by = y + py * offset
     renderer.line(bx, by, bx + Math.cos(aim) * length, by + Math.sin(aim) * length, {
       color: colour,
-      width: 1.6,
+      width: 1.6 * scale,
       glow: 8,
       alpha,
     })
