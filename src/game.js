@@ -366,6 +366,9 @@ export class Game {
           }
           return g.devMode ? "FREE" : `${option.cost} ore`
         },
+        // Something to spend on, as opposed to something already owned or still out of
+        // reach up a ladder.
+        buyable: (g) => !locked && !g.ownsEquipment(slot, option.id),
         action: (g) => {
           if (g.ownsEquipment(slot, option.id)) {
             g.fitEquipment(slot, option.id)
@@ -1249,6 +1252,8 @@ export class Game {
             : `${row.levelCost(at)} ore`
           : "-"
       },
+      // The one step there is anything to spend on: the next one up.
+      buyable: (g) => level === g.upgrades[id] + 1,
       action: (g) => {
         if (level !== g.upgrades[id] + 1) {
           return
@@ -1300,9 +1305,20 @@ export class Game {
     this.slotMenu = { slot, selection: 0 }
   }
 
-  // Open the pop-over on an equipment slot rather than on a special slot.
+  // Open the pop-over on an equipment slot rather than on a special slot, on the row
+  // there is anything to do with: the first thing worth buying, or what is fitted when
+  // the slot is already full up. Same as a levelled row, which opens on its next step.
   openEquipmentMenu(slot) {
-    this.slotMenu = { slot: 0, equipment: slot, selection: 0 }
+    const rows = this.equipmentRows(slot)
+    const wanted = rows.findIndex((row) => row.buyable && row.buyable(this, 0))
+    const fitted = EQUIPMENT[slot].options.findIndex(
+      (option) => option.id === this.fittedEquipment(slot),
+    )
+    this.slotMenu = {
+      slot: 0,
+      equipment: slot,
+      selection: wanted >= 0 ? wanted : Math.max(0, fitted),
+    }
   }
 
   // Or on the ladder of a levelled upgrade, starting on the next step rather than on
@@ -1340,8 +1356,30 @@ export class Game {
   #slotMenuConfirm() {
     const { slot, selection } = this.slotMenu
     const row = this.slotMenuRows(slot)[selection]
-    if (row) {
-      row.action(this, slot)
+    if (!row) {
+      return
+    }
+    const wasBuyable = !!row.buyable && row.buyable(this, slot)
+    row.action(this, slot)
+    // A row that was a purchase and is not one any more is a purchase that went
+    // through: one too dear to afford stays buyable, and the cursor stays on it.
+    if (this.slotMenu && wasBuyable && !row.buyable(this, slot)) {
+      this.#landOnNextPurchase()
+    }
+  }
+
+  // Land on the next row there is something to spend on, so a ladder can be climbed
+  // without walking back up it after every purchase. Nothing left to buy leaves the
+  // cursor where it is.
+  #landOnNextPurchase() {
+    const { slot, selection } = this.slotMenu
+    const rows = this.slotMenuRows(slot)
+    for (let step = 1; step <= rows.length; step++) {
+      const at = (selection + step) % rows.length
+      if (rows[at].buyable && rows[at].buyable(this, slot)) {
+        this.slotMenu.selection = at
+        return
+      }
     }
   }
 

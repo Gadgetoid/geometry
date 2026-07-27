@@ -2303,6 +2303,44 @@ test("the pop-over takes the input the shop behind it would have taken", () => {
   assert.equal(game.slotMenu, null, "and so does escape")
 })
 
+test("a purchase lands the cursor on the next thing worth buying", () => {
+  // So a ladder is climbed with repeated presses of the same key instead of walking
+  // the cursor back down to the next mark after every purchase.
+  const game = liveGame()
+  game.oreBalance = 9000
+  game.enterShop()
+  game.shopSelection = equipmentRowIndex(game, "laser")
+  game.menuConfirm() // opens the laser's marks
+  const marks = EQUIPMENT.laser.options
+  assert.equal(game.slotMenu.selection, 1, "the pop-over opens on the first mark worth buying")
+
+  for (let mark = 1; mark < marks.length - 1; mark++) {
+    game.menuConfirm()
+    assert.ok(game.ownsEquipment("laser", marks[mark].id), `mark ${mark + 1} was bought`)
+    assert.equal(
+      game.slotMenu.selection,
+      mark + 1,
+      `after buying mark ${mark + 1} the cursor should sit on the one above it`,
+    )
+  }
+  // The top of the ladder: nothing left to spend on, so the cursor stays put.
+  game.menuConfirm()
+  assert.equal(game.slotMenu.selection, marks.length - 1)
+  assert.ok(game.ownsEquipment("laser", marks[marks.length - 1].id), "every mark is owned")
+})
+
+test("a purchase that cannot be afforded leaves the cursor on it", () => {
+  const game = liveGame()
+  game.oreBalance = 0
+  game.enterShop()
+  game.shopSelection = equipmentRowIndex(game, "shield")
+  game.menuConfirm()
+  const before = game.slotMenu.selection
+  game.menuConfirm()
+  assert.equal(game.slotMenu.selection, before, "nothing was bought, so nothing moves")
+  assert.equal(game.fittedEquipment("shield"), null, "and no shield was fitted")
+})
+
 test("selling a slot pays what the special is worth and empties that slot", () => {
   const game = liveGame()
   withSlots(game, 3)
