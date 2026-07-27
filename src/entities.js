@@ -49,6 +49,7 @@ import {
   SPECIAL_TYPES,
   MAX_SLOTS,
   SHIELD_SPARK,
+  SHIP_SCALARS,
   barrelCount,
 } from "./config.js"
 import { Sound } from "./audio.js"
@@ -1613,7 +1614,9 @@ export class PlayerShip extends Ship {
     return !!(this.aux && this.aux.module && this.aux.module.kind === "weapon")
   }
 
-  // What the fitted engines add up to, which is what the ship accelerates on.
+  // What the fitted engines add up to, which is what the ship flies on. Both numbers
+  // are the drive's through the same relationships every other hull answers to, so
+  // fitting a lesser drive costs top speed as well as acceleration.
   refreshDrive() {
     let thrust = 0
     for (const module of this.modules()) {
@@ -1622,6 +1625,7 @@ export class PlayerShip extends Ship {
       }
     }
     this.accel = thrust / (this.type.mass ?? 1)
+    this.maxSpeed = this.accel * SHIP_SCALARS.speedPerAccel
   }
 
   #toWorld(lx, ly) {
@@ -1835,9 +1839,9 @@ export class PlayerShip extends Ship {
     Sound.setThruster(this.thrusting || this.reversing)
 
     const speed = Math.hypot(this.vx, this.vy)
-    if (speed > CONFIG.MAX_SPEED) {
-      this.vx *= CONFIG.MAX_SPEED / speed
-      this.vy *= CONFIG.MAX_SPEED / speed
+    if (speed > this.maxSpeed) {
+      this.vx *= this.maxSpeed / speed
+      this.vy *= this.maxSpeed / speed
     }
     this.vx *= Math.pow(CONFIG.SPEED_DRAG, dt)
     this.vy *= Math.pow(CONFIG.SPEED_DRAG, dt)

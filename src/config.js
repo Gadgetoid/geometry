@@ -36,7 +36,9 @@ export const SHIELD_SPARK = PALETTE.shield.spark // ring colour when a shield ta
 export const CONFIG = {
   // player movement / feel
   ROT: 3.2,
-  MAX_SPEED: 340,
+  // Top speed is the drive's, see SHIP_SCALARS. Drag stays here: it is a control
+  // aid rather than a property of the hull, and it is what makes the ship coast the
+  // way it is flown.
   SPEED_DRAG: 0.85,
   THRUST_COST: 21, // energy/sec while thrusting
   INVIN_TIME: 2.5, // grace after arriving, counted from when the ship can be flown
@@ -912,7 +914,11 @@ export const FACTIONS = {
 // shape and mass dictate.
 // ---------------------------------------------------------------------------
 export const SHIP_SCALARS = {
-  speedPerAccel: 1.37, // top speed, as a multiple of acceleration
+  // Top speed, as a multiple of acceleration. Taken from the player's hull, which
+  // was flown at 340 on 270 of thrust long before any of this was derived: that
+  // pair was tuned against the controls by hand, so it is the one measurement here
+  // worth calibrating against. Rounded, which puts the player at 340.2.
+  speedPerAccel: 1.26,
   // turnRate = thrust * this / (mass * reach): thrusters at the hull's edge give a
   // torque proportional to its reach, against a spin inertia that grows with mass
   // and with reach squared, so one power of the reach cancels.
@@ -1417,7 +1423,7 @@ export const EQUIPMENT = {
       {
         id: "vectoredDrive",
         name: "VECTORED DRIVE",
-        desc: "Backs away under DOWN or S, and accelerates less hard.",
+        desc: "Backs away under DOWN or S. Less thrust, so less speed and less push.",
         cost: 55,
       },
     ],

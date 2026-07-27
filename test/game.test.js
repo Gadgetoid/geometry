@@ -32,6 +32,7 @@ import {
   BINDABLE_CONTROLS,
   BINDING_DEVICES,
   CONFIG,
+  ENGINE_TYPES,
   HAZARD_TRAITS,
   weightAt,
   MAX_SLOTS,
@@ -4303,6 +4304,39 @@ test("a new ship needs a shape, two numbers and an engine, and nothing else", ()
   } finally {
     delete SHIP_TYPES.corvette
   }
+})
+
+test("the player's speed is its drive's, through the same relationship as any hull", () => {
+  const game = liveGame()
+  const scalar = SHIP_SCALARS.speedPerAccel
+  const speedOn = (id) => {
+    withEquipment(game, "engine", id)
+    return { accel: game.player.accel, top: game.player.maxSpeed }
+  }
+  const miner = speedOn("minerDrive")
+  assert.equal(miner.accel, ENGINE_TYPES.minerDrive.thrust / PLAYER_TYPE.mass, "thrust over mass")
+  assert.ok(Math.abs(miner.top - miner.accel * scalar) < 1e-9, "and top speed follows from it")
+
+  // The drive that can push backwards makes less thrust, so it costs top speed as
+  // well as acceleration: the trade is in the numbers and not in a rule.
+  const vectored = speedOn("vectoredDrive")
+  assert.ok(vectored.accel < miner.accel, "the vectored drive accelerates less hard")
+  assert.ok(vectored.top < miner.top, "and tops out lower")
+  assert.ok(
+    Math.abs(vectored.top / miner.top - vectored.accel / miner.accel) < 1e-9,
+    "in the same proportion, since one relationship decides both",
+  )
+
+  // And the clamp the ship is flown against is that number, not a constant.
+  assert.equal(CONFIG.MAX_SPEED, undefined, "no global top speed is left to disagree with it")
+  withEquipment(game, "engine", "minerDrive")
+  game.player.vx = 9000
+  game.player.vy = 0
+  game.advance(1 / 60)
+  assert.ok(
+    Math.hypot(game.player.vx, game.player.vy) <= game.player.maxSpeed + 1e-9,
+    "a hull thrown past its top speed is pulled back to it",
+  )
 })
 
 test("stating a setting on a type keeps it, for tuning one ship", () => {
