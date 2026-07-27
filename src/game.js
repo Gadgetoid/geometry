@@ -85,7 +85,10 @@ import {
 
 const PARTICLE_LIFE = 5 // global lifetime multiplier
 const PARTICLE_DRAG = 0.4 // velocity retained per second
-const MAX_PARTICLES = 1200
+// How many particles may be alive at once, oldest dropped past it. Set above what a busy
+// sector asks for: a row of hulls cut open and burning with explosive rock going off among
+// them peaks near 4,800, and one particle is a single line quad, so the room is cheap.
+export const MAX_PARTICLES = 6000
 // The first sector any rival appears in: the earliest spawn gate across the
 // ship types.
 // Phases where a sector is live and the simulation runs. Around them sit

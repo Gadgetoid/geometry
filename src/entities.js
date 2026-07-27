@@ -95,15 +95,26 @@ export function facesOnLine(vertices, point, normal) {
 
 // Fire for a body whose material states no colour of its own: rock, which does not burn
 // where it is cut but still throws flame when something bolted to it comes apart.
-export const DEFAULT_BURN = { colour: PALETTE.fx.fire, ember: PALETTE.fx.ember }
+export const DEFAULT_BURN = {
+  colour: PALETTE.fx.fire,
+  ember: PALETTE.fx.ember,
+  smoke: PALETTE.fx.smoke,
+}
 
-// Fire licking off those faces, thinning out as the heat goes. `carry` is the fractional
-// particle held between frames, and the new one is returned.
+// How smoke leaves a burning face. It is given only a fraction of the body's own motion,
+// so a piece that is still moving strings its smoke out behind it: the trail is the
+// smoke being left where it was made, not a drawn effect.
+const SMOKE_CARRY = 0.2
+const SMOKE_SPEED = [7, 26]
+const SMOKE_LIFE = [0.5, 1.05] // against fire's 0.16 to 0.38, so it hangs long after the flame
+
+// Fire licking off those faces and smoke coming off with it, thinning out as the heat
+// goes. `carry` holds the fractional particle of each between frames, and the new pair
+// is returned.
 export function emitBurn(game, body, vertices, faces, spec, heat, carry, dt) {
-  let backlog = carry + spec.rate * heat * dt
   const centre = body.center || body
-  while (backlog >= 1) {
-    backlog -= 1
+  // Somewhere along a raw face, and the way out of the body there.
+  const onFace = () => {
     const [i, j] = faces[randInt(0, faces.length - 1)]
     const a = vertices[i],
       b = vertices[j]
@@ -120,6 +131,13 @@ export function emitBurn(game, body, vertices, faces, spec, heat, carry, dt) {
       nx = -nx
       ny = -ny
     }
+    return { px, py, nx, ny }
+  }
+
+  let fire = carry.fire + spec.rate * heat * dt
+  while (fire >= 1) {
+    fire -= 1
+    const { px, py, nx, ny } = onFace()
     const speed = randRange(18, 62) * (0.45 + 0.55 * heat)
     game.emit(
       px,
@@ -130,7 +148,24 @@ export function emitBurn(game, body, vertices, faces, spec, heat, carry, dt) {
       Math.random() < 0.35 ? spec.ember : spec.colour,
     )
   }
-  return backlog
+
+  // Smoke keeps coming as the flame dies down, so a wreck that has finished burning is
+  // still smouldering on its way out.
+  let smoke = carry.smoke + spec.smokeRate * (0.35 + 0.65 * heat) * dt
+  while (smoke >= 1) {
+    smoke -= 1
+    const { px, py, nx, ny } = onFace()
+    const speed = randRange(SMOKE_SPEED[0], SMOKE_SPEED[1]) * (0.5 + 0.5 * heat)
+    game.emit(
+      px,
+      py,
+      body.vx * SMOKE_CARRY + nx * speed + randRange(-9, 9),
+      body.vy * SMOKE_CARRY + ny * speed + randRange(-9, 9),
+      randRange(SMOKE_LIFE[0], SMOKE_LIFE[1]),
+      spec.smoke,
+    )
+  }
+  return { fire, smoke }
 }
 
 // The raw face itself, still glowing and cooling as it goes out.
@@ -425,7 +460,7 @@ export class Entity {
     // vertex index pairs into the outline, so they turn with the ship.
     this.burn = 0
     this.burnFaces = []
-    this.burnBacklog = 0
+    this.burnBacklog = { fire: 0, smoke: 0 }
     this.fxCooldown = 0 // throttles repeated hit particles (e.g. asteroid grind)
   }
 
@@ -3074,7 +3109,7 @@ export class Asteroid extends Entity {
     this.material = opts.material || null
     this.burn = 0
     this.burnFaces = []
-    this.burnBacklog = 0
+    this.burnBacklog = { fire: 0, smoke: 0 }
     if (this.burnSpec && opts.burnFrom) {
       this.burnFaces = facesOnLine(this.vertices, opts.burnFrom.point, opts.burnFrom.normal)
       if (this.burnFaces.length) {

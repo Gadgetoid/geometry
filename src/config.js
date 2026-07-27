@@ -1495,10 +1495,18 @@ export function deriveShipStats(type) {
 // a burning piece is plating too, and burns as well.
 export const SHIP_PLATING = {
   minArea: CONFIG.SHIP_DEBRIS_MIN_AREA,
-  // `rate` is fire particles a second at full heat, and the colours are what that fire
-  // and its falling embers are made of, so the material decides how a cut hull looks
-  // and no drawing code holds a colour of its own.
-  burn: { seconds: 9.0, rate: 30, colour: PALETTE.fx.fire, ember: PALETTE.fx.ember },
+  // A torn hull burns for a good while and is meant to be seen doing it. The rates are
+  // particles a second at full heat, and the colours are what that fire, its falling
+  // embers and its smoke are made of, so the material decides how a cut hull looks and
+  // no drawing code holds a colour of its own.
+  burn: {
+    seconds: 16.0,
+    rate: 44,
+    smokeRate: 16,
+    colour: PALETTE.fx.fire,
+    ember: PALETTE.fx.ember,
+    smoke: PALETTE.fx.smoke,
+  },
   // A hull fragment is a shell rather than a boulder, so it comes apart at a fraction
   // of what rock takes: above the drift of a rock field and well under the speed a
   // wreck is thrown at, so a piece still carrying its ship's momentum bursts on the
@@ -1510,7 +1518,12 @@ export const SHIP_PLATING = {
 // colour, so a sector strewn with wreckage still reads at a glance as to whose it is.
 export const ALIEN_PLATING = {
   ...SHIP_PLATING,
-  burn: { ...SHIP_PLATING.burn, colour: PALETTE.alien.fire, ember: PALETTE.alien.ember },
+  burn: {
+    ...SHIP_PLATING.burn,
+    colour: PALETTE.alien.fire,
+    ember: PALETTE.alien.ember,
+    smoke: PALETTE.alien.smoke,
+  },
 }
 // ---------------------------------------------------------------------------
 export const FRIGATE_SHAPE = [

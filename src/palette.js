@@ -92,6 +92,7 @@ export const PALETTE = {
     exhaustFlame: "#9dffc6", // and the fire at the throat, paler than the plume
     fire: "#3dff7a", // their plating burning where it is cut
     ember: "#c8ff9a", // and what falls off it, paler and yellower
+    smoke: "#2f5c46", // and the smoke it trails, dark and still green
   },
 
   // asteroids. Plain rock is a size ramp between `sizeCool` and `sizeWarm`;
@@ -124,6 +125,7 @@ export const PALETTE = {
   fx: {
     fire: "#ff7a4a",
     ember: "#ffd36a",
+    smoke: "#6b6f7d", // what a fire trails behind it, dark against space
     flash: "#ffcf5c",
     dust: "#cfe0ff",
   },

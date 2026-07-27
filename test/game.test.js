@@ -11,7 +11,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { Game } from "../src/game.js"
+import { Game, MAX_PARTICLES } from "../src/game.js"
 import { GameView } from "../src/view.js"
 import { PALETTE } from "../src/palette.js"
 import {
@@ -2476,9 +2476,18 @@ test("the edge a cut leaves on a surviving hull burns", () => {
   }
   assert.ok(fire() > before, "and it throws fire while it flies")
 
-  // It burns out, rather than smoking for the rest of the run.
-  for (let i = 0; i < 60 * 12; i++) {
-    light.game.advance(1 / 60)
+  // Smoke comes off it as well, and lasts long enough to be strung out behind it.
+  const smoke = light.game.particles.filter((p) => p.color === PALETTE.fx.smoke)
+  assert.ok(smoke.length > 0, "it smokes as it burns")
+  assert.ok(
+    Math.max(...smoke.map((p) => p.maxLife)) > 2,
+    "and the smoke hangs about for seconds, not for a flicker",
+  )
+
+  // It burns out, rather than smoking for the rest of the run. Ticked directly, since
+  // it burns for longer than the sector it was cut in lasts once the rocks are gone.
+  for (let i = 0; i < 60 * (SHIP_PLATING.burn.seconds + 1); i++) {
+    light.ship.updateBurn(1 / 60, light.game)
   }
   assert.equal(light.ship.burn, 0, "and then it is out")
 
@@ -2491,6 +2500,39 @@ test("the edge a cut leaves on a surviving hull burns", () => {
   )
   cut.ship.draw(renderer, cut.game)
   assert.ok(drawn.includes(PALETTE.fx.fire), "the raw edge glows")
+})
+
+test("a sector full of burning wreckage does not run the particle buffer out", () => {
+  // Past the cap the oldest particles go, so a buffer sized under what a busy sector
+  // asks for quietly eats the effects of everything else happening in it.
+  const game = liveGame()
+  game.player.x = -3000
+  game.player.y = -3000
+  game.player.invincible = 1e9
+  const ships = []
+  for (let k = 0; k < 6; k++) {
+    const which = k % 2 ? "frigate" : "alienFrigate"
+    const ship = plainRival(200 + k * 200, 320, which, withoutShield(SHIP_TYPES[which].loadout))
+    ship.angle = 0
+    ships.push(ship)
+  }
+  game.rivals = ships
+  for (const ship of ships) {
+    const y = ship.y + 14
+    const beam = { a: { x: ship.x - 200, y }, dir: { x: 1, y: 0 }, b: { x: ship.x + 200, y } }
+    game.applyBeam(beam, game.player, playerWeapon)
+  }
+  assert.ok(
+    game.asteroids.filter((rock) => rock.burn > 0).length >= 6,
+    "the sector must actually be full of burning wreckage for this to measure anything",
+  )
+  let peak = 0
+  for (let i = 0; i < 60 * 8; i++) {
+    game.advance(1 / 60)
+    peak = Math.max(peak, game.particles.length)
+  }
+  assert.ok(peak > 1000, `the scene must be a heavy one, peaked at ${peak}`)
+  assert.ok(peak < MAX_PARTICLES, `and must fit, peaked at ${peak} of ${MAX_PARTICLES}`)
 })
 
 test("what colour a hull burns is its material's, so an alien burns green", () => {
