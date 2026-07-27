@@ -530,6 +530,11 @@ export class Game {
   }
 
   spawnSpecial() {
+    // Sometimes nothing turns up, which is what keeps a drop a thing that happened
+    // rather than a thing on a timer. The wait starts again either way.
+    if (Math.random() >= PROGRESSION.specials.showChance) {
+      return
+    }
     // One of each at most. A sector early enough to have found only one kind was carpeted
     // in that kind: the cap on how many are adrift says nothing about what they are, and
     // two of the same thing is one thing worth going for.

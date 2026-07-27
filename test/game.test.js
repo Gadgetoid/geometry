@@ -4273,6 +4273,41 @@ test("every gun a flown hull carries is drawn on it", () => {
   )
 })
 
+test("a drop is a thing that happened, not a thing on a timer", () => {
+  // The wait between drops is the same either way, and sometimes nothing turns up: a
+  // sector that offers one kind should not hand it over every time the clock comes round.
+  const arrivals = (chance) => {
+    const spec = PROGRESSION.specials
+    const was = spec.showChance
+    spec.showChance = chance
+    try {
+      const game = liveGame()
+      game.startLevel(12)
+      game.phase = "play"
+      const player = beSolid(game.player)
+      let seen = 0
+      for (let frame = 0; frame < 60 * 180; frame++) {
+        player.invincible = 1e9 // so nothing is collected on the way past
+        player.x = -4000
+        player.y = -4000
+        const before = game.specialPickups.length
+        game.advance(1 / 60)
+        seen += game.specialPickups.length > before ? 1 : 0
+      }
+      return seen
+    } finally {
+      spec.showChance = was
+    }
+  }
+  const always = arrivals(1)
+  const sometimes = arrivals(0.3)
+  assert.ok(always > 0, "they do drift in")
+  assert.ok(
+    sometimes < always,
+    `and fewer of them when a drop can miss: ${sometimes} against ${always}`,
+  )
+})
+
 test("no more than one of each kind of special is adrift at a time", () => {
   // The cap on how many are adrift says nothing about what they are, and a sector early
   // enough to have found one kind was carpeted in that kind: at sector 5 both of them

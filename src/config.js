@@ -370,7 +370,16 @@ export const PROGRESSION = {
     speed: [30, 74],
     spin: [-0.6, 0.6],
   },
-  specials: { fromSector: 5, firstDelay: [6, 10], interval: [12, 20], maxOnField: 2 },
+  // `showChance` is the odds that a drop happens at all when one is due: a sector should
+  // sometimes simply not turn one up, whether it has one kind to offer or five, so a
+  // special found is a thing that happened rather than a thing on a timer.
+  specials: {
+    fromSector: 5,
+    firstDelay: [6, 10],
+    interval: [12, 20],
+    showChance: 0.55,
+    maxOnField: 2,
+  },
 }
 
 // ---------------------------------------------------------------------------
