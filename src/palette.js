@@ -63,6 +63,7 @@ export const PALETTE = {
     spark: "#9fe8ff",
     standard: "#9fe8ff",
     deflector: "#b8f0ff",
+    bulwark: "#7fb4ff", // heavier and bluer, for the bubble that shrugs off shot
     flash: "#ffffff",
   },
 

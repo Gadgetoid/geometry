@@ -1205,10 +1205,16 @@ test("a beam cuts every hull it passes through, as it cuts every rock", () => {
 // and to leave its host wide open on the other. Both halves matter, so both are
 // pinned here against whichever shields the registry actually declares.
 test("a single-channel shield outperforms a general one on the channel it covers", () => {
+  // A shield pricing its channels separately is braced against one of them, so it is
+  // not the plain general-purpose bubble this is about; see below for its own trade.
+  const names = Object.keys(SHIELD_TYPES)
   const general =
-    SHIELD_TYPES[Object.keys(SHIELD_TYPES).find((k) => SHIELD_TYPES[k].blocks.length > 1)]
-  const specialist =
-    SHIELD_TYPES[Object.keys(SHIELD_TYPES).find((k) => SHIELD_TYPES[k].blocks.length === 1)]
+    SHIELD_TYPES[
+      names.find(
+        (k) => SHIELD_TYPES[k].blocks.length > 1 && typeof SHIELD_TYPES[k].efficiency === "number",
+      )
+    ]
+  const specialist = SHIELD_TYPES[names.find((k) => SHIELD_TYPES[k].blocks.length === 1)]
   assert.ok(specialist, "some shield should cover one channel only")
   assert.ok(
     specialist.efficiency < general.efficiency,
@@ -1217,6 +1223,54 @@ test("a single-channel shield outperforms a general one on the channel it covers
   assert.ok(specialist.dropAt < general.dropAt, "and hold on further down the cell")
   assert.ok(specialist.recoverAt <= general.recoverAt, "and come back sooner")
   assert.ok(specialist.recoverDelay <= general.recoverDelay, "after a shorter wait")
+})
+
+test("a shield braced against one channel pays for it on another", () => {
+  // Per-channel efficiency is only interesting as a trade. A bubble that prices two
+  // channels separately has to be better than the plain one on at least one of them
+  // and worse on at least one, or it is a straight upgrade wearing a table.
+  const plain = SHIELD_TYPES.standard
+  const drain = (type, channel) =>
+    typeof type.efficiency === "number" ? type.efficiency : (type.efficiency[channel] ?? 1)
+  const braced = Object.entries(SHIELD_TYPES).filter(
+    ([, type]) => typeof type.efficiency === "object",
+  )
+  assert.ok(braced.length, "some shield should price its channels apart")
+  for (const [name, type] of braced) {
+    const channels = type.blocks
+    assert.ok(
+      channels.some((channel) => drain(type, channel) < drain(plain, channel)),
+      `${name} should beat the plain bubble somewhere`,
+    )
+    assert.ok(
+      channels.some((channel) => drain(type, channel) > drain(plain, channel)),
+      `${name} should be worse than it somewhere too`,
+    )
+  }
+
+  // And the drain a host actually pays is the one for the channel that hit it.
+  const shield = new Shield("bulwark")
+  assert.equal(shield.drainPer("projectile"), SHIELD_TYPES.bulwark.efficiency.projectile)
+  assert.equal(shield.drainPer("laser"), SHIELD_TYPES.bulwark.efficiency.laser)
+  // A channel it blocks without pricing costs a point for a point rather than none.
+  assert.equal(new Shield("bulwark").drainPer("gravity"), 1)
+})
+
+test("the frigate's cell soaks far more shot than beam", () => {
+  // The point of the bulwark: a turret used to strip a frigate's shield in under two
+  // seconds, which is no kind of siege hull.
+  const game = liveGame()
+  const spend = (channel, damage) => {
+    const frigate = new RivalShip(600, 300, "frigate", SHIP_TYPES.frigate.loadout)
+    const before = frigate.energy
+    frigate.takeDamage(damage, game, channel)
+    return before - frigate.energy
+  }
+  const shot = spend("projectile", 100)
+  const beam = spend("laser", 100)
+  assert.ok(shot < beam, `the same hit costs less as shot (${shot}) than as beam (${beam})`)
+  assert.ok(shot < 100, "and shot costs less than a point per point")
+  assert.ok(beam > 100, "while a beam costs more")
 })
 
 test("a deflector-shielded hull rides out a point-blank blast", () => {

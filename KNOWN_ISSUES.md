@@ -43,16 +43,19 @@ of units on a 90-unit rock.
 
 Everything that meets a raised shield meets a circle of `shieldRadius`: beams,
 shots, and now hulls. `Shield.draw` paints a regular polygon of the type's
-`sides` at that radius, and every shield in the game has `sides: 6`, so the flats
-of the drawn hexagon sit at 86.6% of the radius being collided against. Parked
-against a flat rather than a vertex, a hull stops with clear space in front of
-it:
+`sides` at that radius, so the flats of a drawn hexagon sit at 86.6% of the radius
+being collided against. Parked against a flat rather than a vertex, a hull stops
+with clear space in front of it:
 
-| bubble  | radius | worst gap |
-| ------- | ------ | --------- |
-| player  | 24.2   | 3.2       |
-| scout   | 22.3   | 3.0       |
-| frigate | 95.1   | **12.7**  |
+| bubble  | radius | sides | worst gap |
+| ------- | ------ | ----- | --------- |
+| player  | 23.9   | 6     | 3.2       |
+| scout   | 22.6   | 6     | 3.0       |
+| frigate | 95.9   | 8     | **7.3**   |
+
+The frigate is the worst of them by a long way, being the largest bubble in the
+game: on six sides it stood 12.8 units off. Its shield is an octagon, which halves
+that at no cost, since `sides` is only ever a drawing.
 
 The hexagon also turns, at `time * 0.3`, so the gap breathes rather than sitting
 still. That rotation is why the circle is the honest steady-state shape and why

@@ -505,7 +505,10 @@ export class Entity {
   takeDamage(amount, game, channel, scoreOnKill = 0, impact = null) {
     const shield = this.shieldModule()
     if (shield && shield.up && shield.blocks(channel) && this.energy > 0) {
-      this.energy = Math.max(0, this.energy - amount * shield.type.efficiency * this.damageResist())
+      this.energy = Math.max(
+        0,
+        this.energy - amount * shield.drainPer(channel) * this.damageResist(),
+      )
       const hx = impact ? impact.x : this.x,
         hy = impact ? impact.y : this.y
       if (impact) {
@@ -956,6 +959,14 @@ export class Shield {
 
   blocks(channel) {
     return this.type.blocks.includes(channel)
+  }
+
+  // Energy drained per point of damage on this channel. One number covers every
+  // channel the shield blocks; a bubble braced against one kind of fire states them
+  // separately, and anything it blocks without pricing costs a point for a point.
+  drainPer(channel) {
+    const efficiency = this.type.efficiency
+    return typeof efficiency === "number" ? efficiency : (efficiency[channel] ?? 1)
   }
 
   // Flash the side facing `angle` (world direction from the host centre).

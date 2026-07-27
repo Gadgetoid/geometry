@@ -607,6 +607,11 @@ export function barrelCount(type) {
 // SHIELD TYPES - a shield turns incoming damage into energy drain (efficiency)
 // for the damage channels it `blocks`. e.g. a deflector stops shots but not
 // lasers. A new channel needs no change here beyond listing it.
+//
+// `efficiency` is energy drained per point of damage, so a lower one is a better
+// bubble. A number covers every channel the shield blocks; an object states it per
+// channel, for a bubble braced against one kind of fire and poor against another.
+// A channel a shield blocks but does not price drains a point for a point.
 // ---------------------------------------------------------------------------
 // A shield overloads (switches off) when energy falls to `dropAt` of the host's
 // capacity, and only comes back once `recoverDelay` seconds have passed AND
@@ -636,6 +641,24 @@ export const SHIELD_TYPES = {
     dropAt: 0.12,
     recoverAt: 0.35,
     recoverDelay: 1,
+  },
+  // The frigate's: braced against small-arms fire and poor against a beam. What
+  // shoots at a hull that size is mostly autocannon and the player's turret, and a
+  // slab that a turret strips in a second and a half is not a siege ship. It pays
+  // for that on the laser channel, so the answer to a frigate is the beam - which is
+  // the weapon that cuts it in half in any case.
+  //
+  // Eight sides rather than six because it is the largest bubble in the game and the
+  // one where the drawn shape parts company with the collided circle most; see
+  // KNOWN_ISSUES.md.
+  bulwark: {
+    efficiency: { projectile: 0.55, laser: 1.6 },
+    blocks: ["laser", "projectile"],
+    sides: 8,
+    colour: PALETTE.shield.bulwark,
+    dropAt: 0.18,
+    recoverAt: 0.6,
+    recoverDelay: 3,
   },
   // The player's, in the marks the shop sells. `efficiency` is energy drained per
   // point of damage, so a lower one is a better bubble; each mark states its own
@@ -1218,7 +1241,7 @@ const SHIP_DESIGNS = {
       { hp: 4, weapon: "autocannon", controller: "turret" },
       { hp: 6, engine: "siegeDrive" },
       { hp: 7, engine: "siegeDrive" },
-      { hp: 5, core: "siegeCore", fitted: { shield: "standard", radar: "huntingArray" } },
+      { hp: 5, core: "siegeCore", fitted: { shield: "bulwark", radar: "huntingArray" } },
     ],
     spawn: { fromSector: 6, weight: 2, maxConcurrent: 1 },
     hunts: true, // steers for the player rather than for ore and rocks
