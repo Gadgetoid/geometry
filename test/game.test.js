@@ -4273,6 +4273,36 @@ test("every gun a flown hull carries is drawn on it", () => {
   )
 })
 
+test("no more than one of each kind of special is adrift at a time", () => {
+  // The cap on how many are adrift says nothing about what they are, and a sector early
+  // enough to have found one kind was carpeted in that kind: at sector 5 both of them
+  // were always repel.
+  const game = liveGame()
+  game.startLevel(5)
+  game.phase = "play"
+  const player = beSolid(game.player)
+  let mostOfOne = 0
+  let adrift = 0
+  for (let frame = 0; frame < 60 * 180; frame++) {
+    player.invincible = 1e9 // so nothing is collected on the way past
+    player.x = -4000
+    player.y = -4000
+    game.advance(1 / 60)
+    const kinds = {}
+    for (const pickup of game.specialPickups) {
+      kinds[pickup.type] = (kinds[pickup.type] || 0) + 1
+    }
+    adrift = Math.max(adrift, game.specialPickups.length)
+    mostOfOne = Math.max(mostOfOne, 0, ...Object.values(kinds))
+  }
+  assert.ok(adrift > 0, "some did drift in, or this measures nothing")
+  assert.equal(mostOfOne, 1, "and never two of the same thing")
+  assert.ok(
+    adrift <= PROGRESSION.specials.maxOnField,
+    "with the cap on how many altogether still holding",
+  )
+})
+
 test("an edge arrow is what the radar found, not what the hull can make out", () => {
   // The floor under every hull's senses reaches past the edges of the screen, so reading
   // the markers off it put an arrow on the page for ore and for hulls that the set fitted

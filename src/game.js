@@ -530,7 +530,12 @@ export class Game {
   }
 
   spawnSpecial() {
-    const type = weightedPick(SPECIAL_IDS, (id) => weightAt(SPECIAL_TYPES[id], this.level))
+    // One of each at most. A sector early enough to have found only one kind was carpeted
+    // in that kind: the cap on how many are adrift says nothing about what they are, and
+    // two of the same thing is one thing worth going for.
+    const already = new Set(this.specialPickups.map((pickup) => pickup.type))
+    const kinds = SPECIAL_IDS.filter((id) => !already.has(id))
+    const type = weightedPick(kinds, (id) => weightAt(SPECIAL_TYPES[id], this.level))
     if (!type) {
       return
     }
