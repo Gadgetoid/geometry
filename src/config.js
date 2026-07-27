@@ -1495,12 +1495,22 @@ export function deriveShipStats(type) {
 // a burning piece is plating too, and burns as well.
 export const SHIP_PLATING = {
   minArea: CONFIG.SHIP_DEBRIS_MIN_AREA,
-  burn: { seconds: 9.0, rate: 30 }, // rate is fire particles a second at full heat
+  // `rate` is fire particles a second at full heat, and the colours are what that fire
+  // and its falling embers are made of, so the material decides how a cut hull looks
+  // and no drawing code holds a colour of its own.
+  burn: { seconds: 9.0, rate: 30, colour: PALETTE.fx.fire, ember: PALETTE.fx.ember },
   // A hull fragment is a shell rather than a boulder, so it comes apart at a fraction
   // of what rock takes: above the drift of a rock field and well under the speed a
   // wreck is thrown at, so a piece still carrying its ship's momentum bursts on the
   // first thing it meets and one that has slowed to a drift is shouldered aside.
   shatterAt: 120,
+}
+
+// What an alien hull is made of. The same stuff by the numbers, burning in their own
+// colour, so a sector strewn with wreckage still reads at a glance as to whose it is.
+export const ALIEN_PLATING = {
+  ...SHIP_PLATING,
+  burn: { ...SHIP_PLATING.burn, colour: PALETTE.alien.fire, ember: PALETTE.alien.ember },
 }
 // ---------------------------------------------------------------------------
 export const FRIGATE_SHAPE = [
@@ -1708,8 +1718,7 @@ const SHIP_DESIGNS = {
   // nothing behind. The pair at the back traverse freely and mind whatever comes at
   // it, which is what makes them the defensive ones.
   //
-  // Still to come, see ROADMAP.md: the singularity it should hold in the jaws, the
-  // green burn where it is cut, and the warp and glitch it should be drawn with.
+  // Still to come, see ROADMAP.md: the glitch it should be drawn with.
   alienFrigate: {
     outline: [
       [-20, 25],
@@ -1791,7 +1800,7 @@ const SHIP_DESIGNS = {
     ],
     spawn: { fromSector: 22, weight: 2, maxConcurrent: 1 },
     hunts: true,
-    debrisMaterial: SHIP_PLATING,
+    debrisMaterial: ALIEN_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
     killScore: 900,
     blastScore: 500,
@@ -1858,7 +1867,7 @@ const SHIP_DESIGNS = {
       },
     },
     spawn: { fromSector: 20, weight: 6, maxConcurrent: 2 },
-    debrisMaterial: SHIP_PLATING,
+    debrisMaterial: ALIEN_PLATING,
     debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
     killScore: 400,
     blastScore: 200,
@@ -1923,7 +1932,7 @@ const SHIP_DESIGNS = {
     // is pointed at it inside the reach of a charged one. `turn` is what it manages while it
     // is going: an arc out, rather than spinning on the spot and running the other way.
     breakOff: { near: 210, facing: 0.55, aimedWithin: 520, hold: 1.3, turn: 0.5 },
-    debrisMaterial: SHIP_PLATING,
+    debrisMaterial: ALIEN_PLATING,
     debris: { particles: 26, speed: 260, ring: 19, shake: 10 },
     killScore: 420,
     blastScore: 200,

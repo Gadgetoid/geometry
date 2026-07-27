@@ -73,6 +73,7 @@ import {
 } from "./persistence.js"
 import {
   Asteroid,
+  DEFAULT_BURN,
   Ore,
   Special,
   PlayerShip,
@@ -852,6 +853,7 @@ export class Game {
     }
     const material = ship.type.debrisMaterial || null
     const debrisMinArea = (material && material.minArea) || CONFIG.AST_MIN_AREA
+    const burn = (material && material.burn) || DEFAULT_BURN
     // the modules that keep working as wreckage, in world space, to hand to the
     // pieces; WEAPON_TYPES decides which those are
     const guns = []
@@ -906,8 +908,8 @@ export class Game {
 
     for (const piece of wreckage) {
       // burning debris at the cut end
-      this.burst(piece.centre.x, piece.centre.y, randInt(10, 16), PALETTE.fx.fire, 40, 190, 0.75)
-      this.burst(piece.centre.x, piece.centre.y, randInt(6, 10), PALETTE.fx.ember, 30, 130, 0.5)
+      this.burst(piece.centre.x, piece.centre.y, randInt(10, 16), burn.colour, 40, 190, 0.75)
+      this.burst(piece.centre.x, piece.centre.y, randInt(6, 10), burn.ember, 30, 130, 0.5)
       this.asteroids.push(
         new Asteroid({
           vertices: piece.partVerts,
@@ -922,7 +924,7 @@ export class Game {
       )
     }
     for (const sliver of slivers) {
-      this.burst(sliver.centre.x, sliver.centre.y, randInt(10, 16), PALETTE.fx.fire, 40, 190, 0.75)
+      this.burst(sliver.centre.x, sliver.centre.y, randInt(10, 16), burn.colour, 40, 190, 0.75)
       // by area, as a rock fragment is: a splinter off a nose was paying the same
       // as half a hull
       for (let k = 0; k < oreFromFragment(sliver.area); k++) {
@@ -1924,8 +1926,9 @@ export class Game {
     this.burst(at.x, at.y, Math.round(16 * heft * force), PALETTE.rock.impact, 60, 240 * force, 0.6)
     this.ring(at.x, at.y, Math.round(10 * heft), PALETTE.fx.flash, 180 * force, 0.45)
     if (asteroid.burnSpec) {
-      this.burst(at.x, at.y, Math.round(14 * heft), PALETTE.fx.fire, 40, 190 * force, 0.75)
-      this.burst(at.x, at.y, Math.round(6 * heft), PALETTE.fx.ember, 30, 120, 0.9)
+      const burn = asteroid.burnSpec
+      this.burst(at.x, at.y, Math.round(14 * heft), burn.colour, 40, 190 * force, 0.75)
+      this.burst(at.x, at.y, Math.round(6 * heft), burn.ember, 30, 120, 0.9)
     }
     this.screenShake = Math.max(this.screenShake, 4 + 4 * heft)
     Sound.explode()

@@ -209,6 +209,11 @@ test("every design in config.js survives a trip through the editor", async () =>
       )
     }
 
+    // What its wreckage is made of decides what colour it burns, so a hull is plated
+    // with its own faction's stuff.
+    const plating = type.faction === "alien" ? "ALIEN_PLATING" : "SHIP_PLATING"
+    assert.match(out, new RegExp(`debrisMaterial: ${plating},`), `${key} keeps its plating`)
+
     // Stating a derived field freezes it, so the editor writes none of them.
     for (const field of ["accel", "maxSpeed", "turnRate", "drag", "energyMax", "regen", "hull:"]) {
       assert.doesNotMatch(out, new RegExp(`\\b${field}`), `${key} does not state ${field}`)

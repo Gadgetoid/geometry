@@ -3068,7 +3068,8 @@
           if (ship.hunts) {
             push(`hunts: true,`)
           }
-          push(`debrisMaterial: SHIP_PLATING,`)
+          // wreckage burns in its faction's colour, so an alien hull is plated with theirs
+          push(`debrisMaterial: ${ship.faction === "alien" ? "ALIEN_PLATING" : "SHIP_PLATING"},`)
           const debris = [
             `particles: ${round(ship.debris.particles)}`,
             `speed: ${round(ship.debris.speed)}`,
@@ -3098,8 +3099,8 @@
         document.getElementById("out").value = snippet()
       }
 
-      // Read a pasted design back in. It refers to names config.js has in scope,
-      // so those are handed to it as arguments: PALETTE, SHIP_PLATING, CONFIG and
+      // Read a pasted design back in. It refers to names config.js has in scope, so
+      // those are handed to it as arguments: PALETTE, the plating materials, CONFIG and
       // every shared outline constant, the last of these being how a design that
       // names one instead of listing its points comes back whole. Anything else it
       // names is a parse error the message reports.
@@ -3115,12 +3116,14 @@
           const make = new Function(
             "PALETTE",
             "SHIP_PLATING",
+            "ALIEN_PLATING",
             "CONFIG",
             ...shapeNames,
             `return (${source})`,
           )
           const value = make(
             PALETTE,
+            { minArea: DEBRIS_MIN_AREA },
             { minArea: DEBRIS_MIN_AREA },
             { SHIP_DEBRIS_MIN_AREA: DEBRIS_MIN_AREA },
             ...SHARED_SHAPES.map(([, points]) => points),

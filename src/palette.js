@@ -79,8 +79,8 @@ export const PALETTE = {
   },
 
   // alien ships. Green, and nothing else on screen is: the sector reads at a glance
-  // as having something in it that is not playing the same game. The burn colour and
-  // the glitch pass over them are still to come, see ROADMAP.md.
+  // as having something in it that is not playing the same game. The glitch pass over
+  // them is still to come, see ROADMAP.md.
   alien: {
     hull: "#5cff9a",
     shot: "#8bffb0", // the orbs their turrets throw
@@ -90,6 +90,8 @@ export const PALETTE = {
     void: "#000000", // the middle of a singularity, which is not a colour but an absence
     exhaust: "#48e08a", // what their drives throw
     exhaustFlame: "#9dffc6", // and the fire at the throat, paler than the plume
+    fire: "#3dff7a", // their plating burning where it is cut
+    ember: "#c8ff9a", // and what falls off it, paler and yellower
   },
 
   // asteroids. Plain rock is a size ramp between `sizeCool` and `sizeWarm`;

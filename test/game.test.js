@@ -2493,6 +2493,32 @@ test("the edge a cut leaves on a surviving hull burns", () => {
   assert.ok(drawn.includes(PALETTE.fx.fire), "the raw edge glows")
 })
 
+test("what colour a hull burns is its material's, so an alien burns green", () => {
+  // No drawing code holds a colour of its own: the material states what its fire and
+  // embers are made of, so a sector strewn with wreckage reads as to whose it is.
+  const alien = grazeHull("alienFrigate", 0.6)
+  assert.equal(alien.dead, false, "it flies on with a jaw off")
+  const piece = alien.game.asteroids.find((rock) => rock.burn > 0)
+  assert.ok(piece, "and what came off it burns")
+  assert.equal(piece.burnSpec.colour, PALETTE.alien.fire)
+
+  const thrown = new Set(alien.game.particles.map((p) => p.color))
+  assert.ok(thrown.has(PALETTE.alien.fire), "the cut throws their fire")
+  assert.ok(!thrown.has(PALETTE.fx.fire), "and none of ours")
+
+  const drawn = []
+  const renderer = new Proxy(
+    { line: (x1, y1, x2, y2, opts) => drawn.push(opts && opts.color) },
+    { get: (target, key) => (key in target ? target[key] : () => {}) },
+  )
+  alien.ship.draw(renderer, alien.game)
+  assert.ok(drawn.includes(PALETTE.alien.fire), "and the raw edge glows green")
+  assert.ok(!drawn.includes(PALETTE.fx.fire))
+
+  // A rival cut the same way still burns in ours, which is the contrast worth having.
+  assert.equal(grazeHull("frigate", 0.5).ship.burnSpec.colour, PALETTE.fx.fire)
+})
+
 test("a dart commits to the arc it breaks off along", () => {
   // Turning slower on the way out is what makes it an arc rather than a spin on the spot
   // followed by a straight run: the whole point of a dart is that it has to commit.

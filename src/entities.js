@@ -93,6 +93,10 @@ export function facesOnLine(vertices, point, normal) {
   return edges
 }
 
+// Fire for a body whose material states no colour of its own: rock, which does not burn
+// where it is cut but still throws flame when something bolted to it comes apart.
+export const DEFAULT_BURN = { colour: PALETTE.fx.fire, ember: PALETTE.fx.ember }
+
 // Fire licking off those faces, thinning out as the heat goes. `carry` is the fractional
 // particle held between frames, and the new one is returned.
 export function emitBurn(game, body, vertices, faces, spec, heat, carry, dt) {
@@ -123,19 +127,19 @@ export function emitBurn(game, body, vertices, faces, spec, heat, carry, dt) {
       body.vx + nx * speed + randRange(-16, 16),
       body.vy + ny * speed + randRange(-16, 16),
       randRange(0.16, 0.38),
-      Math.random() < 0.35 ? PALETTE.fx.ember : PALETTE.fx.fire,
+      Math.random() < 0.35 ? spec.ember : spec.colour,
     )
   }
   return backlog
 }
 
 // The raw face itself, still glowing and cooling as it goes out.
-export function drawBurnFaces(renderer, vertices, faces, heat) {
+export function drawBurnFaces(renderer, vertices, faces, spec, heat) {
   for (const [i, j] of faces) {
     const a = vertices[i],
       b = vertices[j]
     renderer.line(a.x, a.y, b.x, b.y, {
-      color: PALETTE.fx.fire,
+      color: spec.colour,
       width: 1.6 + 1.8 * heat,
       glow: 10 + 16 * heat,
       alpha: 0.35 + 0.55 * heat,
@@ -1845,7 +1849,7 @@ export class Ship extends Entity {
     this.drawFlames(renderer)
     renderer.strokePoly(this.worldOutline(), { color: this.colour, width: hullWidth, glow: 12 })
     if (this.burn > 0) {
-      drawBurnFaces(renderer, this.worldOutline(), this.burnFaces, this.heat)
+      drawBurnFaces(renderer, this.worldOutline(), this.burnFaces, this.burnSpec, this.heat)
     }
     const shield = this.shieldModule()
     if (shield && shield.up) {
@@ -3319,11 +3323,13 @@ export class Asteroid extends Entity {
   }
 
   // A gun coming apart at its mount: a flash, fire out of it and embers falling off
-  // the debris. Shared, so a gun shot off a rock and a gun lost to a cut through it
-  // go the same way. The sound is the caller's, since several can go at once.
+  // the debris, burning as whatever it was bolted to burns. Shared, so a gun shot off
+  // a rock and a gun lost to a cut through it go the same way. The sound is the
+  // caller's, since several can go at once.
   turretLost(hp, game) {
-    game.burst(hp.x, hp.y, randInt(14, 20), PALETTE.fx.fire, 60, 230, 0.5)
-    game.burst(hp.x, hp.y, randInt(6, 10), PALETTE.fx.ember, 30, 150, 0.75)
+    const burn = this.burnSpec || DEFAULT_BURN
+    game.burst(hp.x, hp.y, randInt(14, 20), burn.colour, 60, 230, 0.5)
+    game.burst(hp.x, hp.y, randInt(6, 10), burn.ember, 30, 150, 0.75)
     game.ring(hp.x, hp.y, 9, PALETTE.fx.flash, 230, 0.4)
   }
 
@@ -3532,7 +3538,7 @@ export class Asteroid extends Entity {
   draw(renderer, game) {
     renderer.strokePoly(this.vertices, { color: this.colour(), width: 1.7, glow: 11 })
     if (this.burn > 0) {
-      drawBurnFaces(renderer, this.vertices, this.burnFaces, this.heat)
+      drawBurnFaces(renderer, this.vertices, this.burnFaces, this.burnSpec, this.heat)
     }
     if (this.explosive) {
       const pulse = 0.5 + 0.5 * Math.sin(game.gameTime * 6)
