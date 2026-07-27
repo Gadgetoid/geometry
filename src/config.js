@@ -1611,10 +1611,15 @@ const SHIP_DESIGNS = {
   frigate: {
     outline: FRIGATE_SHAPE,
     colour: PALETTE.rival.frigateHull,
-    // A slab: heavy, hard to turn, and thin-skinned for its size. A quarter of what it
-    // weighs is what it carries: two siege drives, a braced bubble and five guns.
+    // A slab: heavy, hard to turn, and thick with it. A quarter of what it weighs is what
+    // it carries: two siege drives, a braced bubble and five guns.
+    //
+    // 1012 of hull, which is seven seconds of the player's flak once the bubble is down.
+    // At 0.6 it was 380 and under three, so a turret finished a siege hull about as fast as
+    // it stripped the bubble in front of it: the beam is meant to be the answer to one of
+    // these, and a beam kills it by cutting rather than by wearing it down.
     mass: 4.45,
-    armour: 0.6,
+    armour: 1.6,
     lifeTime: [34, 50],
     hardpoints: [
       { local: [68, 0], role: "nose" },
@@ -1712,12 +1717,14 @@ const SHIP_DESIGNS = {
     faction: "alien",
     // The biggest of them bends the most, and reaches past its own jaws.
     warp: { radius: 190, strength: 0.42 },
-    // Twice the material of a frigate for the same laden 6, which is what a hull this
-    // wide and this hollow comes to, and 728 of hull because armour times area is
-    // what decides that. Bare here: its plant, field, drives and five guns make up the
-    // rest.
+    // Twice the material of a frigate for the same laden 6, which is what a hull this wide
+    // and this hollow comes to. Bare here: its plant, field, drives and five guns make up
+    // the rest.
+    //
+    // Tougher than the frigate it answers, as everything else about it is: 1456 of hull
+    // against 1012, which is ten seconds of flak rather than seven.
     mass: 4.75,
-    armour: 0.6,
+    armour: 1.2,
     lifeTime: [34, 50],
     hardpoints: [
       // On the tip of the spike, which is where the singularity goes when there is
