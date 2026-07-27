@@ -67,8 +67,8 @@ its own well is live leaves halves inside a field that no longer knows them.
 
 The pincer's mouth is a real void: contact is decided part by part, so a rock sits
 in the jaws touching nothing and stays cuttable through the opening. Its hull is
-728 against a frigate's 380, being twice the material at the same mass, which may
-want an `armour` pass once there is something to fight it with.
+1455 against a frigate's 1012, being more material at the same mass, which may want
+an `armour` pass once there is something to fight it with.
 
 No visible boosters is available whenever it is wanted: a flame belongs to the
 engine, and a hull with no `engine` hardpoint cannot move under its own power, so a
