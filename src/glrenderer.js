@@ -250,9 +250,13 @@ const PLANET_FS = `#version 300 es
       // phase with every other world in the sector.
       float cells = fbm(sp * 1.7 + uSeed);
       albedo = mix(uBase, uHi, smoothstep(0.35, 0.8, cells));
-      float veins = smoothstep(0.86, 0.99, ridged(sp * 2.4 + uSeed * 1.5));
-      float pulse = 0.65 + 0.35 * sin(uTime * 0.9 + uSeed * 5.0 + cells * 4.0);
-      emit += uEmit * veins * pulse * 0.75;
+      float veins = smoothstep(0.84, 0.99, ridged(sp * 2.4 + uSeed * 1.5));
+      float pulse = 0.5 + 0.5 * sin(uTime * 0.9 + uSeed * 5.0 + cells * 4.0);
+      emit += uEmit * veins * pulse * 1.25;
+      // and the body between the veins glows faintly too, on a slower beat, so the
+      // whole world breathes rather than a web being lit on a dark ball
+      float breath = 0.09 + 0.05 * sin(uTime * 0.42 + uSeed * 3.0);
+      emit += uEmit * breath * (0.3 + 0.7 * cells);
     } else if (uType == 7) {                // shattered: a split crust over a cooling core
       float crust = fbm(sp * 3.4 + uSeed);
       albedo = mix(uBase, uHi, smoothstep(0.4, 0.8, crust));

@@ -23,7 +23,7 @@ const PLANET_COLS = 3
 const PLANET_ROWS = 2
 
 // Planet surface kinds, matching the uType switch in the planet shader.
-const WORLD = {
+export const WORLD = {
   rocky: 0,
   volcanic: 1,
   inhabited: 2,
@@ -46,7 +46,7 @@ const WORLD = {
 // now rides on an anchor that goes somewhere.
 // ---------------------------------------------------------------------------
 export const SKY = {
-  arcSectors: 30,
+  arcSectors: 40,
   // The anchor hue travels the short way from blue to ember, which passes
   // through violet and magenta rather than through green.
   hueEarly: 205,
@@ -67,9 +67,10 @@ export const SKY = {
   nebulaLightA: [20, 19],
   nebulaSatB: [34, 52],
   nebulaLightB: [18, 12],
-  // Glowing worlds are what a late sector has more of, but bloom means two is
-  // plenty in one sky.
-  emissiveCap: [1, 2],
+  // Glowing worlds are what a late sector has more of. Bloom is the limit, and the
+  // third is only affordable because what is lit by the end is mostly alien: a web of
+  // veins rather than a hemisphere of lava.
+  emissiveCap: [1, 3],
   // Planet radius, by class. A late sector is more likely to have something
   // looming in it; one giant at a time, since the grid is only so wide.
   sizes: [
@@ -86,11 +87,12 @@ const WORLDS = [
   { type: WORLD.ice, weight: [3, 0.2] },
   { type: WORLD.gas, weight: [3, 1] },
   { type: WORLD.rocky, weight: [2, 1] },
-  { type: WORLD.inhabited, weight: [0.6, 0.8], emissive: true },
+  { type: WORLD.inhabited, weight: [0.6, 0.35], emissive: true },
   { type: WORLD.volcanic, weight: [0.3, 1.5], emissive: true },
   { type: WORLD.forge, weight: [0, 2], from: 0.3, emissive: true },
   { type: WORLD.shattered, weight: [0, 1.5], from: 0.5, emissive: true },
-  { type: WORLD.alien, weight: [0, 3], from: 0.55, emissive: true },
+  // The far end of a run belongs to them: over half of what a sector 40 sky rolls.
+  { type: WORLD.alien, weight: [0, 8], from: 0.5, emissive: true },
 ]
 
 const lerp = (from, to, t) => from + (to - from) * t
@@ -173,7 +175,22 @@ function worldPalette(type, anchor, arc, rng) {
     // Wrong on purpose: not the sector's hue but one of two bands that belong to
     // nothing else out here. Both are far from the ember sky they hang in, and
     // both stay clear of the player's cyan, which the ship and the HUD own.
-    const h = jitter(rng() < 0.5 ? 115 : 285, 25)
+    //
+    // Which of the two comes up follows the arc, so the last stretch of a run is
+    // overwhelmingly the green one: the same green the faction flying around in
+    // front of it is drawn, burns and shoots in.
+    if (rng() < 0.5 + 0.7 * (arc - 0.5)) {
+      // Sickly rather than verdant: a drained, barely lit body under an acid glow,
+      // so it reads as something wrong and not as somewhere that grows things.
+      const h = jitter(112, 12)
+      return {
+        base: `hsl(${h} 26% 12%)`,
+        hi: `hsl(${wrapHue(h - 8)} 38% 27%)`,
+        atmo: `hsl(${wrapHue(h - 4)} 70% 44%)`,
+        emit: `hsl(${wrapHue(h - 22)} 92% 52%)`,
+      }
+    }
+    const h = jitter(285, 25)
     return {
       base: `hsl(${h} 32% 14%)`,
       hi: `hsl(${wrapHue(h + 30)} 44% 32%)`,

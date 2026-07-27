@@ -12,6 +12,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import { Game, MAX_PARTICLES } from "../src/game.js"
+import { Backdrop, WORLD } from "../src/background.js"
 import { GameView } from "../src/view.js"
 import { PALETTE } from "../src/palette.js"
 import {
@@ -6883,6 +6884,45 @@ test("specials are handed out a kind at a time, stealth last", () => {
   // The shop only sells what the run has found, so the drop gate is the whole gate.
   const game = liveGame()
   assert.ok(!game.buyableSpecials().includes("stealth"), "and cannot be bought before then")
+})
+
+test("the sky turns alien over a run, and sickly green with it", () => {
+  // The backdrop is the one part of a sector the player reads before anything happens in
+  // it, so where the run has got to should be legible from the planets alone.
+  const backdrop = new Backdrop()
+  // One sector is one sky, so a band of them is what a distribution looks like. The arc
+  // holds at its end past the last sector, which is why that band can be wide.
+  const survey = (from, count) => {
+    let planets = 0,
+      alien = 0,
+      green = 0
+    for (let i = 0; i < count; i++) {
+      backdrop.regenSector(from + i)
+      for (const planet of backdrop.planets) {
+        planets++
+        if (planet.type !== WORLD.alien) {
+          continue
+        }
+        alien++
+        // the sickly one glows acid yellow-green; the other band is violet
+        if (Number(planet.emit.match(/hsl\((\d+)/)[1]) < 200) {
+          green++
+        }
+      }
+    }
+    return { alien: alien / planets, green: alien ? green / alien : 0 }
+  }
+  const opening = survey(1, 12)
+  const arrival = survey(18, 6)
+  const late = survey(RUN_LENGTH, 120)
+  assert.equal(opening.alien, 0, "nothing alien hangs in the sky of an opening sector")
+  assert.ok(arrival.alien > 0, "they start showing up around the sector the aliens do")
+  assert.ok(late.alien > 0.4, `and are most of a late sky, got ${(late.alien * 100).toFixed(0)}%`)
+  assert.ok(late.alien > arrival.alien, "which is a ramp, not a switch")
+  assert.ok(
+    late.green > 0.8,
+    `by the end they are the faction's own green, got ${(late.green * 100).toFixed(0)}%`,
+  )
 })
 
 test("rock flak is the rarest gun a rock can carry, and a late one", () => {
