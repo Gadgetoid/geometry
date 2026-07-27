@@ -954,6 +954,13 @@ export class Weapon {
       radius: spec.radius,
       include: ["projectiles"],
       visit: (shot, { dir, falloff }) => {
+        // Loose shot, and not a well that is already out there. Wells pull each other,
+        // which is worth watching; a gun winding up a new one towing the last one about
+        // is not the same thing, and it is what sent a single well out on its own the
+        // moment the ship that threw it flew past it.
+        if (shot.type && shot.type.well) {
+          return
+        }
         shot.vx -= dir.x * pull * falloff * dt
         shot.vy -= dir.y * pull * falloff * dt
       },

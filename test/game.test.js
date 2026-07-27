@@ -4224,6 +4224,7 @@ test("wells fall toward each other, and cannot wind each other up past a limit",
     }
   }
   assert.ok(closest < started * 0.6, `they fall together, ${started} apart down to ${closest}`)
+  assert.ok(peak > spec.speed, "and speed up doing it, which is the point of watching")
   assert.ok(peak > 0, "which means they are moving at all")
   assert.ok(
     peak <= spec.well.terminal + 20,
@@ -4263,6 +4264,39 @@ test("every gun a flown hull carries is drawn on it", () => {
   assert.ok(
     drawn.every((nub) => nub.stroke === PALETTE.alien.turret),
     "in the colour of whoever's hull it is",
+  )
+})
+
+test("a well already out there is not raw material for the next one", () => {
+  // Wells pull each other, which is the behaviour. A gun winding up a new one towing the
+  // last one about is not: it sent a single well out on its own the moment the ship that
+  // threw it flew past it, which is nothing to do with the two of them entangling.
+  const spec = WEAPON_TYPES.singularityGun
+  const game = liveGame()
+  const player = beSolid(game.player)
+  game.asteroids = [new Asteroid({ x: 60, y: 60, radius: 30 })] // so the sector stays live
+  player.angle = 0
+  player.x = 300
+  player.y = 320
+  game.upgrades.owned.laser.push("singularityGun")
+  game.fitEquipment("laser", "singularityGun")
+  const gun = player.mainWeapon
+  const well = new Singularity(player.x + 60, player.y, spec.speed, 0, 0, player, spec)
+  game.projectiles.push(well)
+
+  let peak = 0
+  for (let frame = 0; frame < 180; frame++) {
+    // flying along behind it and then past it, winding the next one all the while
+    player.x += player.maxSpeed * (1 / 60)
+    gun.charging = 1
+    gun.chargeDuration = spec.chargeTime
+    gun.generate(1 / 60, game, player, { x: player.x, y: player.y })
+    well.update(1 / 60, game)
+    peak = Math.max(peak, Math.hypot(well.vx, well.vy))
+  }
+  assert.ok(
+    peak <= spec.speed + 1,
+    `the one already out there keeps its own speed, got ${peak.toFixed(0)}`,
   )
 })
 
