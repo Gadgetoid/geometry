@@ -160,6 +160,36 @@ What is left of it:
 An in-world boss with no special-cased mechanics behind it: an alien ship that
 survives being cut in half and grows the missing half back.
 
+## The shape of the source
+
+`src/config.js` is 3858 lines, and about a quarter of it is not description of the
+game at all: it is menu wiring. `PAUSE_MENU`, `DEV_MENU`, `DEV_SPAWN_MENU`,
+`OVER_MENU`, `SHOP` and `SHOP_LAYOUT`, plus the row helpers and the dev page's
+labels, describe pages rather than ships.
+
+Hoisting them into a `src/menus.js` is the next tidy, and it is cheaper than it
+looks: the dependency already points one way. The menu tail reads `CONFIG`,
+`EQUIPMENT`, `SHIP_TYPES`, `SPECIAL_TYPES`, `CORE_TYPES` and the `DEV_*` helpers,
+and nothing above it reads anything back, so the move is mechanical and the suite
+either stays green or it does not. The input tables, `BINDABLE_CONTROLS`,
+`BINDING_DEVICES`, `DEFAULT_BINDINGS` and `GAMEPAD`, would go the same way into a
+`src/controls.js`.
+
+`EQUIPMENT` is the awkward one and should stay put. It is the largest UI-looking
+block in the file at 402 lines, but it is not only UI: `fitEquipment` and
+`unlockHullFitting` read it to decide what is actually bolted to a hull, and
+`freshEquipment` and `yardOptions` sit on top of it. Only the rows that present it
+belong on a menu page.
+
+Beyond that, and as a maybe: the registries themselves want breaking into
+manageable units, which past a certain number of files starts wanting a build
+step. That is a trade rather than an improvement. The game runs today by opening
+`index.html` with no tooling between the source and the thing running, which is
+worth a great deal - it is why a dev page can be a page and why nothing has to be
+installed to try a change. A build step buys smaller files and costs that. Worth
+doing only when the file count makes the current arrangement the harder one to
+work in, and not before.
+
 ## Maybe
 
 Small things, none of them load-bearing.
