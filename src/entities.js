@@ -3822,8 +3822,10 @@ export class PlayerShip extends Ship {
     const mend = mending ? mending.repair : 0
     if (mend > 0 && this.energy > 0 && this.hull < this.type.hull) {
       // What it mends this frame, and what that costs: paid as it mends, so a whole hull
-      // costs nothing to carry, and never more than the cell has left to give.
-      const price = mending.repairCost ?? 0
+      // costs nothing to carry, and never more than the cell has left to give. The price is
+      // a fraction of the cell a point, as every other cost a special charges is, so a
+      // bigger cell does not make mending free.
+      const price = (mending.repairCost ?? 0) * this.energyMax
       let points = Math.min(mend * this.type.hull * dt, this.type.hull - this.hull)
       if (price > 0) {
         points = Math.min(points, this.energy / price)

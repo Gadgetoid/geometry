@@ -5834,6 +5834,20 @@ test("hull regen mends out of the cell, and a whole hull costs nothing", () => {
     `and the cell paid for it, low of ${lowest.toFixed(0)}`,
   )
 
+  // And it stays a real trade on a bigger cell. `repairCost` is a fraction of the cell
+  // rather than an amount, so what mending draws grows with what it draws on: quoted flat
+  // it cost 40 a second at every level against a regen running 32 to 116, which made
+  // mending a net *gain* at the top of the ladder and free on an upgraded ship.
+  for (let level = 0; level < CORE_TYPES.minerCore.levels.length; level++) {
+    const game = armed(level)
+    game.player.hull = 1
+    const low = run(game, 40)
+    assert.ok(
+      low < game.player.energyMax * 0.5,
+      `at core level ${level} mending should cost the cell, low of ${low.toFixed(0)} of ${game.player.energyMax}`,
+    )
+  }
+
   // It is the first special a run can find, since it is the one worth a slot in trouble.
   const gates = SPECIAL_IDS.map((id) => SPECIAL_TYPES[id].fromSector ?? 0)
   assert.equal(spec.fromSector, Math.min(...gates), "and it is the first one found")

@@ -3254,9 +3254,11 @@ export function freshEquipment() {
 //   energy   taken at the moment of use, as a fraction of the energy cell
 //   drain    drawn per second while switched on, as a fraction of the cell
 //
-// Both are fractions rather than amounts because the cell quadruples across the
-// power core's levels: a flat cost that bites at level 0 is loose change at level
-// 4, and a fully upgraded ship would run stealth on regen alone.
+// Every cost here is a fraction rather than an amount because the cell quadruples
+// across the power core's levels: a flat cost that bites at level 0 is loose change
+// at level 4, and a fully upgraded ship would run stealth on regen alone. That holds
+// for `repairCost` below as well, which is charged per point of hull rather than per
+// second but scales for exactly the same reason.
 //   cooldown seconds before the slot can be used again, counted from the moment
 //            the effect ends
 //   seconds  how long a timed effect lasts
@@ -3273,6 +3275,8 @@ export function freshEquipment() {
 //   collisionImmune asteroid contact does no damage
 //   pull            ore attraction strength
 //   pullRange       how far that attraction reaches, or the whole sector without one
+//   repair          hull points a second mended, as a fraction of the hull's own maximum
+//   repairCost      what a point of that costs, as a fraction of the cell
 //   tintsShip       the hull and the energy bar take this entry's `colour`
 //   invisible       nothing hunting the player can see it, see Game.visiblePlayer
 //   hullAlpha       the hull is drawn this solid
@@ -3392,9 +3396,16 @@ export const SPECIAL_TYPES = {
   // Mends the hull for as long as it is carried, and pays for it as it mends rather than
   // for as long as it is fitted: a whole hull costs nothing to keep. `repair` is a
   // fraction of the hull's own maximum a second, so any hull takes the same time to put
-  // back together, and `repairCost` is energy a point of hull, so what it costs is how
-  // much of the hull was gone. The first thing a run finds, and it wants a slot: the
-  // choice it is there for is throwing the ore magnet out to hold it.
+  // back together, and `repairCost` is a fraction of the cell a point of hull, so what it
+  // costs is how much of the hull was gone. The first thing a run finds, and it wants a
+  // slot: the choice it is there for is throwing the ore magnet out to hold it.
+  //
+  // A fraction rather than an amount, for the reason stated above every other cost here:
+  // the cell quadruples across the core ladder while its regen only trebles, so a flat
+  // 26 a point ran a net 8 a second down at the bottom of the ladder and a net 76 a second
+  // *up* at the top - which is to say it was free on an upgraded ship, and mending is the
+  // one thing that should never be. As a fraction the drain sits at about 1.3 times regen
+  // at every level, so it always costs the cell and never costs dramatically more.
   hullRegen: {
     fromSector: 5,
     label: "HULL REGEN",
@@ -3406,7 +3417,7 @@ export const SPECIAL_TYPES = {
     buyable: true,
     mode: "passive",
     repair: 0.022,
-    repairCost: 26,
+    repairCost: 0.08,
   },
   // Held on rather than triggered: it costs energy for as long as it runs, and
   // firing the main laser gives the position away and drops it.
