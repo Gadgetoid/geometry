@@ -5853,6 +5853,43 @@ test("hull regen mends out of the cell, and a whole hull costs nothing", () => {
   assert.equal(spec.fromSector, Math.min(...gates), "and it is the first one found")
 })
 
+test("pressing a passive special says it is always on rather than activating it", () => {
+  // A passive works for as long as it is fitted: there is no moment of use, so there is
+  // nothing to charge for and nothing to switch on. Pressing the ore magnet reported
+  // "ORE MAGNET ACTIVATED" and did nothing, which is the HUD claiming something happened.
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ x: 60, y: 60, radius: 30 })] // so the sector stays live
+  const player = beSolid(game.player)
+  const passives = SPECIAL_IDS.filter((id) => SPECIAL_TYPES[id].mode === "passive")
+  assert.ok(passives.length > 0, "there are passives to press")
+  for (const id of passives) {
+    player.equip(0, id)
+    const item = player.items[0]
+    player.energy = player.energyMax
+    game.toast = null
+    game.useSpecialSlot(0)
+    const spec = SPECIAL_TYPES[id]
+    assert.ok(game.toast, `${id} should say something`)
+    assert.ok(
+      !game.toast.text.includes("ACTIVATED"),
+      `${id} is always on, so pressing it must not report an activation: got "${game.toast.text}"`,
+    )
+    assert.ok(game.toast.text.includes(spec.label), `${id} names itself`)
+    assert.equal(player.energy, player.energyMax, `${id} costs nothing to press`)
+    assert.equal(item.cooldown, 0, `${id} does not go on a cooldown it has no use for`)
+    assert.equal(item.active, false, `${id} has nothing to switch on`)
+    assert.equal(player.items[0], item, "and it stays in its slot")
+  }
+
+  // What a passive does answer to is the hold, which throws it overboard.
+  player.equip(0, "oreMagnet")
+  game.slotDownAt(0)
+  for (let frame = 0; frame < 60 * (CONFIG.SPECIAL_JETTISON_HOLD + 0.2); frame++) {
+    game.advance(1 / 60)
+  }
+  assert.equal(player.items[0], null, "held, it goes overboard")
+})
+
 test("a special says what it does, wherever it is being looked at", () => {
   // Every other thing the shop fits describes itself, so a special does too: on the
   // page beside the ship when the cursor is on its box, and in the menu that sells it.

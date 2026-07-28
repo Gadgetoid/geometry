@@ -2068,6 +2068,14 @@ export class Game {
       return
     }
     const type = SPECIAL_TYPES[item.id]
+    // A passive has nothing to press: it works for as long as it is fitted, so there is no
+    // moment of use to charge for and nothing to switch on. Say that rather than reporting
+    // an activation that did not happen, which is what a slot holding the ore magnet did.
+    // Holding the button is what a passive answers to, and that throws it overboard.
+    if (type.mode === "passive") {
+      this.showToast(`${type.label} IS ALWAYS ON`)
+      return
+    }
     if (item.active) {
       player.stopSlot(index)
       this.showToast(`${type.label} OFF`)
