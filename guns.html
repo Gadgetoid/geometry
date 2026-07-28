@@ -1,0 +1,1725 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GEOMETRY II - GUNS</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+        --cyan: #5fd7ff;
+        --amber: #ffb14b;
+        --red: #ff5b5b;
+        --green: #57e39a;
+        --edge: #1c3050;
+        --panel: #070c16;
+        --text: #bcd0ee;
+        --dim: #7fa0c8;
+        --muted: #5f79a6;
+        --alien: #5cff9a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #02040a;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: rgba(2, 4, 10, 0.94);
+        border-bottom: 1px solid var(--edge);
+        padding: 10px 20px;
+        backdrop-filter: blur(6px);
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+      h1 {
+        font-size: 13px;
+        letter-spacing: 0.2em;
+        color: var(--cyan);
+        margin: 0;
+      }
+      h1 span {
+        color: var(--muted);
+        letter-spacing: 0.06em;
+      }
+      .filters {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        flex-wrap: wrap;
+      }
+      label {
+        color: var(--muted);
+        letter-spacing: 0.08em;
+        font-size: 10px;
+      }
+      input[type="range"] {
+        accent-color: var(--cyan);
+        width: 140px;
+      }
+      select {
+        font-family: var(--mono);
+        color: var(--text);
+        background: rgba(10, 20, 38, 0.75);
+        border: 1px solid var(--edge);
+        border-radius: 5px;
+        padding: 4px 6px;
+        font-size: 11px;
+      }
+      button {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        color: var(--dim);
+        background: rgba(10, 20, 38, 0.75);
+        border: 1px solid var(--edge);
+        border-radius: 5px;
+        padding: 4px 8px;
+        cursor: pointer;
+      }
+      button:hover {
+        color: #fff;
+        border-color: var(--cyan);
+      }
+      button[aria-pressed="true"] {
+        color: #02040a;
+        background: var(--cyan);
+        border-color: var(--cyan);
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 1px solid var(--cyan);
+        outline-offset: 1px;
+      }
+      main {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 18px 20px 140px;
+      }
+      section {
+        margin: 30px 0;
+      }
+      h2 {
+        font-size: 11px;
+        letter-spacing: 0.22em;
+        color: var(--cyan);
+        border-bottom: 1px solid var(--edge);
+        padding-bottom: 6px;
+        margin: 0 0 4px;
+      }
+      h3 {
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        color: var(--amber);
+        margin: 18px 0 6px;
+      }
+      .note {
+        color: var(--muted);
+        margin: 6px 0 14px;
+        max-width: 108ch;
+      }
+      code {
+        color: var(--dim);
+      }
+      .banner {
+        border: 1px solid var(--red);
+        color: var(--red);
+        padding: 12px 14px;
+        border-radius: 6px;
+        margin: 20px 0;
+        line-height: 1.8;
+      }
+      .scroll {
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+      table {
+        border-collapse: collapse;
+        margin: 4px 0 2px;
+        font-variant-numeric: tabular-nums;
+      }
+      th,
+      td {
+        text-align: right;
+        padding: 2px 10px 2px 0;
+        border-bottom: 1px solid #0e1a2c;
+        white-space: nowrap;
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 400;
+        letter-spacing: 0.1em;
+        font-size: 10px;
+      }
+      th:first-child,
+      td:first-child {
+        text-align: left;
+      }
+      td.wrap {
+        white-space: normal;
+        text-align: left;
+        color: var(--muted);
+        max-width: 58ch;
+      }
+      td.on {
+        color: var(--green);
+      }
+      td.off {
+        color: var(--muted);
+      }
+      td.over {
+        color: var(--red);
+      }
+      tr.alien td:first-child {
+        color: var(--alien);
+      }
+      .screen {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 1024/640;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #02040a;
+        border: 1px solid #0b1526;
+        cursor: crosshair;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      /* The arc and aim overlay, in the game's own 1024x640 so a mount can be placed
+         from its world position with no scaling of its own. */
+      .overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+        gap: 20px;
+        align-items: start;
+      }
+      @media (max-width: 1150px) {
+        .split {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 8px 0;
+      }
+      .live {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        margin: 8px 0;
+      }
+      .live b {
+        color: var(--cyan);
+        font-weight: 400;
+      }
+      dl {
+        margin: 6px 0 0;
+      }
+      dt {
+        color: var(--amber);
+        letter-spacing: 0.12em;
+        margin-top: 14px;
+      }
+      dd {
+        margin: 3px 0 0;
+        color: var(--muted);
+        max-width: 104ch;
+      }
+      /* The gate sequence, one box per test a shot has to pass. */
+      .chain {
+        display: flex;
+        flex-direction: column;
+        max-width: 76ch;
+        margin: 12px 0 6px;
+      }
+      .stage {
+        border: 1px solid var(--edge);
+        border-radius: 6px;
+        padding: 7px 11px;
+        background: var(--panel);
+      }
+      .stage b {
+        color: var(--cyan);
+        font-weight: 400;
+        letter-spacing: 0.1em;
+      }
+      .stage span {
+        color: var(--muted);
+      }
+      .arrow {
+        color: var(--edge);
+        text-align: center;
+        line-height: 1.2;
+      }
+      .tag {
+        display: inline-block;
+        border: 1px solid var(--edge);
+        border-radius: 3px;
+        padding: 0 5px;
+        color: var(--muted);
+        font-size: 10px;
+        margin-left: 6px;
+      }
+      /* One card per hull for the arc diagrams. */
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 14px;
+      }
+      .card {
+        border: 1px solid var(--edge);
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: var(--panel);
+      }
+      .card h4 {
+        margin: 0 0 4px;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        color: var(--text);
+        font-weight: 400;
+      }
+      .card svg,
+      .cycle svg {
+        display: block;
+      }
+      .legend {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        color: var(--muted);
+        font-size: 10px;
+        margin: 8px 0 2px;
+      }
+      .legend i {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+        margin-right: 4px;
+        vertical-align: -1px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="bar">
+        <h1>GEOMETRY II <span>GUNS</span></h1>
+        <div class="filters">
+          <label for="hull">HULL</label>
+          <select id="hull"></select>
+          <label for="facing">FACING</label>
+          <input id="facing" type="range" min="-3.14" max="3.14" step="0.01" value="0" />
+          <button id="btnCrt" aria-pressed="true">CRT</button>
+          <button id="btnFly" aria-pressed="false" title="Let the hull fly itself">FLY</button>
+          <button id="btnFreeze" aria-pressed="false">FREEZE</button>
+          <button id="btnHud" aria-pressed="false" title="The game's own HUD">HUD</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="page">
+      <section>
+        <h2>THE RIG</h2>
+        <p class="note">
+          A hull held still with its guns live. Drag in the frame to put the target somewhere and it
+          stays there. Each mount is drawn with the arc it covers, where it is pointed and where it
+          is trying to point; a mount goes green the frame it is allowed to fire. Nothing else
+          arrives, and nothing here can be lost.
+        </p>
+        <div class="split">
+          <div>
+            <div class="screen">
+              <canvas id="rigCanvas"></canvas>
+              <svg class="overlay" id="overlay" viewBox="0 0 1024 640" preserveAspectRatio="none">
+                <g id="overlayArcs"></g>
+              </svg>
+            </div>
+            <div class="live" id="rigLive"></div>
+            <div class="row">
+              <label for="targetKind">TARGET</label>
+              <select id="targetKind">
+                <option value="hostile">a hostile hull</option>
+                <option value="player">the player's ship</option>
+                <option value="rock">a rock</option>
+              </select>
+              <label for="target">MOVES</label>
+              <select id="target">
+                <option value="pointer">with the pointer</option>
+                <option value="orbit">in a circle</option>
+              </select>
+              <label for="range">RANGE</label>
+              <input id="range" type="range" min="40" max="640" step="1" value="260" />
+              <span id="rangeOut" class="live"></span>
+              <label for="speed">TARGET SPEED</label>
+              <input id="speed" type="range" min="0" max="400" step="1" value="0" />
+              <span id="speedOut" class="live"></span>
+            </div>
+            <div class="legend" id="rigLegend"></div>
+          </div>
+          <div>
+            <h3>EVERY MOUNT, THIS FRAME</h3>
+            <div class="scroll"><table id="mountTable"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>BEFORE A SHOT GOES OUT</h2>
+        <p class="note">
+          In order, for a gun that decides for itself. A shot that never appears failed one of
+          these.
+        </p>
+        <div class="chain" id="gateChain"></div>
+      </section>
+
+      <section>
+        <h2>THE CONTROLLERS</h2>
+        <p class="note">
+          A loadout entry names one. It is called once a frame for a ready weapon and decides
+          whether to fire; the aimer beside it runs whether or not the gun is loaded, so a mount is
+          already round when it comes ready.
+        </p>
+        <dl id="controllerDocs"></dl>
+        <h3>WHO USES WHAT</h3>
+        <div class="scroll"><table id="usageTable"></table></div>
+      </section>
+
+      <section>
+        <h2>ARCS, HULL BY HULL</h2>
+        <p class="note">
+          Nose to the right. A wedge is what a mount can be brought to bear on, centred on
+          <code>arcFrom</code> off the nose; a dashed ring traverses freely.
+        </p>
+        <div class="legend" id="arcLegend"></div>
+        <div class="cards" id="arcCards"></div>
+      </section>
+
+      <section>
+        <h2>THE FIRING CYCLE</h2>
+        <p class="note">
+          One line per weapon and the controller driving it, to a common scale. A banded segment is
+          a range the gun rolls within each time.
+        </p>
+        <div class="legend" id="cycleLegend"></div>
+        <div class="scroll" id="cycleBars"></div>
+        <h3>WHAT THAT COMES TO</h3>
+        <p class="note">
+          Per second, at the cycle above, with a burst counted at the rate it is rolled. Damage is
+          one barrel on one target.
+        </p>
+        <div class="scroll"><table id="rateTable"></table></div>
+      </section>
+
+      <section>
+        <h2>WHAT A HULL'S GUNS COST IT</h2>
+        <p class="note">
+          Every gun firing its cycle at once, against the plant. Over 100% the cell is the limit and
+          the guns fire slower than their reloads say.
+        </p>
+        <div class="scroll"><table id="budgetTable"></table></div>
+      </section>
+
+      <section>
+        <h2>FINDING SOMETHING TO SHOOT</h2>
+        <p class="note">
+          <code>Game.hostileTarget</code> is the only question a gun asks, in this order.
+        </p>
+        <dl id="targetDocs"></dl>
+        <h3>HOW FAR EACH HULL SEES</h3>
+        <div class="scroll"><table id="sightTable"></table></div>
+      </section>
+    </main>
+
+    <script type="module">
+      // What the guns do, and why one is not firing.
+      //
+      // The rig runs a real hull with its real loadout, held still so its mounts can be
+      // watched: the arcs and the aim are drawn over the frame in the game's own
+      // coordinates, read off each Weapon as the controllers leave them.
+
+      const page = document.getElementById("page")
+
+      let glrenderer, viewmod, gamemod, entities, config, palette, mathlib
+      try {
+        ;[glrenderer, viewmod, gamemod, entities, config, palette, mathlib] = await Promise.all([
+          import("./src/glrenderer.js"),
+          import("./src/view.js"),
+          import("./src/game.js"),
+          import("./src/entities.js"),
+          import("./src/config.js"),
+          import("./src/palette.js"),
+          import("./src/math.js"),
+        ])
+      } catch (err) {
+        page.innerHTML =
+          `<div class="banner">The game's modules could not be imported, and this page is ` +
+          `nothing without them. Serve the folder (<code>python3 -m http.server</code>) and open ` +
+          `it over http, or launch with <code>--allow-file-access-from-files</code>.<br />` +
+          `${String(err)}</div>`
+        throw err
+      }
+
+      const { WebGLRenderer } = glrenderer
+      const { GameView } = viewmod
+      const { Game } = gamemod
+      const { RivalShip, Asteroid, WEAPON_CONTROLLERS, WEAPON_AIMERS } = entities
+      const { PALETTE } = palette
+      const {
+        VIEW_W,
+        VIEW_H,
+        CONFIG,
+        ARENA,
+        WEAPON_TYPES,
+        SHIP_TYPES,
+        PLAYER_TYPE,
+        CORE_TYPES,
+        coreAt,
+        EQUIPMENT,
+        HAZARD_TRAITS,
+        RADAR_TYPES,
+        FACTIONS,
+        TAU,
+      } = config
+      const { clamp, shortestTurn } = mathlib
+
+      const round = (v, places = 2) => {
+        const scale = 10 ** places
+        return Math.round(v * scale) / scale
+      }
+      const deg = (radians) => `${Math.round((radians * 180) / Math.PI)}deg`
+      const pair = (value) => (Array.isArray(value) ? value : [value, value])
+
+      function el(tag, props = {}, ...children) {
+        const node = Object.assign(document.createElement(tag), props)
+        for (const child of children.flat()) {
+          if (child != null && child !== false) {
+            node.append(child)
+          }
+        }
+        return node
+      }
+
+      const NS = "http://www.w3.org/2000/svg"
+      function svgEl(tag, attrs = {}, text) {
+        const node = document.createElementNS(NS, tag)
+        for (const [key, value] of Object.entries(attrs)) {
+          node.setAttribute(key, value)
+        }
+        if (text !== undefined) {
+          node.textContent = text
+        }
+        return node
+      }
+
+      function row(cells, tag = "td") {
+        return el(
+          "tr",
+          {},
+          cells.map((cell) => {
+            if (cell && typeof cell === "object" && !cell.nodeType) {
+              const node = el(tag, { className: cell.className || "" })
+              node.append(...[cell.content].flat().filter((c) => c != null))
+              return node
+            }
+            return el(tag, {}, cell && cell.nodeType ? cell : String(cell ?? ""))
+          }),
+        )
+      }
+
+      // ---- what is mounted where ---------------------------------------------
+      // A hull's guns, from its loadout and from the arms it may roll. The mount's own
+      // arc wins over the gun's, which is how the same autocannon looks left on one
+      // flank and right on the other.
+      function gunsOf(type) {
+        const found = []
+        for (const entry of type.loadout || []) {
+          if (entry.weapon) {
+            found.push({ entry, rolled: false })
+          }
+        }
+        for (const [armName, entry] of Object.entries(type.arms || {})) {
+          if (entry.weapon) {
+            found.push({ entry, rolled: true, armName })
+          }
+        }
+        return found.map(({ entry, rolled, armName }) => {
+          const weapon = WEAPON_TYPES[entry.weapon]
+          const hp = (type.hardpoints || [])[entry.hp] || {}
+          return {
+            hp: entry.hp,
+            local: hp.local || [0, 0],
+            role: hp.role,
+            name: entry.weapon,
+            weapon,
+            controller: entry.controller,
+            arc: entry.arc ?? weapon.arc ?? Infinity,
+            arcFrom: entry.arcFrom ?? weapon.arcFrom ?? 0,
+            rolled,
+            armName,
+          }
+        })
+      }
+
+      const HULL_NAMES = Object.keys(SHIP_TYPES)
+      // A type that states no faction is a rival, which is what the game reads it as.
+      const factionOf = (name) => SHIP_TYPES[name].faction ?? "rival"
+      const isAlien = (name) => factionOf(name) === "alien"
+
+      // ---- the rig -----------------------------------------------------------
+      const rigCanvas = document.getElementById("rigCanvas")
+      const renderer = WebGLRenderer.create(rigCanvas)
+      if (!renderer) {
+        page.innerHTML =
+          `<div class="banner">WEBGL2 REQUIRED<br />This browser could not create a WebGL2 ` +
+          `context, and the rig is drawn through the game's own one.</div>`
+        throw new Error("WebGL2 unavailable")
+      }
+      const view = new GameView(renderer)
+      // The rig says what the mounts are doing in its own readout, so the run's HUD is one
+      // more thing over the frame; it stays available for anyone who wants it.
+      view.showHud = false
+      const game = new Game()
+
+      function resize() {
+        view.resize(rigCanvas.getBoundingClientRect())
+      }
+      new ResizeObserver(resize).observe(rigCanvas)
+      resize()
+
+      let subject = null
+      let hullName = HULL_NAMES.find((name) => (SHIP_TYPES[name].loadout || []).length > 1)
+      let facing = 0
+      let flying = false
+      let frozen = false
+      let targetMode = "pointer"
+      let targetKind = "hostile"
+      let targetRange = 260
+      let targetSpeed = 0
+      let orbitAngle = 0
+      // A hull of a side the subject is hostile to. A geom hull is on the player's own
+      // side and finds nothing to shoot at in the player, so the rig keeps one of these
+      // to point it at; which side it belongs to follows from FACTIONS.
+      let hostileHull = null
+      const hostileTo = (faction) =>
+        HULL_NAMES.find((name) => (FACTIONS[faction] || []).includes(factionOf(name)))
+      // Where the target is, in world units. Starts off the hull's nose at the range the
+      // slider says, so the rig opens with something to shoot at.
+      let aimAt = { x: ARENA.cx + targetRange, y: ARENA.cy }
+
+      function pose() {
+        game.startNewGame()
+        game.startLevel(20)
+        game.phase = "play"
+        game.asteroids = []
+        game.rivals = []
+        game.projectiles = []
+        game.laserShots = []
+        game.particles = []
+        game.glitches = []
+        subject = new RivalShip(
+          ARENA.cx,
+          ARENA.cy,
+          hullName,
+          game.rollLoadout ? game.rollLoadout(SHIP_TYPES[hullName]) : null,
+        )
+        subject.lifeTimer = 1e9
+        game.rivals.push(subject)
+        // A rock for the miner controller, which is the one behaviour that looks for
+        // stone instead of a hull.
+        game.asteroids.push(
+          new Asteroid({
+            x: ARENA.cx - 300,
+            y: ARENA.cy + 220,
+            radius: 96,
+            traits: {},
+            vx: 0,
+            vy: 0,
+            spin: 0,
+          }),
+        )
+        // And a hull of a hostile side, for a subject that has no quarrel with the player.
+        const enemy = hostileTo(subject.faction)
+        hostileHull = enemy
+          ? new RivalShip(
+              ARENA.cx + 200,
+              ARENA.cy,
+              enemy,
+              game.rollLoadout ? game.rollLoadout(SHIP_TYPES[enemy]) : null,
+            )
+          : null
+        if (hostileHull) {
+          // It is a target and not a second shooter: its own guns would muddle what the
+          // subject's are doing.
+          hostileHull.lifeTimer = 1e9
+          for (const hp of hostileHull.hardpoints) {
+            if (hp.module && hp.module.kind === "weapon") {
+              hp.module = null
+            }
+          }
+          game.rivals.push(hostileHull)
+        }
+      }
+
+      // Which body the guns are being pointed at, and what to call it.
+      function targetBody() {
+        if (targetKind === "hostile") {
+          return hostileHull
+        }
+        if (targetKind === "rock") {
+          return game.asteroids[0]
+        }
+        return game.player
+      }
+      function nameOf(body) {
+        if (!body) {
+          return "-"
+        }
+        if (body === game.player) {
+          return "player"
+        }
+        return body.typeName ?? (body.wreckOf ? "wreck" : "rock")
+      }
+
+      // Where the camera is, so the overlay can put a mount where the frame drew it. The
+      // view sways both background and world layers by this much.
+      function eyeOf() {
+        return {
+          x: game.viewCenter.x + Math.sin(game.gameTime * 0.13) * 6,
+          y: game.viewCenter.y + Math.cos(game.gameTime * 0.17) * 4,
+        }
+      }
+      const toScreen = (world, eye) => ({
+        x: world.x - eye.x + VIEW_W / 2,
+        y: world.y - eye.y + VIEW_H / 2,
+      })
+
+      const MOUNT_STATE = [
+        ["firing", "var(--green)", "on target, loaded, and allowed to fire"],
+        ["winding", "var(--amber)", "committed and winding up"],
+        ["turning", "var(--cyan)", "coming round onto its demand"],
+        ["waiting", "#5f79a6", "reloading, pacing, or with nothing to point at"],
+      ]
+
+      // What a mount is doing, which decides both its colour and its row.
+      function stateOf(weapon) {
+        if (weapon.charging > 0) {
+          return "winding"
+        }
+        if (!weapon.ready || weapon.resting > 0) {
+          return "waiting"
+        }
+        if (!weapon.target && weapon.controller !== "miner") {
+          return "waiting"
+        }
+        return weapon.onTarget() || weapon.controller === "miner" ? "firing" : "turning"
+      }
+      const inkOf = (state) => (MOUNT_STATE.find(([name]) => name === state) || [])[1] || "#5f79a6"
+
+      // An arc as an SVG path: a wedge from the mount, or nothing for a free mount.
+      function wedgePath(at, middle, half, radius) {
+        if (!isFinite(half)) {
+          return null
+        }
+        const span = Math.min(half, Math.PI - 1e-3)
+        const a0 = middle - span
+        const a1 = middle + span
+        const p0 = { x: at.x + Math.cos(a0) * radius, y: at.y + Math.sin(a0) * radius }
+        const p1 = { x: at.x + Math.cos(a1) * radius, y: at.y + Math.sin(a1) * radius }
+        const large = span * 2 > Math.PI ? 1 : 0
+        return `M ${at.x} ${at.y} L ${p0.x} ${p0.y} A ${radius} ${radius} 0 ${large} 1 ${p1.x} ${p1.y} Z`
+      }
+
+      const overlayArcs = document.getElementById("overlayArcs")
+      const mountTable = document.getElementById("mountTable")
+      const rigLive = document.getElementById("rigLive")
+
+      function drawOverlay() {
+        overlayArcs.replaceChildren()
+        mountTable.replaceChildren()
+        mountTable.append(
+          row(["MOUNT", "WEAPON", "CONTROLLER", "ARC", "OFF", "STATE", "TARGET"], "th"),
+        )
+        if (!subject) {
+          return
+        }
+        const eye = eyeOf()
+        for (const hp of subject.hardpoints) {
+          const weapon = hp.module
+          if (!weapon || weapon.kind !== "weapon") {
+            continue
+          }
+          const at = toScreen(subject.mountWorld(hp.local), eye)
+          const state = stateOf(weapon)
+          const ink = inkOf(state)
+          // A beam reaches as far as it is long; a round flies on, so the wedge is drawn to
+          // a fixed radius and says nothing about how far it carries.
+          const reach = weapon.reach()
+          const radius = Math.min(isFinite(reach) ? reach : 300, 460)
+          const middle = weapon.restBearing(subject)
+          const path = wedgePath(at, middle, weapon.arc, radius)
+          if (path) {
+            overlayArcs.append(
+              svgEl("path", { d: path, fill: ink, "fill-opacity": 0.07, stroke: "none" }),
+            )
+            for (const edge of [middle - weapon.arc, middle + weapon.arc]) {
+              overlayArcs.append(
+                svgEl("line", {
+                  x1: at.x,
+                  y1: at.y,
+                  x2: at.x + Math.cos(edge) * radius,
+                  y2: at.y + Math.sin(edge) * radius,
+                  stroke: ink,
+                  "stroke-opacity": 0.35,
+                  "stroke-width": 1,
+                }),
+              )
+            }
+          } else {
+            overlayArcs.append(
+              svgEl("circle", {
+                cx: at.x,
+                cy: at.y,
+                r: radius,
+                fill: "none",
+                stroke: ink,
+                "stroke-opacity": 0.25,
+                "stroke-width": 1,
+                "stroke-dasharray": "5 7",
+              }),
+            )
+          }
+          // Where it is pointed, and where it wants to be.
+          if (weapon.demand !== null) {
+            overlayArcs.append(
+              svgEl("line", {
+                x1: at.x,
+                y1: at.y,
+                x2: at.x + Math.cos(weapon.demand) * radius,
+                y2: at.y + Math.sin(weapon.demand) * radius,
+                stroke: "#ffffff",
+                "stroke-opacity": 0.3,
+                "stroke-width": 1,
+                "stroke-dasharray": "3 5",
+              }),
+            )
+          }
+          if (weapon.aim !== null) {
+            overlayArcs.append(
+              svgEl("line", {
+                x1: at.x,
+                y1: at.y,
+                x2: at.x + Math.cos(weapon.aim) * radius,
+                y2: at.y + Math.sin(weapon.aim) * radius,
+                stroke: ink,
+                "stroke-width": 1.6,
+              }),
+            )
+          }
+          overlayArcs.append(
+            svgEl("circle", { cx: at.x, cy: at.y, r: 3.4, fill: ink, "fill-opacity": 0.9 }),
+          )
+          overlayArcs.append(
+            svgEl(
+              "text",
+              {
+                x: at.x + 7,
+                y: at.y - 6,
+                fill: ink,
+                "font-size": 10,
+                "font-family": "var(--mono)",
+                "fill-opacity": 0.85,
+              },
+              `${weapon.typeName}`,
+            ),
+          )
+
+          const off =
+            weapon.aim !== null && weapon.demand !== null
+              ? Math.abs(shortestTurn(weapon.aim, weapon.demand))
+              : null
+          mountTable.append(
+            row([
+              `hp ${subject.hardpoints.indexOf(hp)} ${hp.role || ""}`,
+              weapon.typeName,
+              weapon.controller,
+              isFinite(weapon.arc)
+                ? `${deg(weapon.arc)} ${weapon.arcFrom ? deg(weapon.arcFrom) : ""}`
+                : "free",
+              off === null ? "-" : deg(off),
+              { className: state === "firing" ? "on" : "off", content: state },
+              weapon.target ? nameOf(weapon.target.target) : "-",
+            ]),
+          )
+        }
+        rigLive.replaceChildren(
+          el(
+            "span",
+            {},
+            "SIDE ",
+            el("b", {}, subject.faction ?? "none"),
+            " HOSTILE TO ",
+            el("b", {}, (FACTIONS[subject.faction] || []).join(" ") || "nothing"),
+          ),
+          el("span", {}, "TARGET ", el("b", {}, nameOf(targetBody()))),
+          el(
+            "span",
+            {},
+            "ENERGY ",
+            el("b", {}, `${Math.round(subject.energy)}/${Math.round(subject.energyMax)}`),
+          ),
+          el("span", {}, "HULL ", el("b", {}, String(Math.round(subject.hull)))),
+          el("span", {}, "SHOTS ", el("b", {}, String(game.projectiles.length))),
+          el("span", {}, "BEAMS ", el("b", {}, String(game.laserShots.length))),
+        )
+      }
+
+      // ---- prose -------------------------------------------------------------
+      const CONTROLLER_DOCS = [
+        [
+          "manual",
+          "Does nothing on its own. The player's nose gun, fired from PlayerShip.fireLaser, where the charge is held and released by hand. A hull flown by anything else still carries the entry, which is why a rival given the player's laser can use it.",
+        ],
+        [
+          "turret",
+          "Fires along its own mount at whatever its aimer found. It holds fire while the mount is still coming round, and since the aim stops at the edge of the arc and never reaches a demand outside it, a target the mount cannot cover means the hull has to turn before the gun will speak. It also holds fire off screen, so nothing is sniped by something the player cannot see.",
+        ],
+        [
+          "miner",
+          "Cuts rock. Looks for the nearest asteroid inside `triggerRange` and fires along the host's facing, with no traverse and no interest in hulls. A gun with no trigger range never fires.",
+        ],
+        [
+          "hunter",
+          "The heavy mount, and the one with a shape to its behaviour. It waits out `pace`, checks that the target bears inside its arc and sits inside the gun's length, commits the cell, then winds up for `chargeTime` with a growing tell at the muzzle. Once winding it cannot be called off: it runs to its end and fires whether or not the target is still there, which is what makes it a telegraph rather than a snap. A burst is paid for at the commitment and its remaining shots go out on their own account, spaced by `burstGap`.",
+        ],
+        [
+          "defense",
+          "The player's turret. Under the player's hand it fires where the mount has managed to get to, so sweeping the stick walks the fire round instead of putting it on the far side at once. Left alone it takes the nearest hostile hull in range, or ordnance first if what is fitted intercepts. Rocks are the main laser's business, so it ignores them.",
+        ],
+      ]
+
+      const AIMER_DOCS = [
+        [
+          "the two aimers",
+          "Only `turret` and `defense` have one. They run every frame, loaded or not, find their own target, leave it on the weapon for the controller, and swing through Weapon.swingToward so no mount turns faster than its `turnRate`. A controller with no aimer fires along its host's facing.",
+        ],
+        [
+          "lead",
+          "Both aim through interceptBearing, which solves for where a target will be when a round of this gun's speed arrives. A beam has no speed to solve for and takes the bearing as it comes, so a beam turret never leads.",
+        ],
+        [
+          "coming home",
+          "A mount that loses its target swings back to the middle of its arc at its own traverse rate. Straight ahead for nearly every gun, straight back for a tail battery, and out over the nearest edge for a gun bolted to a rock.",
+        ],
+      ]
+
+      const TARGET_DOCS = [
+        [
+          "the faction table",
+          "FACTIONS says which sides a host is hostile to. With no entry the host shoots at nothing, so adding a side is an edit to that table and nowhere else.",
+        ],
+        [
+          "being seen",
+          "The player is the one body that can hide, through visiblePlayer, so stealth is part of the answer here instead of a test each caller could forget.",
+        ],
+        [
+          "radar",
+          "The search is bounded by what the host's own set reaches for ships, and by whatever the caller asked for. Every hull sees within SENSOR_FLOOR whatever it carries, so a set is worth fitting for what it finds past that.",
+        ],
+        [
+          "a preference",
+          "A hull with `prefers` takes one of those types if any is in reach, and whatever is nearest otherwise. A preference and not a blindness.",
+        ],
+        [
+          "wreckage",
+          "Halves of something already cut are candidates only for a gun that asks, through `targetsWreckage`. They are still armed and still moving.",
+        ],
+        [
+          "ordnance first",
+          "A gun with `intercepts` looks for rounds in the air before it looks for hulls, and takes a hull only when the air is clear.",
+        ],
+      ]
+
+      const GATES = [
+        ["game.canFly()", "not between sectors, not in the shop"],
+        ["host.leaving", "a hull on its way out holds fire"],
+        [
+          "host.insideArena()",
+          "and one still outside the ring, for the same reason it cannot be hit",
+        ],
+        ["the aimer", "runs here, loaded or not, so the mount keeps coming round while it reloads"],
+        ["weapon.ready", "cooldown from the last shot has run out"],
+        [
+          "host.holdingFire()",
+          "a self-firing gun yields to a hull that wants its cell for something else",
+        ],
+        ["the controller", "everything below is the controller's own"],
+        ["game.onScreen(host)", "within OFFSCREEN_FIRE_MARGIN of the view"],
+        [
+          "weapon.onTarget()",
+          "aim within TURRET_ON_TARGET of demand, which a target outside the arc never reaches",
+        ],
+        [
+          "weapon.reachFor()",
+          "the cut has to carry past the far side of the target, inside the gun's own length",
+        ],
+        [
+          "host.spendEnergy()",
+          "and the cell has to pay; a refused shot takes a short cooldown anyway",
+        ],
+      ]
+
+      // ---- the firing cycle --------------------------------------------------
+      // What one turn of a gun's cycle is made of, as segments in seconds. A controller
+      // that paces and winds up has a different shape from one that just reloads.
+      function cycleOf(gun) {
+        const type = gun.weapon
+        const segments = []
+        if (gun.controller === "hunter") {
+          const burst = type.burst ?? 1
+          const chance = type.burstChance ?? 1
+          const shots = burst > 1 ? 1 + (burst - 1) * chance : 1
+          const charge = type.chargeTime ?? 0.8
+          if (type.pace) {
+            segments.push({ kind: "pace", low: pair(type.pace)[0], high: pair(type.pace)[1] })
+          }
+          segments.push({ kind: "wind", low: charge, high: charge })
+          segments.push({ kind: "shot", low: 0.06, high: 0.06 })
+          if (burst > 1) {
+            segments.push({ kind: "gap", low: 0, high: type.burstGap ?? 0 })
+            segments.push({ kind: "wind", low: 0, high: charge })
+            segments.push({ kind: "shot", low: 0, high: 0.06 })
+          }
+          return { segments, shots }
+        }
+        const reload = type.reload ?? 0
+        segments.push({ kind: "pace", low: pair(reload)[0], high: pair(reload)[1] })
+        segments.push({ kind: "shot", low: 0.06, high: 0.06 })
+        return { segments, shots: 1 }
+      }
+
+      const SEGMENT_INK = {
+        pace: "#26436b",
+        wind: "var(--amber)",
+        shot: "var(--green)",
+        gap: "#3a2a4a",
+      }
+      const SEGMENT_NAME = {
+        pace: "waiting - reload, or pace between bursts",
+        wind: "winding up",
+        shot: "the shot",
+        gap: "burstGap, between the shots of a burst",
+      }
+
+      // Every (weapon, controller) pair the game actually fields, so a gun that is driven
+      // two ways appears twice.
+      function firedPairs() {
+        const seen = new Map()
+        const add = (name, controller, where) => {
+          if (!WEAPON_TYPES[name] || !controller) {
+            return
+          }
+          const key = `${name}/${controller}`
+          if (!seen.has(key)) {
+            seen.set(key, { name, controller, weapon: WEAPON_TYPES[name], where: [] })
+          }
+          seen.get(key).where.push(where)
+        }
+        for (const hull of HULL_NAMES) {
+          for (const gun of gunsOf(SHIP_TYPES[hull])) {
+            add(gun.name, gun.controller, hull)
+          }
+        }
+        for (const spec of Object.values(EQUIPMENT)) {
+          for (const option of spec.options || []) {
+            if (option.weapon) {
+              add(option.weapon, spec.controller ?? option.controller ?? "manual", "player")
+            }
+          }
+        }
+        for (const hazard of HAZARD_TRAITS) {
+          const pool = hazard.traits && hazard.traits.gun
+          for (const name of Object.keys((pool && pool.guns) || {})) {
+            add(name, "turret", "rock")
+          }
+        }
+        return [...seen.values()]
+      }
+
+      const CYCLE_SCALE = 150 // px a second
+      const CYCLE_LABEL = 190
+
+      function buildCycles(pairs) {
+        const host = document.getElementById("cycleBars")
+        host.replaceChildren()
+        const rowH = 20
+        const widest = Math.max(
+          ...pairs.map((p) =>
+            cycleOf({ weapon: p.weapon, controller: p.controller }).segments.reduce(
+              (sum, s) => sum + s.high,
+              0,
+            ),
+          ),
+        )
+        const width = CYCLE_LABEL + widest * CYCLE_SCALE + 60
+        const svg = svgEl("svg", {
+          width,
+          height: pairs.length * rowH + 26,
+          viewBox: `0 0 ${width} ${pairs.length * rowH + 26}`,
+        })
+        // A second-by-second rule behind it all.
+        for (let second = 0; second <= Math.ceil(widest); second++) {
+          const x = CYCLE_LABEL + second * CYCLE_SCALE
+          svg.append(
+            svgEl("line", {
+              x1: x,
+              y1: 14,
+              x2: x,
+              y2: pairs.length * rowH + 16,
+              stroke: "#12203a",
+            }),
+          )
+          svg.append(
+            svgEl(
+              "text",
+              { x, y: 9, fill: "#5f79a6", "font-size": 9, "text-anchor": "middle" },
+              `${second}s`,
+            ),
+          )
+        }
+        pairs.forEach((entry, i) => {
+          const y = 18 + i * rowH
+          svg.append(
+            svgEl(
+              "text",
+              {
+                x: CYCLE_LABEL - 8,
+                y: y + 9,
+                fill: isAlien(entry.where[0]) ? "#5cff9a" : "#bcd0ee",
+                "font-size": 10,
+                "text-anchor": "end",
+              },
+              `${entry.name} / ${entry.controller}`,
+            ),
+          )
+          let x = CYCLE_LABEL
+          for (const segment of cycleOf(entry).segments) {
+            const low = segment.low * CYCLE_SCALE
+            const high = segment.high * CYCLE_SCALE
+            if (high <= 0) {
+              continue
+            }
+            // The certain part solid, the rolled part banded, so a range reads as one.
+            if (low > 0) {
+              svg.append(
+                svgEl("rect", {
+                  x,
+                  y,
+                  width: Math.max(low, 1),
+                  height: rowH - 7,
+                  rx: 2,
+                  fill: SEGMENT_INK[segment.kind],
+                }),
+              )
+            }
+            if (high > low) {
+              svg.append(
+                svgEl("rect", {
+                  x: x + low,
+                  y,
+                  width: high - low,
+                  height: rowH - 7,
+                  rx: 2,
+                  fill: SEGMENT_INK[segment.kind],
+                  "fill-opacity": 0.4,
+                }),
+              )
+            }
+            x += high
+          }
+        })
+        host.append(svg)
+      }
+
+      // Per second, at that cycle.
+      function ratesOf(entry) {
+        const { segments, shots } = cycleOf(entry)
+        // A segment the gun rolls within contributes the middle of its range.
+        const seconds = segments.reduce((sum, s) => sum + (s.low + s.high) / 2, 0)
+        const perShot = entry.weapon.energy ?? 0
+        const damage = entry.weapon.damage ?? 0
+        const barrels = entry.weapon.barrels ?? 1
+        return {
+          seconds,
+          shots,
+          rate: shots / seconds,
+          damage: (damage * shots) / seconds,
+          energy: (perShot * shots) / seconds,
+          barrels,
+        }
+      }
+
+      function buildRates(pairs) {
+        const table = document.getElementById("rateTable")
+        table.append(
+          row(
+            ["WEAPON", "CONTROLLER", "KIND", "CYCLE", "SHOTS", "PER SEC", "DAMAGE/S", "ENERGY/S"],
+            "th",
+          ),
+        )
+        for (const entry of [...pairs].sort((a, b) => ratesOf(b).damage - ratesOf(a).damage)) {
+          const r = ratesOf(entry)
+          table.append(
+            row([
+              entry.name,
+              entry.controller,
+              entry.weapon.kind ?? "-",
+              `${round(r.seconds)}s`,
+              round(r.shots),
+              round(r.rate),
+              round(r.damage, 1),
+              round(r.energy, 1),
+            ]),
+          )
+        }
+      }
+
+      // ---- what a hull's guns cost it ----------------------------------------
+      // A levelled core states its plant per level instead of outright, so it is read at
+      // the mark a run starts on.
+      function coreOf(type) {
+        for (const entry of type.loadout || []) {
+          if (entry.core) {
+            return coreAt(CORE_TYPES[entry.core], 0)
+          }
+        }
+        return null
+      }
+
+      function buildBudget() {
+        const table = document.getElementById("budgetTable")
+        table.append(
+          row(["HULL", "GUNS", "ENERGY/S", "REGEN", "OF REGEN", "CELL", "DAMAGE/S"], "th"),
+        )
+        const rows = []
+        for (const name of HULL_NAMES) {
+          const type = SHIP_TYPES[name]
+          const guns = gunsOf(type).filter((gun) => !gun.rolled)
+          if (!guns.length) {
+            continue
+          }
+          const core = coreOf(type)
+          const energy = guns.reduce((sum, gun) => sum + ratesOf(gun).energy, 0)
+          const damage = guns.reduce((sum, gun) => sum + ratesOf(gun).damage, 0)
+          const regen = core ? core.regen : null
+          rows.push({
+            name,
+            guns: guns.length,
+            energy,
+            damage,
+            regen,
+            cell: core ? core.energy : null,
+          })
+        }
+        rows.sort((a, b) => (b.regen ? b.energy / b.regen : 0) - (a.regen ? a.energy / a.regen : 0))
+        for (const entry of rows) {
+          const share = entry.regen ? entry.energy / entry.regen : null
+          const node = row([
+            entry.name,
+            entry.guns,
+            round(entry.energy, 1),
+            entry.regen ?? "-",
+            share === null
+              ? { content: "-" }
+              : { className: share > 1 ? "over" : "on", content: `${Math.round(share * 100)}%` },
+            entry.cell ?? "-",
+            round(entry.damage, 1),
+          ])
+          if (isAlien(entry.name)) {
+            node.className = "alien"
+          }
+          table.append(node)
+        }
+      }
+
+      // ---- arcs, hull by hull ------------------------------------------------
+      function arcCard(name) {
+        const type = SHIP_TYPES[name]
+        const guns = gunsOf(type)
+        const outline = type.outline || []
+        const span = Math.max(
+          8,
+          ...outline.flatMap(([x, y]) => [Math.abs(x), Math.abs(y)]),
+          ...guns.flatMap((gun) => [Math.abs(gun.local[0]), Math.abs(gun.local[1])]),
+        )
+        const size = 216
+        const pad = 12
+        const mid = size / 2
+        const half = mid - pad
+        // The arcs are what the card is for, so they get the room and the hull sits small
+        // in the middle of it.
+        const scale = (half * 0.4) / span
+        const at = ([x, y]) => [mid + x * scale, mid + y * scale]
+        const svg = svgEl("svg", { width: size, height: size, viewBox: `0 0 ${size} ${size}` })
+        // A wedge is drawn from its own mount rather than from the middle, so the reach has
+        // to allow for how far out the furthest mount sits: otherwise a gun on the nose
+        // throws its arc through the side of the card.
+        const furthest = Math.max(
+          0,
+          ...guns.map((gun) => Math.hypot(gun.local[0] * scale, gun.local[1] * scale)),
+        )
+        const radius = half - furthest
+        // Every gun's wedge behind the hull, so overlapping cover reads as overlapping.
+        guns.forEach((gun, i) => {
+          const [cx, cy] = at(gun.local)
+          const ink = gun.rolled ? "#7fa0c8" : i === 0 ? "var(--amber)" : "var(--cyan)"
+          if (isFinite(gun.arc)) {
+            const path = wedgePath({ x: cx, y: cy }, gun.arcFrom, gun.arc, radius)
+            svg.append(svgEl("path", { d: path, fill: ink, "fill-opacity": 0.12 }))
+            for (const edge of [gun.arcFrom - gun.arc, gun.arcFrom + gun.arc]) {
+              svg.append(
+                svgEl("line", {
+                  x1: cx,
+                  y1: cy,
+                  x2: cx + Math.cos(edge) * radius,
+                  y2: cy + Math.sin(edge) * radius,
+                  stroke: ink,
+                  "stroke-opacity": 0.5,
+                  "stroke-width": 1,
+                }),
+              )
+            }
+          } else {
+            // A ring says the mount traverses freely, so it only has to be whole: held to
+            // what fits inside the card from wherever the mount sits.
+            const fits = Math.min(cx, cy, size - cx, size - cy) - 2
+            svg.append(
+              svgEl("circle", {
+                cx,
+                cy,
+                r: Math.min(radius * 0.9, fits),
+                fill: "none",
+                stroke: ink,
+                "stroke-opacity": 0.4,
+                "stroke-dasharray": "4 6",
+              }),
+            )
+          }
+        })
+        if (outline.length) {
+          svg.append(
+            svgEl("polygon", {
+              points: outline.map((point) => at(point).join(",")).join(" "),
+              fill: "none",
+              stroke: type.colour || PALETTE.rival.hull,
+              "stroke-width": 1.4,
+            }),
+          )
+        }
+        for (const gun of guns) {
+          const [cx, cy] = at(gun.local)
+          svg.append(
+            svgEl("circle", {
+              cx,
+              cy,
+              r: 2.6,
+              fill: gun.rolled ? "#7fa0c8" : "var(--cyan)",
+            }),
+          )
+        }
+        const table = el(
+          "table",
+          {},
+          row(["GUN", "CTRL", "ARC", "OFF"], "th"),
+          guns.map((gun) =>
+            row([
+              gun.rolled ? `${gun.name}*` : gun.name,
+              gun.controller,
+              isFinite(gun.arc) ? deg(gun.arc) : "free",
+              gun.arcFrom ? deg(gun.arcFrom) : "-",
+            ]),
+          ),
+        )
+        return el(
+          "div",
+          { className: "card" },
+          el("h4", { style: isAlien(name) ? "color:var(--alien)" : "" }, name),
+          svg,
+          el("div", { className: "scroll" }, table),
+        )
+      }
+
+      // ---- tables ------------------------------------------------------------
+      function buildUsage() {
+        const table = document.getElementById("usageTable")
+        table.append(row(["CONTROLLER", "AIMER", "USED BY"], "th"))
+        const byController = new Map()
+        for (const hull of HULL_NAMES) {
+          for (const gun of gunsOf(SHIP_TYPES[hull])) {
+            if (!byController.has(gun.controller)) {
+              byController.set(gun.controller, new Set())
+            }
+            byController.get(gun.controller).add(`${hull}:${gun.name}`)
+          }
+        }
+        for (const name of Object.keys(WEAPON_CONTROLLERS)) {
+          const users = [...(byController.get(name) || [])]
+          table.append(
+            row([
+              name,
+              WEAPON_AIMERS[name] ? "yes" : "-",
+              {
+                className: "wrap",
+                content: users.length ? users.join(", ") : "the player's own hand",
+              },
+            ]),
+          )
+        }
+      }
+
+      function buildSight() {
+        const table = document.getElementById("sightTable")
+        table.append(row(["RADAR", "SHIPS", "ROCKS", "ORE", "FLOOR"], "th"))
+        for (const [name, type] of Object.entries(RADAR_TYPES)) {
+          const sees = type.sees || {}
+          table.append(
+            row([name, sees.ships ?? "-", sees.rocks ?? "-", sees.ore ?? "-", CONFIG.SENSOR_FLOOR]),
+          )
+        }
+      }
+
+      function buildChain() {
+        const host = document.getElementById("gateChain")
+        GATES.forEach(([name, what], i) => {
+          host.append(
+            el(
+              "div",
+              { className: "stage" },
+              el("b", {}, name),
+              el("div", {}, el("span", {}, what)),
+            ),
+          )
+          if (i < GATES.length - 1) {
+            host.append(el("div", { className: "arrow" }, "|"))
+          }
+        })
+      }
+
+      function buildDocs() {
+        const controllers = document.getElementById("controllerDocs")
+        for (const [name, text] of [...CONTROLLER_DOCS, ...AIMER_DOCS]) {
+          controllers.append(el("dt", {}, name.toUpperCase()))
+          controllers.append(el("dd", {}, text))
+        }
+        const targets = document.getElementById("targetDocs")
+        for (const [name, text] of TARGET_DOCS) {
+          targets.append(el("dt", {}, name.toUpperCase()))
+          targets.append(el("dd", {}, text))
+        }
+      }
+
+      function buildLegends() {
+        document
+          .getElementById("rigLegend")
+          .replaceChildren(
+            ...MOUNT_STATE.map(([name, ink, what]) =>
+              el("span", { title: what }, el("i", { style: `background:${ink}` }), name),
+            ),
+            el("span", {}, el("i", { style: "background:#ffffff" }), "demand (dashed)"),
+          )
+        document
+          .getElementById("arcLegend")
+          .replaceChildren(
+            el("span", {}, el("i", { style: "background:var(--amber)" }), "first gun"),
+            el("span", {}, el("i", { style: "background:var(--cyan)" }), "the rest"),
+            el("span", {}, el("i", { style: "background:#7fa0c8" }), "rolled arm (*)"),
+          )
+        document
+          .getElementById("cycleLegend")
+          .replaceChildren(
+            ...Object.entries(SEGMENT_INK).map(([kind, ink]) =>
+              el("span", {}, el("i", { style: `background:${ink}` }), SEGMENT_NAME[kind]),
+            ),
+          )
+      }
+
+      // ---- wiring ------------------------------------------------------------
+      const hullSelect = document.getElementById("hull")
+      for (const name of HULL_NAMES) {
+        hullSelect.append(el("option", { value: name }, name))
+      }
+      hullSelect.value = hullName
+      hullSelect.addEventListener("change", () => {
+        hullName = hullSelect.value
+        pose()
+      })
+
+      const facingInput = document.getElementById("facing")
+      facingInput.addEventListener("input", () => {
+        facing = Number(facingInput.value)
+      })
+
+      const btnCrt = document.getElementById("btnCrt")
+      btnCrt.addEventListener("click", () => {
+        const on = btnCrt.getAttribute("aria-pressed") !== "true"
+        btnCrt.setAttribute("aria-pressed", String(on))
+        renderer.crtEnabled = on
+      })
+      const btnFly = document.getElementById("btnFly")
+      btnFly.addEventListener("click", () => {
+        flying = !flying
+        btnFly.setAttribute("aria-pressed", String(flying))
+      })
+      const btnFreeze = document.getElementById("btnFreeze")
+      btnFreeze.addEventListener("click", () => {
+        frozen = !frozen
+        btnFreeze.setAttribute("aria-pressed", String(frozen))
+      })
+      const btnHud = document.getElementById("btnHud")
+      btnHud.addEventListener("click", () => {
+        view.showHud = !view.showHud
+        btnHud.setAttribute("aria-pressed", String(view.showHud))
+      })
+
+      const targetSelect = document.getElementById("target")
+      targetSelect.addEventListener("change", () => {
+        targetMode = targetSelect.value
+      })
+      const targetKindSelect = document.getElementById("targetKind")
+      targetKindSelect.addEventListener("change", () => {
+        targetKind = targetKindSelect.value
+      })
+      const rangeInput = document.getElementById("range")
+      const rangeOut = document.getElementById("rangeOut")
+      rangeInput.addEventListener("input", () => {
+        targetRange = Number(rangeInput.value)
+        rangeOut.textContent = `${targetRange}`
+        // In pointer mode the range slider slides the target along the bearing it is
+        // already on, so the same shot can be walked in and out of a gun's reach.
+        const bearing = Math.atan2(aimAt.y - ARENA.cy, aimAt.x - ARENA.cx)
+        aimAt = {
+          x: ARENA.cx + Math.cos(bearing) * targetRange,
+          y: ARENA.cy + Math.sin(bearing) * targetRange,
+        }
+      })
+      rangeOut.textContent = `${targetRange}`
+      const speedInput = document.getElementById("speed")
+      const speedOut = document.getElementById("speedOut")
+      speedInput.addEventListener("input", () => {
+        targetSpeed = Number(speedInput.value)
+        speedOut.textContent = `${targetSpeed}`
+      })
+      speedOut.textContent = `${targetSpeed}`
+
+      // Dragged rather than followed: a target that tracked the cursor everywhere could
+      // not be put somewhere and left there, since leaving the canvas is a move like any
+      // other. Press to take hold of it, release to leave it where it is.
+      let dragging = false
+      const placeFrom = (event) => {
+        const rect = rigCanvas.getBoundingClientRect()
+        const eye = eyeOf()
+        aimAt = {
+          x: ((event.clientX - rect.left) / rect.width) * VIEW_W - VIEW_W / 2 + eye.x,
+          y: ((event.clientY - rect.top) / rect.height) * VIEW_H - VIEW_H / 2 + eye.y,
+        }
+        targetRange = Math.round(Math.hypot(aimAt.x - ARENA.cx, aimAt.y - ARENA.cy))
+        rangeInput.value = String(Math.min(Number(rangeInput.max), targetRange))
+        rangeOut.textContent = String(targetRange)
+      }
+      rigCanvas.addEventListener("pointerdown", (event) => {
+        dragging = true
+        rigCanvas.setPointerCapture(event.pointerId)
+        targetMode = "pointer"
+        targetSelect.value = "pointer"
+        placeFrom(event)
+      })
+      rigCanvas.addEventListener("pointermove", (event) => {
+        if (dragging) {
+          placeFrom(event)
+        }
+      })
+      for (const ending of ["pointerup", "pointercancel"]) {
+        rigCanvas.addEventListener(ending, () => {
+          dragging = false
+        })
+      }
+
+      const pairs = firedPairs()
+      buildDocs()
+      buildChain()
+      buildUsage()
+      buildLegends()
+      buildCycles(pairs)
+      buildRates(pairs)
+      buildBudget()
+      buildSight()
+      document
+        .getElementById("arcCards")
+        .append(...HULL_NAMES.filter((name) => gunsOf(SHIP_TYPES[name]).length).map(arcCard))
+      pose()
+
+      // A handle on the rig, as index.html keeps one on the game: it puts the hull, its
+      // mounts and whatever they have found within reach of the console.
+      window.__gunsRig = {
+        game,
+        get subject() {
+          return subject
+        },
+        get target() {
+          return targetBody()
+        },
+      }
+
+      // ---- the loop ----------------------------------------------------------
+      // Everything the rig holds in place, run either side of the step: before it so the
+      // simulation sees the arrangement, and after it so the overlay draws mounts where
+      // the frame drew them. Only the first call moves an orbiting target, so a turn of
+      // the orbit is one turn per frame.
+      function holdRig(dt) {
+        if (subject && subject.inPlay()) {
+          // Held where it was put and pointed where the slider says, so its mounts can be
+          // read; FLY hands it back to its own controller.
+          if (!flying) {
+            subject.x = ARENA.cx
+            subject.y = ARENA.cy
+            subject.vx = 0
+            subject.vy = 0
+            subject.angle = facing
+          }
+          // Far more hull than anything here can take off it in a frame. Damage lands
+          // during the step, so surviving it means going into the step able to: topping up
+          // afterwards is too late, and a hull lost mid-step takes the scene with it.
+          subject.hull = subject.type.hull * 1000
+          subject.energy = subject.energyMax
+          game.viewCenter.x = subject.x
+          game.viewCenter.y = subject.y
+        }
+        if (hostileHull && !game.rivals.includes(hostileHull)) {
+          hostileHull.dead = false
+          hostileHull.leaving = false
+          hostileHull.lifeTimer = 1e9
+          game.rivals.push(hostileHull)
+        }
+        // Nothing arrives on the sector's own schedule: an arrival is another hull in the
+        // scene, with its own guns, and the rig is about one hull's.
+        if (game.rivals.length && (subject || hostileHull)) {
+          game.rivals = game.rivals.filter((ship) => ship === subject || ship === hostileHull)
+        }
+        const body = targetBody()
+        if (body) {
+          if (targetMode === "orbit") {
+            orbitAngle += (targetSpeed / Math.max(targetRange, 1)) * dt
+            body.x = ARENA.cx + Math.cos(orbitAngle) * targetRange
+            body.y = ARENA.cy + Math.sin(orbitAngle) * targetRange
+            body.vx = -Math.sin(orbitAngle) * targetSpeed
+            body.vy = Math.cos(orbitAngle) * targetSpeed
+          } else {
+            body.x = aimAt.x
+            body.y = aimAt.y
+            // A still target needs no lead; the slider gives it a velocity to lead.
+            body.vx = targetSpeed
+            body.vy = 0
+          }
+          if (body.type) {
+            body.hull = body.type.hull * 1000
+            body.energy = body.energyMax
+          }
+          if (body.center) {
+            // A rock carries its outline about its own centre, which is what everything
+            // measuring against it reads.
+            body.center.x = body.x
+            body.center.y = body.y
+          }
+        }
+        const player = game.player
+        if (player) {
+          player.warp = 1
+          player.hull = player.type.hull * 1000
+          player.energy = player.energyMax
+          // An untouchable ship is not a target: visiblePlayer refuses one, so an aimer
+          // finds nothing and the rig sits there with its guns stowed. The spawn grants
+          // invincibility, so it is cleared here rather than waited out - and put back when
+          // the player is not what is being shot at, which is how the player is kept out of
+          // the answer without moving it anywhere.
+          player.invincible = targetKind === "player" ? 0 : 1e9
+          if (targetKind !== "player") {
+            player.x = ARENA.cx
+            player.y = ARENA.cy - 700
+            player.vx = 0
+            player.vy = 0
+          }
+        }
+        // Whatever is not the target waits out of the way, so it cannot be the nearest
+        // thing to something looking for one.
+        for (const idle of [hostileHull, game.asteroids[0]]) {
+          if (idle && idle !== body) {
+            idle.x = ARENA.cx + 700
+            idle.y = ARENA.cy - 500
+            idle.vx = 0
+            idle.vy = 0
+            if (idle.center) {
+              idle.center.x = idle.x
+              idle.center.y = idle.y
+            }
+            if (idle.type) {
+              idle.hull = idle.type.hull * 1000
+            }
+          }
+        }
+      }
+
+      let last = 0
+      function frame(stamp) {
+        const dt = last ? Math.min((stamp - last) / 1000, 0.05) : 0
+        last = stamp
+        if (!frozen) {
+          holdRig(dt)
+          game.advance(dt)
+          holdRig(0)
+          // A rig cannot be allowed to reach a menu: nothing on this page can answer one,
+          // and the scene is gone by the time it appears. Whatever took it out of the
+          // flying phases, the way back is a fresh arrangement.
+          if (!game.canFly()) {
+            pose()
+          }
+        }
+        if (renderer.ready) {
+          view.render(game)
+        }
+        drawOverlay()
+        requestAnimationFrame(frame)
+      }
+      requestAnimationFrame(frame)
+    </script>
+  </body>
+</html>
