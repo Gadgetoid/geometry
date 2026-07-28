@@ -188,7 +188,12 @@ Small things, none of them load-bearing.
 
 ## Specials
 
-The current set wants tuning, and there is space for two more:
+They arrive a kind at a time across a run, at most one of each adrift, and a drop can
+simply not happen. Hull regen is the first a run finds, for the reason the slot
+machinery exists: it is worth throwing the ore magnet out for when the hull is nearly
+gone, and mending on a stock cell leaves nothing for the shield.
+
+The set wants tuning, and there is space for two more:
 
 - **stop time**
 - **warp**, launching the ship along its facing at high speed as a dash strike,

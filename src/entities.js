@@ -2775,6 +2775,25 @@ export class PlayerShip extends Ship {
       }
     }
     this.energy = clamp(this.energy, 0, this.energyMax)
+    // Anything mending the hull does it out of the cell, and a dry cell mends nothing:
+    // what it costs was taken above, as every passive's is. A fraction of the hull's own
+    // maximum, so it takes the same time to put any hull back together.
+    const mending = this.buffWith("repair")
+    const mend = mending ? mending.repair : 0
+    if (mend > 0 && this.energy > 0 && this.hull < this.type.hull) {
+      // What it mends this frame, and what that costs: paid as it mends, so a whole hull
+      // costs nothing to carry, and never more than the cell has left to give.
+      const price = mending.repairCost ?? 0
+      let points = Math.min(mend * this.type.hull * dt, this.type.hull - this.hull)
+      if (price > 0) {
+        points = Math.min(points, this.energy / price)
+        this.energy = Math.max(0, this.energy - points * price)
+      }
+      this.hull += points
+      // The bar draws the gap between what is left and what was left as the part just
+      // lost, so it follows the hull up rather than leaving red behind a repair.
+      this.hullShown = Math.max(this.hullShown ?? this.hull, this.hull)
+    }
     this.updateShield(dt, game)
 
     // Auto weapons (defense turret) fire via their controllers.

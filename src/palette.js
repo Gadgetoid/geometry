@@ -138,6 +138,7 @@ export const PALETTE = {
     booster: "#ffcf5c",
     multi: "#5fd7ff",
     magnet: "#b38bff",
+    hullRegen: "#ff9d7a", // warm, since what it mends is the hull rather than the cell
     stealth: "#dfe9f5",
   },
 

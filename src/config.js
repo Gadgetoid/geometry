@@ -2513,7 +2513,7 @@ export const SPECIAL_TYPES = {
   // neighbourhood, so it is a way out of a squeeze and not a way to sweep the
   // sector; a rock counts as in range when its surface is.
   repel: {
-    fromSector: 5,
+    fromSector: 6,
     label: "REPEL",
     desc: "A shove that throws rocks and shot clear of the ship. A way out of a squeeze, not a way to sweep a sector.",
     icon: "R",
@@ -2620,6 +2620,25 @@ export const SPECIAL_TYPES = {
     mode: "passive",
     pull: CONFIG.ORE_PASSIVE_PULL,
     pullRange: 190,
+  },
+  // Mends the hull for as long as it is carried, and pays for it as it mends rather than
+  // for as long as it is fitted: a whole hull costs nothing to keep. `repair` is a
+  // fraction of the hull's own maximum a second, so any hull takes the same time to put
+  // back together, and `repairCost` is energy a point of hull, so what it costs is how
+  // much of the hull was gone. The first thing a run finds, and it wants a slot: the
+  // choice it is there for is throwing the ore magnet out to hold it.
+  hullRegen: {
+    fromSector: 5,
+    label: "HULL REGEN",
+    short: "REGEN",
+    desc: "Mends the hull while you carry it, slowly, out of the cell.",
+    icon: "H",
+    colour: PALETTE.special.hullRegen,
+    cost: 120,
+    buyable: true,
+    mode: "passive",
+    repair: 0.022,
+    repairCost: 26,
   },
   // Held on rather than triggered: it costs energy for as long as it runs, and
   // firing the main laser gives the position away and drops it.

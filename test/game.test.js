@@ -4713,6 +4713,56 @@ test("a turret is fitted to a mount the hull actually has", () => {
   }
 })
 
+test("hull regen mends out of the cell, and a whole hull costs nothing", () => {
+  // The choice it is there for is throwing the ore magnet out to hold it, which only
+  // means anything if mending is a real trade: it is paid for as it mends, so carrying it
+  // on a whole hull is free and mending on a stock cell leaves nothing for the shield.
+  const spec = SPECIAL_TYPES.hullRegen
+  const armed = (level = 0) => {
+    const game = liveGame()
+    game.asteroids = [new Asteroid({ x: 60, y: 60, radius: 30 })] // so the sector stays live
+    game.upgrades.core = level
+    const player = beSolid(game.player)
+    player.energyMax = game.maxEnergy()
+    player.energy = player.energyMax
+    game.findSpecial("hullRegen")
+    player.equip(0, "hullRegen")
+    return game
+  }
+  const run = (game, seconds, key) => {
+    let lowest = game.player.energy
+    for (let frame = 0; frame < 60 * seconds; frame++) {
+      game.player.invincible = 1e9
+      if (key) {
+        game.pressedKeys.add(key)
+      }
+      game.advance(1 / 60)
+      lowest = Math.min(lowest, game.player.energy)
+    }
+    return lowest
+  }
+
+  // Carried on a whole hull, it costs nothing at all.
+  const whole = armed()
+  const cell = whole.player.energy
+  run(whole, 20)
+  assert.equal(whole.player.energy, cell, "a hull with nothing missing is free to carry")
+
+  // Mending, it puts the hull back and empties the cell doing it.
+  const hurt = armed()
+  hurt.player.hull = 1
+  const lowest = run(hurt, 70)
+  assert.equal(hurt.player.hull, hurt.player.type.hull, "the hull comes back")
+  assert.ok(
+    lowest < hurt.player.energyMax * 0.2,
+    `and the cell paid for it, low of ${lowest.toFixed(0)}`,
+  )
+
+  // It is the first special a run can find, since it is the one worth a slot in trouble.
+  const gates = SPECIAL_IDS.map((id) => SPECIAL_TYPES[id].fromSector ?? 0)
+  assert.equal(spec.fromSector, Math.min(...gates), "and it is the first one found")
+})
+
 test("a special says what it does, wherever it is being looked at", () => {
   // Every other thing the shop fits describes itself, so a special does too: on the
   // page beside the ship when the cursor is on its box, and in the menu that sells it.
