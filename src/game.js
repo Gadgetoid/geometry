@@ -35,8 +35,6 @@ import {
   SLOT_MENU,
   SPECIAL_TYPES,
   SPECIAL_IDS,
-  MAX_SLOTS,
-  UI_SCALES,
   SHIELD_SPARK,
   GAMEPAD,
   BINDABLE_CONTROLS,
@@ -175,9 +173,9 @@ export class Game {
     // How long each slot button has been held, and whether that hold has already
     // thrown the special overboard. A tap uses the slot on release; a hold
     // jettisons as it passes the threshold, and the release then does nothing.
-    this.slotHeld = new Array(MAX_SLOTS).fill(0)
-    this.slotDown = new Array(MAX_SLOTS).fill(false)
-    this.slotSpent = new Array(MAX_SLOTS).fill(false)
+    this.slotHeld = new Array(CONFIG.MAX_SLOTS).fill(0)
+    this.slotDown = new Array(CONFIG.MAX_SLOTS).fill(false)
+    this.slotSpent = new Array(CONFIG.MAX_SLOTS).fill(false)
     this.pauseSelection = 0
     this.pauseConfirming = null // a row waiting to be confirmed a second time
     // Settings live here rather than on the things they affect, so one place holds
@@ -359,7 +357,7 @@ export class Game {
   // for a row that names what it has fitted instead.
   boxesOnRow(row) {
     if (row === this.slotsRow) {
-      return MAX_SLOTS
+      return CONFIG.MAX_SLOTS
     }
     const item = this.shopItem(row)
     const spec = item && item.equipment ? EQUIPMENT[item.equipment] : null
@@ -505,7 +503,7 @@ export class Game {
     const own = this.ownCore()
     const flown = this.playerCore()
     const room = Math.max(own ? (own.special ?? 0) : 0, flown ? (flown.special ?? 0) : 0)
-    return Math.min(room, MAX_SLOTS)
+    return Math.min(room, CONFIG.MAX_SLOTS)
   }
   // Mount the module an upgrade pays for, if the ship exists yet. The shop can be
   // reached before one does (the dev shop), so this is where the check lives.
@@ -1846,7 +1844,11 @@ export class Game {
   // is: the row is a row of boxes, not a loop.
   #slotMenuAcross(step) {
     const direction = Math.sign(step)
-    for (let slot = this.shopSlot + direction; slot >= 0 && slot < MAX_SLOTS; slot += direction) {
+    for (
+      let slot = this.shopSlot + direction;
+      slot >= 0 && slot < CONFIG.MAX_SLOTS;
+      slot += direction
+    ) {
       if (this.slotMenuRows(slot).length) {
         this.shopSlot = slot
         this.slotMenu = { slot, selection: 0 }
@@ -2655,16 +2657,16 @@ export class Game {
   // Step the HUD's scale along the sizes offered, wrapping, so one row works
   // whether it is pressed or nudged left and right.
   setUiScale(value) {
-    const nearest = UI_SCALES.reduce((best, size) =>
+    const nearest = CONFIG.UI_SCALES.reduce((best, size) =>
       Math.abs(size - value) < Math.abs(best - value) ? size : best,
     )
     this.settings.uiScale = nearest
     this.rememberSettings()
   }
   stepUiScale(step) {
-    const at = UI_SCALES.indexOf(this.settings.uiScale)
-    const next = (at + (step > 0 ? 1 : -1) + UI_SCALES.length) % UI_SCALES.length
-    this.setUiScale(UI_SCALES[next])
+    const at = CONFIG.UI_SCALES.indexOf(this.settings.uiScale)
+    const next = (at + (step > 0 ? 1 : -1) + CONFIG.UI_SCALES.length) % CONFIG.UI_SCALES.length
+    this.setUiScale(CONFIG.UI_SCALES[next])
   }
   applySound() {
     Sound.enabled = this.settings.sound
@@ -2798,7 +2800,7 @@ export class Game {
     // Anything the registry no longer knows is dropped, so an old save cannot put
     // a special that has since been removed into a slot or onto the shop's shelf.
     ;(run.items || []).forEach((id, slot) => {
-      if (SPECIAL_TYPES[id] && slot < MAX_SLOTS) {
+      if (SPECIAL_TYPES[id] && slot < CONFIG.MAX_SLOTS) {
         this.player.equip(slot, id)
       }
     })
@@ -3583,7 +3585,7 @@ export class Game {
   // A slot button going down. Nothing happens yet: a tap uses the slot when it
   // comes back up, and a hold throws the special overboard before then.
   slotDownAt(index) {
-    if (index < 0 || index >= MAX_SLOTS) {
+    if (index < 0 || index >= CONFIG.MAX_SLOTS) {
       return
     }
     this.slotDown[index] = true
@@ -3593,7 +3595,7 @@ export class Game {
 
   // ...and coming back up, which uses the slot unless the hold already spent it.
   slotUpAt(index) {
-    if (index < 0 || index >= MAX_SLOTS) {
+    if (index < 0 || index >= CONFIG.MAX_SLOTS) {
       return
     }
     this.slotDown[index] = false
@@ -3606,7 +3608,7 @@ export class Game {
   }
 
   #tickSlotHolds(dt) {
-    for (let index = 0; index < MAX_SLOTS; index++) {
+    for (let index = 0; index < CONFIG.MAX_SLOTS; index++) {
       if (!this.slotDown[index] || this.slotSpent[index]) {
         continue
       }

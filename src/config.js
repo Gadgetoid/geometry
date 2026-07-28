@@ -236,12 +236,22 @@ export const CONFIG = {
   // What a special fetches when traded in, as a fraction of what it costs. One
   // number so no entry can be worth more sold than bought.
   SPECIAL_SELL_FRACTION: 0.35,
+  // Most special slots the ship can be fitted with. What actually opens them is the core ladder,
+  // which stops at four; this is the ceiling everything that walks the slots is written against.
+  MAX_SLOTS: 4,
   // How long a slot button must be held before the special in it is thrown
   // overboard instead of used.
   SPECIAL_JETTISON_HOLD: 0.55,
   SPECIAL_JETTISON_SPEED: [110, 160], // how hard a jettisoned one is flung clear
   SPECIAL_JETTISON_DRAG: 0.25, // and how quickly it slows, so it lands within reach
   SPECIAL_ARM_TIME: 1.4, // how long before it can be picked up again
+
+  // Sizes the in-game HUD can be drawn at, in menu order. The menus themselves are not scaled:
+  // they already fill the page, and there is nowhere for them to grow.
+  UI_SCALES: [1, 1.5, 2],
+  // What a spare ship costs. A repair is priced against it: patching a hull back to whole is worth
+  // what it would have cost to lose it, and half a hull is half of that.
+  LIFE_COST: 60,
 
   // audio. Every effect is mixed through MASTER_VOLUME, so its own level only sets
   // where it sits against the others and this one number sets how loud the game is.
@@ -3419,16 +3429,9 @@ export const SPECIAL_TYPES = {
 
 export const SPECIAL_IDS = Object.keys(SPECIAL_TYPES)
 
-// Maximum special slots the ship can be fitted with.
-export const MAX_SLOTS = 4
-
 export function freshUpgrades() {
   return { core: 0, ...freshEquipment() }
 }
-
-// Sizes the in-game HUD can be drawn at, in menu order. The menus themselves are
-// not scaled: they already fill the page, and there is nowhere for them to grow.
-export const UI_SCALES = [1, 1.5, 2]
 
 // ---------------------------------------------------------------------------
 // PAUSE MENU - one entry per row, in order. Fields:
@@ -3748,10 +3751,6 @@ const equipmentRow = (slot, inset = false) => ({
   maxed: (g) => g.ownsEveryOption(slot),
 })
 
-// What a spare ship costs. A repair is priced against it: patching a hull back to
-// whole is worth what it would have cost to lose it, and half a hull is half of that.
-const LIFE_COST = 60
-
 export const SHOP = [
   // Patching the hull and buying a spare ship are what a run needs rather than what it
   // is fitted with, so they head the page as their own group. Damage carries between
@@ -3761,7 +3760,7 @@ export const SHOP = [
     name: "REPAIR",
     desc: "Patch the hull back to whole. What it costs is how much of it is gone.",
     info: (g) => (g.player ? `${Math.round(g.player.hull)} / ${g.player.type.hull}` : "-"),
-    cost: (g) => (g.player ? Math.ceil(LIFE_COST * g.hullMissing()) : 0),
+    cost: (g) => (g.player ? Math.ceil(CONFIG.LIFE_COST * g.hullMissing()) : 0),
     maxed: (g) => !g.player || g.hullMissing() <= 0,
     apply: (g) => {
       if (g.player) {
@@ -3775,7 +3774,7 @@ export const SHOP = [
     name: "LIVES",
     desc: "One more spare ship.",
     info: (g) => `${g.lives} / ${CONFIG.MAX_LIVES}`,
-    cost: () => LIFE_COST,
+    cost: () => CONFIG.LIFE_COST,
     maxed: (g) => g.lives >= CONFIG.MAX_LIVES,
     apply: (g) => {
       g.lives++

@@ -6,6 +6,7 @@
 // their own draw(renderer, game) methods.
 
 import {
+  CONFIG,
   EQUIPMENT,
   OVER_MENU,
   VIEW_W,
@@ -14,7 +15,6 @@ import {
   ARENA,
   SHOP,
   SHOP_LAYOUT,
-  MAX_SLOTS,
   SPECIAL_TYPES,
 } from "./config.js"
 import { drawMount } from "./entities.js"
@@ -1485,13 +1485,13 @@ export class GameView {
     // Titled exactly as the purchase rows above it are: same size, same weight, and the
     // same colour once there is nothing left to get. It is a row of that list, so it reads
     // as one - it was two points smaller than its neighbours and never went green.
-    const full = game.specialSlots() >= MAX_SLOTS
+    const full = game.specialSlots() >= CONFIG.MAX_SLOTS
     r.text(`${selected ? "> " : "  "}SPECIALS`, leftX, y, {
       size: 17,
       bold: selected,
       color: full ? PALETTE.ui.good : selected ? PALETTE.text.bright : PALETTE.text.normal,
     })
-    for (let index = 0; index < MAX_SLOTS; index++) {
+    for (let index = 0; index < CONFIG.MAX_SLOTS; index++) {
       const { x, size } = this.#slotBox(infoX, index),
         boxY = y - size + 7
       const owned = index < game.specialSlots(),

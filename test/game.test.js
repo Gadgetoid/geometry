@@ -46,7 +46,6 @@ import {
   ENGINE_TYPES,
   HAZARD_TRAITS,
   weightAt,
-  MAX_SLOTS,
   PLAYER_TYPE,
   freshEquipment,
   SPECIAL_IDS,
@@ -60,7 +59,6 @@ import {
   SHOP_LAYOUT,
   OVER_MENU,
   PAUSE_MENU,
-  UI_SCALES,
   VIEW_W,
   VIEW_H,
   WEAPON_TYPES,
@@ -4517,7 +4515,7 @@ test("the specials row is titled like the rows it sits among", () => {
 
   // And it goes green with them once the core gives every slot there is.
   const full = liveGame()
-  withSlots(full, MAX_SLOTS)
+  withSlots(full, CONFIG.MAX_SLOTS)
   full.enterShop()
   assert.equal(rowFor(full, "SPECIALS").colour, PALETTE.ui.good, "nothing left to unlock")
 })
@@ -4553,7 +4551,7 @@ test("the specials boxes start where the rows above name what they have fitted",
   assert.equal(rows.length, 2, "the specials row and the turret row")
   assert.deepEqual(
     rows.map((row) => row.length).sort((a, b) => a - b),
-    [turretMounts, MAX_SLOTS].sort((a, b) => a - b),
+    [turretMounts, CONFIG.MAX_SLOTS].sort((a, b) => a - b),
     "one box per special slot, and one per mount that takes a turret",
   )
   for (const row of rows) {
@@ -5728,7 +5726,7 @@ test("a turret is fitted to a mount the hull actually has", () => {
   // The rows drawn as boxes share one cursor and do not have the same number of boxes.
   // A cursor left on the fourth special arrived at a turret row with one mount and
   // fitted the gun to a mount that was not there, so nothing appeared on the ship.
-  for (let left = 0; left < MAX_SLOTS; left++) {
+  for (let left = 0; left < CONFIG.MAX_SLOTS; left++) {
     const game = liveGame()
     game.setDevFreeBuys(true)
     game.enterShop()
@@ -6111,11 +6109,11 @@ test("the cursor walks every slot box, fitted or not, and stops at either end", 
   assert.equal(game.shopSlot, 0)
   assert.equal(game.menuAdjust(-1), true, "left is taken by the row, not passed on")
   assert.equal(game.shopSlot, 0, "and stops at the first")
-  for (let step = 0; step < MAX_SLOTS + 2; step++) {
+  for (let step = 0; step < CONFIG.MAX_SLOTS + 2; step++) {
     game.menuAdjust(1)
   }
   // an unfitted slot is where the next one is bought, so the cursor must reach it
-  assert.equal(game.shopSlot, MAX_SLOTS - 1, "the last box is the last it reaches")
+  assert.equal(game.shopSlot, CONFIG.MAX_SLOTS - 1, "the last box is the last it reaches")
   // and the launch line still moves the way it always did
   game.shopSelection = game.optionsRow
   game.menuAdjust(1)
@@ -6442,7 +6440,7 @@ test("a slot comes with the power core, along with the cell to run it", () => {
     assert.ok(core[i].energy > core[i - 1].energy, `level ${i} must hold more`)
     assert.ok(core[i].special > core[i - 1].special, `level ${i} must earn a slot`)
   }
-  assert.equal(core[core.length - 1].special, MAX_SLOTS, "the last level fills the ship")
+  assert.equal(core[core.length - 1].special, CONFIG.MAX_SLOTS, "the last level fills the ship")
 })
 
 test("a slot the core does not provide is inert, and the next level opens it", () => {
@@ -6750,18 +6748,22 @@ test("the shop stocks only what the registry says is for sale", () => {
 test("help text and HUD size are settings that survive a session", () => {
   const game = new Game()
   assert.equal(game.settings.help, true, "help text starts on")
-  assert.equal(game.settings.uiScale, UI_SCALES[0])
+  assert.equal(game.settings.uiScale, CONFIG.UI_SCALES[0])
 
   game.setHelp(false)
   assert.equal(game.settings.help, false)
 
   // one row steps the sizes offered, and wraps at the end of them
-  for (const expected of [...UI_SCALES.slice(1), UI_SCALES[0]]) {
+  for (const expected of [...CONFIG.UI_SCALES.slice(1), CONFIG.UI_SCALES[0]]) {
     game.stepUiScale(1)
     assert.equal(game.settings.uiScale, expected)
   }
   game.stepUiScale(-1)
-  assert.equal(game.settings.uiScale, UI_SCALES[UI_SCALES.length - 1], "and the other way")
+  assert.equal(
+    game.settings.uiScale,
+    CONFIG.UI_SCALES[CONFIG.UI_SCALES.length - 1],
+    "and the other way",
+  )
 
   const resumed = new Game()
   resumed.settings = { ...resumed.settings, ...JSON.parse(JSON.stringify(game.settings)) }
@@ -6775,7 +6777,7 @@ test("help text and HUD size are settings that survive a session", () => {
 function hudAt(uiScale, { shield = false } = {}) {
   const game = liveGame()
   game.settings.uiScale = uiScale
-  game.upgrades.slots = MAX_SLOTS
+  game.upgrades.slots = CONFIG.MAX_SLOTS
   equip(game, 0, "repel")
   if (shield) {
     withShield(game)
@@ -6814,7 +6816,7 @@ test("every HUD element is anchored to the page and scales from where it is anch
   // multiplies that distance. A `* ui` left off any of them breaks exactly this.
   // The shield's markers are the one exception, sitting a fraction of the way
   // along a bar that spans the page; the test below covers those.
-  const factor = UI_SCALES[UI_SCALES.length - 1]
+  const factor = CONFIG.UI_SCALES[CONFIG.UI_SCALES.length - 1]
   const small = hudAt(1),
     large = hudAt(factor)
   assert.ok(small.shapes.length > 0 && small.labels.length > 0, "something was drawn")
@@ -6854,7 +6856,7 @@ test("every HUD element is anchored to the page and scales from where it is anch
 })
 
 test("the shield's markers hold their place along the bar at any HUD size", () => {
-  const factor = UI_SCALES[UI_SCALES.length - 1]
+  const factor = CONFIG.UI_SCALES[CONFIG.UI_SCALES.length - 1]
   // The bar is the widest thing the HUD draws, so it is the widest shape recorded.
   const bar = (hud) => hud.shapes.reduce((a, b) => (b.w > a.w ? b : a))
   const markers = (hud) => {

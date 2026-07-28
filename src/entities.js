@@ -56,7 +56,6 @@ import {
   EQUIPMENT,
   AST_SHAPE,
   SPECIAL_TYPES,
-  MAX_SLOTS,
   SHIELD_SPARK,
   flightStats,
   barrelCount,
@@ -3200,7 +3199,7 @@ export class PlayerShip extends Ship {
     this.reversing = false
     // One entry per slot, null where the slot is empty, so a slot's index is its
     // identity: buying into the third slot puts it in the third box.
-    this.items = new Array(MAX_SLOTS).fill(null)
+    this.items = new Array(CONFIG.MAX_SLOTS).fill(null)
     // What the hull leaves the yard carrying, before anything is bought.
     for (const [slot, id] of (type.startingSpecials || []).entries()) {
       this.equip(slot, id)
