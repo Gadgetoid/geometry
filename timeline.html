@@ -256,20 +256,16 @@
     <div id="tip"></div>
 
     <script type="module">
-      // What a run looks like sector by sector, measured by asking the game rather
-      // than by restating any of its numbers. Every figure here is either something
-      // a sector's plan states outright, or the outcome of calling the same code the
-      // game calls and counting what came back.
+      // What a run looks like sector by sector.
       //
-      // A throwaway Game and Backdrop are built to be asked; neither is stepped,
-      // drawn or saved, and nothing in src/ is modified.
+      // A throwaway Game and Backdrop answer the questions; neither is stepped, drawn or
+      // saved.
       //
-      // Hulls arrive for one faction or another, and the sides run to different
-      // schedules: the rivals from early on, the fleet's own alongside them, the
-      // aliens late and then heavily. So faction is carried by hue - each side in the
-      // colour the game draws it in - and magnitude by lightness within each hue.
-      // Every grid that mixes the sides shows a scale per hue, and identity is still
-      // on the label beside the row.
+      // Hulls arrive for one faction or another, and the sides run to different schedules:
+      // the rivals from early on, the fleet's own alongside them, the aliens late and then
+      // heavily. So faction is carried by hue - each side in the colour the game draws it
+      // in - and magnitude by lightness within each hue. Every grid that mixes the sides
+      // shows a scale per hue, with identity on the label beside the row.
 
       const page = document.getElementById("page")
       const status = document.getElementById("status")
@@ -1229,10 +1225,9 @@
         section(
           "milestones",
           "WHEN THINGS FIRST APPEAR",
-          "The first sector each thing can happen in, taken from the measured survey rather than " +
-            "from the sector each registry names, so a gate that is reached through two conditions " +
-            "is reported where it actually opens. Anything belonging to a faction is written in " +
-            "its colour.",
+          "The first sector each thing can happen in, so a gate reached through two conditions is " +
+            "reported where it actually opens. Anything belonging to a faction is written in its " +
+            "colour.",
           el(
             "div",
             { className: "scroll" },
@@ -1266,11 +1261,9 @@
         section(
           "backdrop",
           "SKY",
-          "The nebula pair and the worlds each sector is drawn against. The generator is seeded " +
-            "by the sector number, so this is not a sample: it is the sky that sector always has. " +
-            `The sky runs an arc of its own, ${SKY.arcSectors} sectors long, from cool and quiet ` +
-            "to ember, industrial and alien, holding there afterwards. Swatches are the colours " +
-            "themselves, not a scale.",
+          "The nebula pair and the worlds each sector is drawn against. The sky runs an arc of " +
+            `its own, ${SKY.arcSectors} sectors long, from cool and quiet to ember, industrial and ` +
+            "alien, holding there afterwards. Swatches are the colours themselves.",
           el("div", { className: "scroll" }, backdropStrip(sectors)),
         )
 
@@ -1278,9 +1271,9 @@
         section(
           "counts",
           "HOW MUCH IS OUT THERE",
-          "What a sector's plan states outright. Two measures on two charts rather than two scales " +
-            "on one. The hull count is every faction's together: what arrives is one roll over " +
-            "everything eligible, so a late sector's three may be any mix of the sides.",
+          "What a sector's plan states outright. The hull count is every faction's together: what " +
+            "arrives is one roll over everything eligible, so a late sector's three may be any mix " +
+            "of the sides.",
           el("h3", { textContent: "ROCKS IN THE FIELD" }),
           el(
             "div",
@@ -1312,11 +1305,10 @@
         section(
           "hazards",
           "WHAT A ROCK IS CARRYING",
-          `The chance any one rock in the sector carries each trait. A plan rolls these, so they ` +
-            `are measured over ${PLAN_SAMPLES} plans a sector; the top row is the chance of a ` +
-            `hazard at all and the rest are that chance split between the kinds, so they sum ` +
-            `to it. A trait's weight can grow per sector, which is why armed rocks come to crowd ` +
-            `the others out.`,
+          "The chance any one rock in the sector carries each trait. The top row is the chance of " +
+            "a hazard at all and the rest are that chance split between the kinds, so they sum to " +
+            "it. A trait's weight can grow per sector, which is why armed rocks come to crowd the " +
+            "others out.",
           heatGrid(sectors, hazardRows, {
             legend: "chance a given rock carries it",
             valueOf: (row, entry) =>
@@ -1327,11 +1319,9 @@
         section(
           "arrivals",
           "WHICH HULL ARRIVES",
-          `Asked of the spawner itself, with the field empty and the run set to that sector. ` +
-            `Arrivals are weighed, so a type's share is its own weight over the total of ` +
-            `whatever else is eligible there, and this is worked out rather than sampled. ` +
-            `Each side is written in the colour the game draws it in, and the aliens take most ` +
-            `of the sector's arrivals once they are in it.`,
+          "A type's share is its own weight over the total of whatever else is eligible there. " +
+            "Each side is written in the colour the game draws it in, and the aliens take most of " +
+            "the sector's arrivals once they are in it.",
           el("h3", { textContent: "BY FACTION" }),
           heatGrid(
             sectors,
@@ -1358,8 +1348,8 @@
           el("p", {
             className: "note",
             textContent:
-              "Each optional module is rolled on its own as the ship spawns, from the same call the" +
-              " spawner makes, so a hull can carry any combination of them.",
+              "Each optional module is rolled on its own as the ship spawns, so a hull can carry " +
+              "any combination of them.",
           }),
           heatGrid(
             sectors,
@@ -1388,8 +1378,7 @@
           "THE ALIENS",
           "A second hostile faction, held back until late and then taking most of what arrives. " +
             "They are hostile to the rivals as well as to the player, so a late sector is a " +
-            "three-way fight rather than a harder version of an early one. Everything of theirs " +
-            "on this page is in their own green.",
+            "three-way fight. Everything of theirs on this page is in their own green.",
           el("h3", { textContent: "WHAT EACH ONE IS" }),
           table(
             [
@@ -1421,10 +1410,9 @@
           el("p", {
             className: "note",
             textContent:
-              "The faction's one mechanic, and the reason a sector with them in it does not look " +
-              "like one without: a warp field on the hull, and another on much of what it fires. " +
-              "`radius` is how far it reaches, `strength` how hard it pulls what is drawn through " +
-              "it, and `wave` how much that ripples.",
+              "The faction's one mechanic: a warp field on the hull, and another on much of what " +
+              "it fires. `radius` is how far it reaches, `strength` how hard it pulls what is " +
+              "drawn through it, and `wave` how much that ripples.",
           }),
           table(
             ["hull", "what warps", "radius", "strength", "wave", "notes"],
@@ -1448,11 +1436,9 @@
         section(
           "specials",
           "SPECIALS",
-          `Whether a sector drops them at all, and which. The pool is weighed by sector like ` +
-            `every other roll, so a kind's share is its own weight over the total of what is ` +
-            `eligible there, worked out rather than sampled. Nothing states a sector to start ` +
-            `from or a weight that grows, so the shares are even and stay even; one that did ` +
-            `would show up here as a row that begins late or climbs. At most ` +
+          "Whether a sector drops them at all, and which. A kind's share is its own weight over " +
+            "the total of what is eligible there. Nothing states a sector to start from or a weight " +
+            "that grows, so the shares are even and stay even. At most " +
             `${config.PROGRESSION.specials.maxOnField} are on the field at once.`,
           heatGrid(sectors, [{ label: "specials drop", key: "specials", emphasis: true }], {
             valueOf: (row, entry) => (entry.specials ? 1 : 0),
@@ -1491,7 +1477,7 @@
         section(
           "table",
           "EVERY NUMBER",
-          "The same figures as the strips above, for reading exactly rather than at a glance.",
+          "The same figures as the strips above, exactly.",
           table(
             columnsSpec.map(([name]) => name),
             sectors.map((entry) => columnsSpec.map(([, read]) => String(read(entry)))),
@@ -1499,9 +1485,7 @@
           ),
         )
 
-        status.textContent =
-          `sectors ${from} to ${to} of 0 to ${LAST}, surveyed in ${elapsed}ms ` +
-          `(${PLAN_SAMPLES} plans a sector; arrivals are exact)`
+        status.textContent = `sectors ${from} to ${to} of 0 to ${LAST}, in ${elapsed}ms`
       }
 
       for (const input of ["from", "to"]) {

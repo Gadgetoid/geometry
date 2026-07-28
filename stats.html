@@ -280,18 +280,13 @@
     <main id="page"></main>
 
     <script type="module">
-      // A reference sheet for the game's numbers, built by asking the game's own
-      // modules rather than by restating them: every registry is walked for
-      // whatever keys it happens to have, and anything the game works out at
-      // runtime is worked out here by calling the same code. Adding a weapon, an
-      // engine, a core, a special, a ship or a tuning value shows up here without
-      // this file changing.
+      // A reference sheet for the game's numbers. Every registry is walked for whatever
+      // keys it happens to have, so adding a weapon, an engine, a core, a special, a ship
+      // or a tuning value shows up here without this file changing.
       //
-      // Nothing in src/ is imported by this page in reverse: it reads, and writes
-      // nothing. A throwaway Game is built to answer questions (a sector's plan, the
-      // guns a sector arms a rock with, ore from a shattered rock); it is never
-      // stepped, drawn, or saved, and nothing here starts a run, since starting one
-      // would write over the player's own.
+      // A throwaway Game answers the questions that need one: a sector's plan, the guns a
+      // sector arms a rock with, ore from a shattered rock. It is never stepped, drawn or
+      // saved, and nothing here starts a run, which would write over the player's own.
 
       const page = document.getElementById("page")
 
@@ -1108,14 +1103,10 @@
       section(
         "hulls",
         "HULLS",
-        "One card per ship the game knows about: the player's, and every entry in SHIP_TYPES. " +
-          "A design states an outline in world units and two numbers (mass, armour), bolts engines " +
-          "and thrusters to it, and deriveShipStats works the rest out; the SETTINGS table says " +
-          "where each of them came from. The player's is shown as the yard leaves it, with the " +
-          "equipment a run starts with aboard - what the shop can change is under UPGRADES. " +
-          "Outlines are drawn from the real ones, with the shield bubble dashed, weapons as rings, " +
-          "engines as chevrons, cores as squares and empty mounts as dots. Under TRUE RELATIVE " +
-          "SCALE each hull is named in its side's colour, while the outline keeps its own.",
+        "One card per ship: the player's, and every entry in SHIP_TYPES, shown as the yard leaves " +
+          "it. Outlines are the real ones, with the shield bubble dashed, weapons as rings, engines " +
+          "as chevrons, cores as squares and empty mounts as dots. Under TRUE RELATIVE SCALE a hull " +
+          "is named in its side's colour, while the outline keeps its own.",
         el(
           "div",
           { className: "cards" },
@@ -1133,10 +1124,9 @@
       section(
         "weapons",
         "WEAPONS",
-        "Every entry in WEAPON_TYPES, whatever fields it carries. Rate, damage and energy per " +
-          "second are worked out from `reload` here; barrels come from barrelCount(), the same " +
-          "call the view makes when it draws a turret. `arc` is how far a mount can bear off the " +
-          "hull's facing, and a loadout entry may state its own in place of the weapon's.",
+        "Every entry in WEAPON_TYPES. Rate, damage and energy per second follow from `reload`. " +
+          "`arc` is how far a mount can bear off the hull's facing, and a loadout entry may state " +
+          "its own.",
         el(
           "div",
           { className: "cards" },
@@ -1171,11 +1161,11 @@
         "shields",
         "SHIELDS",
         "A shield turns damage of the channels it blocks into energy drain, at `efficiency` " +
-          "energy per point, which may be one number for every channel or one per channel. It " +
-          "drops when energy falls to `dropAt` of capacity and returns once `recoverDelay` has " +
-          "passed and energy is back to `recoverAt`. A shield with `repel` is a field rather than " +
-          "a bubble: it pays per push for what it holds off, and `solid: false` means it leans on " +
-          "what it meets instead of stopping it dead.",
+          "energy per point - one number for every channel, or one per channel. It drops when " +
+          "energy falls to `dropAt` of capacity and returns once `recoverDelay` has passed and " +
+          "energy is back to `recoverAt`. A shield with `repel` is a field: it pays per push for " +
+          "what it holds off, and `solid: false` leans on what it meets instead of stopping it " +
+          "dead.",
         el(
           "div",
           { className: "cards" },
@@ -1195,11 +1185,9 @@
       section(
         "engines",
         "ENGINES",
-        "What pushes a hull along. An engine is a module like a weapon: how hard a ship " +
-          "accelerates follows from what is bolted to it, so thrustOf() adds up the mounts and " +
-          "flightStats divides by what the ship weighs. Every engine mounted emits, so two of " +
-          "them read as two streams. `reverseAmount` is what one manages backwards, as a fraction " +
-          "of its thrust; without one it pushes only forward.",
+        "What pushes a hull along. thrustOf() adds up the mounts and flightStats divides by what " +
+          "the ship weighs. Every engine mounted emits, so two of them read as two streams. " +
+          "`reverseAmount` is what one manages backwards, as a fraction of its thrust.",
         el(
           "div",
           { className: "cards" },
@@ -1242,12 +1230,10 @@
       section(
         "thrusters",
         "MANEUVERING THRUSTERS",
-        "The nozzles that bring a hull about, which are core equipment and nothing to do with " +
-          "the drive: a hull with plenty of thrust and a light set sweeps through a turn. What a " +
-          "set's torque becomes in radians a second is the hull's business, through " +
-          "SHIP_SCALARS.turnPerReach, so the same nozzles turn a dart smartly and barely trouble " +
-          "a slab. The rates below are the ones the hulls carrying each set fly at, with the mass " +
-          "of the set itself in what they weigh.",
+        "The nozzles that bring a hull about, which are core equipment and nothing to do with the " +
+          "drive. A set's torque becomes radians a second through SHIP_SCALARS.turnPerReach, so the " +
+          "same nozzles turn a dart smartly and barely trouble a slab. The rates below are the ones " +
+          "the hulls carrying each set fly at.",
         el(
           "div",
           { className: "cards" },
@@ -1280,10 +1266,9 @@
       section(
         "cores",
         "POWER CORES",
-        "The plant a hull is built around, and the room it has for what runs off it. Energy is " +
-          "not one of the slots: a hull without a cell does not work, so a core supplies one by " +
-          "being fitted. The named slots are what is optional. A core with `levels` is one the " +
-          "shop can improve, each level stating the whole plant; every other hull's is what it is.",
+        "The plant a hull is built around, and the room it has for what runs off it. A core " +
+          "supplies the cell by being fitted; the named slots are what is optional. A core with " +
+          "`levels` is one the shop can improve, each level stating the whole plant.",
         el(
           "div",
           { className: "cards" },
@@ -1333,11 +1318,10 @@
       section(
         "radar",
         "RADAR",
-        `What a hull knows about the sector it is in. \`sees\` is an effective range per kind of ` +
-          `thing, and a kind left out is one the set cannot pick up beyond the floor: every hull ` +
-          `sees whatever is within SENSOR_FLOOR (${CONFIG.SENSOR_FLOOR}) of it, radar or not, so a ` +
-          `set is only worth carrying for what it finds past that. A range is what the hull knows, ` +
-          `not what it can shoot.`,
+        "What a hull knows about the sector it is in. `sees` is an effective range per kind of " +
+          "thing. Every hull sees whatever is within SENSOR_FLOOR (620) of it, radar or not, so a " +
+          "set is only worth carrying for what it finds past that. A range is what the hull knows, " +
+          "not what it can shoot.",
         el(
           "div",
           { className: "cards" },
@@ -1351,11 +1335,9 @@
         "factions",
         "FACTIONS",
         "Who shoots at whom. Game.hostileTarget is the only thing that reads this, so every gun " +
-          "and every hull that steers at something asks one question and no behaviour has to know " +
-          "which sides exist. A ship type states its own `faction` and is a rival without one; " +
-          "`hazard` is what everything else is, which is a rock and the wreckage cut off a hull. " +
-          "Each side is written in the colour the game draws it in, here and wherever else a " +
-          "table mixes them.",
+          "and every hull that steers at something asks one question. A ship type states its own " +
+          "`faction` and is a rival without one; `hazard` is a rock and the wreckage cut off a " +
+          "hull. Each side is written in the colour the game draws it in.",
         el(
           "div",
           { className: "cards" },
@@ -1396,10 +1378,8 @@
         "Every entry in SPECIAL_TYPES. `mode` says how it is used: a passive is always on while " +
           "it is fitted, a pulse fires once per press, a toggle runs while it is on and drains, a " +
           "timed one lasts `seconds`, a single is spent. `energy` and `drain` are fractions of the " +
-          "cell rather than amounts, since the cell quadruples across the core's levels. The " +
-          "fields below the divider are what the simulation reads off an active one, so a new " +
-          "field appears here as soon as a special carries it. What a sell fetches comes from " +
-          "Game.specialSellValue.",
+          "cell, since the cell quadruples across the core's levels. Below the divider is what the " +
+          "simulation reads off an active one.",
         el(
           "div",
           { className: "cards" },
@@ -1457,12 +1437,11 @@
       section(
         "equipment",
         "EQUIPMENT",
-        "What the shop fits to the player's ship, slot by slot. Buying an option is permanent " +
-          "and swapping between what a run owns is free, so ore buys capability and never a " +
-          "decision. A `ladder` slot is climbed in order, since each mark is the one below it and " +
-          "more; the rest are a straight choice. A `removable` slot may be flown empty. The right " +
-          "of each table is the hull with that option aboard and everything else as the yard left " +
-          "it, so what a mark costs in handling can be read off it.",
+        "What the shop fits to the player's ship, slot by slot. Buying an option is permanent and " +
+          "swapping between what a run owns is free, so ore buys capability and never a decision. A " +
+          "`ladder` slot is climbed in order, since each mark is the one below it and more; the " +
+          "rest are a straight choice, and a `removable` slot may be flown empty. The right of each " +
+          "table is the hull with that option aboard.",
         el(
           "div",
           { className: "cards" },
@@ -1630,10 +1609,8 @@
       section(
         "shop",
         "UPGRADES AND THE SHOP",
-        "One card per SHOP row, in menu order. A row either buys one thing outright, steps a " +
-          "levelled upgrade, or opens onto an equipment slot; what it reports and what it charges " +
-          "are read from the row's own info() and cost() with the throwaway game set to each " +
-          "level, so the curve is exactly what a player is charged.",
+        "One card per SHOP row, in menu order. A row buys one thing outright, steps a levelled " +
+          "upgrade, or opens onto an equipment slot.",
         el("div", { className: "cards" }, shopCards),
       )
 
@@ -1708,9 +1685,7 @@
       section(
         "rocks",
         "ASTEROIDS AND ORE",
-        "Rock shapes come from makeAsteroidPolygon, so the silhouettes below are real ones, freshly " +
-          "rolled each load. The ore tables are measured by calling the game: oreFromFragment for a " +
-          "cut piece, and Game.shatterToOre on a stub rock for a whole one, counting what it spawns.",
+        "Rock shapes come from makeAsteroidPolygon, freshly rolled each load.",
         el("div", { className: "cards" }, [
           card(
             "SHAPE",
@@ -1769,7 +1744,9 @@
               className: "note",
               style: "margin:0 0 6px",
               textContent:
-                "A hazard trait joins the roll at its own sector and is weighed against its siblings by weightAt, like every other pool. `weightPerSector` makes an entry heavier for each sector past that, up to `weightCap`, so a trait can come to crowd the others out.",
+                "A hazard trait joins the roll at its own sector and is weighed against its " +
+                "siblings by weightAt. `weightPerSector` makes an entry heavier for each sector " +
+                "past that, up to `weightCap`, so a trait can come to crowd the others out.",
             }),
             dataTable(
               ["trait", "from sector", "weight growth", "cap"],
@@ -1879,10 +1856,7 @@
         section(
           "sectors",
           "SECTOR BY SECTOR",
-          `Asked of Game.planLevel for each sector in turn. The hazard chance and the trait mix are ` +
-            `measured over ${SECTOR_SAMPLES} plans a sector, since a plan rolls them; everything else ` +
-            `a plan states outright. Rocks are capped at ${config.PROGRESSION.rocks.max}, rivals at ` +
-            `${config.PROGRESSION.rivals.max}.`,
+          "Rocks are capped at 14, rivals at 4.",
           dataTable(
             [
               "sector",
@@ -1905,7 +1879,10 @@
               className: "note",
               style: "margin:0 0 6px",
               textContent:
-                "Each type's share of a sector's arrivals, from weightAt over the eligible types. A type is out of the running while as many as its `maxConcurrent` are already alive, which is not in these shares because it depends on the sector's state rather than its number. A column is headed in its side's colour, since one roll covers every hull eligible there whoever it flies for.",
+                "Each type's share of a sector's arrivals, from weightAt over the eligible types. " +
+                "A type is out of the running while as many as its `maxConcurrent` are already " +
+                "alive, which depends on the sector's state and so is not in these shares. A " +
+                "column is headed in its side's colour.",
             }),
             dataTable(
               ["sector", ...arrivals.names.map((name) => inFaction(name, factionOf(name)))],
@@ -2008,8 +1985,7 @@
         "The relationships that turn a design into a ship, and the material a hull is made of. A " +
           "design states an outline, mass and armour and bolts modules to it; these turn that into " +
           "how it flies and how much it can take. flightStats is called again whenever what is " +
-          "aboard changes, so a hull refitted in the shop and one that turned up carrying an extra " +
-          "gun are worked out the same way.",
+          "aboard changes.",
         el("div", { className: "cards" }, [
           card("SHIP_SCALARS", null, pairs(config.SHIP_SCALARS)),
           card("SHIP_PLATING", null, pairs(config.SHIP_PLATING)),
