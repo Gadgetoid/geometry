@@ -8548,6 +8548,66 @@ test("a torpedo goes off near a target without reaching it", () => {
   assert.ok(spec.blast.radius > surface - victim.boundRadius, "the blast crosses the bubble")
 })
 
+test("a torpedo's fuse counts the player's bubble too, as it counts a rival's", () => {
+  // The same question asked of two body types. The fuse measured to a rival's bubble and to
+  // the player's plating, so a torpedo got closer to the ship than to an equally shielded
+  // rival - and in a hull carrying a field, which the dev page can fly, it had to reach
+  // inside the field before it would go off at all, which is the one thing a torpedo is for.
+  const spec = WEAPON_TYPES.torpedo
+
+  // How far off the fuse trips, walked in along +x so the answer is not a step size.
+  const fuseGap = (game, victim, owner) => {
+    const centre = victim.center ?? victim
+    for (let gap = 400; gap > 0; gap -= 0.25) {
+      const round = new Projectile(centre.x + gap, centre.y, -1, 0, spec.damage, owner, spec)
+      game.projectiles = [round]
+      round.update(1 / 600, game)
+      if (round.dead) {
+        return gap
+      }
+    }
+    return null
+  }
+  const surfaceOf = (hull) => Math.max(hull.boundRadius, hull.shieldUp() ? hull.shieldRadius() : 0)
+
+  // A rival with its bubble up, shot at by something hostile to it.
+  const rivalGame = liveGame()
+  rivalGame.player.x = -9000
+  rivalGame.player.y = -9000
+  const rival = plainRival(ARENA.cx, ARENA.cy, "rivalScout", [
+    ...SHIP_TYPES.rivalScout.loadout,
+    SHIP_TYPES.rivalScout.arms.shield,
+  ])
+  beSolid(rival)
+  rival.arrived = true
+  rivalGame.rivals = [rival]
+  const alien = beSolid(plainRival(-9000, -9000, "alienScout"))
+  assert.equal(rival.shieldUp(), true, "the rival rolled its bubble")
+  const atRival = fuseGap(rivalGame, rival, alien)
+  assert.ok(atRival !== null, "it goes off near a rival")
+  assert.ok(
+    Math.abs(atRival - surfaceOf(rival) - spec.proximity) < 1,
+    `a rival's fuse should trip a fuse clear of its bubble, got ${(atRival - surfaceOf(rival)).toFixed(1)}`,
+  )
+
+  // And the player, in the same hull with the same bubble, answers the same way.
+  const ownGame = liveGame()
+  const player = beSolid(ownGame.player)
+  withShield(ownGame)
+  player.energy = player.energyMax
+  player.x = ARENA.cx
+  player.y = ARENA.cy
+  ownGame.rivals = [beSolid(plainRival(-9000, -9000, "alienScout"))]
+  assert.equal(player.shieldUp(), true, "the player has a bubble to be measured to")
+  assert.ok(surfaceOf(player) > player.boundRadius, "which stands clear of its plating")
+  const atPlayer = fuseGap(ownGame, player, ownGame.rivals[0])
+  assert.ok(atPlayer !== null, "it goes off near the player")
+  assert.ok(
+    Math.abs(atPlayer - surfaceOf(player) - spec.proximity) < 1,
+    `the player's fuse should trip clear of its bubble too, got ${(atPlayer - surfaceOf(player)).toFixed(1)}`,
+  )
+})
+
 test("torpedoes are what put an alien field down", () => {
   const spec = WEAPON_TYPES.torpedo
   const { game, victim, step } = geomRig("alienFrigate")

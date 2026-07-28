@@ -2436,25 +2436,32 @@ export class Projectile extends Entity {
       const gap = Math.hypot(this.x - body.x, this.y - body.y) - surface
       return gap <= reach
     }
+    // What counts as the surface of a hull: its bubble while one is raised, and its
+    // plating when none is. Whether or not that bubble is the kind other bodies stop
+    // against - the fuse is about being near something, not about walls - and an alien
+    // field is exactly the case that matters, since it lets a round through and bends it
+    // wide on the way, so a fuse measured to the plating never went off at all and the
+    // one thing built to answer that field did nothing to it.
+    //
+    // One helper, because the player is a hull like any other here: measured to the
+    // player's plating while a rival's was measured to its bubble, a torpedo got closer
+    // to the ship than to an equally shielded rival, and in a field-carrying hull it had
+    // to reach 27 units inside the field before it would go off at all.
+    const surfaceOf = (hull) =>
+      Math.max(hull.boundRadius, hull.shieldUp() ? hull.shieldRadius() : 0)
     if (
       game.player &&
       owner !== game.player &&
       game.player.inPlay() &&
       hostile.includes("player")
     ) {
-      if (near(game.player, game.player.boundRadius)) {
+      if (near(game.player, surfaceOf(game.player))) {
         return true
       }
     }
     for (const rival of game.rivals) {
       if (rival !== owner && rival.inPlay() && hostile.includes(rival.faction)) {
-        // A raised bubble counts as the surface, whether or not it is the kind of bubble other
-        // bodies stop against. The fuse is about being near something, not about walls - and an
-        // alien field is exactly the case that matters: it lets a round through and bends it wide
-        // on the way, so a fuse measured to the plating never went off at all and the one thing
-        // built to answer that field did nothing to it.
-        const bubble = rival.shieldUp() ? rival.shieldRadius() : 0
-        if (near(rival, Math.max(rival.boundRadius, bubble))) {
+        if (near(rival, surfaceOf(rival))) {
           return true
         }
       }
