@@ -88,12 +88,40 @@ export const PALETTE = {
     beam: "#3dffb4",
     shield: "#7dffd0",
     void: "#000000", // the middle of a singularity, which is not a colour but an absence
+    // A muzzle holding a wound well, waiting on the trigger. White because it has to say "now"
+    // against a hull that is already bending the picture around itself, and nothing else on one
+    // of these is white.
+    ready: "#ffffff",
     exhaust: "#48e08a", // what their drives throw
     exhaustFlame: "#9dffc6", // and the fire at the throat, paler than the plume
     turret: "#c8ff4a", // the guns they ring themselves with, yellower than the hull
     fire: "#3dff7a", // their plating burning where it is cut
     ember: "#c8ff9a", // and what falls off it, paler and yellower
     smoke: "#2f5c46", // and the smoke it trails, dark and still green
+  },
+
+  // The fleet's own frigate, which is on the player's side. It wears the player's hull
+  // colour, so what it is reads before anything it does; everything only it carries is
+  // named here, cold and white where a rival is orange and an alien green.
+  geom: {
+    core: "#dff6ff",
+    // The slug, the slab of space it tears open behind it, and the white middle of it.
+    rail: "#cfeeff",
+    railCore: "#ffffff",
+    // Its torpedoes, and the fire at the back of one. Warmer than the hull, because a
+    // torpedo is a thing burning its way across the sector.
+    torpedo: "#9fe0ff",
+    torpedoFlame: "#e8f8ff",
+    // The blast one makes, which is what it is for: it does not have to hit.
+    torpedoBlast: "#ffffff",
+    // Its rear guns, the same green the player's own turret uses: on this hull as on that
+    // one, this is the thing keeping shot off the back of you.
+    flak: "#9ff5c8",
+    shield: "#8fd0ff",
+    turret: "#bfefff",
+    fire: "#7fd8ff", // its plating burning where it is torn
+    ember: "#dff2ff",
+    smoke: "#33506e",
   },
 
   // asteroids. Plain rock is a size ramp between `sizeCool` and `sizeWarm`;

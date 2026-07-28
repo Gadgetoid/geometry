@@ -25,6 +25,10 @@ const FULLSCREEN = OPTIONS.has("fullscreen")
 if (FULLSCREEN) {
   document.body.classList.add("fullscreen")
 }
+// Whether the page's own buttons are worth having. A build launched without a desktop around
+// it is being played rather than worked on, whatever it was served from - and the packaged
+// build runs off the filesystem, which is one of the things DEV_VISIBLE reads as developing.
+const PAGE_BUTTONS = DEV_VISIBLE && !FULLSCREEN
 
 const view = new GameView(renderer)
 const game = new Game()
@@ -104,24 +108,26 @@ function syncSettings() {
   if (applied.sound !== game.settings.sound) {
     applied.sound = game.settings.sound
     soundButton.setAttribute("aria-pressed", String(game.settings.sound))
-    soundButton.style.display = game.settings.sound && !DEV_VISIBLE ? "none" : ""
+    soundButton.style.display = game.settings.sound && !PAGE_BUTTONS ? "none" : ""
   }
 }
 
 // CRT and DEV are for developing: the filter is in the pause menu and nothing else
-// here is a player's business, so a published build is cleaner without either.
+// here is a player's business, so a published build is cleaner without either. A
+// packaged build runs off the filesystem, which DEV_VISIBLE reads as developing, so
+// ?fullscreen has the last word - the stylesheet hides both there as well.
 //
 // SOUND is not the same. A browser only opens an audio device inside a real pointer
 // gesture, and a gamepad button is not one, so the pause menu cannot unlock it for a
 // player holding only a pad: SOUND would read ON and stay silent. The button is
 // therefore shown exactly while it is needed - whenever sound is off - and goes once
-// it is on, which is the only state it has nothing left to do in. On a dev build it
-// stays, since turning sound back off is something worth reaching for.
+// it is on, which is the only state it has nothing left to do in. On a dev build in a
+// browser it stays, since turning sound back off is something worth reaching for.
 //
 // The packaged build passes ?sound and starts with audio on, so the button is already
 // gone by the time anything is drawn: this is for a browser, where it cannot be.
 const devButton = document.getElementById("btnDev")
-if (!DEV_VISIBLE) {
+if (!PAGE_BUTTONS) {
   for (const id of ["btnDev", "btnCrt"]) {
     document.getElementById(id).style.display = "none"
   }

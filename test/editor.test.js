@@ -211,7 +211,8 @@ test("every design in config.js survives a trip through the editor", async () =>
 
     // What its wreckage is made of decides what colour it burns, so a hull is plated
     // with its own faction's stuff.
-    const plating = type.faction === "alien" ? "ALIEN_PLATING" : "SHIP_PLATING"
+    const plating =
+      { alien: "ALIEN_PLATING", player: "GEOM_PLATING" }[type.faction] ?? "SHIP_PLATING"
     assert.match(out, new RegExp(`debrisMaterial: ${plating},`), `${key} keeps its plating`)
 
     // Stating a derived field freezes it, so the editor writes none of them.
@@ -233,28 +234,32 @@ test("every design in config.js survives a trip through the editor", async () =>
   }
 })
 
-test("the player's hardpoints are the shop's, and the editor leaves them to it", async () => {
+// The hull the run is flown in is a hull like any other now, and its design states what a fresh run
+// is fitted with rather than leaving those mounts blank for the shop. So the editor writes them, and
+// what stops that being a way to quietly change what a run launches with is that the two have to
+// agree - which is asserted directly, in game.test.js.
+//
+// What the editor must still keep is everything about the hull that is not the shop's: which side
+// it is on, how far the arena lets it reach, what it launches carrying, and its own core.
+test("the editor writes the player's hull as the design a fresh run launches with", async () => {
   const dom = stubDom()
-  const { fromType, snippet, setShip, PLAYER_TYPE, EQUIPMENT } = await boot(dom, "player", [
+  const { fromType, snippet, setShip, PLAYER_TYPE } = await boot(dom, "player", [
     "fromType",
     "snippet",
     "PLAYER_TYPE",
-    "EQUIPMENT",
   ])
   setShip(fromType(PLAYER_TYPE, "player", "player"))
   const out = snippet()
 
-  // Everything the shop fits is named against a hardpoint, and stating it here
-  // instead would hand the player whatever the editor happened to be showing.
-  // Only what the yard offers for this hull: a locked option is another hull's own kit,
-  // and a design that carries one states it like any other module.
-  for (const [slot, spec] of Object.entries(EQUIPMENT)) {
-    for (const option of spec.options.filter((entry) => !entry.locked)) {
-      assert.doesNotMatch(out, new RegExp(option.id), `${slot}'s ${option.id} is the shop's to fit`)
-    }
-  }
-  assert.match(out, /faction: "player"/, "the player's hull says which faction it is")
+  assert.match(out, /faction: "player"/, "the player's hull says which side it is on")
   assert.match(out, /confineRadius: 13/, "and how far the arena lets it reach")
   assert.match(out, /startingSpecials: \["oreMagnet"\]/, "and what it launches carrying")
   assert.match(out, /core: "minerCore"/, "the core is the hull's own, so it is stated")
+  // What the shop fits at launch, stated the way the design states it.
+  for (const id of ["playerLaserMk1", "minerDrive", "surveyMk1", "gimbalRing"]) {
+    assert.match(out, new RegExp(id), `${id} is what a fresh run is fitted with, so it is stated`)
+  }
+  // And the turret mount is left empty, because a per-mount slot says nothing about a mount until
+  // something is bought for it: a gun here would be a turret the run was given for free.
+  assert.doesNotMatch(out, /defenseBlaster|defenseFlak/, "no turret is issued with the hull")
 })

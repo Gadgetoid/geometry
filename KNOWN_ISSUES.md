@@ -198,13 +198,15 @@ not been looked at end to end · only `minerCore` has an upgrade ladder, so a hu
 flown out of the dev page has whatever fixed cell its own core states and the shop's
 CORE row sells it levels it does not have (90 on a frigate, 800 on a pincer, 300 on
 a scout) · a pincer's four turrets eat most of its regen while they have something
-to shoot at, which is why it manages one well every 25 seconds rather than the nine
-the cell alone would allow: the appetite of the turrets is the dial, not the cost of
-the well · a hull's own guns are drawn on a flown hull and fire through their own
-controllers, but the player has no way to aim them, so a frigate's four autocannons
-are four things happening rather than four things being done · the wells the player
-can hold at once is bounded only by the cell, and two is the interesting number
-rather than a rule.
+to shoot at, so a pair of wells costs it far longer to re-arm than the cell alone
+says: the appetite of the turrets is the dial, not the cost of the wells · a hull's
+own guns are drawn on a flown hull and fire through their own controllers, but the
+player has no way to aim them, so a frigate's four autocannons are four things
+happening rather than four things being done · a pair of wells costs so nearly a
+pincer's whole cell that only its first commitment of an engagement can afford one,
+its turrets keeping the cell under the price after that: `burstChance` is a quarter,
+so about one appearance in four opens with a pair and the rest throw singles, and
+raising the odds without also cheapening the pair changes nothing.
 
 ## Measured, and not worth re-deriving
 
@@ -232,11 +234,25 @@ And the progression: every part of the 40-sector curve is still climbing at 40,
 which is asserted rather than eyeballed, so a flat late run is a regression and not
 a tuning opinion.
 
-Later still, and equally not worth re-deriving: a pincer left to fight with a target
-in front of it threw two wells a minute and spent 55 of those 60 seconds with no
-field up, which is what `reserve` on a gun is for; wells left unbounded wound each
-other up to 4,424 units a second against the 80 they are thrown at, and are capped
-at 160; a busy sector's worth of specials is one adrift every 32 to 43 seconds
+Later still, and equally not worth re-deriving: two wells left to pull each other
+wound up to 4,424 units a second against the 80 they were thrown at, which a speed
+cap hid rather than fixed. There were two mechanisms behind it, and both are now
+answered at the source: the pull between two wells was one-sided, so the pair
+invented momentum out of the update order and sailed off (measured drift from a
+standing start, 39 units at dt=1/60 rising to 412 at the 0.05 clamp, and spurious
+momentum of 486 with three of them); and there was no softening at close range, so
+every pass handed the pair energy nothing took back. With the reaction applied and
+`well.soften` in place the drift is 1 to 3 units and the orbit loops the same number
+of times at every step from 1/120 to 0.05. `well.terminal` remains, at 260, as a
+backstop that is never reached in play. A well is thrown at 50 against the pincer's
+own top speed of 42, a little faster so the hull is left behind by what it let go of:
+thrown slower, the pincer chased its own wells at their own pace and hull and pair
+travelled across the sector as one stack. How far apart a pair lands is
+`(chargeTime + burstGap) * speed`, which is 150 against a reach of 210 - and it only
+holds because a hull mid-burst plants itself, since what separates the shots of a
+burst is how much faster they fly than the ship does and driving through one closes
+the gap it is trying to leave (measured 24 apart chasing, 150 planted);
+a busy sector's worth of specials is one adrift every 32 to 43 seconds
 across sectors 5, 12 and 25, with at most one of each kind; and a MK I radar marks
 rock only, a MK II adds ore, a MK III adds hulls, measured against one of each
 parked off the top of the screen.

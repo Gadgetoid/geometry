@@ -17,7 +17,7 @@ import {
   MAX_SLOTS,
   SPECIAL_TYPES,
 } from "./config.js"
-import { drawTurret } from "./entities.js"
+import { drawMount } from "./entities.js"
 import { randRange, clamp, lerp } from "./math.js"
 import { drawVectorText } from "./font.js"
 import { PALETTE } from "./palette.js"
@@ -56,6 +56,11 @@ function turretLetter(typeName) {
 // hangs below the box it belongs to, so the panel clears the boxes either side of it
 // rather than starting level with their floor.
 const SLOT_BOX = { size: 26, gap: 6 }
+
+// How much a hull arriving inside the ring bends the space it arrives into. Tight and strong:
+// the point of it is that a spot on the screen goes wrong for a beat before something is there,
+// so it wants to be local enough to say where and hard enough to be noticed.
+const ARRIVAL_WARP = { radius: 60, strength: 0.5, wave: 0.12 }
 
 // What a mount is drawn in, by what is bolted to it. An empty one takes the same colour
 // as an empty special slot, being the same idea.
@@ -333,12 +338,13 @@ export class GameView {
     }
     // World to uv, with the same vertical flip the ripple uses: the scene target has its
     // origin at the bottom.
-    const source = (x, y, radius, strength, wave = 0) => ({
+    const source = (x, y, radius, strength, wave = 0, hollow = 0) => ({
       x: (VIEW_W / 2 + (x - centre.x)) / VIEW_W,
       y: 1 - (VIEW_H / 2 + (y - centre.y)) / VIEW_H,
       radius: radius / VIEW_W,
       strength,
       wave,
+      hollow,
     })
     const lenses = []
     // Whatever is flying, the player's hull among them: a hull bends space because of what
@@ -346,21 +352,45 @@ export class GameView {
     for (const ship of [...game.rivals, game.player]) {
       const warp = ship && ship.type && ship.type.warp
       if (warp && ship.inPlay()) {
-        lenses.push(source(ship.x, ship.y, warp.radius, warp.strength, warp.wave || 0))
+        lenses.push(
+          source(ship.x, ship.y, warp.radius, warp.strength, warp.wave || 0, warp.hollow || 0),
+        )
       }
     }
-    // A well held ready bends space where it is being held: the wind-up is a telegraph,
-    // and this is the part of it that says the thing is finished rather than coming.
+    // A hull arriving inside the ring bends the space it is arriving into, hardest while there
+    // is least of it there. Small and short: it is the tell that something is about to be in
+    // that spot, and it is over as soon as the hull is. The player's own arrival has the
+    // full-screen ripple instead, which is a different thing entirely and is handled above.
+    for (const rival of game.rivals) {
+      if (rival.warping) {
+        const at = ARRIVAL_WARP
+        lenses.push(source(rival.x, rival.y, at.radius, at.strength * (1 - rival.warp), at.wave))
+      }
+    }
+    // A well being wound up bends space where it is being held, harder as it goes: the space
+    // inside the muzzle is drawn into the ring and what is left in the middle is a void rather
+    // than a view of anything. Through the whole wind-up rather than only at the end of it,
+    // because the wind-up is the telegraph and this is the loudest part of it.
     for (const ship of [...game.rivals, game.player]) {
       if (!ship || !ship.inPlay || !ship.inPlay()) {
         continue
       }
       for (const hp of ship.hardpoints) {
         const gun = hp.module
-        const warp = gun && gun.kind === "weapon" && gun.wound ? gun.type.warp : null
-        if (warp) {
+        const warp = gun && gun.kind === "weapon" && gun.type.warp ? gun.type.warp : null
+        const prog = warp && gun.windUpProgress ? gun.windUpProgress() : 0
+        if (prog > 0) {
           const at = ship.mountWorld(hp.local)
-          lenses.push(source(at.x, at.y, warp.radius, warp.strength, warp.wave || 0))
+          lenses.push(
+            source(
+              at.x,
+              at.y,
+              warp.radius * prog,
+              warp.strength * prog,
+              (warp.wave || 0) * prog,
+              warp.hollow || 0,
+            ),
+          )
         }
       }
     }
@@ -377,6 +407,21 @@ export class GameView {
         lenses.push({ ...from, endX: to.x, endY: to.y })
       }
     }
+    // The wake a railgun slug leaves: the space it tore open on its way past, rippling as it
+    // closes. One source for the whole of it, laid as a line from the oldest mark still alive to
+    // where the round is now - the composite pass holds eight of these, so a bend per mark would
+    // have spent the lot on one shot and left nothing for the hulls that bend space by existing.
+    for (const shot of game.projectiles) {
+      const wake = shot.type && shot.type.wake
+      const marks = wake && shot.wakeMarks && shot.wakeMarks()
+      if (!marks || !marks.length) {
+        continue
+      }
+      const tail = marks[0]
+      const from = source(shot.x, shot.y, wake.radius, wake.strength, wake.wave)
+      const to = source(tail.x, tail.y, 0, 0)
+      lenses.push({ ...from, endX: to.x, endY: to.y })
+    }
     for (const shot of game.projectiles) {
       const warp = shot.type && shot.type.warp
       if (warp) {
@@ -384,7 +429,14 @@ export class GameView {
         // how much of itself it has become, and anything without one is simply all there.
         const grown = shot.grown ?? 1
         lenses.push(
-          source(shot.x, shot.y, warp.radius * grown, warp.strength * grown, warp.wave || 0),
+          source(
+            shot.x,
+            shot.y,
+            warp.radius * grown,
+            warp.strength * grown,
+            warp.wave || 0,
+            warp.hollow || 0,
+          ),
         )
       }
     }
@@ -975,7 +1027,8 @@ export class GameView {
     // way out of it, belong to the page.
     const launchOffset = headerHeight + listHeight + 44
     const optionsOffset = launchOffset + 34
-    const lastOffset = optionsOffset + (game.devMode ? 26 : 0)
+    // Room for the dev line below them, when either of the things it reports is switched on.
+    const lastOffset = optionsOffset + (game.devFreeBuys || game.devAnySector ? 26 : 0)
     const blockTop = Math.max(24, Math.round((VIEW_H - titleOffset - lastOffset) / 2))
 
     // Two columns under one header: the list, and the ship it is fitting. The list is
@@ -1102,13 +1155,13 @@ export class GameView {
             : ">"
           : maxed
             ? "MAX"
-            : game.devMode
+            : game.devFreeBuys
               ? "FREE"
               : `${cost} ore`
       r.text(price, rightX, y, {
         size: 16,
         color:
-          maxed || (game.devMode && !opens)
+          maxed || (game.devFreeBuys && !opens)
             ? PALETTE.ui.good
             : opens
               ? PALETTE.text.faint
@@ -1191,23 +1244,35 @@ export class GameView {
       color: optionsSelected ? PALETTE.text.bright : PALETTE.text.normal,
       align: "center",
     })
-    // The dev line stays: free purchases and a sector you can walk to are not things
-    // a player would look for, and the x10 modifier is not visible anywhere else.
-    if (game.devMode) {
-      r.text(
+    // The dev line stays, and says only what is actually switched on: free purchases and a
+    // sector you can walk to are separate things to ask for, and the x10 modifier is not
+    // visible anywhere else.
+    const dev = []
+    if (game.devAnySector) {
+      dev.push(
         this.#prompt(
           game,
-          "DEV   LEFT / RIGHT choose sector (hold SHIFT for x10)   -   purchases are free",
-          "DEV   DPAD LEFT / RIGHT choose sector   -   purchases are free",
+          "LEFT / RIGHT choose sector (hold SHIFT for x10)",
+          "DPAD LEFT / RIGHT choose sector",
         ),
-        menuCentre,
-        optionsY + 26,
-        { size: 11, color: PALETTE.ui.accentAlt, align: "center" },
       )
+    }
+    if (game.devFreeBuys) {
+      dev.push("purchases are free")
+    }
+    if (dev.length) {
+      r.text(`DEV   ${dev.join("   -   ")}`, menuCentre, optionsY + 26, {
+        size: 11,
+        color: PALETTE.ui.accentAlt,
+        align: "center",
+      })
     }
     // Last, so the pop-over sits over the rows it is opened from.
     if (game.slotMenu) {
-      this.#slotPopover(game, rightX, infoX, slotsY)
+      this.#slotPopover(game, rightX, {
+        x: this.#slotBox(infoX, game.slotMenu.slot).x - 6,
+        y: slotsY + 15,
+      })
     }
   }
 
@@ -1336,7 +1401,7 @@ export class GameView {
         if (gun && hp.role !== "nose") {
           // At the hull's own scale, since a turret is a real size on a real ship: the
           // point of showing it is how much of the hull it takes up.
-          drawTurret(r, at.x, at.y, -Math.PI / 2, gun.barrels, PALETTE.player.turret, {
+          drawMount(r, at.x, at.y, -Math.PI / 2, gun, PALETTE.player.turret, {
             length: 12 * scale,
             alpha: 0.5,
             scale,
@@ -1487,7 +1552,9 @@ export class GameView {
     return lines
   }
 
-  #slotPopover(game, rightX, infoX, slotsY) {
+  // `fallback` is where the panel hangs when nothing set an anchor while drawing, which is the
+  // shop's special slots: they draw their own boxes and the menu belongs under one of them.
+  #slotPopover(game, rightX, fallback) {
     const r = this.renderer,
       { slot, selection } = game.slotMenu,
       rows = game.slotMenuRows(slot)
@@ -1495,35 +1562,75 @@ export class GameView {
     // slot belongs under its box. What it is called is the game's to say, since only
     // it knows which registry the rows came from - reading the special in slot 0 for
     // all of them is what put ORE MAGNET at the top of the ENGINE menu.
-    const onRow = !!(game.slotMenu.equipment || game.slotMenu.levels)
+    const onRow = !!(game.slotMenu.equipment || game.slotMenu.levels || game.slotMenu.rows)
     const titleColour = game.slotMenuColour()
     const chosen = rows[selection]
     const titleHeight = 20
+    const tab = this.menuAnchor
+    const side = !!(tab && tab.side)
     const width = onRow ? 260 : 200,
       rowHeight = 20
     // A row's description may depend on the slot it was opened on, as selling does.
     const said =
       chosen && (typeof chosen.desc === "function" ? chosen.desc(game, slot) : chosen.desc)
     const desc = said ? this.#wrap(said, width - 16, 10) : []
-    const height = titleHeight + rows.length * rowHeight + 14 + desc.length * 12
+    // How many rows there is actually room for. A slot with every option found runs to eleven of
+    // them, which is taller than the screen: the list scrolls instead, keeping the selection in
+    // view, and says which way there is more of it. `caretRoom` is the line a caret sits on, and
+    // is only paid for at an end that has something past it.
+    const spare = VIEW_H - 46 - titleHeight - 14 - desc.length * 12
+    const fits = Math.max(3, Math.floor(spare / rowHeight))
+    const shown = Math.min(rows.length, fits)
+    // The window, kept over the selection: it only moves when the cursor would leave it, so
+    // walking the list scrolls it a row at a time rather than recentring under the cursor.
+    const held = game.slotMenu
+    let first = clamp(held.scroll ?? 0, 0, Math.max(0, rows.length - shown))
+    first = clamp(first, selection - shown + 1, selection)
+    first = clamp(first, 0, Math.max(0, rows.length - shown))
+    held.scroll = first
+    const more = { above: first > 0, below: first + shown < rows.length }
+    const height = titleHeight + shown * rowHeight + 14 + desc.length * 12
     // The menu hangs off whatever it is about, sharing its left edge so the two outlines
     // line up: the tab on a row that names what it has fitted, or the box itself on a
     // row that draws boxes. Both are one thing with a shoulder in it rather than a panel
     // that happens to be nearby.
-    const tab = this.menuAnchor
-    const anchorX = tab ? tab.x : this.#slotBox(infoX, slot).x - 6
-    const panelX = Math.min(anchorX, rightX - width),
-      panelY = tab ? tab.y + SLOT_BOX.gap : slotsY + 15
     const outline = titleColour ?? PALETTE.ui.accent
+    // Beside the row, or under whatever it is about. Beside is for a list of rows each carrying a
+    // hint of its own length: a panel that hangs underneath has to climb to stay on screen as the
+    // hint grows, so it jumps about as the cursor walks the list. Beside, only its own height
+    // changes and its top edge stays where it was.
+    const panelX = side
+      ? Math.min(tab.from + 10, VIEW_W - 12 - width)
+      : Math.min(tab ? tab.x : fallback.x, rightX - width)
+    // Wherever it wants to be, held on screen. Every one of these hangs off something - a row, a
+    // slot box, a fly-out - and the thing it hangs off can sit low enough that a panel starting
+    // below it runs off the bottom. The row cap above keeps a panel shorter than the screen; this
+    // keeps it inside it, so the two together mean no list can ever be partly unreachable.
+    const wanted = side ? tab.midY - height / 2 : tab ? tab.y + SLOT_BOX.gap : fallback.y
+    const panelY = clamp(wanted, 12, Math.max(12, VIEW_H - 16 - height))
     r.rect(panelX, panelY, width, height, { fill: "rgba(4,8,16,.95)" })
     r.rect(panelX, panelY, width, height, { stroke: outline, width: 1.2, glow: 8 })
-    if (tab) {
-      // The neck. The tab's floor and the panel's ceiling are painted out between them
-      // and the sides carried down, so the pair is one outline with a shoulder in it
-      // while the panel still starts below the row of boxes rather than level with it.
-      r.rect(panelX + 1.6, tab.y - 1.4, tab.w - 3.2, SLOT_BOX.gap + 3, {
-        fill: "rgba(4,8,16,1)",
-      })
+    if (side) {
+      // A short run from the row to the panel, since the row it belongs to is a highlight rather
+      // than an outline and there is no edge to carry across.
+      r.line(tab.from, tab.midY, panelX, tab.midY, { color: outline, width: 1.2, glow: 8 })
+    } else if (tab && panelY > tab.y) {
+      // The neck. The tab's floor and the panel's ceiling are painted out between them and the
+      // sides carried down, so the pair is one outline with a shoulder in it while the panel still
+      // starts below the row of boxes rather than level with it.
+      //
+      // Only where the panel really is below the thing it belongs to. A panel held up off the
+      // bottom of the screen sits level with its row or above it, and there is no gap to bridge:
+      // drawn anyway, the shoulder ran upwards across the panel's own face.
+      r.rect(
+        panelX + 1.6,
+        tab.y - 1.4,
+        tab.w - 3.2,
+        Math.min(SLOT_BOX.gap + 3, panelY - tab.y + 3),
+        {
+          fill: "rgba(4,8,16,1)",
+        },
+      )
       for (const edge of [panelX, panelX + tab.w]) {
         r.line(edge, tab.y - 1, edge, panelY + 1, { color: outline, width: 1.2, glow: 8 })
       }
@@ -1538,11 +1645,18 @@ export class GameView {
       color: PALETTE.ui.edge,
       width: 1,
     })
-    rows.forEach((row, index) => {
-      const rowY = panelY + titleHeight + 18 + index * rowHeight,
+    rows.slice(first, first + shown).forEach((row, offset) => {
+      const index = first + offset
+      const rowY = panelY + titleHeight + 18 + offset * rowHeight,
         on = selection === index
       if (on) {
         r.rect(panelX + 3, rowY - 12, width - 6, rowHeight - 3, { fill: "rgba(95,215,255,.16)" })
+      }
+      // The first and last lines of a scrolled list are given over to a caret when there is
+      // more that way, so the panel never simply stops mid-list with nothing to say about it.
+      if ((offset === 0 && more.above) || (offset === shown - 1 && more.below)) {
+        this.#caret(panelX + width / 2, rowY - 5, offset === 0 ? -1 : 1)
+        return
       }
       r.text(`${on ? "> " : "  "}${row.name}`, panelX + 8, rowY, {
         size: 13,
@@ -1558,16 +1672,30 @@ export class GameView {
       }
     })
     desc.forEach((line, index) => {
-      r.text(
-        line,
-        panelX + width / 2,
-        panelY + titleHeight + 20 + rows.length * rowHeight + index * 12,
-        {
-          size: 10,
-          color: PALETTE.text.soft,
-          align: "center",
-        },
-      )
+      r.text(line, panelX + width / 2, panelY + titleHeight + 20 + shown * rowHeight + index * 12, {
+        size: 10,
+        color: PALETTE.text.soft,
+        align: "center",
+      })
+    })
+  }
+
+  // A chevron saying there is more of the list that way, drawn rather than written: the body font
+  // is the renderer's and a glyph that happened to be missing would leave a gap that reads as a
+  // list simply ending.
+  #caret(cx, cy, direction) {
+    const r = this.renderer
+    const reach = 5,
+      drop = 3 * direction
+    r.line(cx - reach, cy + drop, cx, cy - drop, {
+      color: PALETTE.text.faint,
+      width: 1.4,
+      glow: 4,
+    })
+    r.line(cx, cy - drop, cx + reach, cy + drop, {
+      color: PALETTE.text.faint,
+      width: 1.4,
+      glow: 4,
     })
   }
 
@@ -1641,7 +1769,10 @@ export class GameView {
 
   // One menu row: its name on the left and, on the right, either what it is set to,
   // what it is waiting for, or the question it is asking.
-  #menuRow(game, row, selected, x0, x1, y, size) {
+  // `flagRight` is where a row's flag ends, measured once for the whole page so the flags share a
+  // column instead of each sitting a value's width in from the edge: a page where some rows are
+  // flagged and some are not still reads as columns.
+  #menuRow(game, row, selected, x0, x1, y, size, flagRight = null) {
     const r = this.renderer
     const asking = game.pauseConfirming === row.name
     const waiting = row.waiting ? row.waiting() : null
@@ -1659,9 +1790,9 @@ export class GameView {
     // pressing the row will do is readable without moving the cursor onto it. Laid out
     // from the right, so the list ends where a plain row's value would.
     const choices = !asking && !waiting && row.choices ? row.choices(game) : null
+    const small = size - 2
+    let right = x1
     if (choices) {
-      const small = size - 2
-      let right = x1
       for (let i = choices.options.length - 1; i >= 0; i--) {
         const picked = i === choices.at
         r.text(choices.options[i], right, y, {
@@ -1682,6 +1813,20 @@ export class GameView {
       : asking
         ? row.confirm
         : waiting || (row.value ? row.value(game) : "")
+    // A second fact about the row, sat to the left of whatever the row already shows on the right:
+    // what it is set to do is one thing, and whether it does it without being asked is another.
+    // Left of it rather than tacked on, so the values stay in their column down the page. Lit,
+    // because it only shows when it is on.
+    const flag = !asking && !waiting && row.flag ? row.flag(game) : ""
+    if (flag) {
+      right = flagRight ?? right - textWidth(value, size - 1) - textWidth("  ", small)
+      r.text(flag, right, y, {
+        size: small,
+        bold: true,
+        color: PALETTE.ui.warn,
+        align: "right",
+      })
+    }
     if (value) {
       r.text(value, x1, y, {
         size: size - 1,
@@ -1785,9 +1930,7 @@ export class GameView {
     const lastRowOffset = 62 + (paused.length - 1) * 38
     const menuTop = onControls ? 92 : Math.max(48, Math.round((VIEW_H - lastRowOffset) / 2))
     const title =
-      { controls: "CONTROLS", dev: "DEV TOOLS", devSpawn: "SPAWN", devShip: "SHIP" }[
-        game.pausePage
-      ] || "OPTIONS"
+      { controls: "CONTROLS", dev: "DEV TOOLS", devSpawn: "SPAWN" }[game.pausePage] || "OPTIONS"
     r.text(title, VIEW_W / 2, menuTop, {
       size: 34,
       bold: true,
@@ -1821,17 +1964,41 @@ export class GameView {
       rightX = VIEW_W / 2 + 205,
       top = menuTop + 62,
       rowHeight = 38
+    // Where the flags end: clear of the widest value on the page, so they line up with each other
+    // rather than each hanging off its own row's value.
+    const widestValue = Math.max(
+      0,
+      ...rows.map((row) => (row.value ? textWidth(row.value(game), 16) : 0)),
+    )
+    const flagRight = rightX - widestValue - textWidth("  ", 15)
+    // Where a pop-over starts: just clear of the longest title on the page, so it opens beside the
+    // name it belongs to and lies over the settings column rather than out past the right-hand edge
+    // of the page. Measured once for all the rows, so it does not step left and right as the cursor
+    // moves between titles of different lengths.
+    const widestName = Math.max(
+      0,
+      ...rows.map((row) => textWidth(`> ${row.label ? row.label(game) : row.name}`, 17)),
+    )
+    const flyoutFrom = leftX + widestName + 14
+    this.menuAnchor = null
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i],
         y = top + i * rowHeight
       const selected = game.pauseSelection === i
-      const asking = this.#menuRow(game, row, selected, leftX, rightX, y, 17)
+      const asking = this.#menuRow(game, row, selected, leftX, rightX, y, 17, flagRight)
       // a scale gets arrows, so it is clear it is adjusted rather than pressed. A row
       // showing its choices already reads as one, and the arrows would sit over them.
       if (selected && row.adjust && !asking && !row.choices) {
         r.text("<", leftX + 264, y, { size: 14, color: PALETTE.text.muted })
         r.text(">", rightX - 80, y, { size: 14, color: PALETTE.text.muted })
       }
+      // The row an open pop-over belongs to, so the panel opens beside its title.
+      if (selected && game.slotMenu && game.slotMenu.rows) {
+        this.menuAnchor = { side: true, from: flyoutFrom, midY: y + 1 }
+      }
+    }
+    if (game.slotMenu && game.slotMenu.rows) {
+      this.#slotPopover(game, VIEW_W - 12, { x: leftX - 12, y: top })
     }
 
     const hintY = top + rows.length * rowHeight + 20

@@ -68,9 +68,10 @@
       /* ?fullscreen: for a TV, a handheld, or Steam. The frame, the drop shadow
          and the help line all go, and the canvas takes the whole viewport; the
          view letterboxes within it, so an odd panel shape is still correct.
-         Which buttons are here at all is main.js's business: CRT and DEV are for
-         developing, and SOUND shows only while sound is off, since a pointer is the
-         only thing that can unlock the audio device. */
+         CRT and DEV go with them: they are for developing, and a build launched
+         like this is being played rather than worked on, whatever it was served
+         from. SOUND is main.js's business - it shows only while sound is off,
+         since a pointer is the only thing that can unlock the audio device. */
       body.fullscreen {
         grid-template-rows: 1fr;
         background-image: none;
@@ -87,6 +88,7 @@
         box-shadow: none;
       }
       body.fullscreen .help,
+      body.fullscreen #btnCrt,
       body.fullscreen #btnDev {
         display: none;
       }

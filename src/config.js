@@ -44,7 +44,9 @@ export const CONFIG = {
   // red where the hull used to be and then shrinks away, so what just happened is
   // readable at a glance instead of being a bar that is quietly shorter than it was.
   HULL_LOSS_FADE: 26,
-  THRUST_COST: 21, // energy/sec while thrusting
+  // Energy a second while thrusting, for a drive that states no figure of its own. See
+  // Ship.thrustCost: it is the drive's, because what a drive costs to hold open is the drive's.
+  THRUST_COST: 21,
   INVIN_TIME: 2.5, // grace after arriving, counted from when the ship can be flown
   START_LIVES: 3,
   MAX_LIVES: 6,
@@ -55,8 +57,16 @@ export const CONFIG = {
   ROCK_IMPACT_COOLDOWN: 0.25, // seconds before another bounce can land its knock
   EXHAUST_WASH_RANGE: 150, // thruster wash shoves rocks caught behind the ship
   EXHAUST_WASH_FORCE: 160,
-  TURRET_AIM_RATE: 3.0, // radians/sec while swinging the turret by hand
+  TURRET_AIM_RATE: 3.0, // radians/sec of demand while swinging the turret by hand
   TURRET_MANUAL_HOLD: 1.5, // seconds of manual control after the last input
+  // How fast a mount traverses, in radians/sec, for a gun whose type states no rate of its
+  // own. This is the limit on the mount itself, so it applies to the player's demand as much
+  // as to a turret picking its own target: a turret sweeps between targets and cannot be
+  // pointed anywhere instantly.
+  TURRET_TURN_RATE: 3.6,
+  // How near the bearing it wants a mount has to be before it will fire, in radians. A turret
+  // still coming round holds its shot instead of putting one wide.
+  TURRET_ON_TARGET: 0.1,
   ORE_GRAB_RADIUS: 8, // added to the ship radius when collecting ore
   ORE_VACUUM_GRAB_RADIUS: 42, // wider grab while sweeping a cleared sector
   OFFSCREEN_FIRE_MARGIN: 40, // enemies hold fire this far beyond the view edge
@@ -141,6 +151,45 @@ export const CONFIG = {
   RIVAL_DESPAWN_MARGIN: 140,
   RIVAL_ORE_INTEREST: 340, // a rival diverts for ore within this range
   RIVAL_ORE_GRAB: 18,
+  // How much more room a hull wants once it is open: its bubble down, or its plating most of
+  // the way gone. It plays for time at that range instead of trading at the range it would
+  // pick while it was whole.
+  RIVAL_EXPOSED_STANDOFF: 1.7,
+  // And how far out that can ever put it. A hull that backed off past the view edge would be
+  // shooting from somewhere the player cannot answer, so whatever it works out it wants, it
+  // keeps itself inside the screen: safe, but still there to be flown at. Under the view's
+  // half-diagonal of 604, with room for the hull itself.
+  RIVAL_STANDOFF_MAX: 540,
+  // How far past the range it wants a hull aims when it backs off, so it carries clear of the
+  // line instead of stalling on it. What it settles into is a band between the two, which is
+  // what standing off looks like from the outside.
+  RIVAL_STANDOFF_BAND: 160,
+  // Where a hull that is softening a target holds while it does it. Inside the range its torpedoes
+  // actually work, which is a much shorter one than it looks: measured, a torpedo thrown from 600
+  // never puts a pincer's field down at all and one from 300 does it in four. Softening from out of
+  // reach would be a hull standing off doing nothing. It closes once the bubble goes down, because
+  // what comes after that is a railgun round. See RivalShip.engagementRange.
+  RIVAL_SOFTEN_RANGE: 320,
+  // What share of its thrust a hull uses while closing on something that still has its bubble up.
+  // Arriving early only means arriving into a shield, so it creeps: the approach is the part of the
+  // fight it is being careful in, and it commits the moment the thing opens. See RivalShip.throttle.
+  RIVAL_CREEP_THRUST: 0.35,
+  // What share of the cell one shot from a hull's heavy gun has to cost before the hull counts as
+  // built around it - and so as one that cannot keep a shield up and does not hold its turrets off
+  // waiting for one. A pincer's well is nearly half its cell; a fleet frigate's railgun is a tenth
+  // of a much bigger one. See Ship.builtAroundOneGun.
+  HEAVY_GUN_SHARE: 0.3,
+  // And when it stops playing for time and leaves. Plating this low with nothing up to soak
+  // the next hit is a hull that limps out rather than one that trades to the death, which is
+  // what makes pressing an attack home worth doing. A type with no break-off in it never runs.
+  RIVAL_FLEE_HULL: 0.3,
+  // What a hull steers around, and how hard. It looks this many seconds of its own travel
+  // ahead along the line it is about to fly, wants AVOID_CLEAR of slack past whatever it is
+  // giving room to, and will bend its heading by at most AVOID_TURN radians to clear it. A
+  // nudge and not a solver: the point is that a hull tries, not that it always gets away.
+  AVOID_LOOK: 1.3,
+  AVOID_CLEAR: 30,
+  AVOID_TURN: 1.2,
   AST_DRAG: 0.985, // velocity retained per second
   AST_SPIN_DRAG: 0.82,
   AST_BOUNDARY_BOUNCE: 1.9, // rocks are repelled hard off the arena wall
@@ -161,7 +210,16 @@ export const CONFIG = {
   CLEAR_DELAY: 12, // failsafe cap on the ore sweep-up, if a chunk cannot reach the ship
   WARP_TIME: 0.85, // seconds for the ship to dissolve into or out of a warp
   WARP_ARRIVE_PAUSE: 0.35, // beat before the ship warps in at the start of a sector
-  RESPAWN_PAUSE: 1.2, // longer beat after losing a life, to get your bearings
+  // And what a rival's arrival costs, for one that turns up inside the arena rather than flying
+  // in from outside it. Much snappier than the player's: the lead-in is a warning that something
+  // is about to be there rather than a moment to take stock, so it is long enough to notice and
+  // short enough that it never reads as a wait.
+  SHIP_WARP_TIME: 0.3,
+  SHIP_WARP_LEAD: 0.55,
+  // A longer beat after losing a life than at the start of a sector, to get your bearings, but
+  // no longer than the warp itself: past that it stops being a moment to take stock and starts
+  // being a wait to be over.
+  RESPAWN_PAUSE: 0.85,
   // A ship warps in solid, so anything sitting on the spawn point is eased out of
   // this radius while it arrives. `RATE` is how much of what is left is undone per
   // second, and `PUSH` the acceleration that sends a rock on its way afterwards.
@@ -403,6 +461,11 @@ export function weightAt(entry, sector) {
   if (sector < from) {
     return 0
   }
+  // And out again, for something that belongs to one stretch of a run rather than to the rest of
+  // it. Nothing else needs an upper bound; a hull that is an early-game sight does.
+  if (entry.toSector !== undefined && sector > entry.toSector) {
+    return 0
+  }
   const growth = (entry.weightPerSector ?? 0) * (sector - from)
   return Math.min((entry.weight ?? 1) + growth, entry.weightCap ?? Infinity)
 }
@@ -472,6 +535,14 @@ export const HAZARD_TRAITS = [
 // trait key is what the rock is built from and not a word to put in front of a player.
 export const HAZARD_NAMES = { explosive: "EXPLOSIVE", shield: "SHIELDED", gun: "ARMED" }
 
+// And what each does, for the dev page that offers one of each: a name says which trait it is,
+// not what having it means.
+export const HAZARD_DESC = {
+  explosive: "Goes off when it is broken, shoving and igniting whatever is close.",
+  shield: "Carries a bubble, so it has to be stripped before it can be cut.",
+  gun: "Carries turrets, which fire on whatever they can see.",
+}
+
 // ---------------------------------------------------------------------------
 // ASTEROID SHAPE - how makeAsteroidPolygon builds a silhouette. It hulls a ring
 // of points around each of `lobes` overlapping circles, so one lobe gives a
@@ -498,6 +569,9 @@ export const AST_SHAPE = {
 // `sound` names a Sound method and `shotLife` how long the flash lingers.
 // `survivesDebris` says the module keeps working when the hull carrying it is
 // cut apart, so it arms the wreckage instead of being lost with the ship.
+// `turnRate` is how fast the mount traverses, in radians/sec, over
+// CONFIG.TURRET_TURN_RATE: heavy mounts read as heavy by being slow to bring
+// round, and a light one can follow something crossing at close range.
 // ---------------------------------------------------------------------------
 export const WEAPON_TYPES = {
   blaster: {
@@ -559,6 +633,7 @@ export const WEAPON_TYPES = {
     damage: CONFIG.DMG_RIVAL_GUN / 10,
     energy: 1,
     reload: [0.11, 0.19],
+    turnRate: 5.4, // light enough to stay on something crossing in close
     speed: CONFIG.BULLET_SPEED,
     colour: PALETTE.weapon.gun,
     survivesDebris: true,
@@ -604,6 +679,7 @@ export const WEAPON_TYPES = {
     energy: 2,
     reload: 0.1,
     range: 240,
+    turnRate: 5.4, // three light barrels on a quick ring, to hold a close target
     speed: 380,
     colour: PALETTE.player.turret,
   },
@@ -621,10 +697,24 @@ export const WEAPON_TYPES = {
   // ringed with them a problem of approach rather than a problem of reflexes.
   warpOrb: {
     kind: "projectile",
+    // What a repel field pays to steer one aside, as a share of the damage it was carrying. Almost
+    // nothing: the field and this were built alongside each other, so a hull behind one is very
+    // nearly impervious to these however many are thrown at it. What answers a field is a beam.
+    steerCost: 0.08,
+    // And a beam is the answer to the orb itself. It is a pocket of bent space with something holding
+    // it together, so a beam run through one takes the holding away and it goes off where it is
+    // rather than where it was aimed - which is what a hull with no field and no room has left.
+    overloadedBy: "laser",
+    // An opening rather than a turret. What comes out is five and a half units across and lands
+    // like a torpedo, and none of that came down a barrel: the mount is a tube with a dark mouth.
+    muzzle: "port",
     mass: 0.08,
     damage: 150,
     energy: 10,
     reload: [1.3, 2.1],
+    // A tube this size comes round slowly, which is the other half of what makes a hull ringed
+    // with them a problem of approach: cross one close enough and it cannot follow.
+    turnRate: 1.1,
     speed: 130,
     // It leans after what it was fired at rather than flying where it was pointed,
     // gently enough that flying around it still works: at this speed and this turn it
@@ -645,9 +735,13 @@ export const WEAPON_TYPES = {
       shake: 13,
       // And it tears the picture where it landed: the aliens are working on the universe
       // rather than on the ship, so what their shots damage includes the fabric the game
-      // is drawn on. Over full strength, because it bursts and falls away fast: the first
-      // moments are as broken as the screen gets.
-      glitch: { strength: 1.6, radius: 300, seconds: 0.34 },
+      // is drawn on. It bursts and falls away fast, so the first moments are the most broken.
+      //
+      // Kept smaller than the hulls it lands on - 140 across against a rival frigate's 144 - so what
+      // fails is the place the round struck rather than everything near it. At three times that
+      // it took the whole target and a good deal of the sector with it, which read as the screen
+      // breaking rather than as a hit landing somewhere.
+      glitch: { strength: 1, radius: 70, seconds: 0.26 },
     },
     colour: PALETTE.alien.shot,
     survivesDebris: true,
@@ -669,14 +763,17 @@ export const WEAPON_TYPES = {
     kind: "well",
     mass: 0.24,
     damage: 0, // it does its damage by existing, see well.damage
-    // What one costs, spent over the wind-up rather than at the shot. There is no reload
-    // behind it: the cell is the limit, so how often one can be thrown is how fast the
-    // cell fills, and everything else the cell pays for goes short while one is held.
+    // What one costs. There is no reload behind it: the cell is the limit, so how often a pair
+    // can be thrown is how fast the cell fills. A whole pair is paid for at once, when the hull
+    // commits to it, and a pair costs very nearly a pincer's entire cell.
     energy: 380,
-    // It drifts rather than flies, slow enough to be outrun by anything with a drive, so
-    // it is a place to be away from rather than a thing to duck. And it stays: long enough
-    // that a sector with two of them in it has to be flown around rather than through.
-    speed: 80,
+    // It drifts rather than flies, but a little faster than the hull that throws it, so a pincer
+    // that has let one go is left behind by it: thrown slower, the ship chased its own wells at
+    // their own pace and the whole arrangement travelled as one stack. Faster still and it
+    // becomes a thing to duck rather than a place to be away from, and outruns the ship it was
+    // aimed at. And it stays: long enough that a sector with two of them in it has to be flown
+    // around rather than through.
+    speed: 50,
     life: 16,
     homing: { turn: 0.5, reach: 900 },
     length: 700, // how far off it will start winding up
@@ -685,11 +782,23 @@ export const WEAPON_TYPES = {
     // shot that starts wide still arrives.
     arc: 1.57,
     chargeTime: 2.2, // a long tell, because the answer is to not be in front of it
-    // What a hull keeps back rather than spending on this, as a fraction of its own cell.
-    // A pincer that put everything into the gun flew around with no bubble for 55 seconds
-    // in every 60, which is a hull fighting itself as much as the player.
-    reserve: 0.35,
-    // And a beat between shots, so it paces itself rather than throwing one the instant
+    // Sometimes two at a time, because one well is a hazard and two are an entanglement: they
+    // arrive a beat apart, close enough that each is inside the other's reach, and the pair
+    // looping around itself is the thing worth watching. Thrown every time it would be the beat
+    // the fight is built around, so it is a quarter of them and the rest are singles.
+    //
+    // Nothing is held back for the field: a hull that kept a field's worth back could never
+    // afford a pair, so it commits, and the field goes down with the cell the moment the muzzle
+    // starts winding. A pincer that has just thrown a pair is a pincer with nothing up, which is
+    // the window, and the pair going out is the tell that it is open.
+    burst: 2,
+    burstChance: 0.25,
+    // The beat between the two of a pair, on top of the wind-up. This is what sets how far apart
+    // they land: `(burstGap + chargeTime) * speed`, which wants to be a good part of `well.radius`
+    // so the two are inside each other's reach and still read as two. Wound back to back with
+    // nothing between, they arrived a wind-up apart and stacked on top of each other.
+    burstGap: 0.8,
+    // And a beat between bursts, so it paces itself rather than throwing one the instant
     // it can afford to. Rolled, so two in a sector do not fall into step.
     pace: [1.6, 3.2],
     sound: "bigLaser",
@@ -698,14 +807,23 @@ export const WEAPON_TYPES = {
     // It arrives as a point and opens out over `grow` seconds, so what it does grows with
     // it: a well is at its worst once it is fully there.
     well: {
-      // The fastest one is ever seen to move. They pull each other, which is worth
-      // watching, and left unbounded they wind each other up past anything the player can
-      // fly away from. Twice the speed one is thrown at still reads as falling together
-      // and still leaves a well a place to be away from rather than a thing that arrives.
-      terminal: 160,
+      // A backstop, well clear of anything a bound pair reaches on its own, so it catches a
+      // pathology without shaping the orbit. What keeps a pair bounded is `soften` and the
+      // pull being answered, below.
+      terminal: 260,
       radius: 210,
       bite: 120,
       pull: 340,
+      // What one well pulls another with, against what it pulls a loose shot with. A pair
+      // orbits rather than being dragged past, so it wants a gentler hand than the shot
+      // cloud does: at full strength the loop is fast enough to outrun the ship watching it.
+      pairPull: 0.25,
+      // How close two of them have to be before the pull stops growing. Without it the force
+      // is at its hardest an inch from the middle and reverses through it, and every pass
+      // hands the pair energy that nothing takes back out: they fall together, slingshot,
+      // and wind each other up. Inside this the pull eases off to nothing at the centre, so
+      // a pass costs what it gave and the orbit closes.
+      soften: 60,
       damage: 260,
       collapse: 220,
       core: 17,
@@ -719,7 +837,12 @@ export const WEAPON_TYPES = {
     // And the space around it does not merely bend, it rings: the strongest distortion in
     // the game, and the only one that puts waves through what is behind it. Tighter than
     // the reach of the well itself, so what is bent is the hole rather than the room.
-    warp: { radius: 130, strength: 0.55, wave: 0.4 },
+    //
+    // Hollow, so the middle is left alone and the stretching happens around it. A bend heaviest
+    // at the centre dragged whatever was behind the muzzle across the dark disc drawn there, and
+    // a hole with the hull smeared over it is not a hole: what the eye wants is space pulled
+    // taut into an edge with nothing inside it.
+    warp: { radius: 130, strength: 0.55, wave: 0.4, hollow: 1 },
   },
   // The alien seeker's: a snap, as its rival counterpart's is.
   warpNeedle: {
@@ -775,6 +898,191 @@ export const WEAPON_TYPES = {
     playerLaserMk4: { chargeRate: 1044, chargeCost: 83, damage: 57 },
     playerLaserMk5: { chargeRate: 1044, chargeCost: 83, damage: 57, canOverdrive: true },
   }),
+
+  // ---------------------------------------------------------------------------
+  // THE FLEET'S OWN GUNS. Everything here is on the geom frigate and nowhere else. The three
+  // of them answer the three things an alien hull does: a field that bends shot aside, a hull
+  // too big to chip down, and a stream of orbs too heavy to outrun.
+  // ---------------------------------------------------------------------------
+  // A single slug, thrown hard enough that it cuts rather than hits. `kind: "rail"` is a shot
+  // that carries a beam with it: every frame it lays the length it has just travelled across
+  // the sector and that line severs whatever it crossed, so it behaves like the player's beam
+  // except that it takes time to arrive and can be flown out of the way of.
+  //
+  // `slice.width` is the slab it takes out instead of the hairline a beam leaves, so what it
+  // does to a hull is rend it: two pieces drift apart and the strip between them is gone.
+  // Anything narrower than the slab is simply not there any more, which is what happens to a
+  // dart that gets in the way of one.
+  //
+  // It is priced and paced exactly as the aliens' singularity gun is - the same cell cost, the
+  // same wind-up, the same beat between shots - so the two heavy guns in the game are answers
+  // to each other rather than one being the better of them.
+  railgun: {
+    kind: "rail",
+    mass: 0.35,
+    // What it does where it cannot cut, which is to a bubble. Deliberately modest: what makes
+    // this gun terrible is the cut, and a slug that could also strip a pincer's field on its own
+    // would leave the torpedoes with nothing to do. It takes about half of one, so a field that
+    // has not already been worked on turns a slug away and is still up.
+    damage: 300,
+    energy: 380,
+    chargeTime: 2.2,
+    pace: [1.6, 3.2],
+    speed: 1250,
+    life: 2.4,
+    // What firing one does to the ship. A share of the slug's own momentum, which on this hull is
+    // a shove of about 30 u/s: a quarter of its top speed, thrown backwards, so a railgun is
+    // something the ship wears rather than something it merely carries.
+    recoil: 140,
+    arc: 0.28, // aimed by the whole hull, which is why the hull turns as it does
+    length: 950, // how far off it will start winding one up
+    slice: { width: 26 },
+    width: 7, // the capsule it strikes with, as a beam has one
+    // The wake: a slab of bent space closing behind it, which is the tell that something
+    // devastating has just gone past. Held for `life` seconds after the slug is gone.
+    wake: { radius: 110, strength: 0.42, wave: 0.26, life: 0.5, every: 26 },
+    // `trail` is a length in units rather than a multiple of velocity, because RailSlug draws
+    // itself and a slug at 1250 u/s multiplied by anything is a line across the whole sector.
+    shot: { radius: 1.8, trail: 23 },
+    impact: {
+      particles: 26,
+      speed: [80, 340],
+      colour: PALETTE.geom.railCore,
+      ring: { count: 18, speed: 240 },
+      shake: 10,
+    },
+    sound: "bigLaser",
+    colour: PALETTE.geom.rail,
+    // What the muzzle turns when the slug is wound and waiting on the trigger. Red, because it is
+    // the one thing on this hull that will cut whatever is in front of it in half, the player
+    // included, and the moment before that happens should be unmistakable.
+    ready: PALETTE.ui.warn,
+  },
+  // The answer to a field that steers shot aside: something that does not have to arrive. A
+  // torpedo goes off when it is `proximity` units from anything it is hostile to and the blast
+  // is what does the work, so a field that bends it off line by twenty units has bought its
+  // hull nothing. It also shoves what it goes off beside, which is what breaks up a formation.
+  //
+  // Slow, and it leans after its target, so it is a thing to be shot down rather than dodged -
+  // and their beams will shoot it down, which is the counter to the counter.
+  torpedo: {
+    kind: "projectile",
+    mass: 0.16,
+    damage: 40, // on contact, which is the rarer way for one to end
+    energy: 30,
+    reload: [1.7, 2.5],
+    speed: 165,
+    life: 8,
+    // An opening rather than a gun, as the aliens' orb tubes are: what comes out is too big to
+    // have come down a barrel.
+    muzzle: "port",
+    // Forward-only tubes, covering a quarter turn either side of the nose: the launchers are in
+    // the shoulders and bringing them to bear means bringing the ship round.
+    arc: Math.PI / 4,
+    turnRate: 1.3,
+    homing: { turn: 1.2, reach: 950 },
+    // It will finish wreckage as well as hulls, which is the other half of cutting something in
+    // two: the halves are still armed and still moving, and something has to see to them.
+    targetsWreckage: true,
+    proximity: 52,
+    // What it does where it goes off, falling away to nothing at the edge. The damage is modest on
+    // its own and enormous against an alien field, which charges four energy a point for shot that
+    // gets through it at all: three volleys of two at close range strip a pincer, which is the
+    // whole point of carrying them, and from any real distance they do nothing at all - the field
+    // bends them wide and what is left of the blast by the time it goes off is not worth having.
+    // Closing is the price of using them, and it is a sustained effort rather than two shots. The reach is wide because the fuse goes off at a hull's bubble
+    // rather than at its plating, so the blast has a bubble's width to cross before it lands.
+    //
+    // The shove is what breaks up a formation, and what tears the halves of a cut hull apart:
+    // wreckage has no hull to lose and comes apart when it is knocked hard enough, see
+    // Projectile.detonate.
+    blast: { radius: 250, damage: 45, knock: 300 },
+    // A bullet rather than a ball: short and blunt, with the booster burning behind it. `streak`
+    // is a multiple of the round's own velocity, so this is about eight units of flame - stated in
+    // units it would be a line most of the way across the sector.
+    shot: { radius: 3.2, streak: 0.05, pulse: 4, core: PALETTE.geom.torpedoFlame },
+    // And the trail it leaves, thrown back off the booster: `rate` a second, at `speed` off the
+    // round's own course, living `life` seconds.
+    plume: { rate: 40, speed: 90, life: 0.4, spread: 0.5, colour: PALETTE.geom.torpedoFlame },
+    overloadedBy: "laser",
+    impact: {
+      particles: 22,
+      speed: [90, 300],
+      colour: PALETTE.geom.torpedoBlast,
+      ring: { count: 16, speed: 260 },
+      shake: 8,
+    },
+    sound: "fire",
+    colour: PALETTE.geom.torpedo,
+  },
+  // The dart's gun: a railgun small enough to carry. It snaps rather than winds up, costs what an
+  // alien needle costs, and takes a strip out of what it goes through the way the big one does.
+  //
+  // The trade against the frigate's is in the numbers: a fourteenth of the price, a tenth of the
+  // wind-up, and a slab under half as wide - and less than half the reach, which is what really
+  // separates them. A cut through the middle of anything still halves it, as a beam through the
+  // middle does; what the narrower slab costs it is everything either side of the line, so it
+  // opens hulls where the big gun removes a section of them.
+  railLance: {
+    kind: "rail",
+    mass: 0.05,
+    damage: 90, // what it does where it cannot cut, which is to a bubble
+    energy: 26,
+    reload: [0.9, 1.4],
+    chargeTime: 0.22, // a snap, as their needle is
+    speed: 900,
+    life: 1.3,
+    arc: 0.35,
+    length: 460, // how far off it will take a shot
+    slice: { width: 11 },
+    width: 3.4,
+    recoil: 26,
+    wake: { radius: 46, strength: 0.24, wave: 0.16, life: 0.3, every: 20 },
+    shot: { radius: 1.2, trail: 14 },
+    impact: {
+      particles: 12,
+      speed: [60, 220],
+      colour: PALETTE.geom.railCore,
+      ring: { count: 9, speed: 180 },
+      shake: 4,
+    },
+    sound: "snapLaser",
+    colour: PALETTE.geom.rail,
+    ready: PALETTE.ui.warn,
+  },
+  // The tail batteries: a beam light enough to fire ten times a second. It is not there to kill
+  // anything, it is there so nothing gets behind the hull - which is where its bubble is thin,
+  // and where a stream of orbs would otherwise arrive unopposed. Being a beam, it pops them.
+  flakLaser: {
+    kind: "beam",
+    // The back of the ship, and only the back: a half turn centred astern. This is the half where
+    // the bubble stops nothing but beams, and holding it is the whole reason these are here. They
+    // cannot be brought to bear on anything in front, which is the railgun's business.
+    arc: Math.PI / 2,
+    arcFrom: Math.PI,
+    // Two of them on each mount, cycling: it fires too fast to have come out of one, and a pair
+    // reads as a battery rather than as a gun.
+    barrels: 2,
+    // And it looks for ordnance before it looks for hulls. Point defence is the whole reason these
+    // are on the tail: a stream of warp orbs is the thing a hull cannot outrun, and a beam is what
+    // takes one apart. It only bothers with rounds a beam can actually do something to.
+    intercepts: true,
+    // It does not cut. A beam severs any bare hull it passes through, which is the right rule for
+    // a cutting beam and an absurd one for point defence: a twenty-point scratch gun was slicing
+    // pincers in half from across the sector. This one chips what it touches and stops there.
+    cuts: false,
+    mass: 0.06,
+    damage: 20,
+    energy: 4,
+    reload: [0.13, 0.21],
+    length: 320,
+    width: 1.8,
+    glow: 11,
+    turnRate: 5.4,
+    shotLife: 0.13,
+    sound: "fire",
+    colour: PALETTE.geom.flak,
+  },
 }
 
 // One mark of the player's beam: the shared gun with what this mark changes on top.
@@ -795,6 +1103,12 @@ function laserMarks(marks) {
     chargeMin: 95,
     chargeCost: 150,
     chargeReach: 40, // beam length is charge * reach multipliers, plus this
+    // What it carries and what it costs when something other than the player's trigger fires it.
+    // The player's own reach comes from the charge held and its own price is `chargeCost`, spent as
+    // the charge is built, so neither of these is ever read on that path: they are what an allied
+    // scout out working a sector fires the same gun on, with no hand on the trigger.
+    length: 420,
+    energy: 26,
   }
   return Object.fromEntries(
     Object.entries(marks).map(([name, mark]) => [name, { ...base, ...mark }]),
@@ -818,13 +1132,19 @@ export function barrelCount(type) {
 
 // ---------------------------------------------------------------------------
 // SHIELD TYPES - a shield turns incoming damage into energy drain (efficiency)
-// for the damage channels it `blocks`. e.g. a deflector stops shots but not
-// lasers. A new channel needs no change here beyond listing it.
+// for the damage channels it `blocks`. A new channel needs no change here beyond
+// listing it.
 //
 // `efficiency` is energy drained per point of damage, so a lower one is a better
 // bubble. A number covers every channel the shield blocks; an object states it per
 // channel, for a bubble braced against one kind of fire and poor against another.
 // A channel a shield blocks but does not price drains a point for a point.
+//
+// A bubble poor against a channel says so with a high `efficiency` on it, not by
+// leaving it out of `blocks`: a channel a shield does not block is one it does not
+// exist on at all, which on a drawn bubble reads as a shield that does nothing.
+// The only bubble here that leaves a channel out is the alien field, and it puts
+// something else in the way instead, see `absorbs` and `repel`.
 // ---------------------------------------------------------------------------
 // A shield overloads (switches off) when energy falls to `dropAt` of the host's
 // capacity, and only comes back once `recoverDelay` seconds have passed AND
@@ -847,20 +1167,65 @@ export const SHIELD_TYPES = {
   // dropping, endures a long scrape along a rock, and is quick back up when
   // something does overload it - six seconds without it is a death sentence for
   // a hull this thin.
+  // The dart's: cheap against shot and very poor against a beam, which is the bulwark's
+  // bargain on a lighter hull. It is priced against the beam rather than left out of its way:
+  // a channel a bubble does not block is a channel it does not exist on, and a drawn bubble
+  // that a beam passes straight through to cut the hull in half reads as a bug, whatever the
+  // number behind it says. One beam takes the whole of a dart's cell and the bubble with it, so
+  // it costs the player a shot and no more.
   deflector: {
     mass: 0.13,
-    efficiency: 0.8,
-    blocks: ["projectile"],
+    efficiency: { projectile: 0.8, laser: 4 },
+    blocks: ["laser", "projectile"],
     sides: 6,
     colour: PALETTE.shield.deflector,
     dropAt: 0.12,
     recoverAt: 0.35,
     recoverDelay: 1,
   },
-  // The frigate's: braced against small-arms fire and poor against a beam. What
+  // The fleet frigate's, and the only bubble in the game that is not the same all the way round.
+  // The forward half is the best armour here by a wide margin, which is what lets the hull put its
+  // nose through an alien field and keep going: ramming is a thing it does on purpose, and the
+  // front of the bubble is what pays for it.
+  //
+  // Behind it there is far less. The rear half stops a beam and nothing else, so shot fired into
+  // its back reaches the plating - that is what the flak batteries on the tail are for, and it is
+  // the answer to a hull that would otherwise have no bad angle. `arc` is how far off the nose
+  // still counts as the front, so the two halves are exactly halves.
+  titanShield: {
+    mass: 0.7,
+    efficiency: { projectile: 0.35, laser: 0.6 },
+    blocks: ["laser", "projectile"],
+    arc: Math.PI / 2,
+    rear: { blocks: ["laser"], efficiency: { laser: 1.4 } },
+    sides: 10,
+    colour: PALETTE.geom.shield,
+    // It holds well down the cell and takes its time coming back, because the cell behind it is
+    // enormous and refills at a trickle: what ends its engagement is the reserve running out, not
+    // the bubble failing.
+    dropAt: 0.1,
+    recoverAt: 0.45,
+    recoverDelay: 3,
+  },
+  // The dart's, and the same idea as the frigate's on a hull an eighth the weight: the front stops
+  // everything and the back only stops beams. On something this small it is less a decision about
+  // how to attack it and more a reason not to be in front of it, since it has no room to be hit in.
+  lanceField: {
+    mass: 0.16,
+    efficiency: { projectile: 0.7, laser: 1 },
+    blocks: ["laser", "projectile"],
+    arc: Math.PI / 2,
+    rear: { blocks: ["laser"], efficiency: { laser: 1.8 } },
+    sides: 8,
+    colour: PALETTE.geom.shield,
+    dropAt: 0.15,
+    recoverAt: 0.5,
+    recoverDelay: 2,
+  },
+  // The rival frigate's: braced against small-arms fire and poor against a beam. What
   // shoots at a hull that size is mostly autocannon and the player's turret, and a
   // slab that a turret strips in a second and a half is not a siege ship. It pays
-  // for that on the laser channel, so the answer to a frigate is the beam - which is
+  // for that on the laser channel, so the answer to a rival frigate is the beam - which is
   // the weapon that cuts it in half in any case.
   //
   // Eight sides rather than six because it is the largest bubble in the game and the
@@ -874,8 +1239,8 @@ export const SHIELD_TYPES = {
   // `solid: false` is the difference between leaning on something and stopping it: a
   // rock is pushed rather than parked against a wall, and a rock pushing hard enough
   // arrives anyway. Nor does it block shot, so a fast round punches through what a
-  // slow one is turned away from. Hulls are not repelled at all, so the pincer's mouth
-  // is as dangerous as it looks.
+  // slow one is turned away from. A hull it holds off with a fraction of what it turns a
+  // round with, so closing on the mouth is a shove to be flown through rather than a wall.
   //
   // It holds down to almost nothing and takes four and a half seconds to come back,
   // which is the window a hull can be cut in. Twelve sides where everything else has
@@ -885,14 +1250,46 @@ export const SHIELD_TYPES = {
   alienField: {
     mass: 0.1,
     solid: false,
-    efficiency: { laser: 1.15 },
+    // A beam it absorbs about as well as any shield does. A round it steers away instead, so one
+    // that lands at all was flown at from inside the field or fired straight down the middle - it
+    // counts as a hit on the field and is charged for heavily, because the field had to stop
+    // something it is not built to stop.
+    efficiency: { laser: 1.15, projectile: 4 },
+    // Stopped at the bubble: a beam, and only a beam. A round is let through it and steered.
     blocks: ["laser"],
+    // Taken onto the cell if it lands anyway, without the bubble standing in its way.
+    absorbs: ["projectile"],
     repel: {
       // Rock is leant on, shot is turned away before it can arrive, and a hull is held
       // off: enough that the last stretch of an approach has to be earned, not enough
       // that it cannot be flown at all.
-      force: { asteroids: 900, projectiles: 3600, player: 800, rivals: 800 },
+      //
+      // Rock and hulls take a push, which does not care how big the field is. A round has to be
+      // turned right around before it arrives, and that does, so it is stated as the speed of shot
+      // the field can turn: comfortably past the fastest thing in the game, which is a rock
+      // turret's defence blaster at 420. Flat, the same number that turned a shot away from a
+      // pincer let one through a dart, which has a seventh of the room to be turned in.
+      force: { asteroids: 900, projectiles: { turns: 460 }, player: 800, rivals: 800 },
+      // How far past the bubble a round starts being steered. Wide, because what makes one miss is
+      // having drifted off line long before it arrives, and it is what makes close range mean
+      // something: inside this there is not enough approach left to bend a round clear, so a turret
+      // pressed right up to a hull lands on the field where one at range cannot touch it.
+      steerReach: 240,
+      // The slowest and fastest it will swing a round's heading over, in radians a second. The lean
+      // is worked out from the geometry and the round's speed; this is what keeps that from reading
+      // wrong at the ends of the range, where a fast round was snapped round and a slow orb drifted
+      // through almost untouched. Both comfortably past a warp orb's own 0.8 of guidance.
+      steerTurn: [1.4, 2.6],
       energyPerPush: 0.02,
+      // And what a round costs to turn, per point of damage it was carrying, charged once as it
+      // arrives. Low, because steering rounds aside is the thing the field is for and not an
+      // emergency: at a point of energy a point of damage its whole cell went on doing its job and
+      // it fell over in six seconds of ordinary turret fire. What it does not matter whether the
+      // damage arrives as one shell or a stream of flak, which is the point of pricing it this way.
+      //
+      // What actually puts a field down is a beam, which it absorbs rather than steers, or getting
+      // close enough to land rounds on it.
+      energyPerDamage: 0.15,
     },
     // It stands well clear of the hull, because a field that pushes needs somewhere to
     // push in: at the bubble's own radius the pincer had 30 units of standoff against a
@@ -903,7 +1300,11 @@ export const SHIELD_TYPES = {
     pulseRate: 4.2,
     pulseDepth: 0.2,
     colour: PALETTE.alien.shield,
-    dropAt: 0.08,
+    // It fails at a quarter of the cell rather than clinging on to the last of it. Held to 0.08 it
+    // was the most stubborn shield in the game - a player carrying one watched the bar flash and
+    // the field stay up regardless - and what should make it hard to put down is how long it takes
+    // to come back, not how little it can run on.
+    dropAt: 0.25,
     recoverAt: 0.7,
     recoverDelay: 4.5,
   },
@@ -997,7 +1398,7 @@ export const ENGINE_TYPES = {
     colour: PALETTE.rival.hull,
   },
   // A long heavy plume: a single small stream read far too light for a hull the
-  // size of a frigate.
+  // size of a rival frigate.
   siegeDrive: {
     thrust: 100,
     mass: 0.16,
@@ -1007,26 +1408,32 @@ export const ENGINE_TYPES = {
   },
   // The aliens'. The same thrust as the rival drives of each tier, so the hulls handle as
   // they did, and nothing else about them is the same: green where everything else here is
-  // orange, and a fire with a rounded throat and a long tail rather than a short hard V.
+  // orange, and no fire at the throat at all.
+  //
+  // What shows at the mouth is a small bubble that breathes - `bubble` its size, `depth` how far
+  // it swells and `rate` how fast - because whatever these do to move a hull, it is not burning
+  // something and trailing the flame. The stream behind them is untouched: that is the drive
+  // doing its work, and it is the only part of one that looks like an exhaust at all.
   swarmDrive: {
     thrust: 100,
     mass: 0.03,
     plume: { rate: 30, speed: 48, life: 0.55, spread: 14 },
-    flame: { length: 13, flicker: 5, width: 7, round: true, colour: PALETTE.alien.exhaustFlame },
+    flame: { bubble: 4.4, depth: 0.24, rate: 8.5, colour: PALETTE.alien.exhaustFlame },
     colour: PALETTE.alien.exhaust,
   },
   stalkerDrive: {
     thrust: 75,
     mass: 0.02,
     plume: { rate: 42, speed: 34, life: 0.6, spread: 5 },
-    flame: { length: 11, flicker: 4, width: 4, round: true, colour: PALETTE.alien.exhaustFlame },
+    flame: { bubble: 3.4, depth: 0.28, rate: 9.5, colour: PALETTE.alien.exhaustFlame },
     colour: PALETTE.alien.exhaust,
   },
   pincerDrive: {
     thrust: 100,
     mass: 0.16,
     plume: { rate: 46, speed: 120, life: 0.8, spread: 20, width: 9 },
-    flame: { length: 34, flicker: 12, round: true, colour: PALETTE.alien.exhaustFlame },
+    // The biggest of them, so the biggest bubble, and the slowest breath.
+    flame: { bubble: 6.6, depth: 0.22, rate: 6.5, colour: PALETTE.alien.exhaustFlame },
     colour: PALETTE.alien.exhaust,
   },
   // The player's, and the one thing the hull starts with that can be replaced by
@@ -1055,6 +1462,34 @@ export const ENGINE_TYPES = {
     flame: { length: 9, flicker: 6, width: 9, colour: PALETTE.player.exhaustFlame },
     colour: PALETTE.player.exhaust,
   },
+  // The fleet dart's, and there is one of them where their darts carry two: this hull has a single
+  // nozzle down the middle. So it is worth two of theirs, which puts the two tiers at the same
+  // acceleration and leaves what separates them to be what they carry rather than how they fly.
+  lanceDrive: {
+    thrust: 150,
+    mass: 0.02,
+    // A quarter of what every other drive costs to hold open. The cell behind it refills at a
+    // trickle, so a hull that paid the usual rate to manoeuvre could not afford to manoeuvre - and
+    // manoeuvring is the whole of what this hull has. What it cannot sustain is its gun, not its
+    // engine.
+    thrustCost: 5,
+    plume: { rate: 42, speed: 40, life: 0.55, spread: 6 },
+    flame: { length: 6, flicker: 4, width: 4, colour: PALETTE.player.exhaustFlame },
+    colour: PALETTE.player.exhaust,
+  },
+  // The fleet frigate's. Well over a siege drive's thrust on a hull no heavier, which is most of
+  // why it moves like nothing else its size: a pair of these carry it at 93 against a rival's 42.
+  // It is a sprinter, and what it cannot sustain is the cell, not the drive. Held back from what it
+  // could do, because a hull that arrives at full tilt reads as reckless rather than as dangerous.
+  titanDrive: {
+    thrust: 168,
+    mass: 0.2,
+    plume: { rate: 54, speed: 260, life: 0.7, spread: 22, width: 11 },
+    // Smaller than the thrust behind it would suggest: at full size the pair of them read as two
+    // bonfires rather than as a drive, and swamped the hull they are bolted to.
+    flame: { length: 13, flicker: 6, width: 7, colour: PALETTE.player.exhaustFlame },
+    colour: PALETTE.player.exhaust,
+  },
 }
 
 // ---------------------------------------------------------------------------
@@ -1066,7 +1501,7 @@ export const ENGINE_TYPES = {
 // hull's business, since the same nozzles turn a dart smartly and barely trouble a
 // slab: see SHIP_SCALARS.turnPerReach.
 //
-// This is deliberately separate from the drive. A frigate with a pair of siege
+// This is deliberately separate from the drive. A rival frigate with a pair of siege
 // engines has plenty of thrust and no way to use it sideways, so it sweeps through a
 // long arc; the player pivots on the spot because the yard fitted a gimbal ring, not
 // because the miner drive is strong.
@@ -1083,9 +1518,14 @@ export const THRUSTER_TYPES = {
   // for it. The trade is in the control rather than in a number here.
   vectorJets: { torque: 180, mass: 0.02 },
   // Heavier nozzles for a heavier hull. More torque than either of the above and
-  // nowhere near enough to make a slab handle: a frigate comes about in 18 seconds
+  // nowhere near enough to make a slab handle: a rival frigate comes about in 18 seconds
   // with these, which is the point of a frigate.
   siegeJets: { torque: 200, mass: 0.1 },
+  // A ring of them around a hull that is meant to be pointed at things: the fleet frigate comes
+  // about in under six seconds where a rival frigate takes thirty-five, which is what lets it bring
+  // a railgun to bear on something trying hard not to be in front of it. It costs more mass than a
+  // whole dart's loadout, and it is still a third of a dart's handling.
+  titanJets: { torque: 728, mass: 0.24 },
 }
 
 // What a design's maneuvering thrusters add up to, which is what brings it about.
@@ -1170,6 +1610,14 @@ export const CORE_TYPES = {
   swarmCore: { mass: 0.05, energy: 260, regen: 28, shield: 1, radar: 1, thruster: 1, special: 0 },
   stalkerCore: { mass: 0.12, energy: 420, regen: 32, shield: 1, radar: 1, thruster: 1, special: 0 },
   pincerCore: { mass: 0.3, energy: 800, regen: 34, shield: 1, radar: 1, thruster: 1, special: 0 },
+  // The fleet dart's: the faction's bargain on a small hull. Half again a rival dart's reserve at
+  // half its recovery, so it too arrives with one engagement in it.
+  lanceCore: { mass: 0.12, energy: 560, regen: 18, shield: 1, radar: 1, thruster: 1, special: 0 },
+  // The fleet frigate's: the deepest cell in the game behind the slowest refill in it. It can
+  // run its shield, its drive and a railgun flat out for one engagement and then it has nothing,
+  // which is what makes the hull a tactical sprinter rather than a siege ship. Four times a
+  // pincer's reserve at a third of its recovery: everything about how it fights follows from that.
+  titanCore: { mass: 0.4, energy: 3200, regen: 11, shield: 1, radar: 1, thruster: 1, special: 0 },
   // The player's, and the only one the shop can improve. Each level is a bigger
   // cell, a faster refill and another slot to spend it through.
   minerCore: {
@@ -1226,11 +1674,14 @@ export function coreAt(type, level = 0) {
   return { ...type, ...type.levels[clamp(level, 0, type.levels.length - 1)] }
 }
 
-// The core a design is built around, which is where its energy comes from.
+// The core a design is built around, which is where its energy comes from. A levelled core is
+// taken at the bottom of its ladder: that is what the hull has before anything is bought, and it
+// is the only honest answer for a hull nobody is upgrading. What the run has climbed to is the
+// run's business, and the player reads it off Game.maxEnergy instead.
 export function coreOf(type) {
   for (const entry of type.loadout || []) {
     if (entry.core) {
-      return CORE_TYPES[entry.core]
+      return coreAt(CORE_TYPES[entry.core], 0)
     }
   }
   return null
@@ -1546,7 +1997,7 @@ export function deriveShipStats(type) {
 // A beam cuts any unshielded hull, exactly as it cuts a rock. Nothing marks a
 // type as cuttable: the material's `minArea` decides what the cut leaves, so a
 // hull with halves above it comes apart into drifting wreckage and one too small
-// for that is simply destroyed. A scout is the second case and a frigate the
+// for that is simply destroyed. A rival scout is the second case and a rival frigate the
 // first, and anything sized between them lands wherever its halves fall.
 // ---------------------------------------------------------------------------
 
@@ -1585,10 +2036,26 @@ export const ALIEN_PLATING = {
     smoke: PALETTE.alien.smoke,
   },
 }
+
+// And what the fleet's own frigate is made of. Heavier stuff: its wreckage holds together in
+// larger pieces and burns cold, so a sector where one has come apart looks nothing like a sector
+// where a rival has.
+export const GEOM_PLATING = {
+  ...SHIP_PLATING,
+  burn: {
+    ...SHIP_PLATING.burn,
+    colour: PALETTE.geom.fire,
+    ember: PALETTE.geom.ember,
+    smoke: PALETTE.geom.smoke,
+  },
+}
 // ---------------------------------------------------------------------------
 
 const SHIP_DESIGNS = {
-  seeker: {
+  rivalSeeker: {
+    // What the dev pages say about it when offering it. One line, present tense, about how the
+    // thing behaves rather than what it is made of: the numbers are on the stats page.
+    desc: "A dart. Fast in a line, slow to come about, lines up and leaves.",
     outline: [
       [18, 0],
       [0, -5],
@@ -1650,7 +2117,8 @@ const SHIP_DESIGNS = {
     blastScore: 200,
     oreDrop: 0,
   },
-  scout: {
+  rivalScout: {
+    desc: "A miner. Cuts rock for ore and does not come looking for a fight.",
     outline: [
       [17, 0],
       [-11, -12],
@@ -1695,13 +2163,18 @@ const SHIP_DESIGNS = {
       },
     },
     spawn: { fromSector: 2, weight: 6 }, // the common one, and the one always available
+    // It is not fighting, so it has no range it wants to shoot from: what it wants is not to be
+    // near the fight. No `aimedWithin` and no `facing`, so it never lines anything up; it puts
+    // distance between itself and the ship and goes back to its rock.
+    breakOff: { near: 300, hold: 2.2 },
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
     killScore: 400,
     blastScore: 200,
     oreDrop: 5,
   },
-  frigate: {
+  rivalFrigate: {
+    desc: "A slab. Four autocannons and a braced bubble; the beam is the answer to it.",
     outline: [
       [62, 16],
       [60, 24],
@@ -1763,6 +2236,10 @@ const SHIP_DESIGNS = {
     ],
     spawn: { fromSector: 14, weight: 0.8, weightPerSector: 0.25, weightCap: 3, maxConcurrent: 1 },
     hunts: true, // steers for the player rather than for ore and rocks
+    // A range, and no dodge: its gun reaches 780 and it has no business closing to where the
+    // reach stops counting. No `aimedWithin` and no `facing`, so it never breaks a line it is
+    // being shot along; it holds its distance and keeps firing, which is what a slab does.
+    breakOff: { near: 420, hold: 1.8 },
     debrisMaterial: SHIP_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
     killScore: 900,
@@ -1779,7 +2256,7 @@ const SHIP_DESIGNS = {
   // arrival budget until they have one of their own, so an alien turning up is a rival
   // that did not. `fromSector` is the one dial for both, per hull.
   // ---------------------------------------------------------------------------
-  // A pincer, the same length as a frigate and three times as wide, with its mouth
+  // A pincer, the same length as a rival frigate and three times as wide, with its mouth
   // facing forward and a spike down the middle of it. Nothing about the shape is
   // decoration: it is the collision outline, the thing a beam crosses and the thing a
   // cut divides, so the mouth is a real void a rock can sit in without touching
@@ -1792,6 +2269,7 @@ const SHIP_DESIGNS = {
   //
   // Still to come, see ROADMAP.md: the glitch it should be drawn with.
   alienFrigate: {
+    desc: "The pincer. Throws singularities from its jaws and drops its field to do it.",
     outline: [
       [-20, 25],
       [-15, 35],
@@ -1828,11 +2306,13 @@ const SHIP_DESIGNS = {
     ],
     colour: PALETTE.alien.hull,
     faction: "alien",
-    // The biggest of them bends the most, and reaches past its own jaws.
-    // Space is never quite still around one of these. The pull is what bends what is
-    // behind it; the wave is the ring in it, kept low enough to be felt rather than seen.
-    warp: { radius: 190, strength: 0.42, wave: 0.07 },
-    // Twice the material of a frigate for the same laden 6, which is what a hull this wide
+    // Space is never quite still around one of these. The pull is what bends what is behind it,
+    // the wave is the ring running through that, and `hollow` is where across the region the two
+    // of them land: out at the rim rather than in the middle, so the whole outline crawls and
+    // ripples instead of the centre swelling while the jaws sit still. The reach is a little past
+    // the furthest point of the hull (92) so the heaviest of it falls on the outline itself.
+    warp: { radius: 150, strength: 0.42, wave: 0.18, hollow: 1 },
+    // Twice the material of a rival frigate for the same laden 6, which is what a hull this wide
     // and this hollow comes to. Bare here: its plant, field, drives and five guns make up
     // the rest.
     //
@@ -1876,6 +2356,10 @@ const SHIP_DESIGNS = {
     ],
     spawn: { fromSector: 30, weight: 0.3, weightPerSector: 0.15, weightCap: 2.5, maxConcurrent: 1 },
     hunts: true,
+    // As the frigate it answers: a range and no dodge. Its own field wants more than this and
+    // takes it, and with the field down it wants more again, see RivalShip.standoffRange - which
+    // is the whole tell, because a pincer that has just thrown a pair backs off.
+    breakOff: { near: 380, hold: 1.8 },
     debrisMaterial: ALIEN_PLATING,
     debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
     killScore: 900,
@@ -1886,6 +2370,7 @@ const SHIP_DESIGNS = {
   // drive, fatter through the body, so it takes about as much cutting as its rival
   // counterpart and comes apart into ore rather than wreckage.
   alienScout: {
+    desc: "Their miner. Space bends around it, so a sector holding one looks wrong.",
     outline: [
       [2, 0],
       [4, -3],
@@ -1943,6 +2428,9 @@ const SHIP_DESIGNS = {
       },
     },
     spawn: { fromSector: 20, weight: 0.6, weightPerSector: 0.2, weightCap: 4, maxConcurrent: 2 },
+    // As its rival counterpart: not a range it fights from, a distance it keeps. One that rolled
+    // a field wants more than this, and takes it, see RivalShip.standoffRange.
+    breakOff: { near: 300, hold: 2.2 },
     debrisMaterial: ALIEN_PLATING,
     debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
     killScore: 400,
@@ -1952,6 +2440,7 @@ const SHIP_DESIGNS = {
   // And to the seeker: a narrow dart with a forked tail, near enough the same hull as
   // the one it answers and a little quicker round for being shorter.
   alienSeeker: {
+    desc: "Their dart. Cuts by bending what it crosses, then arcs out rather than closing.",
     outline: [
       [4, 0],
       [2, -2],
@@ -2014,60 +2503,253 @@ const SHIP_DESIGNS = {
     blastScore: 200,
     oreDrop: 0,
   },
+  // ---------------------------------------------------------------------------
+  // The hull the run is flown in, and a hull like any other: it is in this table so that the
+  // simulation has one kind of ship in it, and what makes it the player's is who is holding it.
+  //
+  // Every flight number it has is derived from what is bolted to it, exactly as a rival's is, so
+  // "how does the ship handle" is answered by its mass, its drive and its thrusters and not by a
+  // table of exceptions. What the shop fits then replaces the loadout below slot for slot, and the
+  // loadout states precisely what a fresh run is fitted with, so a flown one and a spawned one are
+  // the same ship until the first purchase.
+  //
+  // It is rare, and only in the early sectors: one of ours, out doing the same job you are, before
+  // the run gets to where the fleet sends frigates instead. Nothing is earned for shooting one
+  // down, which is the only thing here that treats it as ours.
+  // ---------------------------------------------------------------------------
+  geomScout: {
+    desc: "Ours, and yours. The hull the run is flown in, out working a sector of its own.",
+    outline: [
+      [18, 0],
+      [-10, -11],
+      [-5, 0],
+      [-10, 11],
+    ],
+    colour: PALETTE.player.hull,
+    faction: "player",
+    // Hull, like any other ship: what a hit that no bubble took gets through to. 70 points
+    // off 253 of outline, which is a rock bump survived with care, a beam hit survived
+    // once and a rival's autocannon round still fatal, so a shield stays the first thing
+    // worth buying. See hullPoints.
+    armour: 2.5,
+    // The bare hull. What the shop fits adds 0.17 at launch, which puts the ship at
+    // the 1 every other hull's mass is quoted against, and a fully fitted one a
+    // little over it.
+    mass: 0.83,
+    // What the ship is confined by, which is less than the hull's own reach of 18.2:
+    // see KNOWN_ISSUES.md, "A hull crosses the drawn arena ring".
+    confineRadius: 13,
+    lifeTime: [16, 26],
+    hardpoints: [
+      { local: [18, 0], role: "nose" },
+      { local: [0, 0], role: "core" },
+      { local: [3, 0], role: "aux" }, // the turret's, filled from EQUIPMENT and empty until bought
+      { local: [-10, 0], role: "engine" },
+    ],
+    // What a fresh run is fitted with, stated so that a hull nobody is flying is the same ship.
+    // Every entry here is the first free option in its EQUIPMENT slot, which is what the shop
+    // fits at launch, so putting them in the design gives the player nothing they did not have.
+    //
+    // The nose gun carries a controller for the benefit of whoever is not the player: a flown hull
+    // has its nose taken over by the trigger, see PlayerShip.takeTheNose. The aux mount is left
+    // empty on purpose - a per-mount slot says nothing about a mount until something is bought for
+    // it, so a gun here would be a turret the run was given for free.
+    loadout: [
+      { hp: 0, weapon: "playerLaserMk1", controller: "hunter" },
+      { hp: 1, core: "minerCore", fitted: { radar: "surveyMk1", thruster: "gimbalRing" } },
+      { hp: 3, engine: "minerDrive" },
+    ],
+    // What the ship is fitted with before anything is bought, one id per slot. The
+    // magnet is here rather than in the shop because a ship that cannot pick ore up
+    // is not a ship: it can be ejected, which is a choice, not a starting state.
+    startingSpecials: ["oreMagnet"],
+    spawn: { fromSector: 2, toSector: 8, weight: 0.5, maxConcurrent: 1 },
+    hunts: true,
+    // It fights the way the hull fights: a pass rather than a duel. It has one light beam and no
+    // bubble to speak of, so standing in front of anything is how it dies.
+    breakOff: { near: 260, facing: 0.55, aimedWithin: 520, hold: 1.4, turn: 0.6 },
+    debrisMaterial: GEOM_PLATING,
+    debris: { particles: 26, speed: 240, ring: 18, shake: 10 },
+    // Nothing for shooting one down. It is on your side, and the game does not pay for that.
+    killScore: 0,
+    blastScore: 0,
+    oreDrop: 3,
+  },
+  // ---------------------------------------------------------------------------
+  // The fleet's dart. Ours, and the answer to theirs: it carries a railgun small enough to fit,
+  // which does to a dart what the frigate's does to a pincer, and it is the same trade as every
+  // other hull of ours - a deep cell that refills slowly, so it has one pass in it.
+  // ---------------------------------------------------------------------------
+  geomSeeker: {
+    desc: "Ours. A railgun cut down to fit a dart, and one engagement's worth of cell.",
+    outline: [
+      [12.974, -2.008],
+      [8.974, -3.008],
+      [3.974, -4.008],
+      [1.974, -6.008],
+      [-8.068, -5.99],
+      [-9.11, -3.972],
+      [-11.847, -1.983],
+      [-11.847, 2.017],
+      [-9.11, 4.028],
+      [-8.068, 6.01],
+      [1.974, 5.992],
+      [3.974, 3.992],
+      [8.974, 2.992],
+      [12.974, 1.992],
+      [17.419, -0.006],
+    ],
+    colour: PALETTE.player.hull,
+    faction: "player",
+    mass: 0.47,
+    armour: 1.2,
+    handling: 0.8,
+    lifeTime: [26, 36],
+    hardpoints: [
+      { local: [17.419, -0.006], role: "nose" },
+      { local: [-6.581, -0.006], role: "gun" },
+      { local: [0, 0], role: "core" },
+      { local: [-11.805, -0.001], role: "engine" },
+    ],
+    loadout: [
+      { hp: 0, weapon: "railLance", controller: "hunter" },
+      {
+        hp: 2,
+        core: "lanceCore",
+        fitted: { shield: "lanceField", radar: "huntingArray", thruster: "gimbalRing" },
+      },
+      { hp: 3, engine: "lanceDrive" },
+    ],
+    arms: {
+      gun: {
+        hp: 1,
+        weapon: "flakLaser",
+        controller: "turret",
+        chancePerSector: 0.08,
+        chanceCap: 0.85,
+      },
+    },
+    spawn: { fromSector: 25, weight: 0.4, maxConcurrent: 1 },
+    hunts: true,
+    // A dart lines up, fires and leaves. Its own field is thin behind it, so sitting in front of
+    // something is how it dies; the rolled battery on its back is what covers the other half.
+    breakOff: { near: 240, facing: 0.55, aimedWithin: 500, hold: 1.3, turn: 0.6 },
+    // How it goes about a fight, rolled per target as the frigate's is.
+    engagements: ["ram", "soften"],
+    debrisMaterial: GEOM_PLATING,
+    debris: { particles: 26, speed: 260, ring: 19, shake: 10 },
+    // Nothing is earned for shooting one of ours down, on any of our hulls.
+    killScore: 0,
+    blastScore: 0,
+    oreDrop: 3,
+  },
+  // ---------------------------------------------------------------------------
+  // The fleet's own frigate. It turns up late, one at a time, and it is not there for the player:
+  // it is there for the aliens, and what it does to a pincer is worth stopping to watch.
+  //
+  // Everything about it comes from one trade. The cell is the deepest in the game and refills
+  // at a trickle, so it can run a bubble, a railgun and that drive flat out for one engagement
+  // and then it is spent. It is a tactical sprinter: it arrives, it takes something apart, and
+  // it goes. It is not a hull to be worn down, because it never stays long enough.
+  //
+  // It is on the player's side and it does not care about the player. Nothing filters fire by
+  // faction, so its railgun will cut the ship in half exactly as readily as a pincer: its
+  // firing line is a place not to be, and that is the price of having it in the sector.
+  // ---------------------------------------------------------------------------
+  geomFrigate: {
+    desc: "Ours. A railgun, torpedoes and one engagement's worth of power in the cell.",
+    outline: [
+      [44, 20.068],
+      [26.493, 25],
+      [16.493, 25],
+      [11.493, 35],
+      [-25, 35],
+      [-30, 25],
+      [-43.507, 25],
+      [-53.507, 15],
+      [-43.507, 5],
+      [-43.507, -5],
+      [-53.507, -15],
+      [-43.507, -25],
+      [-30, -25],
+      [-25, -35],
+      [11.493, -35],
+      [16.493, -25],
+      [26.493, -25],
+      [44, -20.068],
+      [49.506, -15.732],
+      [55.001, -9.439],
+      [50, -6.112],
+      [50, 6.112],
+      [55.001, 9.439],
+      [49.506, 15.732],
+    ],
+    colour: PALETTE.player.hull,
+    faction: "player",
+    mass: 2.0,
+    armour: 5.0,
+    lifeTime: [34, 50],
+    hardpoints: [
+      { local: [49, 0], role: "nose" },
+      // The forward pair, in the shoulders: torpedo tubes, which is why their arc is narrow.
+      { local: [11.493, -30], role: "gun" },
+      // and the tail pair, which is where the bubble is thin
+      { local: [-43.507, -15], role: "gun" },
+      { local: [11.493, 30], role: "gun" },
+      { local: [-43.507, 15], role: "gun" },
+      { local: [0, 0], role: "core" },
+      { local: [-28, -30], role: "engine" },
+      { local: [-28, 30], role: "engine" },
+    ],
+    loadout: [
+      { hp: 0, weapon: "railgun", controller: "hunter" },
+      { hp: 1, weapon: "torpedo", controller: "turret" },
+      { hp: 2, weapon: "flakLaser", controller: "turret" },
+      { hp: 3, weapon: "torpedo", controller: "turret" },
+      { hp: 4, weapon: "flakLaser", controller: "turret" },
+      {
+        hp: 5,
+        core: "titanCore",
+        fitted: { shield: "titanShield", radar: "huntingArray", thruster: "titanJets" },
+      },
+      { hp: 6, engine: "titanDrive" },
+      { hp: 7, engine: "titanDrive" },
+    ],
+    spawn: { fromSector: 35, weight: 0.8, maxConcurrent: 1 },
+    hunts: true,
+    // What it goes after first, over whatever happens to be nearest. It is here for the big
+    // hulls: a pincer is what a railgun is for, and a dart is something to be got out of the
+    // way of on the approach. Read by Game.hostileTarget, so it is a preference and not a
+    // blindness - with no frigate in the sector it fights whatever is.
+    prefers: ["alienFrigate", "rivalFrigate", "geomFrigate"],
+    // How it goes about one, rolled when it commits to a target so two of them do not fight the
+    // same way. `ram` drives straight in behind the strong half of the bubble; `soften` holds off
+    // throwing torpedoes until the target's bubble is down and then closes for the railgun. See
+    // RivalShip.rollEngagement, and RIVAL_SOFTEN_RANGE for where it waits.
+    engagements: ["ram", "soften"],
+    // It closes to contact by default, which is what makes ramming possible at all: the range it
+    // keeps is whatever its plan asks for, and `hold` is how long it commits to backing off once
+    // it has decided to. No `aimedWithin` or `facing`, so it never breaks a line it is being shot
+    // along - with that bubble facing forwards there is no reason to.
+    breakOff: { near: 0, hold: 1.2 },
+    debrisMaterial: GEOM_PLATING,
+    debris: { particles: 40, speed: 300, ring: 26, shake: 14 },
+    // Nothing is earned for shooting one of ours down: farming your own side for score is not a
+    // strategy the game should reward. Its wreckage is still worth salvaging.
+    killScore: 0,
+    blastScore: 0,
+    oreDrop: 9,
+  },
 }
 
 export const SHIP_TYPES = Object.fromEntries(
   Object.entries(SHIP_DESIGNS).map(([name, design]) => [name, deriveShipStats(design)]),
 )
 
-// Player ship definition (its own type so the same machinery drives it). How it
-// flies is CONFIG's business and not this table's, since the player's throttle,
-// turn and drag are tuned against the controls rather than against the hull; the
-// bubble and the outline weight still come from the shape, as every hull's do.
-const PLAYER_DESIGN = {
-  outline: [
-    [18, 0],
-    [-10, -11],
-    [-5, 0],
-    [-10, 11],
-  ],
-  colour: PALETTE.player.hull,
-  faction: "player",
-  // Hull, like any other ship: what a hit that no bubble took gets through to. 70 points
-  // off 253 of outline, which is a rock bump survived with care, a beam hit survived
-  // once and a rival's autocannon round still fatal, so a shield stays the first thing
-  // worth buying. See hullPoints.
-  armour: 2.5,
-  // The bare hull. What the shop fits adds 0.17 at launch, which puts the ship at
-  // the 1 every other hull's mass is quoted against, and a fully fitted one a
-  // little over it.
-  mass: 0.83,
-  // What the ship is confined by, which is less than the hull's own reach of 18.2:
-  // see KNOWN_ISSUES.md, "A hull crosses the drawn arena ring".
-  confineRadius: 13,
-  // One core, carrying the cell and the room for what runs off it: see CORE_TYPES.
-  hardpoints: [
-    { local: [18, 0], role: "nose" },
-    { local: [0, 0], role: "core" },
-    { local: [3, 0], role: "aux" }, // filled by a fitting, see below
-    { local: [-10, 0], role: "engine" },
-  ],
-  // The nose and the engine are filled from EQUIPMENT, since what is in them is the
-  // run's to choose; the core is the hull's own.
-  // The core is the hull's own. What goes in it, like what goes on the nose and in
-  // the tail, is the run's: see EQUIPMENT.
-  loadout: [{ hp: 1, core: "minerCore" }],
-  // What the ship is fitted with before anything is bought, one id per slot. The
-  // magnet is here rather than in the shop because a ship that cannot pick ore up
-  // is not a ship: it can be ejected, which is a choice, not a starting state.
-  startingSpecials: ["oreMagnet"],
-}
-
-export const PLAYER_TYPE = {
-  ...PLAYER_DESIGN,
-  ...hullShape(PLAYER_DESIGN),
-  hull: hullPoints(PLAYER_DESIGN),
-}
+// Which of them the run is flown in. A name for one entry of the table rather than a type of its
+// own: everything that used to be special about the player's hull is now either in its design or
+// in who is holding it.
+export const PLAYER_TYPE = SHIP_TYPES.geomScout
 
 // ---------------------------------------------------------------------------
 // EQUIPMENT - what the shop fits to the player's ship, slot by slot.
@@ -2149,6 +2831,20 @@ export const EQUIPMENT = {
         id: "alienField",
         name: "REPEL FIELD",
         desc: "Alien. It pushes rocks and shot away instead of stopping them, and pays for it.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "titanShield",
+        name: "TITAN FIELD",
+        desc: "Ours. The front half stops everything; behind you it only stops beams.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "lanceField",
+        name: "LANCE FIELD",
+        desc: "Ours, and light. The same one-sided bubble on a hull with no room to be hit in.",
         cost: 0,
         locked: true,
       },
@@ -2244,6 +2940,13 @@ export const EQUIPMENT = {
         cost: 0,
         locked: true,
       },
+      {
+        id: "titanJets",
+        name: "TITAN JETS",
+        desc: "Ours. A ring of them, and they bring a frigate about in four seconds.",
+        cost: 0,
+        locked: true,
+      },
     ],
   },
   // Two guns for the aux mount, at the same price: neither is the better one, so
@@ -2285,6 +2988,20 @@ export const EQUIPMENT = {
         id: "warpOrb",
         name: "WARP ORB",
         desc: "Alien. A slow ball of bent space that falls toward what it was thrown at.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "torpedo",
+        name: "TORPEDO",
+        desc: "Ours. Goes off near what it was aimed at, so a field that bends it aside is no use.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "flakLaser",
+        name: "FLAK LASER",
+        desc: "Ours. A scratch beam ten times a second. It pops ordnance and cuts nothing.",
         cost: 0,
         locked: true,
       },
@@ -2369,6 +3086,20 @@ export const EQUIPMENT = {
         cost: 0,
         locked: true,
       },
+      {
+        id: "railgun",
+        name: "RAILGUN",
+        desc: "Ours. One slug, and it takes a strip out of whatever it goes through.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "railLance",
+        name: "RAIL LANCE",
+        desc: "Ours. The railgun cut down to fit a dart: it snaps, and it still cuts.",
+        cost: 0,
+        locked: true,
+      },
     ],
   },
   engine: {
@@ -2429,6 +3160,20 @@ export const EQUIPMENT = {
         id: "pincerDrive",
         name: "PINCER DRIVE",
         desc: "Alien. What moves a pincer, which is a great deal of hull.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "titanDrive",
+        name: "TITAN DRIVE",
+        desc: "Ours. Far more thrust than a hull that size has any business having.",
+        cost: 0,
+        locked: true,
+      },
+      {
+        id: "lanceDrive",
+        name: "LANCE DRIVE",
+        desc: "Ours, for a dart: a rival drive's thrust in our own colours.",
         cost: 0,
         locked: true,
       },
@@ -2542,11 +3287,7 @@ export const SPECIAL_TYPES = {
         centre: player,
         radius: type.range,
         include: ["projectiles"],
-        visit: (bullet, { dir }) => {
-          const speed = Math.max(CONFIG.BULLET_SPEED, Math.hypot(bullet.vx, bullet.vy))
-          bullet.vx = dir.x * speed
-          bullet.vy = dir.y * speed
-        },
+        visit: (bullet, { dir }) => bullet.shove(dir),
       })
       game.ring(player.x, player.y, 40, type.colour, type.range, 0.7)
       game.screenShake = 9
@@ -2699,6 +3440,37 @@ export const UI_SCALES = [1, 1.5, 2]
 // roll for it in this sector, or every arm it could ever have.
 export const DEV_ARMS = ["normal", "rolled", "all"]
 
+// A hull's name as the dev pages show it: the registry key, spaced and shouted.
+const hullLabel = (name) => name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase()
+
+// The sector the dev pages roll arms at, when a run is not already deeper than it. A hull's arms
+// ramp up over the sectors past the one it first turns up in, so rolling at the sector a dev arena
+// is usually opened from gives a hull carrying nothing: this is the shallowest sector by which
+// every arm in the game has reached its own cap, worked out from the registry so it keeps up with
+// what is in there.
+export const DEV_ROLL_SECTOR = Math.max(
+  ...Object.values(SHIP_TYPES).map(
+    (type) =>
+      type.spawn.fromSector +
+      Math.max(
+        0,
+        ...Object.values(type.arms || {}).map((arm) =>
+          Math.ceil((arm.chanceCap ?? 1) / arm.chancePerSector),
+        ),
+      ),
+  ),
+)
+
+// And what an arena does with a hull set to AUTO: one every `interval` seconds while fewer than
+// `cap` of it are alive. The cap is a fallback - a hull whose own spawn rules say how many of it
+// there may be at once is held to that in here too.
+export const DEV_AUTO = { interval: 3.5, cap: 4 }
+
+// What the dogfight shortcut sets going: both sides of the two tiers that actually come at you,
+// and not the frigates, which are a siege rather than a fight. Named here so the row and what it
+// does say the same thing.
+export const DOGFIGHT_HULLS = ["rivalScout", "rivalSeeker", "alienScout", "alienSeeker"]
+
 // An arrow is what a row that leads somewhere shows, so a row that simply does something
 // when it is pressed shows nothing and is not mistaken for a page.
 export const DEV_MENU = [
@@ -2707,66 +3479,122 @@ export const DEV_MENU = [
     value: (g) => (g.sandbox ? "IN ONE" : ""),
     action: (g) => g.enterSandbox(),
   },
+  // The arena, already set up as a fight. Everything the SPAWN page can be walked through by
+  // hand, for the one arrangement that is wanted often enough to be worth a row.
+  {
+    name: "DOGFIGHT",
+    value: (g) => (DOGFIGHT_HULLS.every((name) => g.devAutoFor(name)) ? "ON" : ""),
+    action: (g) => g.enterDogfight(),
+  },
   { name: "CLEAR SECTOR", action: (g) => g.clearSectorNow() },
   { name: "OWN EVERYTHING", action: (g) => g.devOwnEverything() },
   { name: "FULLY UPGRADE", action: (g) => g.devMaxOut() },
+  // Neither of these follows from having the page open. A run being looked at is still the run
+  // that was being played until one of them is turned on, which is what makes the page safe to
+  // reach for mid-run.
+  {
+    name: "FREE PURCHASES",
+    value: (g) => (g.devFreeBuys ? "ON" : "OFF"),
+    action: (g) => g.setDevFreeBuys(!g.devFreeBuys),
+    adjust: (g, step) => g.setDevFreeBuys(step > 0),
+  },
+  {
+    name: "ANY SECTOR",
+    value: (g) => (g.devAnySector ? "ON" : "OFF"),
+    action: (g) => g.setDevAnySector(!g.devAnySector),
+    adjust: (g, step) => g.setDevAnySector(step > 0),
+  },
   { name: "SPAWN", value: () => ">", action: (g) => g.openPausePage("devSpawn") },
+  // Fly any hull in the game. A pop-over rather than a page of its own: it is one choice, every
+  // option says what it is, and the hull being flown is named on the row without opening it.
   {
     name: "SHIP",
-    value: (g) => (g.player ? g.playerTypeName() : ">"),
-    action: (g) => g.openPausePage("devShip"),
+    value: (g) => (g.player ? g.playerTypeName() : ""),
+    // Every hull the spawner could send, the player's own among them: it is a hull like any other
+    // and there is no separate row for going "back" to it. Stepping onto it is stepping back.
+    flyout: (g) =>
+      Object.keys(g.spawnableTypes())
+        .map((name) => ({
+          name: hullLabel(name),
+          key: name,
+          desc: SHIP_TYPES[name].desc,
+        }))
+        .map((entry) => ({
+          name: entry.name,
+          desc: entry.desc,
+          value: (game) => (game.playerTypeName() === entry.name ? "FLYING" : ""),
+          current: (game) => game.playerTypeName() === entry.name,
+          closes: true,
+          action: (game) => game.devFlyShip(entry.key),
+        })),
   },
   // Not "back": in a testing arena this page is what ESCAPE opens, so there is nothing
   // behind it. The options are a row of it, the way it is a row of them.
   { name: "OPTIONS", value: () => ">", action: (g) => g.openPausePage("root") },
 ]
 
-// The ship page: fly any hull in the game. The shop finds its mounts by role, so a hull
-// it can fit is a hull that can be flown; what that feels like is the point of the page.
-export const DEV_SHIP_MENU = [
-  {
-    rows: (g) =>
-      [
-        { name: "PLAYER", key: "player" },
-        ...Object.keys(g.spawnableTypes()).map((name) => ({
-          name: name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase(),
-          key: name,
-        })),
-      ].map((entry) => ({
-        name: entry.name,
-        value: (game) => (game.playerTypeName() === entry.name ? "FLYING" : ""),
-        action: (game) => game.devFlyShip(entry.key),
-      })),
-  },
-  { name: "BACK", action: (g) => g.openPausePage("dev") },
-]
+// What each arming choice means, said where it is chosen. What ROLLED rolls at is stated on the
+// row, because rolling at the sector a dev arena is opened from gives a hull carrying nothing.
+const DEV_ARMS_DESC = {
+  normal: "The design alone, with nothing rolled on top of it.",
+  rolled: `Rolled as the spawner would, at sector ${DEV_ROLL_SECTOR} or deeper.`,
+  all: "Every arm it could ever turn up carrying.",
+}
 
-// The spawn page: a row per hull, a row per kind of rock, and both lists generated, so
-// adding either to its registry puts it on the page.
+// The spawn page: a row per hull and one for rock, each opening a pop-over of what can be done
+// with it. Both lists are generated, so adding either to its registry puts it on the page.
 //
-// A hull row carries its own choice of what to arm it with rather than the page holding
-// one setting for all of them, since the interesting spawn is usually one hull rolled
-// against a plain one. Rolling at the sector the run is in gives almost nothing early on,
-// which is the least useful of the three for looking at a hull, so all three are offered.
+// A pop-over rather than a row that cycles: a hull has an arming choice and an AUTO setting and
+// something to be spawned right now, which is three things on one row and two of them invisible
+// until walked onto. In a panel each says what it is.
 export const DEV_SPAWN_MENU = [
   {
     rows: (g) =>
       Object.keys(g.spawnableTypes()).map((name) => ({
-        name: name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase(),
-        choices: (game) => ({
-          options: DEV_ARMS.map((arms) => arms.toUpperCase()),
-          at: game.devArmsFor(name),
-        }),
-        action: (game) => game.devSpawn(name),
-        adjust: (game, step) => game.stepDevArms(name, step),
+        name: hullLabel(name),
+        // What the row says without being opened: what turns up, and whether it has to be asked
+        // for each time. Two fields rather than one string, so the arming choice keeps its column
+        // down the page whether or not AUTO is on beside it.
+        value: (game) => DEV_ARMS[game.devArmsFor(name)].toUpperCase(),
+        flag: (game) => (game.devAutoFor(name) ? "AUTO" : ""),
+        flyout: () => [
+          {
+            name: "SPAWN ONE",
+            desc: `${SHIP_TYPES[name].desc} Put one in front of the ship.`,
+            closes: true,
+            action: (g) => g.devSpawn(name),
+          },
+          ...DEV_ARMS.map((arms, index) => ({
+            name: arms.toUpperCase(),
+            desc: DEV_ARMS_DESC[arms],
+            value: (g) => (g.devArmsFor(name) === index ? "ARMED" : ""),
+            current: (g) => g.devArmsFor(name) === index,
+            action: (g) => g.setDevArms(name, index),
+          })),
+          {
+            name: "AUTO",
+            desc: `One every ${DEV_AUTO.interval} seconds while fewer than ${DEV_AUTO.cap} are alive. Testing arena only.`,
+            value: (g) => (g.devAutoFor(name) ? "ON" : "OFF"),
+            action: (g) => g.setDevAuto(name, !g.devAutoFor(name)),
+          },
+        ],
       })),
   },
+  // One row for rock, since the kinds differ only in what they are carrying.
   {
-    rows: (g) =>
-      g.devRockKinds().map((kind) => ({
-        name: kind.name,
-        action: (game) => game.devSpawnRock(kind),
-      })),
+    rows: () => [
+      {
+        name: "ASTEROID",
+        value: () => "",
+        flyout: (g) =>
+          g.devRockKinds().map((kind) => ({
+            name: kind.name,
+            desc: kind.desc,
+            closes: true,
+            action: (game) => game.devSpawnRock(kind),
+          })),
+      },
+    ],
   },
   { name: "BACK", action: (g) => g.openPausePage("dev") },
 ]
@@ -2777,7 +3605,7 @@ export const DEV_SPAWN_MENU = [
 export const OVER_MENU = [
   {
     name: "CONTINUE",
-    value: (g) => (g.devMode ? "FREE" : `${g.continueCost()} ore`),
+    value: (g) => (g.devFreeBuys ? "FREE" : `${g.continueCost()} ore`),
     action: (g) => g.continueRun(),
   },
   { name: "NEW RUN", action: (g) => g.startNewGame() },
@@ -2785,11 +3613,11 @@ export const OVER_MENU = [
 
 export const PAUSE_MENU = [
   // First, because on a build that has it, it is what the menu is most often opened for.
-  // Only where the dev buttons show at all, so a published build has no way in.
+  // Only while the tools are switched on, which every build can do; see DEV MENU below.
   {
     name: "DEV TOOLS",
     value: () => ">",
-    available: () => DEV_VISIBLE,
+    available: (g) => g.settings.dev,
     action: (g) => g.openPausePage("dev"),
   },
   // Only offered while the sector is still being fought, and asked twice like the
@@ -2830,6 +3658,15 @@ export const PAUSE_MENU = [
     adjust: (g, step) => g.setHelp(step > 0),
   },
   { name: "CONTROLS", value: () => ">", action: (g) => g.openPausePage("controls") },
+  // In every build, because there is nothing here a player can do to their run by accident: the
+  // page it opens changes nothing until a row on it is turned on, and turning this back off puts
+  // back whatever was. What it defaults to is whether this looks like a build being worked on.
+  {
+    name: "DEV MENU",
+    value: (g) => (g.settings.dev ? "ON" : "OFF"),
+    action: (g) => g.setDevMenu(!g.settings.dev),
+    adjust: (g, step) => g.setDevMenu(step > 0),
+  },
   {
     name: "RESET PROGRESS",
     value: (g) => (g.savedRun ? `SECTOR ${g.resumeSector()}` : "-"),
@@ -2996,7 +3833,7 @@ export const SLOT_MENU = [
         : game.buyableSpecials().map((id) => ({
             name: SPECIAL_TYPES[id].label,
             desc: SPECIAL_TYPES[id].desc,
-            value: (g) => (g.devMode ? "FREE" : `${SPECIAL_TYPES[id].cost} ore`),
+            value: (g) => (g.devFreeBuys ? "FREE" : `${SPECIAL_TYPES[id].cost} ore`),
             action: (g, at) => g.buySpecial(at, id),
           })),
   },

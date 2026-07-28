@@ -645,6 +645,10 @@
       // module, so there is one field to set instead of two that can disagree with
       // each other. Two of the names are read by the game: `nose` is where a beam
       // draws its muzzle stub, and `aux` is the mount the shop fits a turret to.
+      // What each side's wreckage is made of, which is what colour it burns. Named here so the
+      // snippet writes the same material config.js would.
+      const PLATING_FOR = { alien: "ALIEN_PLATING", player: "GEOM_PLATING" }
+
       const ROLES = {
         nose: { module: "weapon", note: "the ship's own gun, and where a beam draws its muzzle" },
         gun: { module: "weapon", note: "a turret, aimed by its controller" },
@@ -778,8 +782,14 @@
 
       // What a hardpoint has fitted, one entry per kind so switching role keeps the
       // pick the previous one had. Which of these is read follows from the role.
+      // `filled` is whether anything is actually mounted here. A mount made by hand in the editor
+      // holds something by definition; one built from a design holds what that design put on it,
+      // and a hardpoint the design left empty stays empty. Without that, an unfilled mount was
+      // written out and weighed as whatever happened to be first in the registry - which is how a
+      // hull with an empty turret mount derived the acceleration of one carrying a blaster.
       function freshMount() {
         return {
+          filled: true,
           engine: Object.keys(ENGINE_TYPES)[0],
           weapon: Object.keys(WEAPON_TYPES)[0],
           controller: CONTROLLERS.includes("turret") ? "turret" : CONTROLLERS[0],
@@ -813,12 +823,16 @@
       // hardpoint each of its slots mounts on, and for the shield and the radar the
       // core slot as well. What is in one is the run's to choose, so the design does
       // not state it and the editor does not offer to.
+      // Whether the shop is what fills this mount on this hull, as a label to say so with. Only a
+      // note for the page: a design states what a fresh run is fitted with, and the shop replaces
+      // it slot for slot from there. Read off the role, which is how EQUIPMENT names its mounts.
       function shopFitting(state, index, slot = null) {
-        if (state.kind !== "player") {
+        if ((state.faction ?? (state.kind === "player" ? "player" : "rival")) !== "player") {
           return null
         }
+        const role = (state.hardpoints[index] || {}).role
         const spec = Object.values(EQUIPMENT || {}).find(
-          (entry) => entry.hp === index && (entry.slot ?? null) === slot,
+          (entry) => (entry.roles || []).includes(role) && (entry.slot ?? null) === slot,
         )
         return spec ? spec.label : null
       }
@@ -859,8 +873,8 @@
         const out = []
         state.hardpoints.forEach((hp, index) => {
           const mount = hp.mount
-          if (shopFitting(state, index)) {
-            return
+          if (!mount.filled) {
+            return // a mount the design left empty, which the shop may fill later
           }
           if (moduleOf(hp) === "weapon") {
             const entry = { hp: index, weapon: mount.weapon, controller: mount.controller }
@@ -875,7 +889,7 @@
             const fitted = {}
             for (const slot of coreSlots(hp)) {
               const inSlot = slotState(mount, slot)
-              if (inSlot.id === "none" || shopFitting(state, index, slot)) {
+              if (inSlot.id === "none") {
                 continue
               }
               if (inSlot.rolled) {
@@ -951,7 +965,7 @@
         ship.hardpoints = (type.hardpoints || []).map((hp) => ({
           local: hp.local.slice(),
           role: hp.role || "",
-          mount: freshMount(),
+          mount: { ...freshMount(), filled: false },
         }))
         const mountEntry = (entry, rollKey) => {
           const hp = ship.hardpoints[entry.hp]
@@ -961,6 +975,7 @@
           // An entry naming a core slot goes into the core on this hardpoint, not
           // onto the hardpoint itself.
           if (entry.slot) {
+            hp.mount.filled = true
             const state = slotState(hp.mount, entry.slot)
             state.id = entry[entry.slot] ?? state.id
             if (rollKey !== undefined) {
@@ -971,13 +986,16 @@
             return
           }
           if (entry.weapon) {
+            hp.mount.filled = true
             hp.mount.weapon = entry.weapon
             hp.mount.controller = entry.controller || hp.mount.controller
           }
           if (entry.engine) {
+            hp.mount.filled = true
             hp.mount.engine = entry.engine
           }
           if (entry.core) {
+            hp.mount.filled = true
             hp.mount.core = entry.core
             for (const [slot, id] of Object.entries(entry.fitted || {})) {
               slotState(hp.mount, slot).id = id
@@ -3069,7 +3087,7 @@
             push(`hunts: true,`)
           }
           // wreckage burns in its faction's colour, so an alien hull is plated with theirs
-          push(`debrisMaterial: ${ship.faction === "alien" ? "ALIEN_PLATING" : "SHIP_PLATING"},`)
+          push(`debrisMaterial: ${PLATING_FOR[ship.faction] || "SHIP_PLATING"},`)
           const debris = [
             `particles: ${round(ship.debris.particles)}`,
             `speed: ${round(ship.debris.speed)}`,
@@ -3117,6 +3135,7 @@
             "PALETTE",
             "SHIP_PLATING",
             "ALIEN_PLATING",
+            "GEOM_PLATING",
             "CONFIG",
             ...shapeNames,
             `return (${source})`,
@@ -3337,8 +3356,10 @@
       buildGrid()
       bindOptions()
       buildTools()
-      if (!restored && SHIP_TYPES.scout) {
-        ship = fromType(SHIP_TYPES.scout, "rival", "scout")
+      // Nothing saved, so it opens on a hull rather than on an empty grid. Named rather than picked
+      // off the front of the table, so which one it is does not move when the table is reordered.
+      if (!restored && SHIP_TYPES.rivalScout) {
+        ship = fromType(SHIP_TYPES.rivalScout, "rival", "rivalScout")
       }
       rebuild()
       resize()

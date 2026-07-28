@@ -28,17 +28,26 @@ import {
   resolveHullRockContact,
   rockMass,
   Singularity,
+  RailSlug,
+  WEAPON_AIMERS,
+  interceptBearing,
+  mountAim,
 } from "../src/entities.js"
 import {
   ARENA,
   BINDABLE_CONTROLS,
   BINDING_DEVICES,
   CONFIG,
+  DEV_ARMS,
+  DEV_AUTO,
+  DEV_ROLL_SECTOR,
+  DOGFIGHT_HULLS,
   ENGINE_TYPES,
   HAZARD_TRAITS,
   weightAt,
   MAX_SLOTS,
   PLAYER_TYPE,
+  freshEquipment,
   SPECIAL_IDS,
   yardOptions,
   SPECIAL_TYPES,
@@ -71,11 +80,59 @@ import {
   polygonArea,
   shortestTurn,
   bearingTo,
+  sliceOutSlab,
+  polygonCentroid,
 } from "../src/math.js"
+import { Sound } from "../src/audio.js"
 
 // A rival as the spawner would bring it in, carrying its design's own loadout and
 // none of the arms it might have rolled. Passing an empty loadout instead would be a
 // hull with no engine, no core and no thrusters, which cannot fly at all.
+// Fly a hull the way the dev menu does it: onto the SHIP row, open its pop-over, pick the hull.
+// Through the menu rather than straight into `devFlyShip`, so what the page offers is exercised
+// along with what the hull does.
+function flyHull(game, label) {
+  game.openDevMenu()
+  const rows = game.pauseMenu()
+  const at = rows.findIndex((row) => row.name === "SHIP")
+  assert.ok(at >= 0, "the dev page offers a ship row")
+  game.pauseSelection = at
+  game.menuConfirm()
+  assert.ok(game.slotMenu, "which opens a pop-over rather than a page")
+  const options = game.slotMenuRows(0)
+  const pick = options.findIndex((row) => row.name === label)
+  assert.ok(pick >= 0, `${label} is among them: ${options.map((row) => row.name).join(", ")}`)
+  game.slotMenu.selection = pick
+  game.menuConfirm()
+  assert.equal(game.slotMenu, null, "and picking one closes it")
+  game.paused = false
+  return game.player
+}
+
+// Open a pause row's pop-over and read what it offers, without acting on any of it. Any panel
+// already up is closed first: confirm works the open panel, so pressing it to open another would
+// act on whatever the open one had selected.
+function flyoutRows(game, rowName) {
+  game.closeSlotMenu()
+  const rows = game.pauseMenu()
+  const at = rows.findIndex((row) => row.name === rowName)
+  assert.ok(at >= 0, `the page should offer ${rowName}`)
+  game.pauseSelection = at
+  game.menuConfirm()
+  assert.ok(game.slotMenu, `${rowName} should open a pop-over`)
+  return game.slotMenuRows(0)
+}
+
+// And pick one of them by name, the way the cursor and the confirm key would.
+function pickInFlyout(game, rowName, optionName) {
+  const options = flyoutRows(game, rowName)
+  const pick = options.findIndex((row) => row.name === optionName)
+  assert.ok(pick >= 0, `${optionName} among ${options.map((row) => row.name).join(", ")}`)
+  game.slotMenu.selection = pick
+  game.menuConfirm()
+  return options[pick]
+}
+
 function plainRival(x, y, typeName, loadout = SHIP_TYPES[typeName].loadout) {
   return new RivalShip(x, y, typeName, loadout)
 }
@@ -514,7 +571,7 @@ const centroidOf = (vertices) => ({
 // Momentum is conserved either way, because the impulse is applied symmetrically,
 // so conservation cannot detect this. The magnitude is what has to be checked.
 test("every hull takes the impulse its mass implies when it hits a rock", () => {
-  for (const typeName of ["player", "scout", "frigate"]) {
+  for (const typeName of ["player", "rivalScout", "rivalFrigate"]) {
     const game = liveGame()
     const ship = typeName === "player" ? game.player : plainRival(0, 0, typeName)
     ship.x = 400
@@ -581,13 +638,13 @@ test("a rival killed this frame takes no further turn", () => {
   player.angle = 0
   // a rock parked far away, so the sector does not count as cleared
   game.asteroids = [new Asteroid({ vertices: square(900, 900, 40) })]
-  const scout = plainRival(500, 320, "scout")
+  const scout = plainRival(500, 320, "rivalScout")
   game.rivals = [scout]
   const beam = { a: { x: 200, y: 320 }, dir: { x: 1, y: 0 }, b: { x: 1100, y: 320 } }
   game.applyBeam(beam, player, playerWeapon, 300)
   assert.equal(scout.dead, true, "the beam must kill it")
   const dropped = game.oreChunks.length
-  assert.equal(dropped, SHIP_TYPES.scout.oreDrop, "and it must drop its ore")
+  assert.equal(dropped, SHIP_TYPES.rivalScout.oreDrop, "and it must drop its ore")
 
   const rivalScore = game.rivalScore
   game.advance(1 / 60)
@@ -600,7 +657,7 @@ test("a dead rival's turret does not fire a parting shot", () => {
   game.player.x = 560
   game.player.y = 320
   game.asteroids = [new Asteroid({ vertices: square(900, 900, 40) })]
-  const gunner = new RivalShip(500, 320, "scout", [
+  const gunner = new RivalShip(500, 320, "rivalScout", [
     { hp: 1, weapon: "autocannon", controller: "turret" },
   ])
   gunner.hardpoints[1].module.cooldown = 0
@@ -614,7 +671,7 @@ test("a rival with no player to hunt still steers somewhere", () => {
   // Nothing in a sector runs without a player, but the hunter controller guards
   // for one and this did not, so the two disagreed about whether it can happen.
   const game = liveGame()
-  const frigate = plainRival(400, 320, "frigate")
+  const frigate = plainRival(400, 320, "rivalFrigate")
   game.rivals = [frigate]
   game.player = null
   assert.doesNotThrow(() => frigate.update(1 / 60, game))
@@ -643,7 +700,7 @@ function rivalBeyondTheRing(typeName, beyond) {
 }
 
 test("a rival beyond the arena cannot be harmed, whatever reaches it", () => {
-  for (const typeName of ["scout", "frigate"]) {
+  for (const typeName of ["rivalScout", "rivalFrigate"]) {
     const { game, rival, player } = rivalBeyondTheRing(typeName, 140)
     assert.equal(rival.insideArena(), false, `${typeName} must be fully outside the ring`)
 
@@ -665,8 +722,8 @@ test("a rival beyond the arena cannot be harmed, whatever reaches it", () => {
 })
 
 test("a rival beyond the arena holds its fire", () => {
-  const { game, rival } = rivalBeyondTheRing("scout", 200)
-  rival.hardpoints[1].module = new RivalShip(0, 0, "scout", [
+  const { game, rival } = rivalBeyondTheRing("rivalScout", 200)
+  rival.hardpoints[1].module = new RivalShip(0, 0, "rivalScout", [
     { hp: 1, weapon: "autocannon", controller: "turret" },
   ]).hardpoints[1].module
   rival.hardpoints[1].module.cooldown = 0
@@ -688,12 +745,17 @@ test("a rival beyond the arena holds its fire", () => {
   game.viewCenter.y = ARENA.cy
   assert.equal(rival.insideArena(), true)
   rival.hardpoints[1].module.cooldown = 0
-  game.advance(1 / 60)
+  // Long enough for the mount to come round onto the player, since a turret holds its shot
+  // while it is still traversing. This half is about the boundary gate, not the traverse.
+  for (let i = 0; i < 60 && game.projectiles.length === 0; i++) {
+    rival.hardpoints[1].module.cooldown = 0
+    game.advance(1 / 60)
+  }
   assert.ok(game.projectiles.length > 0, "a rival in the field fires as before")
 })
 
 test("a departing rival is not dropped while it can still be seen", () => {
-  const { game, rival } = rivalBeyondTheRing("frigate", 300)
+  const { game, rival } = rivalBeyondTheRing("rivalFrigate", 300)
   rival.leaving = true
   rival.lifeTimer = -1
   assert.equal(rival.insideArena(), false, "it must be clear of the ring")
@@ -720,7 +782,7 @@ test("a departing rival still inside the arena is kept, however far off screen",
   const game = liveGame()
   game.asteroids = [new Asteroid({ vertices: square(ARENA.cx + 3000, ARENA.cy + 3000, 40) })]
   // deep in the field but on the far side of the arena from the camera
-  const rival = plainRival(ARENA.cx - 700, ARENA.cy, "scout")
+  const rival = plainRival(ARENA.cx - 700, ARENA.cy, "rivalScout")
   rival.leaving = true
   rival.lifeTimer = -1
   game.rivals = [rival]
@@ -735,17 +797,17 @@ test("a departing rival still inside the arena is kept, however far off screen",
 test("whether a rival hunts is declared on its type", () => {
   // It used to be inferred from a loadout entry naming the "hunter" controller,
   // so a new aggressive controller would silently not chase.
-  assert.equal(plainRival(0, 0, "frigate").hunts, true, "with no loadout at all")
-  assert.equal(new RivalShip(0, 0, "frigate", SHIP_TYPES.frigate.loadout).hunts, true)
-  assert.equal(new RivalShip(0, 0, "scout", SHIP_TYPES.scout.loadout).hunts, false)
-  assert.equal(!!SHIP_TYPES.frigate.hunts, true, "and it is the type that says so")
+  assert.equal(plainRival(0, 0, "rivalFrigate").hunts, true, "with no loadout at all")
+  assert.equal(new RivalShip(0, 0, "rivalFrigate", SHIP_TYPES.rivalFrigate.loadout).hunts, true)
+  assert.equal(new RivalShip(0, 0, "rivalScout", SHIP_TYPES.rivalScout.loadout).hunts, false)
+  assert.equal(!!SHIP_TYPES.rivalFrigate.hunts, true, "and it is the type that says so")
 })
 
 test("two rivals cannot occupy the same space", () => {
   const game = liveGame()
   game.player.x = -5000 // keep the player out of it
-  const a = plainRival(600, 320, "frigate")
-  const b = plainRival(611, 325, "frigate")
+  const a = plainRival(600, 320, "rivalFrigate")
+  const b = plainRival(611, 325, "rivalFrigate")
   a.angle = 0
   b.angle = 0
   game.rivals = [a, b]
@@ -764,7 +826,7 @@ test("two rivals cannot occupy the same space", () => {
 
 test("the player cannot be flown through a frigate", () => {
   const game = liveGame()
-  const frigate = plainRival(600, 320, "frigate")
+  const frigate = plainRival(600, 320, "rivalFrigate")
   frigate.angle = 0
   frigate.lifeTimer = 1e9
   game.rivals = [frigate]
@@ -783,12 +845,12 @@ test("the player cannot be flown through a frigate", () => {
 test("a light ship bounces off a heavy one without shifting it much", () => {
   const game = liveGame()
   game.player.x = -5000
-  const frigate = plainRival(600, 320, "frigate")
+  const frigate = plainRival(600, 320, "rivalFrigate")
   frigate.angle = 0
   // nose just inside the frigate's tail face, closing along +x: a shallow
   // contact, as one caught on the frame it forms would be
   const tailX = Math.min(...frigate.worldOutline().map((p) => p.x))
-  const scout = plainRival(tailX - 12, 320, "scout")
+  const scout = plainRival(tailX - 12, 320, "rivalScout")
   scout.angle = 0
   scout.vx = 200
   frigate.vx = 0
@@ -806,7 +868,12 @@ test("a light ship bounces off a heavy one without shifting it much", () => {
 function frigateOnAxis(game) {
   // Unshielded, because a raised bubble is what stops a beam: a hull is only ever cut
   // when there is none, and cutting is what these tests are about.
-  const frigate = plainRival(600, 320, "frigate", withoutShield(SHIP_TYPES.frigate.loadout))
+  const frigate = plainRival(
+    600,
+    320,
+    "rivalFrigate",
+    withoutShield(SHIP_TYPES.rivalFrigate.loadout),
+  )
   frigate.angle = 0
   game.rivals = [frigate]
   const xs = frigate.worldOutline().map((p) => p.x)
@@ -822,7 +889,7 @@ test("a beam that only grazes a hull scorches it instead of severing it", () => 
   game.applyBeam(beam, game.player, playerWeapon)
   assert.equal(frigate.dead, false, "a 5-unit graze must not cut a 136-unit hull in two")
   assert.equal(game.asteroids.length, 0, "and must leave no debris")
-  assert.ok(frigate.hull < SHIP_TYPES.frigate.hull, "but it does take damage")
+  assert.ok(frigate.hull < SHIP_TYPES.rivalFrigate.hull, "but it does take damage")
 })
 
 test("a beam driven through a hull severs it", () => {
@@ -898,7 +965,7 @@ function beamPastPlayer(offset, weaponType, { shielded }) {
   if (shielded) {
     withShield(game)
   }
-  const shooter = plainRival(400 + offset, 320 - 300, "scout")
+  const shooter = plainRival(400 + offset, 320 - 300, "rivalScout")
   game.rivals = [shooter]
   const beam = {
     a: { x: 400 + offset, y: 320 - 300 },
@@ -941,7 +1008,7 @@ test("a beam laid over a hull registers, rather than needing its centreline on i
   // but not under its centreline.
   const laser = WEAPON_TYPES.playerLaserMk1
   const game = liveGame()
-  const scout = plainRival(500, 320, "scout") // unarmed, unshielded
+  const scout = plainRival(500, 320, "rivalScout") // unarmed, unshielded
   scout.angle = 0
   game.rivals = [scout]
   const nose = Math.max(...scout.worldOutline().map((p) => p.y))
@@ -993,7 +1060,7 @@ function targetWithRockBehind(game, typeName, loadout) {
 }
 
 test("an unshielded hull does not stop a beam reaching the rocks behind it", () => {
-  for (const typeName of ["scout", "frigate"]) {
+  for (const typeName of ["rivalScout", "rivalFrigate"]) {
     const game = liveGame()
     const { rival, beam } = targetWithRockBehind(game, typeName, [])
     game.applyBeam(beam, game.player, playerWeapon)
@@ -1012,7 +1079,7 @@ test("a sliver cut off a hull is worth what a rock fragment its size is worth", 
     const game = liveGame()
     game.player.x = -9000
     game.player.y = -9000
-    const scout = plainRival(500, 320, "scout")
+    const scout = plainRival(500, 320, "rivalScout")
     scout.angle = 0
     game.rivals = [scout]
     // shave a strip off one side: too small to survive, and carrying no turret
@@ -1067,7 +1134,7 @@ function sectorWithARock() {
 
 test("a hull cannot be flown inside a shield bubble it can see", () => {
   const game = sectorWithARock()
-  const frigate = new RivalShip(600, 320, "frigate", SHIP_TYPES.frigate.loadout)
+  const frigate = new RivalShip(600, 320, "rivalFrigate", SHIP_TYPES.rivalFrigate.loadout)
   frigate.angle = 0
   game.rivals = [frigate]
   assert.ok(frigate.shieldUp(), "the frigate must actually have its shield up")
@@ -1100,8 +1167,8 @@ test("a hull cannot be flown inside a shield bubble it can see", () => {
 
 test("an unshielded hull is still touched on its outline", () => {
   const game = sectorWithARock()
-  const bare = withoutShield(SHIP_TYPES.frigate.loadout)
-  const frigate = new RivalShip(600, 320, "frigate", bare)
+  const bare = withoutShield(SHIP_TYPES.rivalFrigate.loadout)
+  const frigate = new RivalShip(600, 320, "rivalFrigate", bare)
   frigate.angle = 0
   game.rivals = [frigate]
   assert.equal(frigate.shieldUp(), false)
@@ -1201,7 +1268,7 @@ test("a beam cuts every hull it passes through, as it cuts every rock", () => {
   game.player.y = -9000
   const line = []
   for (let i = 0; i < 4; i++) {
-    const scout = plainRival(400 + i * 90, 320, "scout") // unarmed, unshielded
+    const scout = plainRival(400 + i * 90, 320, "rivalScout") // unarmed, unshielded
     scout.angle = 0
     line.push(scout)
   }
@@ -1219,28 +1286,27 @@ test("a beam cuts every hull it passes through, as it cuts every rock", () => {
   )
 })
 
-// A shield that covers one channel instead of two is meant to be better at it,
-// and to leave its host wide open on the other. Both halves matter, so both are
-// pinned here against whichever shields the registry actually declares.
-test("a single-channel shield outperforms a general one on the channel it covers", () => {
-  // A shield pricing its channels separately is braced against one of them, so it is
-  // not the plain general-purpose bubble this is about; see below for its own trade.
-  const names = Object.keys(SHIELD_TYPES)
-  const general =
-    SHIELD_TYPES[
-      names.find(
-        (k) => SHIELD_TYPES[k].blocks.length > 1 && typeof SHIELD_TYPES[k].efficiency === "number",
+// The reported bug: a rival dart carrying a visible bubble was cut in half by one laser shot,
+// because its shield left the laser channel out of `blocks` and out of `absorbs` too. A channel a
+// bubble does not block is a channel it does not exist on, so the beam went past the bubble and
+// through the hull, and the drawn shield did nothing at all.
+//
+// The rule that catches it: every bubble has to put something in the way of every channel that
+// can be fired at it. Blocking it at the bubble, taking it onto the cell, or bending it aside all
+// count; being silent about it does not. A bubble poor against a channel says so with a high
+// `efficiency`, which is the trade the test below this one pins.
+test("every shield puts something in the way of every channel", () => {
+  const channels = ["laser", "projectile"]
+  for (const [name, type] of Object.entries(SHIELD_TYPES)) {
+    const shield = new Shield(name)
+    for (const channel of channels) {
+      const steers = !!(type.repel && type.repel[`${channel}s`])
+      assert.ok(
+        shield.absorbs(channel) || steers,
+        `${name} does nothing about ${channel}: it neither blocks it, absorbs it, nor steers it`,
       )
-    ]
-  const specialist = SHIELD_TYPES[names.find((k) => SHIELD_TYPES[k].blocks.length === 1)]
-  assert.ok(specialist, "some shield should cover one channel only")
-  assert.ok(
-    specialist.efficiency < general.efficiency,
-    `it should drain less per point (${specialist.efficiency} vs ${general.efficiency})`,
-  )
-  assert.ok(specialist.dropAt < general.dropAt, "and hold on further down the cell")
-  assert.ok(specialist.recoverAt <= general.recoverAt, "and come back sooner")
-  assert.ok(specialist.recoverDelay <= general.recoverDelay, "after a shorter wait")
+    }
+  }
 })
 
 test("a shield braced against one channel pays for it on another", () => {
@@ -1262,10 +1328,15 @@ test("a shield braced against one channel pays for it on another", () => {
       channels.some((channel) => drain(type, channel) < drain(plain, channel)),
       `${name} should beat the plain bubble somewhere`,
     )
-    assert.ok(
-      channels.some((channel) => drain(type, channel) > drain(plain, channel)),
-      `${name} should be worse than it somewhere too`,
-    )
+    // The trade can be paid on a channel or on the other face, for a bubble that has two: a
+    // channel it does not block back there at all is the steepest price of the lot. What is not
+    // allowed is being better everywhere on every side, which is a straight upgrade in a table.
+    const rear = type.rear ? { ...type, ...type.rear } : type
+    const worseSomewhere =
+      channels.some((channel) => drain(type, channel) > drain(plain, channel)) ||
+      channels.some((channel) => !rear.blocks.includes(channel)) ||
+      rear.blocks.some((channel) => drain(rear, channel) > drain(plain, channel))
+    assert.ok(worseSomewhere, `${name} should be worse than it somewhere too`)
   }
 
   // And the drain a host actually pays is the one for the channel that hit it.
@@ -1375,7 +1446,7 @@ test("the alien field is not a wall: it is passed through by what pushes hard en
   assert.equal(alien.contactReach(), alien.boundRadius, "and its reach is the hull's")
 
   // A bubble still is one.
-  const frigate = plainRival(500, 320, "frigate")
+  const frigate = plainRival(500, 320, "rivalFrigate")
   assert.ok(frigate.barrierUp(), "a bulwark is a wall")
   assert.equal(frigate.contactShape().radius, frigate.shieldRadius())
 
@@ -1469,6 +1540,15 @@ test("a pincer winds up at anything in front of it, and not behind", () => {
   const windsUp = (degrees) => {
     gun.charging = 0
     gun.cooldown = 0
+    // And not part way through a burst, since the rest of one goes out on its own account
+    // without looking at the target again. What is being asked here is what it starts, on a cell
+    // that can afford to start it: a burst is paid for whole when it is committed to, so the case
+    // before this one left the cell empty.
+    gun.abandonBurst()
+    // Nor waiting out its beat. A gun that paces itself waits one before its first shot as well as
+    // between them, and what is being asked here is which way it will wind up rather than when.
+    gun.resting = 0
+    alien.energy = alien.energyMax
     const bearing = (degrees * Math.PI) / 180
     game.player.x = 500 + Math.cos(bearing) * 400
     game.player.y = 320 + Math.sin(bearing) * 400
@@ -1560,8 +1640,8 @@ test("a singularity pulls, bites through a shield, and spares whoever fired it",
   const caught = plainRival(
     well.x + 40,
     well.y,
-    "frigate",
-    SHIP_TYPES.frigate.loadout.filter((entry) => entry.core),
+    "rivalFrigate",
+    SHIP_TYPES.rivalFrigate.loadout.filter((entry) => entry.core),
   )
   game.rivals = [alien, caught]
   assert.ok(caught.shieldUp(), "it has a bubble up")
@@ -1698,6 +1778,135 @@ test("the dev page reaches every part of the game without playing up to it", () 
   assert.equal(game.pausePage, "dev", "and it leads back to where it was opened from")
 })
 
+// The dev tools are a setting like any other, offered in every build, and opening the page does
+// nothing to the run on its own: what it can do has to be turned on a row at a time.
+test("the dev tools are switched on from the options, and change nothing until asked", () => {
+  const game = liveGame()
+  const named = () => game.pauseMenu().map((row) => row.name)
+  const row = (name) => {
+    const found = game.pauseMenu().find((entry) => entry.name === name)
+    assert.ok(found, `the page should offer ${name}`)
+    return found
+  }
+
+  game.openPausePage("root")
+  assert.ok(named().includes("DEV MENU"), "the options offer it whatever build this is")
+
+  game.setDevMenu(false)
+  assert.ok(!named().includes("DEV TOOLS"), "switched off, there is no way in")
+  row("DEV MENU").action(game)
+  assert.equal(game.settings.dev, true)
+  assert.ok(named().includes("DEV TOOLS"), "switched on, there is")
+
+  // Opening the page is not asking for anything the page offers.
+  row("DEV TOOLS").action(game)
+  assert.equal(game.pausePage, "dev")
+  assert.equal(game.devFreeBuys, false, "purchases are not free for having looked")
+  assert.equal(game.devAnySector, false, "nor is every sector open")
+  assert.equal(game.devSectorStep(1), false, "so the launch line will not step")
+
+  // Each is its own row, and each does one thing.
+  row("FREE PURCHASES").action(game)
+  assert.equal(game.devFreeBuys, true)
+  assert.equal(game.devAnySector, false, "one does not imply the other")
+  row("ANY SECTOR").action(game)
+  assert.equal(game.devAnySector, true)
+
+  // And turning the tools off puts back what they were doing, rather than leaving a run quietly
+  // changed behind a page that is no longer reachable.
+  game.openPausePage("root")
+  row("DEV MENU").action(game)
+  assert.equal(game.settings.dev, false)
+  assert.equal(game.devFreeBuys, false)
+  assert.equal(game.devAnySector, false)
+})
+
+// The one arena arrangement worth a row of its own: the four hulls that come looking for a
+// fight, armed the way the sector would arm them, all set to keep arriving.
+test("the dogfight row sets up a fight and drops into it", () => {
+  const game = liveGame()
+  beSolid(game.player)
+  game.openDevMenu()
+  const rows = game.pauseMenu()
+  const at = rows.findIndex((entry) => entry.name === "DOGFIGHT")
+  assert.ok(at > 0, "the dev page offers it")
+  assert.equal(rows[at - 1].name, "TESTING ARENA", "under the arena it drops into")
+  assert.equal(rows[at].value(game), "", "and says nothing until it has been used")
+
+  rows[at].action(game)
+  assert.equal(game.sandbox, true, "it is an arena")
+  assert.equal(game.rivals.length, 0, "which starts empty and fills itself")
+  for (const name of DOGFIGHT_HULLS) {
+    assert.equal(game.devAutoFor(name), true, `${name} should keep arriving`)
+    assert.equal(DEV_ARMS[game.devArmsFor(name)], "rolled", `${name} should be armed as rolled`)
+  }
+  // The frigates are a siege rather than a fight, so they are not in it.
+  for (const name of Object.keys(SHIP_TYPES).filter((n) => !DOGFIGHT_HULLS.includes(n))) {
+    assert.equal(game.devAutoFor(name), false, `${name} should be left out of it`)
+  }
+  game.openDevMenu()
+  assert.equal(
+    game
+      .pauseMenu()
+      .find((entry) => entry.name === "DOGFIGHT")
+      .value(game),
+    "ON",
+    "and it says so once it is set up",
+  )
+
+  // Left running, the arena brings them in.
+  game.paused = false
+  for (let i = 0; i < 60 * (DEV_AUTO.interval + 1); i++) {
+    game.advance(1 / 60)
+  }
+  assert.ok(game.rivals.length > 0, "and they turn up on their own")
+  assert.ok(
+    game.rivals.every((rival) => DOGFIGHT_HULLS.includes(rival.typeName)),
+    "and only the ones asked for",
+  )
+})
+
+// The reported bug: a dogfight opened from an early sector filled with hulls carrying nothing. A
+// hull's arms ramp up over the sectors past the one it first turns up in, so rolling at sector 1
+// rolls a zero chance for every arm in the game, and the row said ROLLED while nothing rolled.
+test("a dev spawn rolled at a shallow sector still turns up armed", () => {
+  // The registry has to hand a sector at which rolling means something, whatever is added to it.
+  for (const [name, type] of Object.entries(SHIP_TYPES)) {
+    for (const [slot, arm] of Object.entries(type.arms || {})) {
+      const ramp = DEV_ROLL_SECTOR - type.spawn.fromSector
+      assert.ok(
+        ramp * arm.chancePerSector >= (arm.chanceCap ?? 1),
+        `${name}'s ${slot} is not at its cap by sector ${DEV_ROLL_SECTOR}`,
+      )
+    }
+  }
+
+  const game = liveGame()
+  game.level = 1 // where a run opening a dev arena actually is
+  const armed = (name) => {
+    const at = DEV_ARMS.indexOf("rolled")
+    game.setDevArms(name, at)
+    let carried = 0
+    const rolls = 120
+    for (let i = 0; i < rolls; i++) {
+      if (game.devLoadout(name, SHIP_TYPES[name]).length > SHIP_TYPES[name].loadout.length) {
+        carried++
+      }
+    }
+    return carried / rolls
+  }
+  for (const name of Object.keys(SHIP_TYPES).filter(
+    (n) => Object.keys(SHIP_TYPES[n].arms || {}).length,
+  )) {
+    assert.ok(armed(name) > 0.5, `most rolled ${name}s should turn up carrying something`)
+  }
+
+  // NORMAL still means the design alone, so the choice between the three is still a choice.
+  const plain = Object.keys(SHIP_TYPES).find((n) => Object.keys(SHIP_TYPES[n].arms || {}).length)
+  game.setDevArms(plain, DEV_ARMS.indexOf("normal"))
+  assert.deepEqual(game.devLoadout(plain, SHIP_TYPES[plain]), SHIP_TYPES[plain].loadout)
+})
+
 test("a menu row showing an arrow is one that opens a page", () => {
   // The arrow is what says "there is more behind this". A row that simply does something
   // when it is pressed must not show one, or it reads as a page that never arrives.
@@ -1729,88 +1938,99 @@ test("the spawn page offers every hull and every kind of rock", () => {
   beSolid(game.player)
   game.openDevMenu()
   game.openPausePage("devSpawn")
-  const row = (name) => {
-    const found = game.pauseMenu().find((entry) => entry.name === name)
-    assert.ok(found, `the spawn page should offer ${name}`)
-    return found
-  }
+  const names = () => game.pauseMenu().map((entry) => entry.name)
 
-  // A row per hull the spawner could send and one per kind of rock it could put in a
-  // sector, both generated from their registries so the page grows with the game.
+  // A row per hull the spawner could send, generated from the registry so the page grows with
+  // the game, and one row for rock: the kinds differ only in what they carry, so they are
+  // options inside it rather than five rows of their own.
   for (const name of Object.keys(SHIP_TYPES)) {
-    row(name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase())
+    const label = name.replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase()
+    assert.ok(names().includes(label), `the spawn page should offer ${label}`)
   }
-  row("ASTEROID")
-  row("ASTEROID, EXPLOSIVE")
-  row("ASTEROID, ARMED")
+  assert.ok(names().includes("ASTEROID"), "and one row for rock")
+  assert.equal(
+    names().filter((name) => name.startsWith("ASTEROID")).length,
+    1,
+    `rock is one row, not one per kind: ${names().join(", ")}`,
+  )
+
+  // Every option in a pop-over says what it does, since saying so is the reason it is a panel
+  // rather than a row that cycles.
+  for (const option of flyoutRows(game, "ALIEN FRIGATE")) {
+    assert.ok(option.desc, `${option.name} should say what it does`)
+  }
+  game.closeSlotMenu()
 
   game.rivals = []
-  row("ALIEN FRIGATE").action(game)
+  pickInFlyout(game, "ALIEN FRIGATE", "SPAWN ONE")
   assert.equal(game.rivals.length, 1, "spawning puts one in the sector")
   assert.equal(game.rivals[0].typeName, "alienFrigate")
   assert.ok(game.rivals[0].arrived, "already here, rather than flying in from beyond the ring")
+  assert.equal(game.slotMenu, null, "and spawning one closes the panel behind it")
 
-  // What a hull carries is each row's own choice, so one can be spawned rolled against
-  // another spawned plain. Rolling at the sector the run is in gives almost nothing early
-  // on, which is the least useful of the three, so all three are offered.
-  const spawned = (name) => {
+  // What a hull carries is each hull's own choice, so one can be spawned rolled against another
+  // spawned plain.
+  const armed = () => DEV_ARMS[game.devArmsFor("rivalScout")].toUpperCase()
+  const spawned = () => {
     game.rivals = []
-    row(name).action(game)
+    pickInFlyout(game, "RIVAL SCOUT", "SPAWN ONE")
     return [...game.rivals[0].modules()].map((m) => m.typeName)
   }
-  const scout = () => row("SCOUT")
-  const shown = () => {
-    const choice = scout().choices(game)
-    return choice.options[choice.at]
-  }
-  assert.equal(shown(), "NORMAL", "it starts on the design alone")
-  const bare = spawned("SCOUT")
-  const design = SHIP_TYPES.scout.loadout.map((entry) => entry.weapon).filter(Boolean)
+  assert.equal(armed(), "NORMAL", "it starts on the design alone")
+  const bare = spawned()
+  const design = SHIP_TYPES.rivalScout.loadout.map((entry) => entry.weapon).filter(Boolean)
   assert.ok(
     design.every((gun) => bare.includes(gun)),
     "which is everything the design states",
   )
   assert.ok(
-    !bare.includes(SHIP_TYPES.scout.arms.gun.weapon),
+    !bare.includes(SHIP_TYPES.rivalScout.arms.gun.weapon),
     "and nothing it only sometimes turns up with",
   )
-  scout().adjust(game, 1)
-  assert.equal(shown(), "ROLLED")
-  scout().adjust(game, 1)
-  assert.equal(shown(), "ALL")
-  const loaded = spawned("SCOUT")
-  for (const arm of Object.values(SHIP_TYPES.scout.arms)) {
+
+  // Picking an arming choice sets it and leaves the panel up, so what it now is can be seen.
+  const picked = pickInFlyout(game, "RIVAL SCOUT", "ALL")
+  assert.equal(armed(), "ALL")
+  assert.ok(game.slotMenu, "a setting leaves the panel open")
+  assert.equal(picked.value(game), "ARMED", "and marks itself as the one in force")
+  game.closeSlotMenu()
+  const loaded = spawned()
+  for (const arm of Object.values(SHIP_TYPES.rivalScout.arms)) {
     const carried = arm.weapon || arm.shield
     assert.ok(loaded.includes(carried), `every arm should be aboard, missing ${carried}`)
   }
-  scout().adjust(game, 1)
-  assert.equal(shown(), "NORMAL", "and the choice wraps")
 
-  // Which is each row's own: setting one leaves the others where they were.
-  scout().adjust(game, 1)
-  const seeker = game
-    .pauseMenu()
-    .find((entry) => entry.name === "SEEKER")
-    .choices(game)
-  assert.equal(seeker.options[seeker.at], "NORMAL", "a hull nobody has set is still plain")
+  // AUTO is the other half of the hull's setting, and picking one must not disturb the other.
+  const auto = pickInFlyout(game, "RIVAL SCOUT", "AUTO")
+  assert.equal(game.devAutoFor("rivalScout"), true)
+  assert.equal(auto.value(game), "ON")
+  assert.equal(armed(), "ALL", "which leaves the arming choice where it was")
+  pickInFlyout(game, "RIVAL SCOUT", "NORMAL")
+  assert.equal(game.devAutoFor("rivalScout"), true, "and setting the arms leaves AUTO where it was")
+  assert.equal(armed(), "NORMAL")
+  game.closeSlotMenu()
+
+  // Each hull holds its own: one set leaves the others alone.
+  assert.equal(DEV_ARMS[game.devArmsFor("rivalSeeker")], "normal", "a hull nobody has set is plain")
+  assert.equal(game.devAutoFor("rivalSeeker"), false)
 
   // A rock of each kind, carrying what the kind is named for. The gun pool is cut to the
   // sector, so an armed rock asked for in sector one must still turn up armed.
   const rock = (name) => {
     game.asteroids = []
-    row(name).action(game)
+    pickInFlyout(game, "ASTEROID", name)
     assert.equal(game.asteroids.length, 1, `${name} should put one rock in the sector`)
     return game.asteroids[0]
   }
   assert.equal(game.level, 1, "and this is sector one, where a rock is normally bare")
-  const plain = rock("ASTEROID")
+  const plain = rock("PLAIN")
   assert.equal(plain.explosive, false)
   assert.equal(plain.hardpoints.length, 0, "a plain rock carries nothing")
-  assert.equal(rock("ASTEROID, EXPLOSIVE").explosive, true)
-  const armed = rock("ASTEROID, ARMED")
-  const guns = armed.hardpoints.filter((hp) => hp.module && hp.module.kind === "weapon")
+  assert.equal(rock("EXPLOSIVE").explosive, true)
+  const gunned = rock("ARMED")
+  const guns = gunned.hardpoints.filter((hp) => hp.module && hp.module.kind === "weapon")
   assert.ok(guns.length > 0, "an armed rock turns up with guns on it")
-  const both = rock("ASTEROID, ARMED + SHIELDED")
+  const both = rock("ARMED + SHIELDED")
   assert.ok(
     both.hardpoints.some((hp) => hp.module && hp.module.kind === "shield"),
     "and a shielded one with a bubble",
@@ -1828,10 +2048,10 @@ test("dev spawns are set down clear of each other", () => {
   game.openDevMenu()
   game.openPausePage("devSpawn")
   for (let i = 0; i < 6; i++) {
-    row("ALIEN FRIGATE").action(game)
+    pickInFlyout(game, "ALIEN FRIGATE", "SPAWN ONE")
   }
   for (let i = 0; i < 4; i++) {
-    row("SEEKER").action(game)
+    pickInFlyout(game, "RIVAL SEEKER", "SPAWN ONE")
   }
   assert.equal(game.rivals.length, 10, "all ten arrived")
   let closest = Infinity
@@ -1849,6 +2069,56 @@ test("dev spawns are set down clear of each other", () => {
       "and all of them are inside the ring",
     )
   }
+})
+
+// A hull that turns up inside the ring has nowhere to have flown in from, so it warps in like
+// the player: a portal for a beat, which is the warning, then the hull. It cannot be shot and
+// cannot shoot while it forms, and it stays where it was put.
+test("a hull spawned inside the ring warps in", () => {
+  const game = liveGame()
+  beSolid(game.player)
+  game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })] // so the sector stays live
+  game.devSpawn("rivalFrigate")
+  const ship = game.rivals[0]
+  assert.ok(ship, "it should be in the sector")
+  assert.equal(ship.solid, false, "and not yet solid")
+  assert.equal(ship.inPlay(), false, "so nothing can reach it")
+  assert.equal(ship.warping, true)
+
+  const put = { x: ship.x, y: ship.y }
+  const before = game.projectiles.length
+  for (let i = 0; i < 20; i++) {
+    game.advance(1 / 60)
+  }
+  assert.equal(ship.warping, true, "the portal is still open a third of a second in")
+  assert.equal(ship.warp, 0, "and nothing has formed during the lead-in")
+  assert.equal(Math.hypot(ship.x - put.x, ship.y - put.y), 0, "it holds where it was put")
+  assert.equal(game.projectiles.length, before, "and holds its fire")
+  assert.equal(ship.takeDamage(9999, game, "laser"), false, "nothing lands on it either")
+
+  // ...and it is all over quickly. The whole arrival is the lead-in plus the forming.
+  const whole = CONFIG.SHIP_WARP_LEAD + CONFIG.SHIP_WARP_TIME
+  assert.ok(whole < CONFIG.WARP_ARRIVE_PAUSE + CONFIG.WARP_TIME, "snappier than the player's")
+  for (let i = 0; i < Math.ceil(whole * 60) + 2; i++) {
+    game.advance(1 / 60)
+  }
+  assert.equal(ship.solid, true, "the hull is there")
+  assert.equal(ship.warping, false)
+  assert.equal(ship.inPlay(), true, "and in the fight")
+})
+
+// One that comes in from beyond the boundary flies in, and that flight is its arrival: warping
+// it in as well would be two arrivals for the same hull.
+test("a hull entering from outside the ring does not warp", () => {
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })]
+  game.level = 40 // deep enough that every type is on the table
+  game.spawnRival()
+  const ship = game.rivals[0]
+  assert.ok(ship, "it should be on its way in")
+  assert.equal(ship.insideArena(), false, "from outside the ring")
+  assert.equal(ship.warping, false, "so no portal")
+  assert.equal(ship.solid, true)
 })
 
 test("a testing arena never clears itself", () => {
@@ -1869,6 +2139,161 @@ test("a testing arena never clears itself", () => {
   // And leaving by any ordinary route puts the game back to normal.
   game.enterShop()
   assert.equal(game.sandbox, false)
+})
+
+// An arena opened from a sector deep enough that the sector sends things of its own accord.
+function arenaFromASpawningSector() {
+  const game = liveGame()
+  beSolid(game.player)
+  const sector = 34
+  game.startLevel(sector)
+  game.phase = "play"
+  assert.ok(game.plan.rivals > 0, "the sector this is opened from sends rivals")
+  assert.ok(game.plan.specials, "and specials")
+  assert.ok(game.plan.spawns.length > 0, "and rock")
+  game.openDevMenu()
+  game
+    .pauseMenu()
+    .find((row) => row.name === "TESTING ARENA")
+    .action(game)
+  beSolid(game.player)
+  return game
+}
+
+test("a testing arena stays empty, whatever the sector it was opened from", () => {
+  // Emptying the lists emptied it once. The sector's spawn plan went on running behind it, so a
+  // few seconds later rivals and specials arrived as though the sector had never been left.
+  const game = arenaFromASpawningSector()
+  assert.equal(game.plan.rivals, 0, "an arena asks for no rivals")
+  assert.equal(game.plan.specials, false, "nor specials")
+  assert.deepEqual(game.plan.spawns, [], "nor rock")
+  let most = 0
+  for (let frame = 0; frame < 60 * 90; frame++) {
+    game.player.hull = game.player.type.hull
+    game.player.invincible = 1e9
+    game.advance(1 / 60)
+    most = Math.max(most, game.rivals.length + game.specialPickups.length + game.asteroids.length)
+  }
+  assert.equal(most, 0, `nothing ever arrives, most seen at once was ${most}`)
+})
+
+test("every dev row that offers a pop-over can be opened and worked", () => {
+  // The pages are generated from registries, so a hull or a hazard added to one arrives here as a
+  // row nobody wrote. Every option in every panel is opened and pressed: what this catches is a
+  // row that offers something it cannot do.
+  const game = liveGame()
+  beSolid(game.player)
+  game.asteroids = [new Asteroid({ x: 60, y: 60, radius: 30 })] // so the sector stays live
+  let panels = 0
+  let options = 0
+  for (const page of ["dev", "devSpawn"]) {
+    game.openDevMenu()
+    game.openPausePage(page)
+    const named = game.pauseMenu().map((row) => row.name)
+    for (const name of named) {
+      game.closeSlotMenu()
+      game.openPausePage(page)
+      const at = game.pauseMenu().findIndex((row) => row.name === name)
+      if (!game.pauseMenu()[at].flyout) {
+        continue
+      }
+      panels++
+      const count = flyoutRows(game, name).length
+      assert.ok(count > 0, `${name} offers something`)
+      for (let pick = 0; pick < count; pick++) {
+        game.closeSlotMenu()
+        game.openPausePage(page)
+        const rows = flyoutRows(game, name)
+        const row = rows[pick]
+        assert.ok(row.desc, `${name} / ${row.name} says what it does`)
+        game.slotMenu.selection = pick
+        game.menuConfirm()
+        options++
+        // Whatever it did, the game is still coherent: a hull is being flown and the sector holds
+        // nothing broken.
+        assert.ok(game.player, `${name} / ${row.name} leaves a ship`)
+        assert.ok(Number.isFinite(game.player.x), "in one piece")
+        for (const rival of game.rivals) {
+          assert.ok(Number.isFinite(rival.x), "and nothing spawned adrift")
+        }
+        game.advance(1 / 60)
+      }
+    }
+  }
+  assert.ok(panels >= 7, `every hull and rock offers one, got ${panels}`)
+  assert.ok(options > 30, `and each offers several, ${options} pressed in all`)
+})
+
+test("each hull holds its own arming choice and its own AUTO", () => {
+  // Two separate settings on one hull, and every hull holds both for itself: the interesting
+  // spawn is usually one hull rolled against another plain one.
+  const game = liveGame()
+  assert.equal(game.devArmsFor("rivalScout"), 0, "a hull nobody has set is on the design alone")
+  assert.equal(game.devAutoFor("rivalScout"), false, "and is not sent unasked")
+
+  game.setDevArms("rivalScout", DEV_ARMS.indexOf("all"))
+  game.setDevAuto("rivalScout", true)
+  assert.equal(DEV_ARMS[game.devArmsFor("rivalScout")], "all")
+  assert.equal(game.devAutoFor("rivalScout"), true)
+
+  // Neither disturbs the other.
+  game.setDevArms("rivalScout", DEV_ARMS.indexOf("rolled"))
+  assert.equal(game.devAutoFor("rivalScout"), true, "arming does not touch AUTO")
+  game.setDevAuto("rivalScout", false)
+  assert.equal(DEV_ARMS[game.devArmsFor("rivalScout")], "rolled", "nor AUTO the arming")
+
+  // Nor another hull's.
+  assert.equal(game.devArmsFor("rivalFrigate"), 0, "a hull left alone is left alone")
+  assert.equal(game.devAutoFor("rivalFrigate"), false)
+})
+
+test("a hull set to AUTO keeps arriving in an arena, up to what it is allowed", () => {
+  const game = arenaFromASpawningSector()
+  // Nothing on AUTO is nothing arriving, which is the whole point of the arena.
+  for (let frame = 0; frame < 60 * 30; frame++) {
+    game.advance(1 / 60)
+  }
+  assert.equal(game.rivals.length, 0, "with nothing set, nothing comes")
+
+  // A plain hull, and the pincer, which the spawner only ever sends one of at a time.
+  const capped = Object.keys(game.spawnableTypes()).find(
+    (name) => SHIP_TYPES[name].spawn && SHIP_TYPES[name].spawn.maxConcurrent === 1,
+  )
+  assert.ok(capped, "some hull is held to one at a time")
+  for (const name of ["rivalScout", capped]) {
+    game.setDevAuto(name, true)
+    assert.equal(game.devAutoFor(name), true)
+  }
+  const alive = (name) => game.rivals.filter((rival) => rival.typeName === name).length
+  for (let frame = 0; frame < 60 * 60; frame++) {
+    for (const rival of game.rivals) {
+      rival.lifeTimer = 1e9 // they are not allowed to age out mid-count
+      rival.hull = 1e9
+    }
+    game.player.hull = game.player.type.hull
+    game.player.invincible = 1e9
+    game.advance(1 / 60)
+    assert.ok(alive(capped) <= 1, `${capped} is never sent more than one at a time`)
+  }
+  assert.equal(alive("rivalScout"), DEV_AUTO.cap, `up to the cap of ${DEV_AUTO.cap}`)
+  assert.equal(alive(capped), 1, "and one of the one-at-a-time hull")
+
+  // And it is the arena's spawner, so it does not follow a run out of the arena: the setting
+  // stays put, but a sector sends what a sector sends.
+  game.enterShop()
+  game.startLevel(35)
+  game.phase = "play"
+  assert.equal(game.devAutoFor("rivalScout"), true, "the page keeps the setting")
+  assert.equal(game.sandbox, false)
+  for (let frame = 0; frame < 60 * 20; frame++) {
+    game.player.hull = game.player.type.hull
+    game.player.invincible = 1e9
+    game.advance(1 / 60)
+  }
+  assert.ok(
+    game.rivals.length <= game.plan.rivals,
+    `a sector sends its own and no more, ${game.rivals.length} against ${game.plan.rivals}`,
+  )
 })
 
 // The shop row for a levelled upgrade, by id.
@@ -1902,7 +2327,7 @@ test("what bends space says so, and the view finds it", () => {
   assert.equal(withShots.length, 2, "the orb bends space and the ordinary round does not")
 
   // A rival hull states none, so nothing about it distorts.
-  game.rivals = [plainRival(500, 320, "frigate")]
+  game.rivals = [plainRival(500, 320, "rivalFrigate")]
   game.projectiles = []
   assert.deepEqual(distortion(game).lenses, [], "a rival frigate bends nothing")
 })
@@ -2021,9 +2446,9 @@ test("an alien plant is deep enough to run a field through a crossfire", () => {
   // fire. So an alien core carries a good deal more than the rival core of its tier,
   // and the pincer's most of all.
   for (const [alien, rival] of [
-    ["alienScout", "scout"],
-    ["alienSeeker", "seeker"],
-    ["alienFrigate", "frigate"],
+    ["alienScout", "rivalScout"],
+    ["alienSeeker", "rivalSeeker"],
+    ["alienFrigate", "rivalFrigate"],
   ]) {
     assert.ok(
       SHIP_TYPES[alien].energyMax > SHIP_TYPES[rival].energyMax,
@@ -2125,10 +2550,16 @@ test("a field bounces its own side's fire and pushes against everything else", (
   )
   assert.equal(friendly.lost, 0, "so a sector of aliens is never one where they shoot each other")
 
-  // A rival's is pushed against instead, which is a slower business and gets further in.
-  const hostile = orbAt("frigate")
-  assert.ok(hostile.near < friendly.near, "an enemy round gets closer than a friendly one")
-  assert.equal(hostile.lost, 0, "though still not to the hull")
+  // A rival's is steered instead, and steered from a long way further out than the bubble: it never
+  // gets near enough to bounce off anything. Its own side's fire is the only thing that ever touches
+  // the surface, which is the difference between being known to a field and not.
+  const hostile = orbAt("rivalFrigate")
+  assert.ok(
+    hostile.near > friendly.near,
+    `an enemy round is turned wider than a friendly one bounces: ${hostile.near.toFixed(0)} against ${friendly.near.toFixed(0)}`,
+  )
+  assert.ok(hostile.near > hostile.field, "and never reaches the field at all")
+  assert.equal(hostile.lost, 0, "let alone the hull")
 })
 
 test("the field turns shot away, so a stream of it cannot take a pincer apart", () => {
@@ -2183,12 +2614,262 @@ test("the field turns shot away, so a stream of it cannot take a pincer apart", 
   assert.equal(orbs.lost, 0, "nor do its own orbs, fired back at it")
 })
 
+test("a field turns shot away whatever hull it is around, and however fast the shot", () => {
+  // The field's push used to be one flat number, so what it could do depended on the room it had:
+  // a pincer's reaches 79 units past its hull and turned everything, a dart's reaches 14 and let a
+  // well-placed round through to a hull that dies to one. Rock turrets throwing at 420 went through
+  // both. It is stated as the speed of round it can turn now and worked out per hull from there.
+  //
+  // Worse than that, the push was heaviest at the middle and almost nothing at the rim: a round has
+  // no size for the traversal to measure from its surface, so it was leant on hardest once it had
+  // already arrived. Turning one is the other way about.
+  const field = (name) => {
+    const core = (SHIP_TYPES[name].loadout || []).find((entry) => entry.core)
+    const id =
+      (SHIP_TYPES[name].loadout || []).find((entry) => entry.shield)?.shield ?? core?.fitted?.shield
+    return id && SHIELD_TYPES[id] && SHIELD_TYPES[id].repel ? SHIELD_TYPES[id] : null
+  }
+  const wearers = Object.keys(SHIP_TYPES).filter((name) => field(name))
+  assert.ok(wearers.length >= 2, `more than one hull carries a field: ${wearers.join(", ")}`)
+  // And they differ in size enough for this to be worth asserting.
+  const reaches = wearers.map((name) => SHIP_TYPES[name].boundRadius)
+  assert.ok(Math.max(...reaches) > Math.min(...reaches) * 3, "and they are not all the same size")
+
+  // The fastest round anything in the game throws, and past it.
+  const fastest = Math.max(
+    ...Object.values(WEAPON_TYPES)
+      .filter((type) => type.kind === "projectile")
+      .map((type) => type.speed),
+  )
+  const costs = []
+  for (const name of wearers) {
+    const spec = SHIP_TYPES[name]
+    for (const speed of [250, fastest, Math.round(fastest * 1.3)]) {
+      for (const offset of [0, Math.round(spec.boundRadius * 0.5), spec.boundRadius]) {
+        const game = liveGame()
+        game.player.x = -9000
+        game.player.y = -9000
+        game.asteroids = [new Asteroid({ vertices: square(-600, -600, 40), spin: 0 })]
+        const alien = plainRival(
+          500,
+          320,
+          name,
+          spec.loadout.filter((entry) => entry.core),
+        )
+        alien.regen = 0 // so what turning a round costs is visible
+        game.rivals = [alien]
+        const before = alien.hull
+        const start = alien.energy
+        // From beyond the field's reach, so the whole of the approach is steered. Fired from inside
+        // it there is less of one to work with, which is the point of the second test below.
+        const from = 500 - (alien.shieldRadius() + SHIELD_TYPES.alienField.repel.steerReach + 120)
+        const round = new Projectile(from, 320 + offset, speed, 0, 120, game.player, {
+          ...WEAPON_TYPES.blaster,
+          speed,
+        })
+        game.projectiles = [round]
+        let closest = Infinity
+        let slowest = speed
+        let fastest = speed
+        for (let i = 0; i < 400 && !round.dead; i++) {
+          alien.x = 500
+          alien.y = 320
+          alien.vx = 0
+          alien.vy = 0
+          game.advance(1 / 60)
+          closest = Math.min(closest, Math.hypot(round.x - alien.x, round.y - alien.y))
+          const carried = Math.hypot(round.vx, round.vy)
+          slowest = Math.min(slowest, carried)
+          fastest = Math.max(fastest, carried)
+        }
+        assert.equal(
+          alien.hull,
+          before,
+          `${name} takes nothing from a ${speed} round ${offset} off centre`,
+        )
+        // Well clear of the plating, not shaved off it: a round that grazes reads as a hit the field
+        // got away with rather than as a miss. A round already aimed wide needs little steering to
+        // go by, so the bubble itself is only asserted for one aimed at the middle - which is the
+        // one the field actually has to work on.
+        assert.ok(
+          closest > spec.boundRadius * 1.3,
+          `${name} turns a ${speed} round well clear: closest ${closest.toFixed(0)} against a hull reaching ${spec.boundRadius.toFixed(0)}`,
+        )
+        if (offset === 0) {
+          assert.ok(
+            closest > alien.shieldRadius(),
+            `and one aimed at the middle never even reaches the bubble: ${closest.toFixed(0)} against ${alien.shieldRadius().toFixed(0)}`,
+          )
+        }
+        // Its vector, never its velocity: a field steers, it does not brake or throw.
+        assert.ok(
+          fastest - slowest < 1,
+          `and never changes its speed: ${speed} ran ${slowest.toFixed(0)}..${fastest.toFixed(0)}`,
+        )
+        if (speed === 250 && offset === 0) {
+          costs.push({ name, spent: start - alien.energy })
+        }
+      }
+    }
+  }
+  // Priced by the damage turned aside, so the same round costs the same whatever turned it. That is
+  // what says the lean is worked out from the geometry rather than picked per hull.
+  const spent = costs.map((entry) => entry.spent)
+  assert.ok(Math.min(...spent) > 0, `turning one costs something: ${JSON.stringify(costs)}`)
+  assert.ok(
+    Math.max(...spent) - Math.min(...spent) < Math.min(...spent) * 0.25,
+    `and the same on every hull: ${costs.map((e) => `${e.name} ${e.spent.toFixed(1)}`).join(", ")}`,
+  )
+})
+
+test("a beam overloads the orbs it is laid across", () => {
+  // An orb is a pocket of bent space with something holding it together, so a beam through one takes
+  // the holding away and it goes off where it is. It is what a hull with no field and no room to
+  // dodge has left against being hosed with something it cannot outrun.
+  const orb = WEAPON_TYPES.warpOrb
+  assert.equal(orb.overloadedBy, "laser", "which is the orb's own business to declare")
+  const lay = (at, { attacker = null, owner = null, wall = null } = {}) => {
+    const game = liveGame()
+    const player = beSolid(game.player)
+    game.asteroids = [new Asteroid({ vertices: square(-900, -900, 40), spin: 0 })]
+    player.x = 200
+    player.y = 320
+    player.angle = 0
+    game.rivals = []
+    const shooter = owner ? plainRival(-3000, -3000, owner) : null
+    if (shooter) {
+      game.rivals.push(shooter)
+    }
+    if (wall) {
+      const blocker = plainRival(500, 320, wall)
+      blocker.arrived = true
+      blocker.hull = 1e9
+      game.rivals.push(blocker)
+    }
+    const orbs = at.map(([x, y]) => {
+      const round = new Projectile(x, y, -orb.speed, 0, orb.damage, shooter, orb)
+      game.projectiles.push(round)
+      return round
+    })
+    game.applyBeam(
+      { a: { x: 250, y: 320 }, b: { x: 950, y: 320 }, dir: { x: 1, y: 0 } },
+      attacker ?? player,
+      { type: { width: 2.4, damage: 60, colour: PALETTE.player.laser } },
+      60,
+    )
+    return orbs
+  }
+
+  const across = lay([
+    [400, 320],
+    [550, 320],
+    [700, 320],
+  ])
+  assert.ok(
+    across.every((round) => round.dead),
+    "every orb along the beam goes off",
+  )
+
+  // On its line, not merely in the neighbourhood.
+  const size = orb.shot.radius
+  assert.equal(lay([[500, 320 + size]])[0].dead, true, "one touching the beam goes off")
+  assert.equal(lay([[500, 320 + size + 20]])[0].dead, false, "and one clear of it carries on")
+
+  // A beam that was stopped short does not reach past whatever stopped it.
+  const shadowed = lay(
+    [
+      [350, 320],
+      [800, 320],
+    ],
+    { wall: "rivalFrigate" },
+  )
+  assert.equal(shadowed[0].dead, true, "an orb in front of a shield that stops the beam goes off")
+  assert.equal(shadowed[1].dead, false, "one behind it is left alone")
+
+  // And a sector of aliens is not one where they pop each other's ordnance.
+  const theirs = lay([[500, 320]], { owner: "alienFrigate" })
+  assert.equal(theirs[0].dead, true, "an orb thrown by one side is fair game to the other")
+  const game = liveGame()
+  const alien = plainRival(300, 320, "alienFrigate")
+  const friend = plainRival(-3000, -3000, "alienSeeker")
+  game.rivals = [alien, friend]
+  const sameSide = new Projectile(500, 320, -orb.speed, 0, orb.damage, friend, orb)
+  game.projectiles.push(sameSide)
+  game.applyBeam(
+    { a: { x: 320, y: 320 }, b: { x: 950, y: 320 }, dir: { x: 1, y: 0 } },
+    alien,
+    { type: { width: 2.4, damage: 60, colour: PALETTE.alien.beam } },
+    60,
+  )
+  assert.equal(sameSide.dead, false, "but its own side's is not")
+})
+
+test("a field steers rounds aside at range, and is pummelled at point-blank", () => {
+  // Two halves of one rule. At range a field bends rounds off line long before they arrive and they
+  // simply miss, which is what it is for; fired from inside its reach there is not enough approach
+  // left to bend one clear, so it lands on the field rather than the plating and is charged for
+  // heavily. That is what makes closing the distance the answer to one.
+  const spec = SHIP_TYPES.alienFrigate
+  const hose = (range, gun, seconds) => {
+    const game = liveGame()
+    game.player.x = -9000
+    game.player.y = -9000
+    game.asteroids = [new Asteroid({ vertices: square(-600, -600, 40), spin: 0 })]
+    const alien = plainRival(
+      500,
+      320,
+      "alienFrigate",
+      spec.loadout.filter((entry) => entry.core),
+    )
+    alien.arrived = true
+    game.rivals = [alien]
+    const shield = alien.shieldModule()
+    const type = WEAPON_TYPES[gun]
+    const gap = Array.isArray(type.reload) ? (type.reload[0] + type.reload[1]) / 2 : type.reload
+    const hull = alien.hull
+    let next = 0
+    let fired = 0
+    let down = false
+    for (let frame = 0; frame < 60 * seconds; frame++) {
+      alien.x = 500
+      alien.y = 320
+      alien.vx = 0
+      alien.vy = 0
+      if (frame >= next) {
+        game.projectiles.push(
+          new Projectile(500 - range, 320, type.speed, 0, type.damage, game.player, type),
+        )
+        fired++
+        next = frame + Math.max(1, Math.round(60 * gap))
+      }
+      game.advance(1 / 60)
+      down = down || !shield.up
+    }
+    return { fired, down, hullLost: hull - alien.hull }
+  }
+
+  const far = hose(620, "autocannon", 25)
+  assert.ok(far.fired > 8, `enough rounds to matter: ${far.fired}`)
+  assert.equal(far.hullLost, 0, "at range not one round reaches the hull")
+  assert.equal(far.down, false, "and steering them aside does not cost the field its footing")
+
+  const close = hose(Math.round(spec.boundRadius) + 4, "autocannon", 25)
+  assert.ok(close.down, "fired from inside its reach, the field is pummelled down")
+
+  // And its own side's ordnance is very nearly free to turn: a field is built alongside it.
+  const orb = WEAPON_TYPES.warpOrb
+  assert.ok(orb.steerCost < 0.2, `an orb costs a field little to steer: ${orb.steerCost}`)
+  const orbs = hose(620, "warpOrb", 25)
+  assert.equal(orbs.hullLost, 0, "so orbs thrown from range never arrive")
+  assert.equal(orbs.down, false, "and never wear the field down doing it")
+})
+
 test("the frigate's cell soaks far more shot than beam", () => {
   // The point of the bulwark: a turret used to strip a frigate's shield in under two
   // seconds, which is no kind of siege hull.
   const game = liveGame()
   const spend = (channel, damage) => {
-    const frigate = new RivalShip(600, 300, "frigate", SHIP_TYPES.frigate.loadout)
+    const frigate = new RivalShip(600, 300, "rivalFrigate", SHIP_TYPES.rivalFrigate.loadout)
     const before = frigate.energy
     frigate.takeDamage(damage, game, channel)
     return before - frigate.energy
@@ -2206,41 +2887,49 @@ test("a deflector-shielded hull rides out a point-blank blast", () => {
   const game = liveGame()
   game.player.x = -9000
   game.player.y = -9000
-  const seeker = new RivalShip(500, 320, "seeker", SHIP_TYPES.seeker.loadout)
+  const seeker = new RivalShip(500, 320, "rivalSeeker", SHIP_TYPES.rivalSeeker.loadout)
   game.rivals = [seeker]
   assert.equal(seeker.shieldModule().typeName, "deflector")
   assert.ok(seeker.shieldUp())
   seeker.takeDamage(CONFIG.BLAST_DAMAGE, game, "projectile")
   assert.ok(seeker.shieldUp(), "a blast at zero range must not overload it")
-  assert.equal(seeker.hull, SHIP_TYPES.seeker.hull, "and must not reach the hull")
+  assert.equal(seeker.hull, SHIP_TYPES.rivalSeeker.hull, "and must not reach the hull")
 
-  // but it is still wide open to the one channel it does not cover
+  // ...and it is still very poor against the one channel it is not braced for: a beam takes the
+  // whole cell and the bubble with it, so a dart costs the player one shot to open and a second to
+  // cut. What it must not do is cost only one, which is a drawn bubble that did nothing.
   const bare = liveGame()
   bare.player.x = -9000
   bare.player.y = -9000
-  const other = new RivalShip(500, 320, "seeker", SHIP_TYPES.seeker.loadout)
+  const other = new RivalShip(500, 320, "rivalSeeker", SHIP_TYPES.rivalSeeker.loadout)
   other.angle = 0
   bare.rivals = [other]
-  bare.applyBeam(
-    { a: { x: 200, y: 320 }, b: { x: 900, y: 320 }, dir: { x: 1, y: 0 } },
-    bare.player,
-    playerWeapon,
-    68,
-  )
-  assert.ok(other.dead, "one laser hit must still finish it")
+  const beam = () =>
+    bare.applyBeam(
+      { a: { x: 200, y: 320 }, b: { x: 900, y: 320 }, dir: { x: 1, y: 0 } },
+      bare.player,
+      playerWeapon,
+      68,
+    )
+  beam()
+  assert.equal(other.dead, false, "the first shot must go on the bubble, not through it")
+  assert.equal(other.shieldUp(), false, "and it must take the bubble with it")
+  assert.equal(other.hull, SHIP_TYPES.rivalSeeker.hull, "with nothing reaching the hull yet")
+  beam()
+  assert.equal(other.dead, true, "the second finishes it")
 })
 
 test("the seeker shoots at the player rather than at rocks", () => {
   // Its nose used to carry a miner, which fires only when a rock is near and
   // only along the host's facing, so its offence was a side effect of hunting.
-  const nose = SHIP_TYPES.seeker.loadout.find((entry) => entry.hp === 0)
+  const nose = SHIP_TYPES.rivalSeeker.loadout.find((entry) => entry.hp === 0)
   const weapon = WEAPON_TYPES[nose.weapon]
   assert.equal(weapon.kind, "beam")
   assert.equal(weapon.triggerRange, undefined, "it must not be gated on a rock being close")
 
   const game = liveGame()
   game.asteroids = [] // nothing to mine, so anything it fires is aimed at the player
-  const seeker = new RivalShip(700, 320, "seeker", SHIP_TYPES.seeker.loadout)
+  const seeker = new RivalShip(700, 320, "rivalSeeker", SHIP_TYPES.rivalSeeker.loadout)
   seeker.angle = Math.PI // facing the player
   game.rivals = [seeker]
   const player = game.player
@@ -2259,16 +2948,10 @@ test("the seeker shoots at the player rather than at rocks", () => {
   assert.ok(player.energy < before, "with no rocks at all, it must still shoot the player")
 })
 
-test("a shield only stops the channels it blocks, whichever body carries it", () => {
-  // A deflector stops shots and not lasers. Asked of a rock and of a hull, the
-  // answer has to be the same one.
-  const blocksLaser = Object.keys(SHIELD_TYPES).find((key) =>
-    SHIELD_TYPES[key].blocks.includes("laser"),
-  )
-  const passesLaser = Object.keys(SHIELD_TYPES).find(
-    (key) => !SHIELD_TYPES[key].blocks.includes("laser"),
-  )
-  assert.ok(passesLaser, "some shield should let a laser through, or there is nothing to test")
+test("a shield stops the beam whichever body carries it, and an absent one does not", () => {
+  // Every bubble in the game stands in a beam's way, so the pair being compared is a shield
+  // against no shield. Asked of a rock and of a hull, the answer has to be the same one.
+  const shields = Object.keys(SHIELD_TYPES)
 
   const fire = (game) =>
     game.applyBeam(
@@ -2277,13 +2960,17 @@ test("a shield only stops the channels it blocks, whichever body carries it", ()
       playerWeapon,
       68,
     )
-  // A hull: does the shield soak it, or does the beam reach the hull inside?
+  // A hull: does the shield soak it, or does the beam reach the hull inside? A cell big enough
+  // that one shot cannot empty it, so what is measured is the bubble standing in the way rather
+  // than the bubble being overloaded by the same shot.
   const hitShip = (shield) => {
     const game = liveGame()
     game.player.x = -9000
     game.player.y = -9000
-    const ship = new RivalShip(500, 320, "scout", [{ hp: 2, shield }])
+    const ship = new RivalShip(500, 320, "rivalScout", shield ? [{ hp: 2, shield }] : [])
     ship.angle = 0
+    ship.energyMax = 4000
+    ship.energy = 4000
     game.rivals = [ship]
     const energy = ship.energy,
       hull = ship.hull
@@ -2296,8 +2983,12 @@ test("a shield only stops the channels it blocks, whichever body carries it", ()
     game.player.x = -9000
     game.player.y = -9000
     const rock = new Asteroid({ vertices: square(500, 320, 70) })
-    rock.hardpoints.push({ x: rock.center.x, y: rock.center.y, module: new Shield(shield) })
+    if (shield) {
+      rock.hardpoints.push({ x: rock.center.x, y: rock.center.y, module: new Shield(shield) })
+    }
     rock.refreshEnergy()
+    rock.energyMax = 4000
+    rock.energy = 4000
     game.asteroids = [rock]
     const energy = rock.energy
     fire(game)
@@ -2307,12 +2998,14 @@ test("a shield only stops the channels it blocks, whichever body carries it", ()
     ["a hull", hitShip],
     ["a rock", hitRock],
   ]) {
-    const blocked = hit(blocksLaser)
-    assert.ok(blocked.soaked, `${what} with a laser-blocking shield must soak the beam`)
-    assert.ok(!blocked.reachedHull, `${what} with one must not be reached through it`)
-    const passed = hit(passesLaser)
-    assert.ok(!passed.soaked, `${what} with a shield that passes lasers must not soak one`)
-    assert.ok(passed.reachedHull, `${what} with one must be reached through it`)
+    for (const shield of shields) {
+      const blocked = hit(shield)
+      assert.ok(blocked.soaked, `${what} carrying a ${shield} must soak the beam`)
+      assert.ok(!blocked.reachedHull, `${what} carrying a ${shield} must not be reached through it`)
+    }
+    const bare = hit(null)
+    assert.ok(!bare.soaked, `${what} with no shield has nothing to soak it with`)
+    assert.ok(bare.reachedHull, `${what} with none must be reached`)
   }
 })
 
@@ -2320,9 +3013,9 @@ test("a raised shield still stops the beam, and shelters what is behind it", () 
   const game = liveGame()
   game.player.x = -9000
   game.player.y = -9000
-  const shielded = new RivalShip(500, 320, "scout", [{ hp: 2, shield: "standard" }])
+  const shielded = new RivalShip(500, 320, "rivalScout", [{ hp: 2, shield: "standard" }])
   shielded.angle = 0
-  const behind = plainRival(700, 320, "scout")
+  const behind = plainRival(700, 320, "rivalScout")
   behind.angle = 0
   game.rivals = [shielded, behind]
   const rock = new Asteroid({ vertices: square(860, 320, 60) })
@@ -2360,13 +3053,13 @@ test("a beam registers on a shielded rival's bubble, not on the hull inside it",
 
   const cases = [
     [
-      "scout",
+      "rivalScout",
       [
         { hp: 0, weapon: "minerLaser", controller: "miner" },
         { hp: 2, shield: "standard" },
       ],
     ],
-    ["frigate", SHIP_TYPES.frigate.loadout],
+    ["rivalFrigate", SHIP_TYPES.rivalFrigate.loadout],
   ]
   for (const [typeName, loadout] of cases) {
     const bubble = probe(typeName, loadout, 0).bubble
@@ -2402,7 +3095,7 @@ function grazeScout(loadout, offset) {
   player.angle = 0
   player.x = 100
   player.y = 320
-  const scout = new RivalShip(500, 320, "scout", loadout)
+  const scout = new RivalShip(500, 320, "rivalScout", loadout)
   scout.angle = 0 // nose along +x, so an offset beam clips a wing and exits again
   game.rivals = [scout]
   game.asteroids = [new Asteroid({ vertices: square(2000, 2000, 40) })]
@@ -2436,7 +3129,11 @@ test("a graze through an unarmed scout leaves nothing but ore", () => {
     assert.equal(r.scout.dead, true, `at offset ${offset}`)
     assert.equal(r.pieces.length, 0, `at offset ${offset}: no piece clears the plating minimum`)
     assert.ok(r.ore > 0, `at offset ${offset}: it goes to ore`)
-    assert.equal(r.scored, SHIP_TYPES.scout.killScore, "nothing left behind, so it pays as a kill")
+    assert.equal(
+      r.scored,
+      SHIP_TYPES.rivalScout.killScore,
+      "nothing left behind, so it pays as a kill",
+    )
   }
 })
 
@@ -2455,7 +3152,7 @@ test("a graze through an armed scout leaves the piece holding the gun, still fir
     assert.ok(piece.burn > 0, "and it burns where it was torn")
     assert.equal(
       r.scored,
-      SHIP_TYPES.scout.blastScore,
+      SHIP_TYPES.rivalScout.blastScore,
       "wreckage is left to deal with, so it pays as a blast rather than a kill",
     )
   }
@@ -2488,7 +3185,7 @@ function grazeHull(name, fraction) {
 }
 
 test("a graze takes a corner off a big hull and leaves it flying", () => {
-  const light = grazeHull("frigate", 0.75)
+  const light = grazeHull("rivalFrigate", 0.75)
   assert.equal(light.dead, false, "a slab does not come apart over a corner")
   assert.ok(light.kept > 0.85, `it keeps most of itself, kept ${(light.kept * 100).toFixed(0)}%`)
   assert.ok(light.wreckage + light.ore > 0, "and the corner comes off it")
@@ -2500,12 +3197,12 @@ test("a graze takes a corner off a big hull and leaves it flying", () => {
   )
 
   // What it lost, it lost: less hull to lose, less mass to carry, and quicker round for it.
-  assert.ok(light.ship.hull < SHIP_TYPES.frigate.hull, "it has less left to lose")
-  assert.ok(light.ship.mass < SHIP_TYPES.frigate.laden, "and less to carry")
-  assert.ok(light.ship.turnRate > SHIP_TYPES.frigate.turnRate, "so it comes about quicker")
+  assert.ok(light.ship.hull < SHIP_TYPES.rivalFrigate.hull, "it has less left to lose")
+  assert.ok(light.ship.mass < SHIP_TYPES.rivalFrigate.laden, "and less to carry")
+  assert.ok(light.ship.turnRate > SHIP_TYPES.rivalFrigate.turnRate, "so it comes about quicker")
 
   // A cut through the middle still finishes it: what decides is how much is left.
-  const deep = grazeHull("frigate", 0.2)
+  const deep = grazeHull("rivalFrigate", 0.2)
   assert.equal(deep.dead, true, "a cut through the body is still a cut through the body")
 })
 
@@ -2529,7 +3226,7 @@ test("a cut takes the mounts that were on the part it took, and no others", () =
     return ship
   }
 
-  const frigate = noseOff("frigate", 52)
+  const frigate = noseOff("rivalFrigate", 52)
   assert.equal(frigate.dead, false, "it survives losing its nose")
   const engines = [...frigate.modules()].filter((m) => m.kind === "engine")
   assert.equal(engines.length, 2, "and keeps both nozzles, which sit off the tail")
@@ -2549,7 +3246,7 @@ test("a cut takes the mounts that were on the part it took, and no others", () =
 test("the edge a cut leaves on a surviving hull burns", () => {
   // The piece that came off burns, because a rock made of plating does. The ship it came
   // off is made of the same stuff and had the same face left raw, and was showing nothing.
-  const light = grazeHull("frigate", 0.5)
+  const light = grazeHull("rivalFrigate", 0.5)
   assert.equal(light.dead, false)
   assert.ok(light.ship.burn > 0, "the fresh edge is alight")
   assert.ok(light.ship.burnFaces.length > 0, "along the face the beam left")
@@ -2579,7 +3276,7 @@ test("the edge a cut leaves on a surviving hull burns", () => {
   assert.equal(light.ship.burn, 0, "and then it is out")
 
   // The face is drawn too, in the same colour the wreckage burns.
-  const cut = grazeHull("frigate", 0.5)
+  const cut = grazeHull("rivalFrigate", 0.5)
   const drawn = []
   const renderer = new Proxy(
     { line: (x1, y1, x2, y2, opts) => drawn.push(opts && opts.color) },
@@ -2598,7 +3295,7 @@ test("a sector full of burning wreckage does not run the particle buffer out", (
   game.player.invincible = 1e9
   const ships = []
   for (let k = 0; k < 6; k++) {
-    const which = k % 2 ? "frigate" : "alienFrigate"
+    const which = k % 2 ? "rivalFrigate" : "alienFrigate"
     const ship = plainRival(200 + k * 200, 320, which, withoutShield(SHIP_TYPES[which].loadout))
     ship.angle = 0
     ships.push(ship)
@@ -2645,13 +3342,13 @@ test("what colour a hull burns is its material's, so an alien burns green", () =
   assert.ok(!drawn.includes(PALETTE.fx.fire))
 
   // A rival cut the same way still burns in ours, which is the contrast worth having.
-  assert.equal(grazeHull("frigate", 0.5).ship.burnSpec.colour, PALETTE.fx.fire)
+  assert.equal(grazeHull("rivalFrigate", 0.5).ship.burnSpec.colour, PALETTE.fx.fire)
 })
 
 test("a dart commits to the arc it breaks off along", () => {
   // Turning slower on the way out is what makes it an arc rather than a spin on the spot
   // followed by a straight run: the whole point of a dart is that it has to commit.
-  const seeker = SHIP_TYPES.seeker
+  const seeker = SHIP_TYPES.rivalSeeker
   assert.ok(seeker.breakOff.turn < 1, "it manages less than its full rate while going")
   assert.ok(seeker.turnRate <= 3.25, "and no better than the player at its best")
 
@@ -2662,7 +3359,7 @@ test("a dart commits to the arc it breaks off along", () => {
   game.player.x = 500
   game.player.y = 320
   game.player.angle = 0
-  const rival = plainRival(600, 320, "seeker") // well inside its break-off range
+  const rival = plainRival(600, 320, "rivalSeeker") // well inside its break-off range
   rival.angle = Math.PI
   game.rivals = [rival]
 
@@ -2685,7 +3382,7 @@ test("a small hull is finished by any cut at all, however light", () => {
   // The other half of the rule, and what keeps the existing behaviour: the whole of a
   // scout is a fraction of the smallest piece its plating holds together in, so there is
   // no corner it can lose and still be a ship. Grazed or halved, it comes apart.
-  for (const name of ["scout", "seeker", "alienScout"]) {
+  for (const name of ["rivalScout", "rivalSeeker", "alienScout"]) {
     for (const fraction of [0.9, 0.5, 0]) {
       const cut = grazeHull(name, fraction)
       assert.equal(cut.dead, true, `a ${name} grazed at ${fraction} of its half-height`)
@@ -2695,7 +3392,7 @@ test("a small hull is finished by any cut at all, however light", () => {
 
 test("a raised shield is what stops a beam", () => {
   const game = liveGame()
-  const { rival, beam } = targetWithRockBehind(game, "scout", [
+  const { rival, beam } = targetWithRockBehind(game, "rivalScout", [
     { hp: 0, weapon: "minerLaser", controller: "miner" },
     { hp: 2, shield: "standard" },
   ])
@@ -2713,7 +3410,7 @@ test("a raised shield is what stops a beam", () => {
 test("what a cut hull leaves is decided by its material, not by its type", () => {
   const cut = (minArea) => {
     const game = liveGame()
-    const { rival, beam } = targetWithRockBehind(game, "scout", [])
+    const { rival, beam } = targetWithRockBehind(game, "rivalScout", [])
     rival.type = Object.create(rival.type)
     rival.type.debrisMaterial = { ...SHIP_PLATING, minArea }
     const oreBefore = game.oreChunks.length
@@ -2738,16 +3435,16 @@ test("a shattered hull pays what shooting it down pays", () => {
   // Cutting a scout in two destroys it, and must be worth the same as killing it
   // with shots, since in both cases nothing is left behind to mine.
   const game = liveGame()
-  const { rival, beam } = targetWithRockBehind(game, "scout", [])
+  const { rival, beam } = targetWithRockBehind(game, "rivalScout", [])
   const scoreBefore = game.score
   game.applyBeam(beam, game.player, playerWeapon)
   assert.equal(rival.dead, true)
   assert.equal(
     game.score - scoreBefore,
-    SHIP_TYPES.scout.killScore + CONFIG.SLICE_SCORE,
+    SHIP_TYPES.rivalScout.killScore + CONFIG.SLICE_SCORE,
     "a shattered hull pays killScore (the rock behind adds SLICE_SCORE)",
   )
-  assert.equal(game.oreChunks.length, SHIP_TYPES.scout.oreDrop, "and drops its oreDrop")
+  assert.equal(game.oreChunks.length, SHIP_TYPES.rivalScout.oreDrop, "and drops its oreDrop")
 })
 
 test("the player's hull is never cut into wreckage", () => {
@@ -2757,7 +3454,7 @@ test("the player's hull is never cut into wreckage", () => {
   player.x = 400
   player.y = 320
   player.energy = 0 // nothing to hide behind
-  const shooter = plainRival(100, 320, "scout")
+  const shooter = plainRival(100, 320, "rivalScout")
   game.rivals = [shooter]
   const beam = { a: { x: 100, y: 320 }, dir: { x: 1, y: 0 }, b: { x: 900, y: 320 } }
   assert.ok(countBeamCrossings(beam, player.worldOutline()) >= 2, "the beam must pass through")
@@ -2795,8 +3492,8 @@ test("frigate debris is partitioned into convex parts that tile it", () => {
 // asserted; that one shot is never enough is not.
 test("a full-charge shot does not strip a shielded rival's shield in one hit", () => {
   for (const [typeName, loadout] of [
-    ["scout", [{ hp: 2, shield: "standard" }]],
-    ["frigate", SHIP_TYPES.frigate.loadout],
+    ["rivalScout", [{ hp: 2, shield: "standard" }]],
+    ["rivalFrigate", SHIP_TYPES.rivalFrigate.loadout],
   ]) {
     const game = liveGame()
     const player = game.player
@@ -2826,7 +3523,9 @@ test("charge buys reach, and damage follows it more gently", () => {
     const game = liveGame()
     const player = game.player
     player.angle = 0
-    const scout = new RivalShip(player.x + 60, player.y, "scout", [{ hp: 2, shield: "standard" }])
+    const scout = new RivalShip(player.x + 60, player.y, "rivalScout", [
+      { hp: 2, shield: "standard" },
+    ])
     game.rivals = [scout]
     const before = scout.energy
     player.mainWeapon.charge = charge
@@ -2943,7 +3642,7 @@ test("a body that is not in the sector neither stops a beam nor swallows a shot"
   const behind = () => new Asteroid({ vertices: square(700, 320, 60), vx: 0, vy: 0 })
   const beamPast = (pose) => {
     const game = liveGame()
-    const shooter = plainRival(150, 320, "scout")
+    const shooter = plainRival(150, 320, "rivalScout")
     shooter.angle = 0
     game.rivals.push(shooter)
     game.asteroids = [behind()]
@@ -2995,7 +3694,7 @@ test("a rival outside the arena is passed through by a shot, as it is by a beam"
   const game = liveGame()
   // Just past the ring, where a rival flying in actually sits. A shot expires of
   // its own accord out here, so the impact effect is what tells the two apart.
-  const rival = plainRival(ARENA.cx + ARENA.radius + 20, ARENA.cy, "scout")
+  const rival = plainRival(ARENA.cx + ARENA.radius + 20, ARENA.cy, "rivalScout")
   rival.angle = Math.PI
   game.rivals = [rival]
   assert.ok(!rival.inPlay(), "the rival must actually be outside the arena")
@@ -3006,7 +3705,7 @@ test("a rival outside the arena is passed through by a shot, as it is by a beam"
     bullet.update(1 / 600, game)
   }
   assert.equal(game.particles.length, 0, "a rival that cannot be hurt must strike no sparks")
-  assert.equal(rival.hull, SHIP_TYPES.scout.hull)
+  assert.equal(rival.hull, SHIP_TYPES.rivalScout.hull)
 })
 
 // ---- specials are declared, not special-cased ------------------------------
@@ -3091,7 +3790,7 @@ test("a mount only fires where it can bear", () => {
   // nothing behind it, which is a property of the mount rather than of the gun: the
   // same autocannon on a ring traverses freely.
   const game = liveGame()
-  const target = plainRival(500, 320, "scout")
+  const target = plainRival(500, 320, "rivalScout")
   game.rivals = [target]
   const held = new Weapon("autocannon", "turret", 0.5)
   const free = new Weapon("autocannon", "turret")
@@ -3389,9 +4088,12 @@ test("a piece hit harder than it holds together comes apart, and otherwise is sh
   const slow = thrown(SHIP_PLATING.shatterAt - 40, SHIP_PLATING)
   assert.ok(!slow.burst, "the same piece drifting is shoved aside instead")
 
-  // Rock holds together through anything a hull can do to it short of a full-tilt ram.
+  // Rock holds together through anything the other side can do to it. Our own hulls are the fast
+  // ones and a full-tilt ram does break rock, which is why this is asked of theirs: the player has
+  // always been able to, and an allied hull is the same hull at the same speed.
+  const theirs = Object.values(SHIP_TYPES).filter((type) => type.faction !== "player")
   assert.ok(
-    CONFIG.ROCK_SHATTER_SPEED > Math.max(...Object.values(SHIP_TYPES).map((t) => t.maxSpeed)),
+    CONFIG.ROCK_SHATTER_SPEED > Math.max(...theirs.map((t) => t.maxSpeed)),
     "no rival can drive a rock hard enough to break it",
   )
   assert.ok(!thrown(CONFIG.ROCK_SHATTER_SPEED - 50, null).burst, "so an ordinary field holds")
@@ -3410,12 +4112,12 @@ test("what rock contact costs a hull is the type's business, not the code's", ()
   // its own hull and speed when it is fitted out, and a value written down has to be
   // remembered as written down to survive that.
   const cost = (scale) => {
-    const original = SHIP_TYPES.scout
-    SHIP_TYPES.scout = deriveShipStats({ ...original, rockContact: scale })
+    const original = SHIP_TYPES.rivalScout
+    SHIP_TYPES.rivalScout = deriveShipStats({ ...original, rockContact: scale })
     try {
-      return ramARock("scout")
+      return ramARock("rivalScout")
     } finally {
-      SHIP_TYPES.scout = original
+      SHIP_TYPES.rivalScout = original
     }
   }
   assert.equal(cost(0), 0, "a type that declares no susceptibility takes nothing")
@@ -3446,10 +4148,12 @@ test("a run starts with no shield, and the first mark of plating fits one", () =
     g.player.takeDamage(100, g, "projectile", 0, { x: g.player.x + 5, y: g.player.y })
     return g.player.energyMax - g.player.energy
   }
-  assert.ok(
-    drain(optionAt("shield", -1)) < drain(optionAt("shield", 0)),
-    "the top mark drains less than the first",
-  )
+  // The top mark, which is the last one that is bought rather than found: the list ends with the
+  // alien kit a run can turn up, and that is not a mark on this ladder at all - it works nothing
+  // like one, and reading it as the best of them compared plating against a repel field.
+  const marks = EQUIPMENT.shield.options.filter((option) => !option.locked)
+  assert.ok(marks.length > 1, "there is a ladder of plating to climb")
+  assert.ok(drain(marks.at(-1).id) < drain(marks[0].id), "the top mark drains less than the first")
 })
 
 test("a resumed run re-mounts the shield it had bought", () => {
@@ -3495,7 +4199,7 @@ test("a laser mark that pays for damage lands more of it", () => {
     player.x = 100
     player.y = 320
     player.angle = 0
-    const frigate = new RivalShip(500, 320, "frigate", [{ hp: 1, shield: "standard" }])
+    const frigate = new RivalShip(500, 320, "rivalFrigate", [{ hp: 1, shield: "standard" }])
     game.rivals = [frigate]
     const before = frigate.energy
     fullChargeShot(game)
@@ -4007,13 +4711,7 @@ test("flying a hull is how its equipment is found", () => {
   // Groundwork as much as a dev tool: an alien gun is an EQUIPMENT option like any
   // other, so once a run has one it swaps against the yard's own.
   const game = liveGame()
-  game.openDevMenu()
-  game.openPausePage("devShip")
-  game
-    .pauseMenu()
-    .find((row) => row.name === "ALIEN FRIGATE")
-    .action(game)
-  game.paused = false
+  flyHull(game, "ALIEN FRIGATE")
 
   const carried = [...game.player.modules()].map((m) => m.typeName)
   assert.ok(carried.includes("singularityGun"), "it flies with its own gun")
@@ -4112,9 +4810,9 @@ test("holding the trigger on a gun that does not charge keeps the cell a number"
 })
 
 test("a gun that winds up is paid for while it winds, and let go of to fire", () => {
-  // The wind-up is the telegraph and the cost both: what limits how often a well can be
-  // thrown is how fast the cell fills, and everything else the cell pays for goes short
-  // while one is being held.
+  // The player pays by the shot, as it winds. A burst is a pacing rule for a controller that has
+  // to decide for itself; charging the player for a pair to throw one well made the gun cost
+  // double, and unusable on any cell that could afford a single.
   const spec = WEAPON_TYPES.singularityGun
   // A tap is a press and a release, and the release is what fires a held charge: a well
   // has to be wound before either means anything, or it is handed over for nothing.
@@ -4157,14 +4855,15 @@ test("a gun that winds up is paid for while it winds, and let go of to fire", ()
     return game
   }
 
-  // Paid for as it winds, at its own price over its own clock.
+  // Paid for as it winds, at its own price over its own clock, and one shot's price at that: a
+  // player asked a pair's price could not throw one well on a cell that held one well's worth.
   const game = armed()
   const cell = game.player.energy
   hold(game, Math.round(60 * spec.chargeTime * 0.5))
   const halfway = cell - game.player.energy
   assert.ok(
     Math.abs(halfway - spec.energy / 2) < spec.energy * 0.15,
-    `half wound costs about half, got ${halfway.toFixed(0)} of ${spec.energy}`,
+    `half wound costs about half of one, got ${halfway.toFixed(0)} of ${spec.energy}`,
   )
   assert.equal(game.projectiles.length, 0, "and nothing has been thrown yet")
 
@@ -4177,6 +4876,16 @@ test("a gun that winds up is paid for while it winds, and let go of to fire", ()
   letGo(game)
   assert.equal(game.projectiles.length, 1, "the release is what fires it")
   assert.equal(game.player.mainWeapon.wound, false)
+
+  // How many can be thrown is what the cell holds, so the player decides whether one well or two
+  // is what the moment wants rather than being committed to a pair by the gun.
+  const perCell = Math.floor(game.player.energyMax / spec.energy)
+  assert.ok(perCell >= 2, `a full cell is worth more than one well, ${perCell}`)
+  const single = armed()
+  single.player.energy = spec.energy + 1 // one well's worth and no more
+  hold(single, Math.round(60 * spec.chargeTime) + 2)
+  letGo(single)
+  assert.equal(single.projectiles.length, 1, "one well's worth of cell throws one well")
 
   // A hold that cannot start anything must not stall the cell. Holding the trigger
   // through a reload used to skip the regen and do nothing else, so the wait for the
@@ -4191,14 +4900,19 @@ test("a gun that winds up is paid for while it winds, and let go of to fire", ()
   )
   assert.equal(waitingOut.projectiles.length, 0, "and nothing is thrown by asking")
 
-  // Holding a wound one keeps drawing on the cell, which is what makes the ship
-  // vulnerable while it holds one: the shield reads the same cell.
+  // Holding a wound one costs nothing further, so lining the shot up is free. Charged as it
+  // was held, a hold long enough to aim emptied the cell, and a cell emptied by the trigger
+  // could never fill again: the regen is on the other side of the branch that the trigger
+  // keeps taking.
   const waiting = armed()
   hold(waiting, Math.round(60 * spec.chargeTime) + 2)
   assert.equal(waiting.player.mainWeapon.wound, true)
   const held = waiting.player.energy
-  hold(waiting, 20)
-  assert.ok(waiting.player.energy < held, "holding it keeps drawing on the cell")
+  hold(waiting, 120)
+  assert.ok(
+    waiting.player.energy >= held,
+    `holding it draws nothing, cell went ${held.toFixed(0)} to ${waiting.player.energy.toFixed(0)}`,
+  )
 
   // Let go of early and it comes apart where it was held: the cost is spent either way.
   const early = armed()
@@ -4266,61 +4980,137 @@ test("an alien beam bends the space along it, and an honest one bends nothing", 
   assert.equal(ours.lenses.length, 0, "nothing of ours bends space")
 })
 
-test("wells fall toward each other, and cannot wind each other up past a limit", () => {
-  // Two inside each other's reach pull each other, which is worth watching. Nothing in
-  // the sector takes that energy back out again, so left unbounded they wound each other
-  // up to 4,400 units a second: fifty times what one is thrown at, and far past anything
-  // the player can fly away from.
+// Two wells started at rest, and what the pair does over `seconds` at a given step. Started at
+// rest because that is the case with an answer to check against: a pair with no momentum in it
+// must still have none however long it orbits, so any drift of the middle is momentum the
+// simulation invented.
+const orbitingPair = (apart, dt, seconds = 15) => {
   const spec = WEAPON_TYPES.singularityGun
   const game = liveGame()
   beSolid(game.player)
   game.player.x = -9000
   game.player.y = -9000
   game.asteroids = [new Asteroid({ x: 60, y: 60, radius: 30 })] // so the sector stays live
-  const pair = [0, 160].map((offset) => new Singularity(400 + offset, 320, 0, 0, 0, null, spec))
+  const pair = [0, apart].map((offset) => new Singularity(400 + offset, 320, 0, 0, 0, null, spec))
   game.projectiles.push(...pair)
-  const apartAt = () => Math.abs(pair[1].x - pair[0].x)
-  const started = apartAt()
-  let closest = started
+  const middle = () => ({
+    x: (pair[0].x + pair[1].x) / 2,
+    y: (pair[0].y + pair[1].y) / 2,
+  })
+  const started = middle()
+  const apartAt = () => Math.hypot(pair[1].x - pair[0].x, pair[1].y - pair[0].y)
+  let closest = apart
+  let widest = apart
   let peak = 0
-  for (let frame = 0; frame < 180; frame++) {
-    game.advance(1 / 60)
-    if (pair.every((well) => !well.dead)) {
-      closest = Math.min(closest, apartAt())
-      peak = Math.max(peak, ...pair.map((well) => Math.hypot(well.vx, well.vy)))
+  let drift = 0
+  let momentum = 0
+  let loops = 0
+  let close = false
+  for (let frame = 0; frame < Math.round(seconds / dt); frame++) {
+    game.advance(dt)
+    if (pair.some((well) => well.dead)) {
+      break
     }
+    closest = Math.min(closest, apartAt())
+    widest = Math.max(widest, apartAt())
+    peak = Math.max(peak, ...pair.map((well) => Math.hypot(well.vx, well.vy)))
+    const at = middle()
+    drift = Math.max(drift, Math.hypot(at.x - started.x, at.y - started.y))
+    momentum = Math.max(
+      momentum,
+      Math.hypot(
+        pair.reduce((sum, well) => sum + well.vx, 0),
+        pair.reduce((sum, well) => sum + well.vy, 0),
+      ),
+    )
+    // A pass counted on the way in, so one loop is one count however long it takes.
+    const passing = apartAt() < 40
+    if (passing && !close) {
+      loops++
+    }
+    close = passing
   }
-  assert.ok(closest < started * 0.6, `they fall together, ${started} apart down to ${closest}`)
-  assert.ok(peak > spec.speed, "and speed up doing it, which is the point of watching")
-  assert.ok(peak > 0, "which means they are moving at all")
+  return { closest, widest, peak, drift, momentum, loops }
+}
+
+test("two wells fall together and keep orbiting, without inventing momentum", () => {
+  // The pull between two of them used to be one-sided: each pushed the other and took no
+  // reaction, so the pair manufactured momentum out of the order they happened to be updated
+  // in and sailed off across the sector together. `terminal` capped how fast either could
+  // travel, which hid it and flattened the orbit into a jitter at the cap.
+  const spec = WEAPON_TYPES.singularityGun
+  const apart = 176
+  const run = orbitingPair(apart, 1 / 60)
   assert.ok(
-    peak <= spec.well.terminal + 20,
-    `and neither outruns the ship watching them, got ${peak.toFixed(0)}`,
+    run.closest < apart * 0.6,
+    `they fall together, ${apart} apart down to ${run.closest.toFixed(0)}`,
   )
+  assert.ok(run.peak > spec.speed, "and speed up doing it, which is the point of watching")
+  assert.ok(run.loops > 1, `and keep going round, ${run.loops} passes`)
+  // Bound, so the pair stays a pair: a pass that hands out more than it took flings them apart.
+  assert.ok(
+    run.widest <= apart + 1,
+    `and never fly further apart than they started, ${run.widest.toFixed(0)} of ${apart}`,
+  )
+  // Started at rest, so both of these are zero in exact arithmetic and small either side of it.
+  assert.ok(
+    run.momentum < spec.speed * 0.25,
+    `with no momentum invented, got ${run.momentum.toFixed(1)}`,
+  )
+  assert.ok(run.drift < 10, `so the pair stays where it was put, wandered ${run.drift.toFixed(1)}`)
+  assert.ok(
+    run.peak <= spec.well.terminal,
+    `and the backstop is never reached, got ${run.peak.toFixed(0)} of ${spec.well.terminal}`,
+  )
+})
+
+test("what a pair of wells does is the same at any frame rate", () => {
+  // The drift scaled with the step, so the slower the machine the further a pair sailed: at the
+  // 0.05 clamp in main.js it left the arena from a standing start. The number of times they
+  // swung around each other moved with the step too, which is the orbit being decided by the
+  // integrator rather than by the pull.
+  const steps = [1 / 60, 1 / 30, 0.05]
+  const runs = steps.map((dt) => orbitingPair(176, dt))
+  const loops = runs.map((run) => run.loops)
+  assert.ok(
+    Math.max(...loops) - Math.min(...loops) <= 1,
+    `the same orbit at every step, passes were ${loops.join(", ")} for ${steps.map((dt) => dt.toFixed(4)).join(", ")}`,
+  )
+  for (const [i, run] of runs.entries()) {
+    assert.ok(
+      run.drift < 10,
+      `and no drift at dt=${steps[i].toFixed(4)}, wandered ${run.drift.toFixed(1)}`,
+    )
+  }
 })
 
 test("every gun a flown hull carries is drawn on it", () => {
   // The player's draw path drew the one mount the shop fits, so a hull flown out of the
   // dev page fired from four mounts with nothing on any of them.
+  // A mount is a ring, whether it is a turret's nub or the mouth of a port, so both radii count
+  // as one gun drawn. Holes are counted separately: a port has one and a turret does not.
+  const TURRET_NUB = 3.4
+  const PORT_MOUTH = 4.8
   const drawnTurrets = (game) => {
-    const nubs = []
+    const rings = []
+    const holes = []
     const renderer = new Proxy(
-      { circle: (x, y, r, opts) => nubs.push({ r, stroke: opts && opts.stroke }) },
+      {
+        circle: (x, y, r, opts) => rings.push({ r, stroke: opts && opts.stroke }),
+        occlude: (x, y, r) => holes.push(r),
+      },
       { get: (target, key) => (key in target ? target[key] : () => {}) },
     )
     new GameView(renderer).render(game)
-    return nubs.filter((nub) => Math.abs(nub.r - 3.4) < 0.01)
+    const mounts = rings.filter(
+      (ring) => Math.abs(ring.r - TURRET_NUB) < 0.01 || Math.abs(ring.r - PORT_MOUTH) < 0.01,
+    )
+    return Object.assign(mounts, { holes })
   }
   const game = liveGame()
   beSolid(game.player)
   game.asteroids = [new Asteroid({ x: 60, y: 60, radius: 30 })] // so the sector stays live
-  game.openDevMenu()
-  game.openPausePage("devShip")
-  game
-    .pauseMenu()
-    .find((row) => row.name === "ALIEN FRIGATE")
-    .action(game)
-  game.paused = false
+  flyHull(game, "ALIEN FRIGATE")
   const player = beSolid(game.player)
   const guns = player.hardpoints.filter(
     (hp) => hp.module && hp.module.kind === "weapon" && hp.role !== "nose",
@@ -4331,6 +5121,20 @@ test("every gun a flown hull carries is drawn on it", () => {
   assert.ok(
     drawn.every((nub) => nub.stroke === PALETTE.alien.turret),
     "in the colour of whoever's hull it is",
+  )
+  // These four throw warp orbs, which are too big to have come down a barrel: the mount is an
+  // opening with a dark mouth rather than a nub with a thin nozzle on it.
+  assert.ok(
+    guns.every((hp) => hp.module.type.muzzle === "port"),
+    "the hull for this test carries openings",
+  )
+  assert.ok(
+    drawn.every((nub) => Math.abs(nub.r - PORT_MOUTH) < 0.01),
+    `drawn at the port's own size, got ${drawn.map((n) => n.r.toFixed(1)).join(", ")}`,
+  )
+  assert.ok(
+    drawn.holes.length >= guns.length,
+    `each with a hole in the hull for a mouth, got ${drawn.holes.length}`,
   )
 })
 
@@ -4411,7 +5215,7 @@ test("an edge arrow is what the radar found, not what the hull can make out", ()
     // One of each, off the top of the screen but well inside the sensor floor.
     game.asteroids = [new Asteroid({ x: player.x, y: player.y - 450, radius: 40 })]
     game.oreChunks = [new Ore(player.x + 40, player.y - 450, 0, 0)]
-    const rival = plainRival(player.x - 40, player.y - 450, "scout")
+    const rival = plainRival(player.x - 40, player.y - 450, "rivalScout")
     rival.arrived = true
     game.rivals = [rival]
     const found = []
@@ -4448,17 +5252,11 @@ test("an edge arrow is what the radar found, not what the hull can make out", ()
 test("the nose gun is the player's own, whatever the hull had it doing", () => {
   // A hull out of the dev page brings its own controller with it, and a nose still set to
   // hunt or to mine fires itself: an alien scout arrived shooting on its own.
-  for (const hull of ["ALIEN SCOUT", "SCOUT", "SEEKER", "FRIGATE"]) {
+  for (const hull of ["ALIEN SCOUT", "RIVAL SCOUT", "RIVAL SEEKER", "RIVAL FRIGATE"]) {
     const game = liveGame()
     beSolid(game.player)
     game.asteroids = [new Asteroid({ x: 200, y: 320, radius: 50 })] // what a miner shoots at
-    game.openDevMenu()
-    game.openPausePage("devShip")
-    game
-      .pauseMenu()
-      .find((row) => row.name === hull)
-      .action(game)
-    game.paused = false
+    flyHull(game, hull)
     const player = beSolid(game.player)
     player.x = 400
     player.y = 320
@@ -4488,7 +5286,7 @@ test("an alien round tears the picture wherever it lands, not only on the player
   player.y = 500
   // Close in, so the orbs it throws actually arrive inside the run.
   const pincer = plainRival(300, 320, "alienFrigate")
-  const mark = plainRival(430, 320, "scout")
+  const mark = plainRival(430, 320, "rivalScout")
   pincer.arrived = true
   mark.arrived = true
   game.rivals = [pincer, mark]
@@ -4507,12 +5305,26 @@ test("an alien round tears the picture wherever it lands, not only on the player
     tears += game.glitches.length > before ? 1 : 0
   }
   assert.ok(tears > 0, "an alien round landing on a rival tears the picture where it lands")
+
+  // And it tears the place it struck rather than the target. Wider than the hull it lands on, it
+  // reads as the screen breaking instead of as a hit arriving somewhere: at three times this it
+  // took the whole of a frigate and a good part of the sector with it.
+  const glitch = WEAPON_TYPES.warpOrb.impact.glitch
+  const widest = Math.max(...Object.values(SHIP_TYPES).map((type) => type.boundRadius))
+  assert.ok(
+    glitch.radius < widest,
+    `the tear is narrower than the hulls it lands on, ${glitch.radius} against ${widest.toFixed(0)}`,
+  )
 })
 
-test("a hull keeps its bubble up rather than spending it on the big gun", () => {
-  // A pincer that put everything into the gun flew about with no bubble for 55 seconds in
-  // every 60: a hull fighting itself as much as the player. It keeps a reserve back, and
-  // paces itself rather than winding up again the instant it can afford to.
+test("a hull that throws the big gun in a pair goes without its field to do it", () => {
+  // A pair is what the gun is for: two thrown a beat apart land inside each other's reach and
+  // entangle, which is the thing worth watching. It costs very nearly the whole cell, so the
+  // field goes down with it and stays down until the cell fills - a pincer that has just thrown
+  // a pair is a pincer with nothing up, and the pair going out is the tell.
+  //
+  // Whether a commitment is a pair is rolled, and this is what one does when it is; how often it
+  // is is the test below.
   const game = liveGame()
   const player = beSolid(game.player)
   game.asteroids = [new Asteroid({ x: 60, y: 60, radius: 30 })] // so the sector stays live
@@ -4524,9 +5336,14 @@ test("a hull keeps its bubble up rather than spending it on the big gun", () => 
   game.rivals = [pincer]
   const shield = pincer.shieldModule()
   assert.ok(shield && shield.up, "it starts with its field up")
+  const gun = pincer.hardpoints.find(
+    (hp) => hp.module && hp.module.typeName === "singularityGun",
+  ).module
+  gun.rollBurst = () => WEAPON_TYPES.singularityGun.burst // the pair, rather than a quarter of one
 
   let down = 0
   let thrown = 0
+  let lowest = pincer.energy
   const at = []
   for (let frame = 0; frame < 60 * 40; frame++) {
     pincer.x = 300
@@ -4542,22 +5359,83 @@ test("a hull keeps its bubble up rather than spending it on the big gun", () => 
       at.push(frame / 60)
       thrown++
     }
+    lowest = Math.min(lowest, pincer.energy)
     if (!shield.up) {
       down++
     }
   }
-  assert.ok(thrown > 0, "it does throw them")
-  assert.equal(down, 0, `and never goes without its field to do it, down for ${down} frames`)
+  const spec = WEAPON_TYPES.singularityGun
+  assert.equal(thrown, spec.burst, `it throws a pair, got ${thrown} at ${at.join(", ")}`)
+  // A wind-up plus a beat apart. Wound back to back with nothing between they landed on top of
+  // each other, which reads as one well rather than a pair.
+  const beat = spec.chargeTime + spec.burstGap
+  const apart = at[1] - at[0]
   assert.ok(
-    pincer.energy > WEAPON_TYPES.singularityGun.reserve * pincer.energyMax * 0.5,
-    "with something left in the cell",
+    Math.abs(apart - beat) < 0.2,
+    `a wind-up and a beat apart, got ${apart.toFixed(2)}s against ${beat.toFixed(2)}s`,
   )
-  for (let i = 1; i < at.length; i++) {
-    assert.ok(
-      at[i] - at[i - 1] > WEAPON_TYPES.singularityGun.pace[0],
-      `and a beat between them, got ${(at[i] - at[i - 1]).toFixed(1)}s`,
-    )
-  }
+  // Close enough to pull on each other, and far enough to read as two things.
+  const gap = apart * spec.speed
+  assert.ok(
+    gap < spec.well.radius,
+    `which puts them inside each other's reach, ${gap.toFixed(0)} of ${spec.well.radius}`,
+  )
+  assert.ok(
+    gap > spec.well.radius * 0.5,
+    `and not stacked on top of each other, ${gap.toFixed(0)} of ${spec.well.radius}`,
+  )
+  assert.ok(down > 0, "and the field goes down paying for it")
+  // Paid at the commitment, so the cell bottoms out at what a pair leaves rather than draining
+  // over the two wind-ups.
+  assert.ok(
+    lowest < pincer.energyMax - spec.energy * spec.burst + 1,
+    `with the pair paid for whole, cell bottomed at ${lowest.toFixed(0)}`,
+  )
+  // And one pair per commitment: the next needs the cell filled again, which is far longer than
+  // `pace` on its own and longer than a pincer's time in the sector.
+  assert.ok(at[at.length - 1] < 40, "inside the window measured")
+})
+
+test("a pair is the rarer outcome, and a single the usual one", () => {
+  // Thrown every time, a pair stops being a thing that happens and becomes the beat the fight is
+  // built around. Most commitments are for one well; `burstChance` is how often it is two, and a
+  // gun that says nothing about it fires one at a time.
+  const spec = WEAPON_TYPES.singularityGun
+  const game = liveGame()
+  beSolid(game.player)
+  const pincer = plainRival(300, 320, "alienFrigate")
+  game.rivals = [pincer]
+  const gun = pincer.hardpoints.find(
+    (hp) => hp.module && hp.module.typeName === "singularityGun",
+  ).module
+  const flush = { energy: spec.energy * spec.burst } // a cell that can see a pair through
+  const rolls = seeded(20260728, () =>
+    Array.from({ length: 4000 }, () => gun.rollBurst(flush)).reduce(
+      (tally, shots) => tally.set(shots, (tally.get(shots) ?? 0) + 1),
+      new Map(),
+    ),
+  )
+  assert.deepEqual(
+    [...rolls.keys()].sort(),
+    [1, spec.burst],
+    "it rolls one or the pair, nothing else",
+  )
+  const pairs = rolls.get(spec.burst) / 4000
+  assert.ok(
+    Math.abs(pairs - spec.burstChance) < 0.03,
+    `a pair about ${(spec.burstChance * 100).toFixed(0)}% of the time, got ${(pairs * 100).toFixed(1)}%`,
+  )
+
+  // And only offered at all when the cell can already pay for one, so a roll is never overruled
+  // afterwards: cut back to what was affordable instead, a pair almost never survived the roll.
+  const short = { energy: spec.energy * spec.burst - 1 }
+  const shortRolls = new Set(Array.from({ length: 200 }, () => gun.rollBurst(short)))
+  assert.deepEqual([...shortRolls], [1], "a cell a shot short of a pair never rolls one")
+
+  // A turret says nothing about bursts, so it never rolls one and never plants its hull.
+  const orb = pincer.hardpoints.find((hp) => hp.module && hp.module.typeName === "warpOrb").module
+  assert.equal(orb.rollBurst(flush), 1, "a gun with no burst fires one at a time")
+  assert.equal(orb.spacingShots, false, "and has no gap to hold station for")
 })
 
 test("a well already out there is not raw material for the next one", () => {
@@ -4593,6 +5471,162 @@ test("a well already out there is not raw material for the next one", () => {
   )
 })
 
+test("a well drifts a little faster than the hull that threw it", () => {
+  // Faster, so the hull is left behind by what it let go of. Thrown slower, a pincer chased its
+  // own wells at their own pace and hull and pair travelled as one stack the whole way across the
+  // sector, which is nothing to look at. Much faster and it stops being a place to be away from
+  // and becomes a thing that arrives.
+  const spec = WEAPON_TYPES.singularityGun
+  const game = liveGame()
+  beSolid(game.player)
+  game.devFlyShip("alienFrigate")
+  const pincer = beSolid(game.player)
+  assert.equal(pincer.mainWeapon.typeName, "singularityGun", "the hull carries it")
+  assert.ok(
+    spec.speed > pincer.maxSpeed,
+    `thrown at ${spec.speed} by a hull that flies at ${pincer.maxSpeed.toFixed(0)}`,
+  )
+  assert.ok(
+    spec.speed < pincer.maxSpeed * 1.5,
+    `but only a little faster, ${(spec.speed / pincer.maxSpeed).toFixed(2)}x the hull`,
+  )
+})
+
+test("a well launched by the gun holds its speed for its whole life", () => {
+  // On its own nothing should touch it: not the field it was launched from inside of, not the
+  // muzzle of the next one winding up, not the ship flying through it. Each of those has sent a
+  // lone well out at multiples of what it was thrown at.
+  const spec = WEAPON_TYPES.singularityGun
+  const game = liveGame()
+  beSolid(game.player)
+  game.devFlyShip("alienFrigate")
+  const pincer = beSolid(game.player)
+  pincer.angle = 0
+  pincer.x = 250
+  pincer.y = 320
+  const well = new Singularity(pincer.x + 90, pincer.y, spec.speed, 0, 0, pincer, spec)
+  game.projectiles.push(well)
+  let peak = 0
+  for (let frame = 0; frame < Math.round(60 * spec.life * 0.8); frame++) {
+    beSolid(pincer)
+    pincer.invincible = 1e9
+    // Sailing straight through it with the trigger down, which is the arrangement that used to
+    // pick a well up and throw it.
+    pincer.x = 250 + frame * 3
+    game.pressedKeys.add("Space")
+    game.advance(1 / 60)
+    if (well.dead) {
+      break
+    }
+    peak = Math.max(peak, Math.hypot(well.vx, well.vy))
+  }
+  assert.ok(
+    Math.abs(peak - spec.speed) < 1,
+    `it keeps the speed it was thrown at, got ${peak.toFixed(1)} of ${spec.speed}`,
+  )
+})
+
+test("a shove turns a well without speeding it up", () => {
+  // REPEL and a rock going off both set a shot's speed rather than adding to it, at no less than
+  // a round's own. A well is the one shot that never slows and never dies on contact, so one
+  // pulse used to leave it running at the cap for the rest of its life.
+  const spec = WEAPON_TYPES.singularityGun
+  const game = liveGame()
+  const player = beSolid(game.player)
+  game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })] // so the sector stays live
+  player.x = 400
+  player.y = 320
+  // Coming at the ship, so the shove has something to turn.
+  const well = new Singularity(player.x + 80, player.y, -spec.speed, 0, 0, player, spec)
+  game.projectiles.push(well)
+  player.equip(0, "repel")
+  let peak = 0
+  for (let frame = 0; frame < 300; frame++) {
+    beSolid(player)
+    player.invincible = 1e9
+    player.energy = player.energyMax
+    if (frame === 30) {
+      player.items[0].cooldown = 0
+      game.useSpecialSlot(0)
+    }
+    game.advance(1 / 60)
+    if (well.dead) {
+      break
+    }
+    peak = Math.max(peak, Math.hypot(well.vx, well.vy))
+  }
+  assert.ok(
+    peak <= spec.speed + 1,
+    `a shove redirects it and no more, got ${peak.toFixed(1)} of ${spec.speed}`,
+  )
+  assert.ok(well.vx > 0, "and it is going the other way for it")
+})
+
+test("a well that leaves the arena is gone, as any shot is", () => {
+  // `Singularity` replaces the whole of `Projectile.update`, so it used to skip the escape check
+  // with it: a well drifted out past the ring and went on pulling from thousands of units away
+  // for the rest of its sixteen seconds.
+  const spec = WEAPON_TYPES.singularityGun
+  const game = liveGame()
+  beSolid(game.player)
+  game.player.x = -9000
+  game.player.y = -9000
+  game.asteroids = [new Asteroid({ x: 60, y: 60, radius: 30 })] // so the sector stays live
+  const well = new Singularity(ARENA.cx, ARENA.cy, spec.well.terminal, 0, 0, null, spec)
+  game.projectiles.push(well)
+  for (let frame = 0; frame < Math.round(60 * spec.life * 0.9) && !well.dead; frame++) {
+    game.advance(1 / 60)
+  }
+  assert.ok(well.dead, "it dies out there rather than running its clock down outside the ring")
+  assert.ok(well.life > 0, "and it was the ring that did it, not the clock")
+})
+
+test("a held trigger on a dry cell does not pin the cell, or restart forever", () => {
+  // The gun has no reload, so a hold could always start a wind-up. Started on a cell that could
+  // not pay for one, it failed on its first frame and was started again on the next: the charge
+  // sound thirty times a second, and none of it reaching the regen, which lives on the other
+  // side of the branch the trigger kept taking. Gun dead, field down, cell pinned at nothing.
+  const game = liveGame()
+  beSolid(game.player)
+  game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })] // so the sector stays live
+  game.devFlyShip("alienFrigate")
+  const pincer = beSolid(game.player)
+  const spec = WEAPON_TYPES.singularityGun
+  pincer.energy = 5
+  // Held for less than it takes the cell to reach one shot's price, so every frame of it is a
+  // frame the gun genuinely cannot fire in.
+  const frames = Math.round((60 * (spec.energy - pincer.energy)) / pincer.type.regen) - 60
+  assert.ok(frames > 120, `a window worth measuring, ${frames} frames`)
+  let charges = 0
+  const wasCharge = Sound.charge
+  Sound.charge = () => {
+    charges++
+  }
+  const started = pincer.energy
+  try {
+    for (let frame = 0; frame < frames; frame++) {
+      beSolid(pincer)
+      pincer.invincible = 1e9
+      game.pressedKeys.add("Space")
+      game.advance(1 / 60)
+    }
+  } finally {
+    Sound.charge = wasCharge
+  }
+  assert.equal(charges, 0, `no wind-up is started that cannot be paid for, got ${charges}`)
+  // The cell filling is the whole of it: pinned at nothing, the field could never reach
+  // `recoverAt` either, so a held trigger cost the ship its gun and its bubble together.
+  assert.ok(
+    pincer.energy > started + 100,
+    `and the cell fills while the trigger is down, got ${pincer.energy.toFixed(0)}`,
+  )
+  assert.ok(
+    pincer.energy >= started + pincer.type.regen * (frames / 60) - 1,
+    "at its full rate, so the trigger costs the regen nothing",
+  )
+  assert.equal(game.projectiles.length, 0, "and nothing was thrown by asking")
+})
+
 test("whoever is flying it decides the side, not the hull", () => {
   // A hull reported its own faction, so flying a rival's made the player one: their own
   // guns went looking for a target on the side they were now on and found none, and an
@@ -4600,17 +5634,11 @@ test("whoever is flying it decides the side, not the hull", () => {
   const game = liveGame()
   beSolid(game.player)
   game.asteroids = [new Asteroid({ x: 100, y: 100, radius: 40 })] // so the sector stays live
-  game.openDevMenu()
-  game.openPausePage("devShip")
-  game
-    .pauseMenu()
-    .find((row) => row.name === "FRIGATE")
-    .action(game)
-  game.paused = false
+  flyHull(game, "RIVAL FRIGATE")
   const player = beSolid(game.player)
   assert.equal(player.faction, "player", "still the player, in someone else's hull")
 
-  const mark = plainRival(700, 320, "scout")
+  const mark = plainRival(700, 320, "rivalScout")
   mark.arrived = true
   game.rivals = [mark]
   let fired = 0
@@ -4678,12 +5706,7 @@ test("a hull's rolled arms are found with it, not only what it always carries", 
   const game = liveGame()
   const arms = Object.values(SHIP_TYPES.alienSeeker.arms || {})
   assert.ok(arms.length, "the hull for this test must roll something")
-  game.openDevMenu()
-  game.openPausePage("devShip")
-  game
-    .pauseMenu()
-    .find((row) => row.name === "ALIEN SEEKER")
-    .action(game)
+  flyHull(game, "ALIEN SEEKER")
   for (const arm of arms) {
     const id = arm.weapon || arm.shield
     const slot = arm.weapon ? "turret" : "shield"
@@ -4697,7 +5720,7 @@ test("a turret is fitted to a mount the hull actually has", () => {
   // fitted the gun to a mount that was not there, so nothing appeared on the ship.
   for (let left = 0; left < MAX_SLOTS; left++) {
     const game = liveGame()
-    game.devMode = true
+    game.setDevFreeBuys(true)
     game.enterShop()
     game.shopSlot = left // where the specials row left it
     for (let row = 0; row <= SHOP.length; row++) {
@@ -5008,7 +6031,7 @@ test("the shop says what the ship is worth, and how much of it was bought", () =
   // Everything bought, and the page says which way each number went: a bigger cell is
   // worth having, and the mass and the speed it costs are the price of it.
   const kitted = liveGame()
-  kitted.devMode = true
+  kitted.setDevFreeBuys(true)
   kitted.devMaxOut()
   kitted.enterShop()
   const after = readStats(kitted)
@@ -5345,8 +6368,8 @@ test("the shop sells only what the run has found, and dev mode sells everything"
   assert.deepEqual(game.buyableSpecials(), ["oreMagnet"], "a fresh run has met its own kit")
   game.findSpecial("repel")
   assert.deepEqual(game.buyableSpecials().sort(), ["oreMagnet", "repel"])
-  game.devMode = true
-  assert.deepEqual(game.buyableSpecials(), SPECIAL_IDS, "dev mode stocks the lot")
+  game.setDevFreeBuys(true)
+  assert.deepEqual(game.buyableSpecials(), SPECIAL_IDS, "free purchases stock the lot")
 })
 
 test("picking a special up is what puts it on the shop's shelf", () => {
@@ -5638,7 +6661,7 @@ test("the defense turret holds fire in stealth, but still answers the player's h
       game.pressedKeys.add(game.bindings.keys.turretFire[0])
       player.turretAim = 0
     }
-    game.rivals = [plainRival(560, 320, "scout")]
+    game.rivals = [plainRival(560, 320, "rivalScout")]
     let fired = 0
     for (let frame = 0; frame < 240; frame++) {
       player.energy = player.energyMax
@@ -5693,7 +6716,7 @@ test("a loose special names itself for a ship close by, when help text is on", (
 
 test("the shop stocks only what the registry says is for sale", () => {
   const game = liveGame()
-  game.devMode = true
+  game.setDevFreeBuys(true)
   assert.deepEqual(game.buyableSpecials(), SPECIAL_IDS, "everything is for sale today")
   for (const id of SPECIAL_IDS) {
     assert.equal(typeof SPECIAL_TYPES[id].buyable, "boolean", `${id} must say either way`)
@@ -5705,7 +6728,7 @@ test("the shop stocks only what the registry says is for sale", () => {
   try {
     assert.ok(!game.buyableSpecials().includes(id), "not offered in dev mode")
     game.findSpecial(id)
-    game.devMode = false
+    game.setDevFreeBuys(false)
     assert.ok(!game.buyableSpecials().includes(id), "nor once the run has found one")
   } finally {
     SPECIAL_TYPES[id].buyable = was
@@ -6002,8 +7025,8 @@ test("the exhaust wash shoves a boulder behind the ship, not only a pebble", () 
 test("a nearest scan takes the closest of what can be shot at", () => {
   const game = liveGame()
   const from = { x: ARENA.cx, y: ARENA.cy }
-  const near = plainRival(ARENA.cx + 120, ARENA.cy, "scout")
-  const far = plainRival(ARENA.cx + 300, ARENA.cy, "scout")
+  const near = plainRival(ARENA.cx + 120, ARENA.cy, "rivalScout")
+  const far = plainRival(ARENA.cx + 300, ARENA.cy, "rivalScout")
   game.rivals = [far, near] // out of order, so the scan is doing the choosing
 
   const found = game.nearestRival(from)
@@ -6016,7 +7039,7 @@ test("a nearest scan takes the closest of what can be shot at", () => {
 
   // nor one that is not in play: a rival outside the ring cannot be harmed
   near.dead = false
-  const { game: outside, rival } = rivalBeyondTheRing("scout", 200)
+  const { game: outside, rival } = rivalBeyondTheRing("rivalScout", 200)
   assert.equal(rival.inPlay(), false, "the pose must actually be out of play")
   outside.rivals = [rival]
   assert.equal(outside.nearestRival({ x: rival.x, y: rival.y }), null)
@@ -6150,10 +7173,10 @@ function flyingFor(typeName, faction, body) {
 }
 
 test("a hull takes aim at the sides its own faction is hostile to", () => {
-  flyingFor("seeker", "alien", () => {
+  flyingFor("rivalSeeker", "alien", () => {
     const game = liveGame()
-    const rival = plainRival(ARENA.cx + 100, ARENA.cy, "scout")
-    const alien = plainRival(ARENA.cx + 160, ARENA.cy, "seeker")
+    const rival = plainRival(ARENA.cx + 100, ARENA.cy, "rivalScout")
+    const alien = plainRival(ARENA.cx + 160, ARENA.cy, "rivalSeeker")
     game.rivals = [rival, alien]
     assert.equal(rival.faction, "rival", "a type says nothing and flies for the rivals")
     assert.equal(alien.faction, "alien")
@@ -6166,10 +7189,10 @@ test("a hull takes aim at the sides its own faction is hostile to", () => {
 })
 
 test("a hidden player is no target, and the other side still is", () => {
-  flyingFor("seeker", "alien", () => {
+  flyingFor("rivalSeeker", "alien", () => {
     const game = liveGame()
-    const rival = plainRival(ARENA.cx + 60, ARENA.cy, "scout")
-    const alien = plainRival(ARENA.cx + 300, ARENA.cy, "seeker")
+    const rival = plainRival(ARENA.cx + 60, ARENA.cy, "rivalScout")
+    const alien = plainRival(ARENA.cx + 300, ARENA.cy, "rivalSeeker")
     game.rivals = [rival, alien]
     assert.equal(game.hostileTarget(rival).target, game.player, "in the open the player is nearest")
     hideThePlayer(game)
@@ -6180,7 +7203,7 @@ test("a hidden player is no target, and the other side still is", () => {
 test("a rock is a hazard: it fights the player and leaves the rivals to it", () => {
   const game = liveGame()
   const rock = new Asteroid({ x: ARENA.cx + 200, y: ARENA.cy, radius: 40, traits: {} })
-  const rival = plainRival(ARENA.cx + 210, ARENA.cy, "scout")
+  const rival = plainRival(ARENA.cx + 210, ARENA.cy, "rivalScout")
   game.asteroids = [rock]
   game.rivals = [rival]
   assert.equal(rock.faction, "hazard")
@@ -6223,10 +7246,11 @@ test("a turret does not track a ship nothing can see", () => {
   for (const armed of ["a rival", "a rock"]) {
     const build = (game) => {
       if (armed === "a rival") {
-        const rival = new RivalShip(ARENA.cx, ARENA.cy, "frigate", [
+        const rival = new RivalShip(ARENA.cx, ARENA.cy, "rivalFrigate", [
           { hp: 1, weapon: "autocannon", controller: "turret" },
         ])
         game.rivals = [rival]
+        game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })] // so the sector stays live
         return rival
       }
       const rock = new Asteroid({ vertices: square(ARENA.cx, ARENA.cy, 60) })
@@ -6240,32 +7264,488 @@ test("a turret does not track a ship nothing can see", () => {
       return rock
     }
 
+    // The aim is worked out in the update pass and drawing reads it, so each pose is held long
+    // enough for the mount to traverse onto it before the barrel is measured.
+    const settle = (game, at) => {
+      game.player.x = ARENA.cx + at[0]
+      game.player.y = ARENA.cy + at[1]
+      for (let i = 0; i < 90; i++) {
+        game.player.x = ARENA.cx + at[0]
+        game.player.y = ARENA.cy + at[1]
+        game.advance(1 / 60)
+      }
+    }
+
     // seen: the barrels follow the ship, which is what makes a turret legible
     const open = liveGame()
     const seen = build(open)
-    const followed = poses.map(([dx, dy]) => {
-      open.player.x = ARENA.cx + dx
-      open.player.y = ARENA.cy + dy
+    const followed = poses.map((at) => {
+      settle(open, at)
       const bearings = drawnBearings(open, seen)
       assert.equal(bearings.length, 1, `${armed} should draw one barrel`)
       return bearings[0]
     })
     assert.ok(swing(followed) > 1, `${armed} should track a ship it can see`)
 
-    // hidden: they hold whatever bearing they had, however the ship moves
+    // hidden: the mount comes back to rest and stays there, wherever the ship goes. Holding the
+    // last bearing instead left a turret frozen mid-sky pointing at nothing, which reads as broken
+    // rather than as having lost you; swinging home says it has nothing, which is the truth.
     const dark = liveGame()
     const hiding = build(dark)
     hideThePlayer(dark)
-    const held = poses.map(([dx, dy]) => {
-      dark.player.x = ARENA.cx + dx
-      dark.player.y = ARENA.cy + dy
+    const held = poses.map((at) => {
+      settle(dark, at)
       return drawnBearings(dark, hiding)[0]
     })
     assert.ok(
       swing(held) < 1e-9,
       `${armed} tracked a hidden ship across ${((swing(held) * 180) / Math.PI).toFixed(1)} degrees`,
     )
+    const gun = hiding.hardpoints.find((hp) => hp.module && hp.module.kind === "weapon").module
+    assert.ok(
+      Math.abs(shortestTurn(held[0], gun.restBearing(hiding))) < 1e-6,
+      `${armed} should come back to rest, not freeze wherever it was looking`,
+    )
   }
+})
+
+// The other half of it: a turret that had something and lost it comes home under its own traverse
+// rather than snapping back, so what the mount is doing is legible the whole way.
+test("a turret swings back to rest when it loses its target", () => {
+  const { game, rival, gun, hold } = turretRig("autocannon")
+  // Abeam, so there is a real angle to come back from.
+  for (let i = 0; i < 90; i++) {
+    game.player.x = ARENA.cx
+    game.player.y = ARENA.cy + 300
+    game.player.vx = 0
+    game.player.vy = 0
+    hold()
+    game.advance(1 / 60)
+  }
+  const swung = Math.abs(shortestTurn(gun.aim, gun.restBearing(rival)))
+  assert.ok(swung > 1, `it should be well off rest while it has a target, was ${swung.toFixed(2)}`)
+
+  // Take the target away and watch it come home. Hidden rather than moved: the player is confined
+  // to the arena, so a ship put outside it is simply dragged back in and is a target again.
+  hideThePlayer(game)
+  const seen = []
+  for (let i = 0; i < 180; i++) {
+    hold()
+    game.advance(1 / 60)
+    seen.push(Math.abs(shortestTurn(gun.aim, gun.restBearing(rival))))
+  }
+  assert.ok(seen[0] < swung, "it starts back at once")
+  assert.ok(seen[0] > 0.05, "and under its own traverse rather than snapping there")
+  assert.ok(seen.at(-1) < 1e-6, `and arrives, ended ${seen.at(-1).toFixed(4)} off rest`)
+  // Monotone: it comes home without wandering off on the way.
+  for (let i = 1; i < seen.length; i++) {
+    assert.ok(seen[i] <= seen[i - 1] + 1e-9, "the swing home never reverses")
+  }
+})
+
+// A rival with a single named turret and a still hull, so what the mount does is the only
+// thing moving. The hull is pinned every frame: a turret's aim is a world bearing and the
+// arc it covers is measured off the hull, so a drifting host muddies both.
+//
+// The design's own core and drives are kept and only its guns replaced. A loadout of one
+// weapon is a hull with no cell behind it, and a gun that cannot be paid for never fires.
+function turretRig(weapon, arc) {
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })] // so the sector stays live
+  const rival = new RivalShip(ARENA.cx, ARENA.cy, "rivalFrigate", [
+    ...SHIP_TYPES.rivalFrigate.loadout.filter((entry) => !entry.weapon),
+    { hp: 1, weapon, controller: "turret", arc },
+  ])
+  rival.turnRate = 0
+  game.rivals = [rival]
+  const hold = () => {
+    rival.x = ARENA.cx
+    rival.y = ARENA.cy
+    rival.vx = 0
+    rival.vy = 0
+    rival.angle = 0
+  }
+  hold()
+  return { game, rival, gun: rival.hardpoints[1].module, hold }
+}
+
+// The mount is what limits the aim, so a turret sweeps between targets instead of jumping
+// from one to the next. Measured as the fastest the aim ever moved over a chase deliberately
+// whipped around faster than any mount can follow.
+test("a turret comes round no faster than its mount traverses", () => {
+  for (const weapon of ["autocannon", "defenseFlak", "warpOrb"]) {
+    const { game, gun, hold } = turretRig(weapon)
+    const cap = gun.turnRate()
+    const dt = 1 / 60
+    let worst = 0,
+      last = null
+    for (let i = 0; i < 240; i++) {
+      const around = i * 0.25 // a quarter turn a frame: 15 rad/sec of demand
+      game.player.x = ARENA.cx + Math.cos(around) * 300
+      game.player.y = ARENA.cy + Math.sin(around) * 300
+      game.player.vx = 0
+      game.player.vy = 0
+      hold()
+      game.advance(dt)
+      if (last !== null && gun.aim !== null) {
+        worst = Math.max(worst, Math.abs(shortestTurn(last, gun.aim)) / dt)
+      }
+      last = gun.aim
+    }
+    assert.ok(
+      worst <= cap + 1e-6,
+      `${weapon} swung at ${worst.toFixed(2)} rad/sec against a ${cap} limit`,
+    )
+    // ...and the limit is what held it back, rather than the demand never asking for more.
+    assert.ok(worst > cap * 0.9, `${weapon} never reached its own ${cap} rad/sec`)
+  }
+})
+
+// The point of moving the aim into the update pass: one bearing, worked out where there is a
+// dt to limit it, that both the shot and the barrel come off. A turret that fires somewhere
+// other than where it is drawn pointing reads as a cheat.
+test("a turret fires along the barrel the view draws", () => {
+  const { game, rival, gun, hold } = turretRig("autocannon")
+  let fired = null
+  for (let i = 0; i < 300 && !fired; i++) {
+    game.player.x = ARENA.cx + 200
+    game.player.y = ARENA.cy + 260
+    game.player.vx = 0
+    game.player.vy = 180 // crossing, so the aim is somewhere the hull is not pointed
+    hold()
+    game.advance(1 / 60)
+    fired = game.projectiles[0] ?? null
+  }
+  assert.ok(fired, "the turret should get a shot away")
+  const barrel = drawnBearings(game, rival)
+  assert.equal(barrel.length, 1, "one barrel to read")
+  assert.ok(
+    Math.abs(shortestTurn(barrel[0], mountAim(gun, rival.angle))) < 1e-9,
+    "the barrel is drawn along the mount's own aim",
+  )
+  assert.ok(
+    Math.abs(shortestTurn(Math.atan2(fired.vy, fired.vx), barrel[0])) < 1e-9,
+    "and the round left along it",
+  )
+})
+
+// A mount still traversing holds its shot: the alternative is a turret that puts a round wide
+// the instant it acquires something and then walks its fire onto it.
+test("a turret holds its fire until the mount is round", () => {
+  const { game, gun, hold } = turretRig("autocannon")
+  // Abeam, and a long way off the hull's facing, so there is a real traverse to sit through.
+  game.player.x = ARENA.cx
+  game.player.y = ARENA.cy + 300
+  gun.cooldown = 0
+  hold()
+  game.advance(1 / 60)
+  assert.equal(game.projectiles.length, 0, "nothing goes out while it is still coming round")
+  const swept = Math.abs(shortestTurn(0, gun.aim))
+  assert.ok(swept > 0, "but it has started to move")
+  assert.ok(swept < Math.PI / 2, "and it has not arrived yet")
+
+  for (let i = 0; i < 90 && game.projectiles.length === 0; i++) {
+    game.player.x = ARENA.cx
+    game.player.y = ARENA.cy + 300
+    game.player.vx = 0
+    game.player.vy = 0
+    gun.cooldown = 0
+    hold()
+    game.advance(1 / 60)
+  }
+  assert.ok(game.projectiles.length > 0, "and it fires once it has arrived")
+})
+
+// A mount only covers so much of the sky. Past the edge of its arc the aim stops and never
+// reaches what it wants, which is the same state as still traversing: it holds its fire and
+// the hull has to come round.
+test("a turret will not fire outside the arc its mount covers", () => {
+  const { game, gun, hold } = turretRig("autocannon", 0.5)
+  game.player.x = ARENA.cx - 300 // dead astern of a hull facing along +x
+  game.player.y = ARENA.cy
+  for (let i = 0; i < 120; i++) {
+    game.player.x = ARENA.cx - 300
+    game.player.y = ARENA.cy
+    game.player.vx = 0
+    game.player.vy = 0
+    gun.cooldown = 0
+    hold()
+    game.advance(1 / 60)
+  }
+  assert.equal(game.projectiles.length, 0, "a mount cannot shoot through its own hull")
+  assert.ok(Math.abs(shortestTurn(0, gun.aim)) <= 0.5 + 1e-9, "and it stops at the arc edge")
+})
+
+// Where a turret points to put a round where a target is going to be. For a target crossing
+// square to the line of sight the lead angle is exactly asin(target speed / round speed), which
+// is a closed form worth pinning: it is the whole of the leading behaviour in one number.
+test("a turret leads a crossing target, and gives up on one it cannot catch", () => {
+  const mount = { x: 0, y: 0 }
+  const crossing = { x: 300, y: 0, vx: 0, vy: 120 }
+  const lead = interceptBearing(mount, crossing, 400)
+  assert.ok(lead > 0, "the aim goes ahead of the target, not at it")
+  assert.ok(Math.abs(Math.sin(lead) - 120 / 400) < 1e-9, "by asin(crossing speed / round speed)")
+
+  // Nothing to lead: a beam is there the instant it is fired.
+  assert.equal(interceptBearing(mount, crossing, 0), bearingTo(mount, crossing))
+
+  // And a target running faster than the round can never be met, so it is aimed at directly
+  // and the shot is at least thrown in the right general direction.
+  const running = { x: 300, y: 0, vx: 900, vy: 0 }
+  assert.equal(interceptBearing(mount, running, 130), bearingTo(mount, running))
+
+  // A target sitting still is aimed at, whatever the round's speed.
+  const still = { x: 0, y: -240, vx: 0, vy: 0 }
+  assert.ok(Math.abs(shortestTurn(interceptBearing(mount, still, 250), -Math.PI / 2)) < 1e-9)
+})
+
+// The whole point of leading, end to end: a round thrown at a crossing target has to leave
+// ahead of it, and the further ahead the faster the target is going.
+test("a turret's rounds leave ahead of a crossing target", () => {
+  const leadFor = (crossSpeed) => {
+    const { game, rival, gun, hold } = turretRig("autocannon")
+    let fired = null
+    for (let i = 0; i < 400 && !fired; i++) {
+      game.player.x = ARENA.cx + 300
+      game.player.y = ARENA.cy
+      game.player.vx = 0
+      game.player.vy = crossSpeed
+      gun.cooldown = 0
+      hold()
+      game.advance(1 / 60)
+      fired = game.projectiles[0] ?? null
+    }
+    assert.ok(fired, `a shot should go out against a target crossing at ${crossSpeed}`)
+    const at = rival.mountWorld(rival.hardpoints[1].local)
+    return shortestTurn(bearingTo(at, game.player), Math.atan2(fired.vy, fired.vx))
+  }
+  const slow = leadFor(60)
+  const fast = leadFor(180)
+  assert.ok(slow > 0.01, `the round should lead the target, led by ${slow.toFixed(3)}`)
+  assert.ok(
+    fast > slow,
+    `a faster target is led further: ${fast.toFixed(3)} over ${slow.toFixed(3)}`,
+  )
+})
+
+// A rival in a live sector with the player pinned where the test puts it, and everything else
+// out of the way. Both hulls are held every frame: what is being measured is where the rival
+// chooses to be, and a player drifting off would move the goalposts with it.
+function standoffRig(typeName, { at = 500, facing = Math.PI } = {}) {
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })] // so the sector stays live
+  const rival = plainRival(ARENA.cx + at, ARENA.cy, typeName)
+  rival.arrived = true
+  rival.lifeTimer = 9999
+  rival.angle = facing // pointed at the player, so a slab is not still coming about
+  game.rivals = [rival]
+  const step = () => {
+    game.player.x = ARENA.cx
+    game.player.y = ARENA.cy
+    game.player.vx = 0
+    game.player.vy = 0
+    game.viewCenter.x = ARENA.cx
+    game.viewCenter.y = ARENA.cy
+    game.advance(1 / 60)
+    return Math.hypot(rival.x - ARENA.cx, rival.y - ARENA.cy)
+  }
+  return { game, rival, step }
+}
+
+// What a field does to a round is bend it over the approach, so a round fired from inside the
+// field's reach arrives whatever the field does. A hull carrying one knows it and holds the
+// fight outside that reach, which is a longer range than its type would ask for on its own.
+test("a hull with a field stands off past the reach of the field", () => {
+  const bare = plainRival(0, 0, "rivalSeeker")
+  const fielded = plainRival(0, 0, "alienSeeker")
+  const field = fielded.shieldModule()
+  assert.equal(field.typeName, "alienField", "the alien dart carries the field")
+  const reach = field.type.repel.steerReach
+
+  assert.ok(
+    fielded.standoffRange() >= fielded.shieldRadius() + reach,
+    "the fight is held outside the reach of the field",
+  )
+  assert.ok(
+    fielded.standoffRange() > bare.standoffRange(),
+    `the fielded hull wants more room: ${fielded.standoffRange().toFixed(0)} over ${bare.standoffRange().toFixed(0)}`,
+  )
+  // Both types ask for the same distance, so the difference above is the field's and nothing else.
+  assert.equal(SHIP_TYPES.alienSeeker.breakOff.near, SHIP_TYPES.rivalSeeker.breakOff.near)
+})
+
+// Open, and it plays for time instead of trading: more room than it would take while it was
+// whole, and never so much that it has backed off the screen and out of the fight.
+test("an open hull wants more room, and never more than the screen", () => {
+  const rival = plainRival(0, 0, "alienFrigate")
+  const whole = rival.standoffRange()
+  assert.equal(rival.exposed(), false, "it starts whole")
+
+  const field = rival.shieldModule()
+  field.up = false
+  assert.equal(rival.exposed(), true, "a bubble that is down is an open hull")
+  assert.ok(rival.standoffRange() > whole, "and an open hull wants more room")
+
+  field.up = true
+  rival.hull = SHIP_TYPES.alienFrigate.hull * CONFIG.RIVAL_FLEE_HULL
+  assert.equal(rival.exposed(), true, "so is plating this far gone")
+
+  // Whatever it works out, it stays inside the view: the half-diagonal is 604, and a hull
+  // shooting from past that is shooting from somewhere the player cannot answer.
+  rival.hull = 1
+  field.up = false
+  assert.ok(rival.standoffRange() <= CONFIG.RIVAL_STANDOFF_MAX)
+  assert.ok(CONFIG.RIVAL_STANDOFF_MAX < Math.hypot(VIEW_W, VIEW_H) / 2)
+})
+
+// A miner is not fighting, so it has no range it wants to shoot from: what it wants is not to be
+// near the fight. Given a rock parked right beside the ship it gives the rock up rather than come
+// and get it, and cuts from out where it is instead.
+//
+// A rock parked right beside the ship is a rock it gives up rather than comes and gets, and it
+// does so with the rock in reach of its cutting beam, so it is not giving up mining - it is
+// giving up mining that one from up close.
+test("a miner inside its standoff breaks off instead of closing", () => {
+  const near = standoffRig("rivalScout", { at: 250 })
+  // A rock it wants, close enough to the ship that going to get it means coming in, and on the
+  // far side of the ship so the hull is not simply grinding along it.
+  near.game.asteroids = [new Asteroid({ x: ARENA.cx - 130, y: ARENA.cy, radius: 60 })]
+  assert.ok(near.rival.standoffRange() > 250, "it starts inside the range it wants to keep")
+  near.game.advance(1 / 60)
+  assert.ok(near.rival.breaking > 0, "so it wants out, rock or no rock")
+
+  let range = Math.hypot(near.rival.x - ARENA.cx, near.rival.y - ARENA.cy)
+  for (let i = 0; i < 60 * 4; i++) {
+    range = near.step()
+  }
+  assert.ok(range > near.rival.standoffRange(), `and the range opens: ${range.toFixed(0)}`)
+
+  // ...and out there it has no reason to run, so it gets on with what it came for.
+  const far = standoffRig("rivalScout", { at: 700 })
+  far.game.advance(1 / 60)
+  assert.equal(far.rival.breaking, 0, "a miner at range is not breaking off from anything")
+})
+
+// Most of its plating gone and nothing up to soak the next hit, and it stops fighting. The
+// reward for pressing an attack home rather than trading with something that never breaks.
+test("a hull with its plating gone leaves rather than trading on", () => {
+  const { game, rival } = standoffRig("rivalSeeker", { at: 300 })
+  const shield = rival.shieldModule()
+  shield.up = false
+  shield.downTimer = 5 // genuinely down, not down for the one frame before it recovers
+  rival.hull = SHIP_TYPES.rivalSeeker.hull * CONFIG.RIVAL_FLEE_HULL * 0.9
+  game.advance(1 / 60)
+  assert.equal(rival.leaving, true, "a beaten hull makes for the edge")
+
+  const { game: other, rival: whole } = standoffRig("rivalSeeker", { at: 300 })
+  other.advance(1 / 60)
+  assert.equal(whole.leaving, false, "a whole one stays and fights")
+
+  // Its bubble holding is enough to keep it in the fight, however thin the plating is.
+  const { game: third, rival: shielded } = standoffRig("rivalSeeker", { at: 300 })
+  shielded.hull = 1
+  assert.equal(shielded.shieldModule().up, true)
+  third.advance(1 / 60)
+  assert.equal(shielded.leaving, false, "a bubble still up is still a hull in the fight")
+})
+
+// A rival flies around what would hurt it rather than through it. Measured as the closest it
+// ever comes to a point it would otherwise fly straight over, with the player parked on the
+// far side of it so the shortest way there is through.
+function closestApproachTo(place, seconds = 10) {
+  const { game, rival, step } = standoffRig("rivalSeeker", { at: -500, facing: 0 })
+  const hazard = place(game)
+  let closest = Infinity
+  for (let i = 0; i < 60 * seconds; i++) {
+    game.player.x = ARENA.cx + 200 // past the hazard, so the way to it runs over the hazard
+    game.player.y = ARENA.cy
+    hazard.hold()
+    step()
+    game.player.x = ARENA.cx + 200
+    game.player.y = ARENA.cy
+    if (rival.dead) {
+      break
+    }
+    closest = Math.min(closest, Math.hypot(rival.x - hazard.x, rival.y - hazard.y))
+  }
+  return closest
+}
+
+test("a rival flies around a singularity rather than through it", () => {
+  const spot = { x: ARENA.cx - 150, y: ARENA.cy }
+  const bite = WEAPON_TYPES.singularityGun.well.bite
+  const withWell = closestApproachTo((game) => {
+    const well = new Singularity(spot.x, spot.y, 0, 0, 0, null, WEAPON_TYPES.singularityGun)
+    game.projectiles.push(well)
+    return {
+      ...spot,
+      hold() {
+        // pinned and kept alive, so the hull is steering around the same thing throughout
+        well.x = spot.x
+        well.y = spot.y
+        well.vx = 0
+        well.vy = 0
+        well.life = 99
+      },
+    }
+  })
+  const empty = closestApproachTo(() => ({ ...spot, hold() {} }))
+  assert.ok(empty < 40, `with nothing there it flies over the spot, at ${empty.toFixed(0)}`)
+  assert.ok(
+    withWell > bite,
+    `it should clear the bite of ${bite}, and came to ${withWell.toFixed(0)}`,
+  )
+})
+
+test("a rival gives explosive rock a wider berth than plain rock", () => {
+  const spot = { x: ARENA.cx - 150, y: ARENA.cy }
+  const berth = (explosive) =>
+    closestApproachTo((game) => {
+      const rock = new Asteroid({ x: spot.x, y: spot.y, radius: 40, traits: { explosive } })
+      game.asteroids = [rock, ...game.asteroids]
+      return {
+        ...spot,
+        hold() {
+          rock.x = spot.x
+          rock.y = spot.y
+        },
+      }
+    })
+  const plain = berth(false)
+  const armed = berth(true)
+  assert.ok(plain > 40, `it should not shoulder through rock either, at ${plain.toFixed(0)}`)
+  assert.ok(
+    armed > plain + 60,
+    `explosive rock wants real room: ${armed.toFixed(0)} against ${plain.toFixed(0)}`,
+  )
+})
+
+// The check on all of the above: a miner that gave every rock a wide berth could never reach
+// one to cut it, and the sector would never clear. The rock it is steering at is the exception.
+test("a miner still closes on the rock it means to cut", () => {
+  const game = liveGame()
+  const rock = new Asteroid({ x: ARENA.cx + 200, y: ARENA.cy, radius: 50 })
+  game.asteroids = [rock]
+  const scout = plainRival(ARENA.cx - 300, ARENA.cy, "rivalScout")
+  scout.arrived = true
+  scout.lifeTimer = 9999
+  game.rivals = [scout]
+  let beams = 0
+  for (let i = 0; i < 60 * 20 && game.asteroids.length; i++) {
+    game.player.x = ARENA.cx // parked well outside the sector, so it is free to mine
+    game.player.y = ARENA.cy - 4000
+    game.viewCenter.x = scout.x
+    game.viewCenter.y = scout.y
+    const before = game.laserShots.length
+    game.advance(1 / 60)
+    if (game.laserShots.length > before) {
+      beams++
+    }
+    if (scout.dead) {
+      break
+    }
+  }
+  assert.ok(beams > 0, "a miner given a rock and no fight should cut it")
 })
 
 // A ship's heading accumulates and is never normalised, so a rival that has been
@@ -6273,6 +7753,1023 @@ test("a turret does not track a ship nothing can see", () => {
 // only correct while (goal - heading) stayed above -3 PI, and past that it turned
 // the long way round. At a heading of 8 rad with a goal bearing of -2 it gave
 // -3.72 where the short way is +2.57: the opposite direction.
+// A gun that paces itself waits out a beat before its first shot as well as between them. A pincer
+// that flew in from beyond the ring spent that beat getting here; one that warped in beside you was
+// throwing a well before you had finished looking at it.
+test("a heavy gun waits a beat before its first shot", () => {
+  const paced = Object.entries(WEAPON_TYPES).filter(([, type]) => type.pace)
+  assert.ok(paced.length, "some gun should pace itself")
+  for (const [name] of paced) {
+    const gun = new Weapon(name, "hunter")
+    assert.ok(gun.resting > 0, `${name} should start out waiting`)
+    const [slow, fast] = Array.isArray(WEAPON_TYPES[name].pace)
+      ? WEAPON_TYPES[name].pace
+      : [WEAPON_TYPES[name].pace, WEAPON_TYPES[name].pace]
+    assert.ok(gun.resting >= slow && gun.resting <= fast, `${name} waits out its own pace`)
+  }
+  // A gun with no pace of its own is ready when it is loaded, as it was.
+  assert.equal(new Weapon("autocannon", "turret").resting, 0)
+
+  // And in a sector: a pincer set down in front of the ship does not open with a well.
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })] // so the sector stays live
+  const pincer = plainRival(ARENA.cx + 300, ARENA.cy, "alienFrigate")
+  pincer.arrived = true
+  pincer.lifeTimer = 99999
+  pincer.angle = Math.PI
+  game.rivals = [pincer]
+  const gun = pincer.hardpoints[0].module
+  const beat = gun.resting
+  for (let i = 0; i < Math.floor(beat * 60) - 2; i++) {
+    game.player.x = ARENA.cx
+    game.player.y = ARENA.cy
+    game.advance(1 / 60)
+  }
+  assert.equal(gun.charging, 0, "nothing has been wound up yet")
+  assert.ok(gun.resting > 0, "it is still waiting out its beat")
+  // Asked of the gun rather than of the cell: its turrets are firing the whole time and paying for
+  // it, so the cell is no evidence about what the heavy gun has committed to.
+  assert.equal(gun.burstLeft, 0, "and nothing has been committed to")
+})
+
+// ---- the hull the run is flown in, which is a hull like any other ------------
+
+// The player's design states what a fresh run is fitted with, so that a spawned one and a launched
+// one are the same ship. That only holds while the two agree, and nothing else checks it: state a
+// different mark in the design and every allied scout in the game would carry a gun no run starts
+// with, silently.
+test("the player's design states exactly what a fresh run is fitted with", () => {
+  const fresh = freshEquipment()
+  const type = SHIP_TYPES.geomScout
+  assert.equal(PLAYER_TYPE, type, "the player's hull is one of the designs")
+
+  const roleAt = (hp) => (type.hardpoints[hp] || {}).role
+  for (const [slot, spec] of Object.entries(EQUIPMENT)) {
+    const fitted = fresh.fitted[slot]
+    const stated = spec.slot
+      ? ((type.loadout.find((entry) => entry.core) || {}).fitted || {})[spec.slot]
+      : (type.loadout.find((entry) => spec.roles.includes(roleAt(entry.hp))) || {})[spec.mount]
+    if (spec.perMount) {
+      // A per-mount slot says nothing about a mount until something is bought for it, so the
+      // design must leave those mounts empty or the run is issued one for free.
+      assert.deepEqual(fitted, [], `${slot} starts saying nothing about its mounts`)
+      assert.equal(stated, undefined, `so the design must not fill a ${slot} mount`)
+      continue
+    }
+    assert.equal(
+      stated ?? null,
+      fitted ?? null,
+      `${slot}: the design says ${stated} and a fresh run fits ${fitted}`,
+    )
+  }
+})
+
+// The reported bug: flying a hull out of the dev page confiscated the run's special slots. Every
+// core but the player's own states no bays at all - rivals do not carry specials - so `specialSlots`
+// read zero off the flown hull. What was already aboard stayed there, because nothing clears it, but
+// selling one left a slot that could not be filled again at any price. A run quietly broken by
+// looking at something.
+test("flying another hull does not take the run's special slots away", () => {
+  const game = liveGame()
+  game.setDevFreeBuys(true)
+  game.devMaxOut() // climb the core ladder, which is what pays for the slots
+  const bought = game.specialSlots()
+  assert.ok(bought > 1, "the ladder should have bought more than one slot")
+
+  for (const name of ["geomFrigate", "alienFrigate", "rivalSeeker"]) {
+    game.devFlyShip(name)
+    const flown = game.playerCore()
+    assert.equal(flown.special ?? 0, 0, `a ${name}'s core has no bays of its own`)
+    assert.equal(game.specialSlots(), bought, `and flying one keeps the run's ${bought}`)
+
+    // The part that broke a run: sell one and put it back.
+    game.player.equip(0, "repel")
+    game.player.items[0] = null
+    game.buySpecial(0, "repel")
+    assert.equal(
+      game.player.items[0] && game.player.items[0].id,
+      "repel",
+      `a slot sold while flying a ${name} can be filled again`,
+    )
+  }
+
+  // And a hull with more room than the ladder bought would keep its own, so this is only ever
+  // generous. Nothing has that today, which is why it is asserted rather than demonstrated.
+  game.devFlyShip("geomScout")
+  assert.ok(game.playerCore().special >= bought, "our own hull's core is where the bays come from")
+})
+
+// It is on our side, rare, and only about early on: one of ours out doing the same job, before the
+// run gets to where the fleet sends frigates instead.
+test("the player's hull spawns rarely, and only early", () => {
+  const spawn = SHIP_TYPES.geomScout.spawn
+  assert.equal(SHIP_TYPES.geomScout.faction, "player", "it is on our side")
+  assert.equal(weightAt(spawn, spawn.fromSector - 1), 0, "not before it turns up")
+  assert.ok(weightAt(spawn, spawn.fromSector) > 0, "and from then on")
+  assert.ok(spawn.toSector !== undefined, "with an end to it")
+  assert.equal(weightAt(spawn, spawn.toSector + 1), 0, "past which it is gone")
+  // Rarer than anything else on the table where they overlap.
+  const rivals = Object.entries(SHIP_TYPES).filter(([name]) => name !== "geomScout")
+  for (const [name, type] of rivals) {
+    const at = spawn.toSector
+    if (weightAt(type.spawn, at) > 0) {
+      assert.ok(
+        weightAt(spawn, at) < weightAt(type.spawn, at),
+        `a ${name} should be commoner at sector ${at}`,
+      )
+    }
+  }
+})
+
+// A spawned one has to be able to fly and fight on its own. It used to state only a core, because
+// everything else came from the shop, and as a rival it would have arrived with no drive, no
+// thrusters and no gun.
+test("a spawned geom scout flies and shoots for itself", () => {
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })] // so the sector stays live
+  game.player.x = ARENA.cx
+  game.player.y = ARENA.cy - 4000 // out of the way; it is not what the ally is here for
+  // Inside the reach its beam carries when a controller rather than the trigger is firing it.
+  const ally = plainRival(ARENA.cx - 100, ARENA.cy, "geomScout")
+  ally.arrived = true
+  ally.lifeTimer = 99999
+  ally.angle = 0
+  const foe = plainRival(ARENA.cx + 200, ARENA.cy, "alienScout")
+  foe.arrived = true
+  foe.lifeTimer = 99999
+  game.rivals = [ally, foe]
+  assert.ok(ally.accel > 0, "it has a drive")
+  assert.ok(ally.turnRate > 0, "and thrusters")
+  assert.equal(game.hostileTarget(ally).target, foe, "and something to shoot at")
+
+  let fired = 0
+  for (let i = 0; i < 60 * 20; i++) {
+    ally.x = ARENA.cx - 100
+    ally.y = ARENA.cy
+    ally.vx = 0
+    ally.vy = 0
+    ally.angle = 0
+    foe.x = ARENA.cx + 200
+    foe.y = ARENA.cy
+    foe.hull = SHIP_TYPES.alienScout.hull // a target, not a casualty
+    game.player.x = ARENA.cx
+    game.player.y = ARENA.cy - 4000
+    game.viewCenter.x = ARENA.cx
+    game.viewCenter.y = ARENA.cy
+    const before = game.laserShots.length
+    game.advance(1 / 60)
+    if (game.laserShots.length > before) {
+      fired++
+    }
+  }
+  assert.ok(fired > 0, "an allied scout should use the gun it carries")
+})
+
+// And it does not shoot at the ship, nor the ship at it: the faction table already said so, and
+// this is the hull that makes it matter.
+test("an allied hull and the player leave each other alone", () => {
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })]
+  const ally = plainRival(ARENA.cx + 200, ARENA.cy, "geomScout")
+  ally.arrived = true
+  ally.lifeTimer = 99999
+  game.rivals = [ally]
+  assert.equal(game.hostileTarget(ally), null, "it has nothing to shoot at but the player")
+  assert.equal(game.hostileTarget(game.player), null, "and the player has nothing to shoot at")
+  // Nothing is earned for shooting one down either.
+  assert.equal(SHIP_TYPES.geomScout.killScore, 0)
+  assert.equal(SHIP_TYPES.geomScout.blastScore, 0)
+})
+
+// ---- the fleet's dart, and the railgun cut down to fit it --------------------
+
+test("the rail lance is the railgun made small, and priced like a needle", () => {
+  const lance = WEAPON_TYPES.railLance
+  const heavy = WEAPON_TYPES.railgun
+  const needle = WEAPON_TYPES.warpNeedle
+  assert.equal(lance.kind, "rail", "it is the same kind of gun")
+  // Priced and paced like the alien needle it answers, which is what "small" means here.
+  assert.ok(lance.energy <= needle.energy * 1.2, "about a needle's price")
+  assert.ok(
+    lance.chargeTime <= needle.chargeTime * 1.2,
+    "and a needle's snap rather than a wind-up",
+  )
+  // And smaller than the frigate's in every way that matters.
+  for (const field of ["energy", "chargeTime", "speed", "length"]) {
+    assert.ok(lance[field] < heavy[field], `its ${field} is under the frigate gun's`)
+  }
+  assert.ok(lance.slice.width < heavy.slice.width / 2, "and it takes out well under half the strip")
+  assert.ok(lance.recoil < heavy.recoil, "and shoves the hull less")
+})
+
+test("a lance cuts a dart apart and is turned away by a bubble", () => {
+  // Unshielded, it does what a rail cut does: a dart is not there any more.
+  const bare = geomRig("alienSeeker")
+  const field = bare.victim.shieldModule()
+  field.up = false
+  field.downTimer = 99
+  new Weapon("railLance", "hunter").launchSlug(bare.game, bare.game.player, ARENA.cx, ARENA.cy, 0)
+  for (let i = 0; i < 200 && bare.game.projectiles.length; i++) {
+    bare.step()
+  }
+  assert.equal(bare.victim.dead, true, "one lance finishes a dart")
+
+  // Shielded, it stops at the bubble and spends itself on it, as the big one does.
+  const up = geomRig("alienFrigate")
+  const cell = up.victim.energy
+  new Weapon("railLance", "hunter").launchSlug(up.game, up.game.player, ARENA.cx, ARENA.cy, 0)
+  for (let i = 0; i < 200 && up.game.projectiles.length; i++) {
+    up.step()
+  }
+  assert.equal(up.victim.dead, false, "a raised field turns one away")
+  assert.ok(up.victim.energy < cell, "and pays for it")
+  assert.ok(
+    cell - up.victim.energy < cell * 0.5,
+    "with far less of the cell than the frigate's gun takes",
+  )
+})
+
+// What holding the throttle costs is the drive's, not one figure for every hull. A cell that refills
+// at a trickle behind a drive charged at the usual rate is a hull that cannot afford to manoeuvre,
+// and manoeuvring is the whole of what a dart has.
+test("what a throttle costs to hold open is the drive's own figure", () => {
+  const game = liveGame()
+  const stock = game.player.thrustCost()
+  assert.equal(
+    stock,
+    CONFIG.THRUST_COST,
+    "a drive that says nothing costs what every drive used to",
+  )
+
+  game.devFlyShip("geomSeeker")
+  const dart = game.player.thrustCost()
+  assert.ok(dart < stock / 2, `the fleet dart's drive is far cheaper: ${dart} against ${stock}`)
+
+  // Long enough to be worth having: it can hold the throttle for most of its life rather than
+  // emptying the cell in a few seconds of manoeuvring.
+  const seconds = game.player.energyMax / dart
+  assert.ok(seconds > 60, `it should hold the throttle for a while, got ${seconds.toFixed(0)}s`)
+  // And its own life is the shorter of the two, so the drive is not what limits it.
+  assert.ok(seconds > SHIP_TYPES.geomSeeker.lifeTime[1], "the drive outlasts the hull's own clock")
+
+  // A hull with two nozzles pays what one of them asks rather than twice.
+  game.devFlyShip("geomFrigate")
+  const twin = [...game.player.modules()].filter((module) => module.kind === "engine")
+  assert.equal(twin.length, 2, "the fleet frigate carries two")
+  assert.equal(
+    game.player.thrustCost(),
+    twin[0].type.thrustCost ?? CONFIG.THRUST_COST,
+    "and pays one drive's rate",
+  )
+})
+
+test("the fleet's dart flies like a dart and uses the gun it carries", () => {
+  const type = SHIP_TYPES.geomSeeker
+  assert.equal(type.faction, "player", "it is on our side")
+  assert.equal(type.killScore, 0, "and nothing is earned for shooting one down")
+  // A dart, by the numbers: it handles like theirs rather than like our frigate.
+  const theirs = SHIP_TYPES.alienSeeker
+  assert.ok(
+    Math.abs(type.maxSpeed - theirs.maxSpeed) < theirs.maxSpeed * 0.25,
+    "as quick as theirs",
+  )
+  assert.ok(type.turnRate > SHIP_TYPES.geomFrigate.turnRate * 2, "and far handier than our frigate")
+  // The faction's bargain: a deeper cell than theirs, refilling slower.
+  assert.ok(type.energyMax > theirs.energyMax, "a deeper cell than theirs")
+  assert.ok(type.regen < theirs.regen, "and a slower refill")
+
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })]
+  game.player.x = ARENA.cx
+  game.player.y = ARENA.cy - 4000
+  const ally = plainRival(ARENA.cx - 200, ARENA.cy, "geomSeeker")
+  ally.arrived = true
+  ally.lifeTimer = 99999
+  ally.angle = 0
+  // A pincer with its field up survives being shot at, so the rate can be seen at all.
+  const foe = plainRival(
+    ARENA.cx + 150,
+    ARENA.cy,
+    "alienFrigate",
+    SHIP_TYPES.alienFrigate.loadout.filter((entry) => !entry.weapon),
+  )
+  foe.arrived = true
+  foe.lifeTimer = 99999
+  game.rivals = [ally, foe]
+  let slugs = 0
+  for (let i = 0; i < 60 * 25; i++) {
+    ally.x = ARENA.cx - 200
+    ally.y = ARENA.cy
+    ally.vx = 0
+    ally.vy = 0
+    ally.angle = 0
+    foe.x = ARENA.cx + 150
+    foe.y = ARENA.cy
+    foe.energy = foe.energyMax // a target, not a casualty
+    game.player.x = ARENA.cx
+    game.player.y = ARENA.cy - 4000
+    game.viewCenter.x = ARENA.cx
+    game.viewCenter.y = ARENA.cy
+    const before = game.projectiles.filter((shot) => shot.type === WEAPON_TYPES.railLance).length
+    game.advance(1 / 60)
+    const after = game.projectiles.filter((shot) => shot.type === WEAPON_TYPES.railLance).length
+    if (after > before) {
+      slugs += after - before
+    }
+  }
+  assert.ok(slugs > 8, `it should keep shooting, threw ${slugs} in 25 seconds`)
+})
+
+// ---- the fleet frigate, its guns and the way it fights ----------------------
+
+// A cut with width to it: the strip along the line is gone, so what comes back does not add up to
+// what went in. Three answers to tell apart, and a caller that confuses them either destroys a
+// hull the shot missed or leaves one that should be gone.
+test("a slab cut takes a strip out, and can leave nothing at all", () => {
+  const square = (half) => [
+    { x: -half, y: -half },
+    { x: half, y: -half },
+    { x: half, y: half },
+    { x: -half, y: half },
+  ]
+  const across = { x: 0, y: 1 } // a horizontal line, cutting top from bottom
+  const box = square(50) // 100 x 100, so 10000 of area
+
+  const halves = sliceOutSlab(box, { x: 0, y: 0 }, across, 10)
+  assert.equal(halves.length, 2, "a line through the middle leaves two")
+  const left = halves.reduce((sum, part) => sum + polygonArea(part), 0)
+  assert.equal(polygonArea(box) - left, 2000, "and the strip it took out is exactly 20 x 100")
+  for (const part of halves) {
+    assert.ok(Math.abs(polygonCentroid(part).y) > 10, "neither piece is inside the strip")
+  }
+
+  // Wider than the thing it is cutting, and there is nothing left of it.
+  assert.deepEqual(sliceOutSlab(box, { x: 0, y: 0 }, across, 60), [])
+  // And a line that misses is a graze, which is not the same as leaving nothing.
+  assert.equal(sliceOutSlab(box, { x: 0, y: 200 }, across, 10), null)
+  // An ordinary slice is the same cut with no width, so the two agree about where it went.
+  const thin = sliceOutSlab(box, { x: 0, y: 0 }, across, 0.5)
+  assert.equal(thin.length, 2)
+  assert.ok(polygonArea(box) - thin.reduce((sum, p) => sum + polygonArea(p), 0) < 200)
+})
+
+// A rig with one geom frigate and one victim, both pinned. The frigate's own guns are taken off it
+// unless the test asks for them: with a railgun, two torpedo tubes and two flak batteries all
+// firing, nothing can be attributed to any of them.
+function geomRig(victimType, { keep = [], turrets = null, armVictim = false } = {}) {
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })] // so the sector stays live
+  game.player.x = ARENA.cx
+  game.player.y = ARENA.cy - 4000 // out of it, so the player is not part of the fight
+  const design = SHIP_TYPES.geomFrigate.loadout
+  const loadout = turrets
+    ? design.map((entry) =>
+        entry.weapon && entry.hp !== 0 ? { ...entry, weapon: turrets } : entry,
+      )
+    : design.filter((entry) => !entry.weapon || keep.includes(entry.weapon))
+  const ship = plainRival(ARENA.cx - 300, ARENA.cy, "geomFrigate", loadout)
+  ship.arrived = true
+  ship.lifeTimer = 99999
+  ship.angle = 0
+  // The victim is disarmed unless a test wants its guns. A pincer left armed pays for a pair of
+  // wells with its own cell and drops its own field, which is not something any of these are about.
+  const victimLoadout =
+    victimType && !armVictim
+      ? SHIP_TYPES[victimType].loadout.filter((entry) => !entry.weapon)
+      : victimType && SHIP_TYPES[victimType].loadout
+  const victim = victimType ? plainRival(ARENA.cx + 200, ARENA.cy, victimType, victimLoadout) : null
+  if (victim) {
+    victim.arrived = true
+    victim.lifeTimer = 99999
+    victim.angle = Math.PI
+  }
+  game.rivals = victim ? [ship, victim] : [ship]
+  const hold = () => {
+    ship.x = ARENA.cx - 300
+    ship.y = ARENA.cy
+    ship.vx = 0
+    ship.vy = 0
+    ship.angle = 0
+    if (victim) {
+      victim.x = ARENA.cx + 200
+      victim.y = ARENA.cy
+      victim.vx = 0
+      victim.vy = 0
+    }
+    game.player.x = ARENA.cx
+    game.player.y = ARENA.cy - 4000
+    game.viewCenter.x = ARENA.cx
+    game.viewCenter.y = ARENA.cy
+  }
+  const step = () => {
+    hold()
+    game.advance(1 / 60)
+    hold()
+  }
+  return { game, ship, victim, step, hold }
+}
+
+// A slug is a shot that carries a cutting line with it, so it does to a hull what a beam does -
+// except that it takes a strip out rather than parting it, and that it takes time to arrive.
+test("a railgun slug rends a hull rather than parting it", () => {
+  const { game, victim, step } = geomRig("alienFrigate")
+  const field = victim.shieldModule()
+  field.up = false
+  field.downTimer = 99 // the bubble is its own test, below
+  const before = polygonArea(victim.worldOutline())
+  const gun = new Weapon("railgun", "hunter")
+  gun.launchSlug(game, game.player, ARENA.cx, ARENA.cy, 0)
+  for (let i = 0; i < 200 && game.projectiles.length; i++) {
+    step()
+  }
+  assert.equal(victim.dead, true, "a pincer with nothing up is cut apart by one")
+  const wreck = game.asteroids.filter((rock) => rock.wreckOf === "alien")
+  assert.equal(wreck.length, 2, "into two pieces")
+  const left = wreck.reduce((sum, rock) => sum + rock.area, 0)
+  const taken = before - left
+  assert.ok(
+    taken > WEAPON_TYPES.railgun.slice.width * 40,
+    `and the strip between them is gone: ${taken.toFixed(0)} of ${before.toFixed(0)}`,
+  )
+})
+
+// A cut face catches fire, and a slab cut leaves its faces a slab's width off the line it was
+// aimed along. Looked for on the centre line they are not there at all, and wreckage rent by a
+// railgun drifted off cold while the same hull cut by a beam burned.
+test("wreckage rent by a railgun burns at the seams", () => {
+  const { game, victim, step } = geomRig("alienFrigate")
+  const field = victim.shieldModule()
+  field.up = false
+  field.downTimer = 99
+  const gun = new Weapon("railgun", "hunter")
+  gun.launchSlug(game, game.player, ARENA.cx, ARENA.cy, 0)
+  for (let i = 0; i < 200 && game.projectiles.length; i++) {
+    step()
+  }
+  const wreck = game.asteroids.filter((rock) => rock.wreckOf === "alien")
+  assert.equal(wreck.length, 2, "it should come apart")
+  for (const piece of wreck) {
+    assert.ok(piece.burnFaces.length > 0, "each piece has a fresh face alight")
+    assert.ok(piece.burn > 0, "and is burning")
+  }
+})
+
+// And what a strip that wide does to something narrower than it: there is nothing left to drift.
+test("a railgun slug leaves nothing of a hull thinner than its slab", () => {
+  const { game, victim, step } = geomRig("alienSeeker")
+  const field = victim.shieldModule()
+  field.up = false
+  field.downTimer = 99
+  assert.ok(
+    victim.boundRadius * 2 < WEAPON_TYPES.railgun.slice.width * 2,
+    "a dart has to be narrower than the strip for this to be the case being tested",
+  )
+  const gun = new Weapon("railgun", "hunter")
+  gun.launchSlug(game, game.player, ARENA.cx, ARENA.cy, 0)
+  for (let i = 0; i < 200 && game.projectiles.length; i++) {
+    step()
+  }
+  assert.equal(victim.dead, true)
+  assert.equal(game.asteroids.filter((rock) => rock.wreckOf).length, 0, "and no wreckage from it")
+})
+
+// A bubble is what stops one, which is the whole reason the torpedoes exist: something has to put
+// the bubble down before the railgun is any use at all.
+test("a raised bubble stops a railgun slug, and takes the hit", () => {
+  const { game, victim, step } = geomRig("alienFrigate")
+  const field = victim.shieldModule()
+  assert.equal(field.up, true)
+  const cell = victim.energy
+  const gun = new Weapon("railgun", "hunter")
+  gun.launchSlug(game, game.player, ARENA.cx, ARENA.cy, 0)
+  const slug = game.projectiles[0]
+  assert.ok(slug instanceof RailSlug)
+  for (let i = 0; i < 200 && game.projectiles.length; i++) {
+    step()
+  }
+  assert.equal(victim.dead, false, "it does not get through")
+  assert.ok(
+    victim.energy < cell,
+    `and the field paid for it: ${cell} -> ${victim.energy.toFixed(0)}`,
+  )
+  assert.equal(field.up, true, "one round is not enough to put a pincer's field down")
+})
+
+test("firing the railgun shoves the ship that fired it", () => {
+  const { game, ship } = geomRig(null)
+  const gun = new Weapon("railgun", "hunter")
+  ship.vx = 0
+  ship.vy = 0
+  gun.launchSlug(game, ship, ship.x, ship.y, 0) // fired along +x
+  assert.ok(ship.vx < 0, `the hull is pushed back along the shot, got ${ship.vx.toFixed(1)}`)
+  const kick = Math.abs(ship.vx)
+  assert.ok(kick > 5, `by something worth feeling, got ${kick.toFixed(1)}`)
+  assert.ok(kick < ship.maxSpeed, "and not enough to throw it anywhere")
+  // A lighter hull feels the same gun more, which is the whole of stating it as an impulse.
+  const light = geomRig(null)
+  const dart = plainRival(ARENA.cx, ARENA.cy, "rivalSeeker")
+  light.game.rivals.push(dart)
+  dart.vx = 0
+  new Weapon("railgun", "hunter").launchSlug(light.game, dart, dart.x, dart.y, 0)
+  assert.ok(Math.abs(dart.vx) > kick, "a dart is thrown further by it than a frigate is")
+})
+
+// A bubble that is not the same all the way round. The forward half is what lets the hull ram, and
+// behind it there is only a beam-stopper, which is what the tail batteries are for.
+test("a bubble may be strong at the front and thin behind", () => {
+  const shield = new Shield("titanShield")
+  assert.notEqual(shield.front, shield.back, "the titan field has two faces")
+  const host = { angle: 0, x: 0, y: 0 } // pointed along +x
+
+  const ahead = { x: 100, y: 0 }
+  const astern = { x: -100, y: 0 }
+  assert.equal(shield.blocks("projectile", shield.sideFor(host, ahead)), true, "shot at the nose")
+  assert.equal(shield.blocks("projectile", shield.sideFor(host, astern)), false, "and not astern")
+  assert.equal(
+    shield.blocks("laser", shield.sideFor(host, astern)),
+    true,
+    "a beam is stopped both ways",
+  )
+  assert.ok(
+    shield.drainPer("laser", shield.sideFor(host, astern)) >
+      shield.drainPer("laser", shield.sideFor(host, ahead)),
+    "and costs more to stop from behind",
+  )
+  // A hit with nowhere to have come from is treated as one on the front, which is what every
+  // bubble without a back does.
+  assert.equal(shield.sideFor(host, null), shield.front)
+})
+
+test("a round reaches the plating through the thin half of a bubble", () => {
+  const { game, ship } = geomRig(null)
+  ship.energy = ship.energyMax
+  assert.equal(ship.shieldModule().up, true)
+  // Measured through the one question every weapon asks: how big is this body to hit?
+  const ahead = { x: ship.x + 200, y: ship.y }
+  const astern = { x: ship.x - 200, y: ship.y }
+  assert.ok(ship.blockingRadius("projectile", ahead) > 0, "a round at the nose is stopped")
+  assert.equal(ship.blockingRadius("projectile", astern), 0, "one astern reaches the hull")
+  assert.ok(ship.blockingRadius("laser", astern) > 0, "a beam astern is still stopped")
+
+  // And the damage follows: the same round costs the hull plating from behind and nothing in front.
+  const hull = ship.hull
+  ship.takeDamage(40, game, "projectile", 0, ahead)
+  assert.equal(ship.hull, hull, "nothing reached the plating from the front")
+  ship.takeDamage(40, game, "projectile", 0, astern)
+  assert.ok(ship.hull < hull, "and it did from behind")
+})
+
+// The answer to a field that steers shot aside: a round that does not have to arrive.
+test("a torpedo goes off near a target without reaching it", () => {
+  const { game, victim, step } = geomRig("alienFrigate")
+  const spec = WEAPON_TYPES.torpedo
+  const round = new Projectile(ARENA.cx, ARENA.cy, spec.speed, 0, spec.damage, game.player, spec)
+  game.projectiles = [round]
+  // Measured to whatever the fuse counts as the surface, which for a hull with its bubble up is
+  // the bubble: an alien field lets a round through and bends it wide on the way, so a fuse that
+  // waited for the plating never went off and the one thing built to answer that field did nothing.
+  assert.equal(victim.shieldUp(), true)
+  const surface = Math.max(victim.boundRadius, victim.shieldRadius())
+  assert.ok(surface > victim.boundRadius, "a pincer's field stands well clear of its plating")
+  let wentOffAt = null
+  for (let i = 0; i < 600 && !round.dead; i++) {
+    step()
+    if (round.dead) {
+      wentOffAt = Math.hypot(round.x - victim.x, round.y - victim.y) - surface
+    }
+  }
+  assert.ok(wentOffAt !== null, "it should go off")
+  assert.ok(
+    Math.hypot(round.x - victim.x, round.y - victim.y) > victim.boundRadius,
+    "clear of the plating rather than on it",
+  )
+  assert.ok(
+    wentOffAt <= spec.proximity + 4,
+    `and within its fuse of the bubble, got ${wentOffAt.toFixed(0)}`,
+  )
+  // And its blast has to be wide enough to reach the hull from out there, or going off at the
+  // bubble would be going off harmlessly.
+  assert.ok(spec.blast.radius > surface - victim.boundRadius, "the blast crosses the bubble")
+})
+
+test("torpedoes are what put an alien field down", () => {
+  const spec = WEAPON_TYPES.torpedo
+  const { game, victim, step } = geomRig("alienFrigate")
+  const field = victim.shieldModule()
+  let thrown = 0
+  while (field.up && thrown < 12) {
+    game.projectiles.push(
+      new Projectile(ARENA.cx, ARENA.cy, spec.speed, 0, spec.damage, game.player, spec),
+    )
+    thrown++
+    for (let i = 0; i < 400 && game.projectiles.length; i++) {
+      step()
+    }
+  }
+  assert.equal(field.up, false, `a handful should do it, took ${thrown}`)
+  assert.ok(thrown > 1, "and not one, or the railgun would have nothing to wait for")
+  assert.ok(thrown <= 6, `nor a dozen, took ${thrown}`)
+})
+
+// The other half of cutting something in two: the halves are still there, still armed, and
+// nothing in the game used to look at them again.
+test("a torpedo finishes the halves of something already cut apart", () => {
+  const spec = WEAPON_TYPES.torpedo
+  const { game, ship, step } = geomRig(null)
+  const half = new Asteroid({
+    vertices: [
+      { x: ARENA.cx + 150, y: ARENA.cy - 30 },
+      { x: ARENA.cx + 230, y: ARENA.cy - 30 },
+      { x: ARENA.cx + 230, y: ARENA.cy + 30 },
+      { x: ARENA.cx + 150, y: ARENA.cy + 30 },
+    ],
+    wreckOf: "alien",
+    material: SHIP_TYPES.alienFrigate.debrisMaterial,
+    vx: 0,
+    vy: 0,
+    spin: 0,
+  })
+  game.asteroids = [half, ...game.asteroids]
+
+  // It is a target only for something that asked to see wreckage.
+  assert.equal(game.hostileTarget(ship), null, "wreckage is not a target by default")
+  assert.equal(
+    game.hostileTarget(ship, ship, Infinity, { wreckage: true }).target,
+    half,
+    "and is for whoever asks",
+  )
+
+  const round = new Projectile(ARENA.cx, ARENA.cy, spec.speed, 0, spec.damage, game.player, spec)
+  game.projectiles = [round]
+  for (let i = 0; i < 600 && !round.dead; i++) {
+    step()
+  }
+  assert.equal(round.dead, true, "the torpedo goes off")
+  assert.equal(half.dead, true, "and the half comes apart, having no hull to lose")
+})
+
+// Point defence. It does not cut, it does not reach across the sector, and it covers the half of
+// the ship where the bubble is thin.
+test("the tail batteries hold the back of the ship and cut nothing", () => {
+  const flak = new Weapon("flakLaser", "turret")
+  assert.equal(WEAPON_TYPES.flakLaser.cuts, false, "a scratch beam must not sever hulls")
+  assert.equal(flak.barrels, 2)
+  // Its arc is centred astern, so it cannot be brought to bear on anything ahead at all.
+  const host = { angle: 0 }
+  assert.equal(flak.bearsOn(host, Math.PI), true, "dead astern is what it covers")
+  assert.equal(flak.bearsOn(host, 0), false, "and dead ahead is not")
+  assert.equal(flak.bearsOn(host, Math.PI / 2), true, "abeam is the edge of it")
+  // And it carries only as far as it says.
+  assert.equal(flak.reach(), WEAPON_TYPES.flakLaser.length)
+  assert.equal(flak.reachFor({ boundRadius: 10 }, 1000), null, "nothing to shoot at out there")
+  assert.ok(flak.reachFor({ boundRadius: 10 }, 100) > 100, "and a shot at something in range")
+})
+
+test("a non-cutting beam chips a hull instead of severing it", () => {
+  const { game, victim } = geomRig("alienFrigate")
+  const field = victim.shieldModule()
+  field.up = false
+  field.downTimer = 99
+  const hull = victim.hull
+  const flak = new Weapon("flakLaser", "turret")
+  game.applyBeam(
+    { a: { x: ARENA.cx, y: ARENA.cy }, b: { x: ARENA.cx + 400, y: ARENA.cy }, dir: { x: 1, y: 0 } },
+    game.player,
+    flak,
+    WEAPON_TYPES.flakLaser.damage,
+  )
+  assert.equal(victim.dead, false, "a twenty-point beam must not cut a pincer in half")
+  assert.ok(victim.hull < hull, "it chips it")
+})
+
+// The reported bug: the flak on a flown hull was not engaging orbs at all. Two faults at once - the
+// player's turret runs on the `defense` aimer, which had never learned to prefer ordnance, and a
+// `defense` gun with no `range` of its own searched within `Math.min(undefined, radar)`, which is NaN,
+// so it found nothing whatever to shoot at.
+test("point defence prefers ordnance whoever is holding the hull", () => {
+  // Flown rather than spawned, because `defense` is the player's own turret and a flown hull is what
+  // puts a battery on that controller in the first place.
+  for (const controller of ["turret", "defense"]) {
+    const game = liveGame()
+    game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })]
+    game.devFlyShip("geomFrigate")
+    const host = beSolid(game.player)
+    host.x = ARENA.cx
+    host.y = ARENA.cy
+    host.angle = 0
+    const flak = new Weapon("flakLaser", controller)
+    host.hardpoints[2].module = flak
+    // A hull to shoot at, well inside the battery's arc astern...
+    const foe = plainRival(ARENA.cx - 200, ARENA.cy, "alienScout")
+    foe.arrived = true
+    foe.lifeTimer = 99999
+    game.rivals = [foe]
+    // ...and an orb on its way in, nearer than the hull.
+    const orb = new Projectile(ARENA.cx - 140, ARENA.cy, 90, 0, 10, foe, WEAPON_TYPES.warpOrb)
+    game.projectiles = [orb]
+
+    const world = host.mountWorld(host.hardpoints[2].local)
+    WEAPON_AIMERS[controller](flak, 1 / 60, game, host, world)
+    assert.equal(flak.target && flak.target.target, orb, `${controller} should take the orb first`)
+
+    // And with the air clear it takes the hull, which is the other half of "prefers".
+    game.projectiles = []
+    WEAPON_AIMERS[controller](flak, 1 / 60, game, host, world)
+    assert.equal(
+      flak.target && flak.target.target,
+      foe,
+      `${controller} should take a hull otherwise`,
+    )
+  }
+})
+
+// What a battery is for is what is about to hit the ship, so the nearest round is the wrong question:
+// in a busy sector it is routinely a spent one drifting past while the one that matters closes from
+// further out.
+test("point defence takes the round that arrives soonest, not the nearest", () => {
+  const game = liveGame()
+  const host = plainRival(ARENA.cx, ARENA.cy, "geomFrigate")
+  game.rivals = [host]
+  const alien = plainRival(ARENA.cx - 900, ARENA.cy, "alienScout")
+  game.rivals.push(alien)
+
+  // Near, and on its way out.
+  const leaving = new Projectile(ARENA.cx - 80, ARENA.cy, -130, 0, 10, alien, WEAPON_TYPES.warpOrb)
+  // Further off, and closing.
+  const closing = new Projectile(ARENA.cx - 260, ARENA.cy, 130, 0, 10, alien, WEAPON_TYPES.warpOrb)
+  game.projectiles = [leaving, closing]
+
+  const found = game.hostileRound(host, host, 600)
+  assert.equal(found && found.target, closing, "the one that is arriving")
+
+  // And a round on its way out is not a target at all.
+  game.projectiles = [leaving]
+  assert.equal(game.hostileRound(host, host, 600), null, "nothing to do about one already past")
+
+  // Its own side's rounds are never targets either.
+  game.projectiles = [
+    new Projectile(ARENA.cx - 100, ARENA.cy, 130, 0, 10, host, WEAPON_TYPES.torpedo),
+  ]
+  assert.equal(game.hostileRound(host, host, 600), null, "and it does not shoot its own ordnance")
+})
+
+// A round has no extent of its own, and the reach to fire at one came out NaN - a beam drawn and
+// resolved to nowhere. Point defence aimed at ordnance was firing shots that could not land.
+test("the reach to fire at a round is a number", () => {
+  const flak = new Weapon("flakLaser", "defense")
+  const orb = new Projectile(0, 0, 130, 0, 10, null, WEAPON_TYPES.warpOrb)
+  assert.equal(orb.boundRadius, undefined, "a round has no extent, which is the case being covered")
+  assert.ok(Number.isFinite(flak.cutReach(orb, 200)), "so the reach has to come from somewhere")
+  assert.ok(flak.cutReach(orb, 200) > 200, "and carries past it")
+  assert.ok(Number.isFinite(flak.reachFor(orb, 200)), "and the same held to what the gun throws")
+})
+
+test("the tail batteries shoot down the rounds a pincer throws", () => {
+  const { game, ship, step } = geomRig(null, { keep: ["flakLaser"] })
+  const pincer = plainRival(ARENA.cx - 500, ARENA.cy, "alienFrigate")
+  pincer.arrived = true
+  pincer.lifeTimer = 99999
+  pincer.angle = 0 // pointed at the frigate's stern
+  game.rivals.push(pincer)
+  let popped = 0
+  for (let i = 0; i < 60 * 25; i++) {
+    pincer.x = ARENA.cx - 500
+    pincer.y = ARENA.cy
+    pincer.vx = 0
+    pincer.vy = 0
+    pincer.angle = 0
+    const orbs = game.projectiles.filter((shot) => shot.type === WEAPON_TYPES.warpOrb)
+    step()
+    for (const orb of orbs) {
+      if (orb.dead && Math.hypot(orb.x - ship.x, orb.y - ship.y) > ship.boundRadius + 20) {
+        popped++
+      }
+    }
+  }
+  assert.ok(popped > 0, "orbs thrown at its stern should be taken apart clear of the hull")
+})
+
+// The reported bug: a battery left to itself holds the cell at nothing and the bubble down for
+// good, so the hull never gets its shield back.
+test("turrets hold their fire so the bubble can come back", () => {
+  // Its own tubes swapped for a battery of warp orbs, which is what was reported: four of them
+  // held the cell at nothing and the bubble down for the rest of the sector.
+  const { game, ship, step } = geomRig(null, { turrets: "warpOrb" })
+  const foe = plainRival(ARENA.cx + 200, ARENA.cy, "alienScout")
+  foe.arrived = true
+  foe.lifeTimer = 99999
+  game.rivals.push(foe)
+  const shield = ship.shieldModule()
+  shield.up = false
+  shield.downTimer = 0
+  ship.energy = 200
+  const needs = SHIELD_TYPES.titanShield.recoverAt * ship.energyMax
+  let firedWhileLow = 0
+  let backUp = null
+  for (let i = 0; i < 60 * 200 && backUp === null; i++) {
+    foe.x = ARENA.cx + 200
+    foe.y = ARENA.cy
+    foe.hull = SHIP_TYPES.alienScout.hull // a target, not a casualty
+    const low = ship.energy < needs && !shield.up
+    const before = game.projectiles.filter((shot) => shot.type === WEAPON_TYPES.warpOrb).length
+    step()
+    const after = game.projectiles.filter((shot) => shot.type === WEAPON_TYPES.warpOrb).length
+    if (low && after > before) {
+      firedWhileLow++
+    }
+    if (shield.up) {
+      backUp = i / 60
+    }
+  }
+  assert.equal(firedWhileLow, 0, "no turret round goes out while the bubble is waiting on the cell")
+  assert.ok(backUp !== null, "and the bubble comes back")
+  assert.ok(ship.energy >= needs, `with the cell up to what it needed: ${ship.energy.toFixed(0)}`)
+})
+
+test("a hull committed to a heavy gun still fires its turrets", () => {
+  // A pincer pays for a pair of wells with everything it has and throws its orbs out of what is
+  // left. Holding its turrets off until the cell could feed the field would silence it for good,
+  // because the well gun takes the cell again the moment it has anything.
+  const pincer = plainRival(ARENA.cx, ARENA.cy, "alienFrigate")
+  pincer.shieldModule().up = false
+  pincer.energy = 40
+  assert.equal(pincer.builtAroundOneGun(), true, "a well costs nearly half its cell")
+  assert.equal(pincer.holdingFire(), false, "so the turrets carry on regardless")
+
+  // And a hull whose heavy gun is a small part of a big cell is not that hull: there the turrets
+  // really are what is keeping the bubble down, and they wait.
+  const fleet = plainRival(ARENA.cx, ARENA.cy, "geomFrigate")
+  fleet.shieldModule().up = false
+  fleet.energy = 40
+  assert.equal(fleet.builtAroundOneGun(), false, "a railgun is a tenth of that cell")
+  assert.equal(fleet.holdingFire(), true, "so they hold off and let the bubble come back")
+})
+
+// It came for the big hulls. A dart in the way is something to get past.
+test("the fleet frigate goes for a frigate over a nearer dart", () => {
+  const game = liveGame()
+  game.asteroids = [new Asteroid({ x: -6000, y: -6000, radius: 30 })]
+  game.player.x = ARENA.cx
+  game.player.y = ARENA.cy - 4000
+  const ship = plainRival(ARENA.cx, ARENA.cy, "geomFrigate")
+  const dart = plainRival(ARENA.cx + 150, ARENA.cy, "alienSeeker")
+  const pincer = plainRival(ARENA.cx + 500, ARENA.cy, "alienFrigate")
+  for (const rival of [ship, dart, pincer]) {
+    rival.arrived = true
+    rival.lifeTimer = 99999
+  }
+  game.rivals = [ship, dart, pincer]
+  assert.ok(SHIP_TYPES.geomFrigate.prefers.includes("alienFrigate"))
+  assert.equal(game.hostileTarget(ship).target, pincer, "the pincer, though the dart is nearer")
+  // A preference and not a blindness: with no frigate about it fights what there is.
+  pincer.dead = true
+  assert.equal(game.hostileTarget(ship).target, dart)
+})
+
+test("the fleet frigate holds off while a bubble is up, and closes once it is down", () => {
+  const { ship, victim } = geomRig("alienFrigate")
+  ship.rollEngagement = () => (ship.engagement = "soften")
+  ship.rollEngagement()
+  const prey = { target: victim, distance: 500 }
+  const field = victim.shieldModule()
+  assert.equal(field.up, true)
+  assert.equal(
+    ship.standoffRange(prey),
+    CONFIG.RIVAL_SOFTEN_RANGE,
+    "it waits out where it can work",
+  )
+  field.up = false
+  assert.equal(ship.standoffRange(prey), 0, "and comes in once the bubble is down")
+  // Ramming skips all of that.
+  ship.engagement = "ram"
+  field.up = true
+  assert.equal(ship.standoffRange(prey), 0, "a ram is a ram whatever is up")
+})
+
+// It creeps in on anything that still has its bubble up. Thundering across the sector at it only
+// means arriving into a shield with its own cell part spent, and it reads as reckless rather than as
+// dangerous.
+test("the fleet frigate creeps in while a bubble is up, and commits once it is down", () => {
+  const { ship, victim } = geomRig("alienFrigate")
+  const prey = { target: victim, distance: 600 }
+  const field = victim.shieldModule()
+  assert.equal(field.up, true)
+  assert.equal(
+    ship.throttle(prey),
+    CONFIG.RIVAL_CREEP_THRUST,
+    "it holds back while the bubble is up",
+  )
+  field.up = false
+  assert.equal(ship.throttle(prey), 1, "and commits once it is down")
+  // Backing off is not the moment to be careful.
+  field.up = true
+  ship.breaking = 1
+  assert.equal(ship.throttle(prey), 1, "and it backs off at everything it has")
+  ship.breaking = 0
+  ship.leaving = true
+  assert.equal(ship.throttle(prey), 1, "as it leaves, too")
+  // And a hull with no plan flies the way it always has.
+  const plain = plainRival(ARENA.cx, ARENA.cy, "rivalSeeker")
+  assert.equal(plain.throttle(prey), 1)
+})
+
+// The creep has to be a slower ship and not merely a slower start: this hull has so little drag that
+// a third of the thrust still reached its full 93, a few seconds later.
+test("creeping holds the hull's speed down, not just its acceleration", () => {
+  // Its own loop rather than the rig's: that one pins the hull still between frames, which is
+  // exactly the thing being measured here.
+  const watch = (creeping) => {
+    const { game, ship, victim } = geomRig("alienFrigate")
+    if (!creeping) {
+      ship.throttle = () => 1
+    }
+    const field = victim.shieldModule()
+    let fastest = 0
+    for (let i = 0; i < 60 * 40; i++) {
+      // Held out at arm's length, so what is measured is the approach and not the arrival.
+      victim.x = ARENA.cx + 700
+      victim.y = ARENA.cy
+      victim.vx = 0
+      victim.vy = 0
+      victim.energy = victim.energyMax // it is a thing to fly at, not a thing to be worn down
+      game.player.x = ARENA.cx
+      game.player.y = ARENA.cy - 4000
+      game.viewCenter.x = ARENA.cx
+      game.viewCenter.y = ARENA.cy
+      game.advance(1 / 60)
+      if (!field.up || ship.dead) {
+        break
+      }
+      // Only while it is closing. Backing off is done at everything it has, deliberately, and a
+      // hull that has reached its standoff and is sprinting back out is not creeping in.
+      if (!(ship.breaking > 0)) {
+        fastest = Math.max(fastest, Math.hypot(ship.vx, ship.vy))
+      }
+    }
+    // The hull's own top speed, not the type's: this rig strips its guns, so it is lighter than a
+    // fitted one and quicker for it.
+    return { fastest, cap: ship.maxSpeed }
+  }
+  const crept = watch(true)
+  const charged = watch(false)
+  assert.ok(
+    charged.fastest > crept.fastest * 1.8,
+    `creeping should be far slower: ${crept.fastest.toFixed(0)} against ${charged.fastest.toFixed(0)}`,
+  )
+  assert.ok(
+    crept.fastest <= crept.cap * CONFIG.RIVAL_CREEP_THRUST + 1,
+    `held to its share of its own top speed: ${crept.fastest.toFixed(0)} of ${crept.cap.toFixed(0)}`,
+  )
+})
+
+test("the fleet frigate leaves once what it came for is dead", () => {
+  const { ship, victim, step } = geomRig("alienFrigate")
+  step()
+  assert.equal(ship.committed, victim, "it commits to what it came for")
+  assert.ok(SHIP_TYPES.geomFrigate.engagements.includes(ship.engagement), "and rolls a plan for it")
+  assert.equal(ship.leaving, false)
+  victim.dead = true
+  step()
+  assert.equal(ship.leaving, true, "with that dead it has no reason to stay")
+})
+
+// Flying a hull out of the dev page means flying that hull, with what its designer put on it.
+test("flying a hull installs its own loadout, and stepping back restores the run's", () => {
+  const game = liveGame()
+  const fittedOn = (ship) =>
+    ship.hardpoints
+      .map((hp) => {
+        const module = hp.module
+        if (!module) {
+          return null
+        }
+        if (module.kind === "core") {
+          return (module.fitted || []).map((inner) => inner.typeName)
+        }
+        return module.typeName
+      })
+      .flat()
+      .filter(Boolean)
+
+  const own = fittedOn(game.player)
+  game.devFlyShip("geomFrigate")
+  const flown = fittedOn(game.player)
+  for (const wanted of [
+    "railgun",
+    "torpedo",
+    "flakLaser",
+    "titanShield",
+    "titanDrive",
+    "titanJets",
+  ]) {
+    assert.ok(flown.includes(wanted), `a flown geom frigate should carry its ${wanted}`)
+  }
+  assert.ok(!flown.includes("playerLaserMk1"), "and not the player's own gun")
+
+  game.devFlyShip("player")
+  assert.deepEqual(fittedOn(game.player), own, "stepping back is stepping back into the run")
+})
+
 test("a rival past a full turn still turns the short way", () => {
   const game = liveGame()
   const player = game.player
@@ -6318,7 +8815,7 @@ test("the grace period after arriving turns away every kind of damage", () => {
   assert.equal(shot.lives, CONFIG.START_LIVES, "a bullet must not cost a life")
 
   const beamed = arrived()
-  const shooter = plainRival(100, 320, "scout")
+  const shooter = plainRival(100, 320, "rivalScout")
   beamed.rivals = [shooter]
   beamed.applyBeam(
     { a: { x: 100, y: 320 }, dir: { x: 1, y: 0 }, b: { x: 900, y: 320 } },
@@ -6615,7 +9112,7 @@ test("a blast leaves alone what is already wreckage", () => {
   // its kill twice.
   const game = liveGame()
   const bomb = new Asteroid({ x: ARENA.cx, y: ARENA.cy, radius: 45, traits: EXPLOSIVE })
-  const rival = plainRival(ARENA.cx + 40, ARENA.cy, "scout")
+  const rival = plainRival(ARENA.cx + 40, ARENA.cy, "rivalScout")
   rival.dead = true
   game.asteroids = [bomb]
   game.rivals = [rival]
@@ -6626,7 +9123,7 @@ test("a blast leaves alone what is already wreckage", () => {
 
 test("dev mode walks the sector only from the row that shows it", () => {
   const game = liveGame()
-  game.devMode = true
+  game.setDevAnySector(true)
   game.enterShop()
   const sector = game.shopSector
 
@@ -7333,13 +9830,7 @@ test("exhaust comes out of every nozzle, on the player's hull as on any other", 
   assert.ok(single.size > 0, "the one nozzle throws something")
 
   // A hull with two of them throws from both, in two groups either side of the middle.
-  game.openDevMenu()
-  game.openPausePage("devShip")
-  game
-    .pauseMenu()
-    .find((row) => row.name === "FRIGATE")
-    .action(game)
-  game.paused = false
+  flyHull(game, "RIVAL FRIGATE")
   const pair = game.player
   pair.angle = 0
   const nozzles = pair.hardpoints.filter((hp) => hp.module && hp.module.kind === "engine")
@@ -7388,14 +9879,14 @@ test("the thruster flame is the engine's, so any hull with one burns", () => {
 
   // And a rival, which was drawing no flame at all: the shape was written into the
   // player's own draw method rather than into the engine both of them mount.
-  const rival = new RivalShip(400, 300, "scout", SHIP_TYPES.scout.loadout)
+  const rival = new RivalShip(400, 300, "rivalScout", SHIP_TYPES.rivalScout.loadout)
   assert.ok(flameOf(rival) > 0, "a rival's drive burns too")
 
   // An engine that states no flame draws none, so a drive can show only its plume.
   const flame = ENGINE_TYPES.pulseDrive.flame
   delete ENGINE_TYPES.pulseDrive.flame
   try {
-    const dark = new RivalShip(400, 300, "scout", SHIP_TYPES.scout.loadout)
+    const dark = new RivalShip(400, 300, "rivalScout", SHIP_TYPES.rivalScout.loadout)
     assert.equal(flameOf(dark), null, "no flame block, no flame")
   } finally {
     ENGINE_TYPES.pulseDrive.flame = flame
@@ -7461,9 +9952,9 @@ test("the quicker thrusters more than pay for a full ship's worth of mass", () =
 test("a rival that rolled an extra gun carries the weight of it", () => {
   // A rival works out how it flies from what it turned up with, not from its type, so
   // the arms it rolled are aboard for the arithmetic as well as for the shooting.
-  const design = SHIP_TYPES.seeker
-  const plain = plainRival(500, 320, "seeker")
-  const armed = plainRival(500, 320, "seeker", [...design.loadout, design.arms.gun])
+  const design = SHIP_TYPES.rivalSeeker
+  const plain = plainRival(500, 320, "rivalSeeker")
+  const armed = plainRival(500, 320, "rivalSeeker", [...design.loadout, design.arms.gun])
   assert.ok(
     Math.abs(plain.mass - design.laden) < 1e-9,
     "an unrolled one weighs what its design says",
@@ -7478,7 +9969,7 @@ test("what brings a hull about is its thrusters, and never its drive", () => {
   // frigate has thrust to spare and no way to use it sideways, so a bigger drive must
   // buy speed and nothing else.
   const base = {
-    outline: SHIP_TYPES.scout.outline,
+    outline: SHIP_TYPES.rivalScout.outline,
     mass: 1,
     armour: 1,
     hardpoints: [
@@ -7522,13 +10013,16 @@ test("what brings a hull about is its thrusters, and never its drive", () => {
 test("a frigate sweeps where the player pivots", () => {
   const game = liveGame()
   assert.ok(
-    SHIP_TYPES.frigate.turnRate < game.player.turnRate,
-    `frigate ${SHIP_TYPES.frigate.turnRate.toFixed(2)} vs player ${game.player.turnRate.toFixed(2)}`,
+    SHIP_TYPES.rivalFrigate.turnRate < game.player.turnRate,
+    `frigate ${SHIP_TYPES.rivalFrigate.turnRate.toFixed(2)} vs player ${game.player.turnRate.toFixed(2)}`,
   )
   // Not by a whisker: it has the most torque of any hull in the game and is still the
   // slowest round, because torque works against mass and reach.
-  assert.ok(torqueOf(SHIP_TYPES.frigate) > 150, "the frigate carries the heaviest set of thrusters")
-  assert.ok(SHIP_TYPES.frigate.turnRate < 0.5, "and comes about in its own time regardless")
+  assert.ok(
+    torqueOf(SHIP_TYPES.rivalFrigate) > 150,
+    "the frigate carries the heaviest set of thrusters",
+  )
+  assert.ok(SHIP_TYPES.rivalFrigate.turnRate < 0.5, "and comes about in its own time regardless")
 })
 
 test("the shop's other set of thrusters is quicker, and swaps back", () => {
@@ -7544,13 +10038,13 @@ test("the shop's other set of thrusters is quicker, and swaps back", () => {
 })
 
 test("stating a setting on a type keeps it, for tuning one ship", () => {
-  const design = { ...SHIP_TYPES.scout, armour: 1, drag: 0.123, hull: 99 }
+  const design = { ...SHIP_TYPES.rivalScout, armour: 1, drag: 0.123, hull: 99 }
   delete design.accel
   const tuned = deriveShipStats(design)
   assert.equal(tuned.drag, 0.123, "a stated value wins")
   assert.equal(tuned.hull, 99)
   assert.ok(
-    Math.abs(tuned.accel - thrustOf(SHIP_TYPES.scout) / ladenMass(design)) < 1e-9,
+    Math.abs(tuned.accel - thrustOf(SHIP_TYPES.rivalScout) / ladenMass(design)) < 1e-9,
     "the rest still derives",
   )
   // And a stated one is remembered as stated, since a ship refitted in flight has to
@@ -7606,7 +10100,7 @@ test("the defense turret shoots at rivals and leaves rocks alone", () => {
   atRival.player.angle = 0
   withTurret(atRival)
   atRival.asteroids = [new Asteroid({ vertices: square(400, -600, 60) })] // keep the sector live
-  const rival = plainRival(600, 320, "scout")
+  const rival = plainRival(600, 320, "rivalScout")
   atRival.rivals = [rival]
   let fired = false
   for (let i = 0; i < 240 && !fired; i++) {
@@ -7644,7 +10138,7 @@ test("a beam aimed at a target carries past it, so it can cut", () => {
     withTurret(game)
     game.asteroids = [new Asteroid({ vertices: square(300, -600, 60) })] // keep the sector live
     // a big unshielded hull, further across than the overshoot
-    const target = plainRival(560, 320, "frigate")
+    const target = plainRival(560, 320, "rivalFrigate")
     target.angle = 0
     game.rivals = [target]
     assert.ok(
@@ -7867,7 +10361,13 @@ test("a gun's barrel count follows its rate of fire", () => {
     const barrels = barrelCount(type)
     assert.ok(Number.isInteger(barrels) && barrels >= 1, `${name} got ${barrels} barrels`)
     if (type.kind !== "projectile") {
-      assert.equal(barrels, 1, `${name} is a beam, so it has an emitter and not barrels`)
+      // A beam has an emitter rather than barrels, unless the type states a count of its own: a
+      // point-defence battery firing ten times a second reads as a pair and says so.
+      assert.equal(
+        barrels,
+        type.barrels ?? 1,
+        `${name} is a beam, so it has an emitter and not barrels`,
+      )
       continue
     }
     // one barrel per BARREL_CYCLE_RATE rounds a second, rounded up
@@ -8128,9 +10628,9 @@ const RUN_LENGTH = 40
 
 test("a run introduces its hulls a tier at a time, rivals before aliens", () => {
   const from = (name) => SHIP_TYPES[name].spawn.fromSector
-  assert.ok(from("scout") < from("seeker"), "the scout is what a run opens with")
-  assert.ok(from("seeker") < from("frigate"), "then the dart, then the slab")
-  assert.ok(from("frigate") < from("alienScout"), "and every rival before any alien")
+  assert.ok(from("rivalScout") < from("rivalSeeker"), "the scout is what a run opens with")
+  assert.ok(from("rivalSeeker") < from("rivalFrigate"), "then the dart, then the slab")
+  assert.ok(from("rivalFrigate") < from("alienScout"), "and every rival before any alien")
   assert.ok(from("alienScout") < from("alienSeeker"), "the aliens arrive in the same order")
   assert.ok(from("alienSeeker") < from("alienFrigate"))
   assert.ok(from("alienFrigate") <= RUN_LENGTH - 8, "with a run's end left to fight them in")
@@ -8313,7 +10813,7 @@ test("a lost run can be bought back into at the shop's price for a ship", () => 
 test("the sector a run was lost in is the sector it is bought back into", () => {
   const game = lastShipLost(500)
   game.level = 12
-  const rival = plainRival(700, 300, "scout")
+  const rival = plainRival(700, 300, "rivalScout")
   game.rivals = [rival]
   game.asteroids = [new Asteroid({ x: 300, y: 300, radius: 50 })]
   game.continueRun()

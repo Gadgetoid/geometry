@@ -671,3 +671,41 @@ export function slicePolygon(vertices, pointOnLine, normal) {
   }
   return pieces.length ? pieces : [ring]
 }
+
+// Take a slab out of a polygon rather than cutting it in two: everything within `halfWidth` of
+// the line is gone, and what is left either side comes back. Two ordinary slices, each keeping
+// only the pieces on the far side of its own edge, so the middle belongs to neither and is not
+// returned at all.
+//
+// Three answers, and a caller has to tell them apart:
+//   null  the line does not pass through the polygon, so there is nothing to take out. The same
+//         answer an ordinary slice gives for a graze.
+//   []    the polygon was narrower than the slab and there is nothing left of it.
+//   [..]  what survives either side. One piece means the slab reached past one edge of it.
+export function sliceOutSlab(vertices, pointOnLine, normal, halfWidth) {
+  // Checked on the centre line, because that is what decides whether this is a cut at all. With
+  // it established, an edge that fails to cut is one the slab has swallowed that side of.
+  if (slicePolygon(vertices, pointOnLine, normal).length < 2) {
+    return null
+  }
+  const length = Math.hypot(normal.x, normal.y) || 1
+  const ux = normal.x / length,
+    uy = normal.y / length
+  const outer = []
+  for (const side of [1, -1]) {
+    const edge = {
+      x: pointOnLine.x + ux * halfWidth * side,
+      y: pointOnLine.y + uy * halfWidth * side,
+    }
+    for (const part of slicePolygon(vertices, edge, { x: ux, y: uy })) {
+      const centre = polygonCentroid(part)
+      const beyond = (centre.x - edge.x) * ux + (centre.y - edge.y) * uy
+      // Only what lies past this edge, and only where the edge actually cut: a single part
+      // sitting on the near side is the whole polygon, which this side has no claim on.
+      if (Math.sign(beyond) === side && polygonArea(part) < polygonArea(vertices)) {
+        outer.push(part)
+      }
+    }
+  }
+  return outer
+}

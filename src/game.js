@@ -5,9 +5,12 @@
 
 import {
   DEV_ARMS,
+  DEV_AUTO,
+  DEV_ROLL_SECTOR,
+  DEV_VISIBLE,
+  DOGFIGHT_HULLS,
   SHIP_SCALARS,
   DEV_MENU,
-  DEV_SHIP_MENU,
   DEV_SPAWN_MENU,
   OVER_MENU,
   VIEW_W,
@@ -16,6 +19,7 @@ import {
   TAU,
   CONFIG,
   PROGRESSION,
+  HAZARD_DESC,
   HAZARD_NAMES,
   HAZARD_TRAITS,
   FACTIONS,
@@ -55,6 +59,7 @@ import {
   dot,
   perpendicular,
   slicePolygon,
+  sliceOutSlab,
   polygonCentroid,
   polygonArea,
   pointInPolygon,
@@ -177,7 +182,17 @@ export class Game {
     this.pauseConfirming = null // a row waiting to be confirmed a second time
     // Settings live here rather than on the things they affect, so one place holds
     // them and main.js applies whatever changes. Loaded below.
-    this.settings = { volume: 0.8, sound: true, crt: true, help: true, uiScale: 1 }
+    // `dev` is whether the dev tools are offered at all. It is a setting like the rest, so it
+    // is in every build and it sticks; what it defaults to is whether this looks like a build
+    // being worked on. Nothing it opens changes the game on its own, see devFreeBuys below.
+    this.settings = {
+      volume: 0.8,
+      sound: true,
+      crt: true,
+      help: true,
+      uiScale: 1,
+      dev: DEV_VISIBLE,
+    }
     // Control bindings, and the row waiting for a key or button when one is being
     // rebound. Menu navigation is never in here; see BINDABLE_CONTROLS.
     this.bindings = freshBindings()
@@ -189,10 +204,15 @@ export class Game {
     // see what kind of window this is; a tab cannot be closed by script.
     this.canExit = false
     this.toast = null
-    this.devMode = false
+    // What the dev tools are actually doing to the run, each asked for on its own. Opening the
+    // page changes nothing by itself: a run being looked at with the page open is still the run
+    // that was being played, and neither of these survives turning the tools off.
+    this.devFreeBuys = false // the shop gives everything away, and shows what has not been found
+    this.devAnySector = false // the launch line steps to any sector, not only the ones reached
     // A sector that never counts as cleared, so a dev arena stays put. See enterSandbox.
     this.sandbox = false
     this.devArms = {} // what a dev spawn of each hull carries, an index into DEV_ARMS
+    this.devAuto = {} // and which hulls the testing arena keeps sending, see #tickAutoSpawn
     this.overSelection = 0 // the cursor on the screen a run ends at
     this.paused = false
     this.gameTime = 0
@@ -200,6 +220,7 @@ export class Game {
     this.oreVacuum = false
     this.specialTimer = 0
     this.rivalTimer = 0
+    this.autoTimer = 0 // the arena's own spawn beat, see #tickAutoSpawn
     this.clearTimer = 0
     this.pressedKeys = new Set()
     // Which device the player last used, so the HUD can name the right controls.
@@ -290,6 +311,14 @@ export class Game {
   maxEnergy() {
     const core = this.playerCore()
     return core ? core.energy : 0
+  }
+
+  // The core the run's own hull carries, at the mark the run has climbed to. Not the core of
+  // whatever hull is being flown: those are two different questions, and only one of them is about
+  // what has been bought.
+  ownCore() {
+    const entry = (PLAYER_TYPE.loadout || []).find((held) => held.core)
+    return entry ? coreAt(CORE_TYPES[entry.core], this.upgrades.core) : null
   }
   // ---- equipment -------------------------------------------------------
   // What a slot holds, what the run owns for it, and what it would cost to own
@@ -389,7 +418,7 @@ export class Game {
     if (!option || this.ownsEquipment(slot, id)) {
       return
     }
-    if (!this.devMode) {
+    if (!this.devFreeBuys) {
       if (this.oreBalance < option.cost) {
         Sound.hit()
         return
@@ -436,7 +465,7 @@ export class Game {
           if (locked) {
             return "-"
           }
-          return g.devMode ? "FREE" : `${option.cost} ore`
+          return g.devFreeBuys ? "FREE" : `${option.cost} ore`
         },
         // Something to spend on, as opposed to something already owned or still out of
         // reach up a ladder.
@@ -464,9 +493,19 @@ export class Game {
   }
 
   // How many specials the ship has room for, which the power core decides.
+  // How many specials the run can carry. Room the run bought, so it is the run's own core ladder
+  // that answers, whatever hull is being flown: a dev build can put the player in a pincer, and an
+  // alien plant has no bays for a player's kit at all. Losing what was paid for by stepping into
+  // one is not what the page is for - the specials stayed aboard and could not be replaced once
+  // sold, which is a run quietly broken by looking at something.
+  //
+  // A flown hull with more room than the ladder bought keeps its own, so this can only ever be
+  // generous. Nothing in the game has that today.
   specialSlots() {
-    const core = this.playerCore()
-    return Math.min(core ? (core.special ?? 0) : 0, MAX_SLOTS)
+    const own = this.ownCore()
+    const flown = this.playerCore()
+    const room = Math.max(own ? (own.special ?? 0) : 0, flown ? (flown.special ?? 0) : 0)
+    return Math.min(room, MAX_SLOTS)
   }
   // Mount the module an upgrade pays for, if the ship exists yet. The shop can be
   // reached before one does (the dev shop), so this is where the check lives.
@@ -567,9 +606,9 @@ export class Game {
 
   // Optional modules a ship type can turn up with. Each arm's chance ramps with
   // how far past the type's spawn sector this one is, up to the arm's cap.
-  rollLoadout(type) {
+  rollLoadout(type, sector = this.level) {
     const loadout = (type.loadout || []).slice()
-    const ramp = Math.max(0, this.level - type.spawn.fromSector)
+    const ramp = Math.max(0, sector - type.spawn.fromSector)
     for (const arm of Object.values(type.arms || {})) {
       if (Math.random() < clamp(ramp * arm.chancePerSector, 0, arm.chanceCap)) {
         loadout.push(arm)
@@ -609,6 +648,18 @@ export class Game {
     ship.angle = bearing + Math.PI
     ship.vx = Math.cos(ship.angle) * ship.maxSpeed
     ship.vy = Math.sin(ship.angle) * ship.maxSpeed
+    this.addRival(ship)
+  }
+
+  // Put a rival into the sector. One that starts beyond the boundary flies in, and that is its
+  // arrival; one that turns up inside the ring has nowhere to have flown in from, so it warps in
+  // the way the player does. Stated here rather than at each spawner, so it holds however the
+  // hull got here: by the sector's own arrivals, by hand off the dev page, or by the arena's
+  // spawner. Today only the arena puts one inside the ring.
+  addRival(ship) {
+    if (ship.insideArena()) {
+      ship.beginWarpIn(CONFIG.SHIP_WARP_LEAD)
+    }
     this.rivals.push(ship)
   }
 
@@ -708,6 +759,9 @@ export class Game {
     // the bright core the view draws. Every surface it can strike is grown by it,
     // so a shot that visibly laps a target is a shot that connects.
     const halfWidth = (weapon.type.width || 2.4) / 2
+    // How wide a strip the cut takes out, for a shot that rends rather than parts. Half the
+    // stated width either side of the line, and zero for every gun that cuts cleanly.
+    const slabWidth = (weapon.type.slice && weapon.type.slice.width / 2) || 0
 
     // Every ship the beam reaches, nearest first. Each is struck on its outermost
     // real surface: the shield bubble while one is raised, and the hull outline
@@ -721,7 +775,9 @@ export class Game {
       // A shield only stands in the way of the channels it blocks. A deflector
       // stops shots and not lasers, so a beam reaches the hull inside it, which
       // is the same answer a shielded rock gives.
-      const bubble = e.blockingRadius("laser")
+      // From the muzzle, so a hull whose rear only stops beams is asked about the side the
+      // beam is actually arriving on.
+      const bubble = e.blockingRadius("laser", beam.a)
       const entry =
         bubble > 0
           ? segmentCircleEntry(beam.a, beam.b, e, bubble + halfWidth)
@@ -755,7 +811,8 @@ export class Game {
     for (const { ship, entry } of reached) {
       const cuttable =
         ship.severable &&
-        ship.blockingRadius("laser") === 0 &&
+        weapon.type.cuts !== false &&
+        ship.blockingRadius("laser", beam.a) === 0 &&
         countBeamCrossings(beam, ship.worldOutline()) >= 2
       if (!cuttable) {
         blockShip = ship
@@ -767,6 +824,31 @@ export class Game {
     if (blockShip) {
       beam.b.x = beam.a.x + beam.dir.x * blockDist
       beam.b.y = beam.a.y + beam.dir.y * blockDist
+    }
+
+    // Rounds the beam overloads on the way through, after the beam has been cut short by whatever
+    // stopped it, so one held off by a shield does not reach the orbs behind it. A round like this is
+    // held together rather than solid, and a beam laid across a stream of them clears the lot: it is
+    // the answer to being hosed with something a hull cannot outrun.
+    for (const shot of this.projectiles) {
+      if (shot.dead || !shot.type || shot.type.overloadedBy !== "laser") {
+        continue
+      }
+      // Not the shooter's own, and not its own side's: a sector of aliens is not one where they
+      // pop each other's ordnance, which is the rule their fields already keep.
+      if (shot.owner === attacker) {
+        continue
+      }
+      if (shot.owner && attacker && shot.owner.faction === attacker.faction) {
+        continue
+      }
+      const size = (shot.type.shot && shot.type.shot.radius) || 3
+      if (segmentCircleEntry(beam.a, beam.b, shot, size + halfWidth) === null) {
+        continue
+      }
+      if (shot.overload(this, attacker === this.player)) {
+        didHit = true
+      }
     }
 
     const survivors = []
@@ -791,7 +873,9 @@ export class Game {
         bubble > 0
           ? segmentCircleEntry(beam.a, beam.b, asteroid.center, bubble + halfWidth) !== null
           : countBeamCrossings(beam, asteroid.vertices) >= 2
-      if (!reached) {
+      if (!reached || (bubble <= 0 && weapon.type.cuts === false)) {
+        // A beam that does not cut has nothing to say to bare rock: rock is destroyed by being
+        // cut apart and by nothing else, so there is no lesser thing for one to do to it.
         survivors.push(asteroid)
         continue
       }
@@ -850,7 +934,7 @@ export class Game {
         Sound.fire()
         continue
       }
-      const frags = asteroid.splitBy(beam, this)
+      const frags = asteroid.splitBy(beam, this, slabWidth)
       if (!frags) {
         survivors.push(asteroid)
         continue
@@ -890,7 +974,7 @@ export class Game {
     // Every hull the beam passed through comes apart. A cut that will not split
     // cleanly scorches instead, where the beam met it.
     for (const { ship, entry } of severed) {
-      if (this.sliceHull(ship, beam, fromPlayer)) {
+      if (this.sliceHull(ship, beam, fromPlayer, slabWidth)) {
         didHit = true
       } else {
         strike(ship, { x: beam.a.x + beam.dir.x * entry, y: beam.a.y + beam.dir.y * entry })
@@ -902,6 +986,56 @@ export class Game {
       strike(blockShip, { x: beam.b.x, y: beam.b.y })
     }
     return didHit
+  }
+
+  // One body, cut by a line running through it: what a railgun slug does to each thing it
+  // passes through, one at a time as it reaches them.
+  //
+  // Apart from applyBeam because a slug is not a beam. A beam exists all at once along its whole
+  // length, so it can ask "what is on this line" and be done; a slug arrives somewhere new every
+  // frame, and the length it has just travelled is far too short to pass through anything. The
+  // line handed here is the slug's trajectory spanning this one body, which is the line the thing
+  // is actually being cut along, and the caller decides when the slug has got there.
+  //
+  // Returns whether the body gave way. False means it stopped the slug.
+  railCut(body, line, attacker, damage, slab) {
+    const fromPlayer = attacker === this.player
+    // A raised bubble is what stops one. It spends its whole damage on the bubble and goes no
+    // further, which is the shield doing exactly what it does to a beam.
+    if (body.blockingRadius("laser", line.a) > 0) {
+      body.takeDamage(damage, this, "laser", 0, { x: line.a.x, y: line.a.y })
+      return false
+    }
+    const rock = this.asteroids.includes(body)
+    if (rock) {
+      if (body.explosive) {
+        if (body.fuse == null) {
+          body.fuse = 0.04
+        }
+        return true // it goes off in its own time, and the slug carries on through
+      }
+      const frags = body.splitBy(line, this, slab)
+      if (!frags) {
+        return true // clipped rather than passed through, so there is nothing to split
+      }
+      this.asteroids = this.asteroids.filter((a) => a !== body).concat(frags)
+      this.burst(body.center.x, body.center.y, randInt(16, 26), PALETTE.rock.cut, 50, 210, 0.45)
+      if (fromPlayer) {
+        this.score += CONFIG.SLICE_SCORE
+      }
+      Sound.slice()
+      this.screenShake = Math.max(this.screenShake, 4)
+      return true
+    }
+    // A hull. One that cannot be cut apart is scorched where the slug went through it, and a
+    // slug is not stopped by that: it is through, and what it went through is still there.
+    const scoreOnKill = fromPlayer && body !== this.player ? body.type.killScore : 0
+    if (!body.severable || !this.sliceHull(body, line, fromPlayer, slab)) {
+      body.takeDamage(damage, this, "laser", scoreOnKill, { x: line.a.x, y: line.a.y })
+    }
+    this.screenShake = Math.max(this.screenShake, 6)
+    Sound.slice()
+    return true
   }
 
   // Cut an unshielded hull along the beam, exactly as a rock is cut. A piece big
@@ -916,12 +1050,18 @@ export class Game {
   // shatters according to how big its halves come out.
   //
   // Returns false if the beam only grazes it (no clean split).
-  sliceHull(ship, beam, fromPlayer) {
+  sliceHull(ship, beam, fromPlayer, slab = 0) {
     const cutNormal = perpendicular(beam.dir)
     // slice the real (concave) hull outline; the slicer handles it directly and
     // may return more than two pieces
-    const parts = slicePolygon(ship.worldOutline(), beam.a, cutNormal)
-    if (parts.length < 2) {
+    //
+    // `slab` is a cut with width to it, for a shot that rends rather than parts: the strip it
+    // takes out is gone, so the pieces that come back do not add up to the hull. Nothing left
+    // over at all means the hull was narrower than the slab, and there is no wreckage to be had.
+    const parts = slab
+      ? sliceOutSlab(ship.worldOutline(), beam.a, cutNormal, slab)
+      : slicePolygon(ship.worldOutline(), beam.a, cutNormal)
+    if (parts === null || (parts.length < 2 && !slab)) {
       return false
     }
     const material = ship.type.debrisMaterial || null
@@ -942,8 +1082,10 @@ export class Game {
     // material holds together in. The second half is what keeps this off the small hulls:
     // the whole of a scout is a fraction of that area, so any cut at all still finishes one.
     const whole = polygonArea(ship.worldOutline())
-    const biggest = parts.reduce((best, p) => (polygonArea(p) > polygonArea(best) ? p : best))
-    const keptArea = polygonArea(biggest)
+    const biggest = parts.length
+      ? parts.reduce((best, p) => (polygonArea(p) > polygonArea(best) ? p : best))
+      : null
+    const keptArea = biggest ? polygonArea(biggest) : 0
     const survives = keptArea >= whole * SHIP_SCALARS.cutSurvival && keptArea >= debrisMinArea
     // Sort the pieces before anything is spawned, so "did this hull leave any
     // wreckage?" is answered over the whole cut rather than one piece at a time.
@@ -955,6 +1097,13 @@ export class Game {
       }
       const centre = polygonCentroid(partVerts)
       const side = dot(subtract(centre, beam.a), cutNormal) > 0 ? 1 : -1
+      // Where this piece's fresh face actually is. A clean cut leaves both faces on the line; a
+      // slab cut leaves each one a slab's width off it, on its own side, and looking for them on
+      // the centre line found nothing at all - so wreckage rent by a railgun did not burn.
+      const cutAt = {
+        x: beam.a.x + cutNormal.x * slab * side,
+        y: beam.a.y + cutNormal.y * slab * side,
+      }
       const drift = {
         vx: ship.vx + cutNormal.x * side * CONFIG.SPLIT_IMPULSE,
         vy: ship.vy + cutNormal.y * side * CONFIG.SPLIT_IMPULSE,
@@ -968,7 +1117,7 @@ export class Game {
       if (area < debrisMinArea && mine.length === 0) {
         slivers.push({ centre, drift, area })
       } else {
-        wreckage.push({ partVerts, centre, drift, mine })
+        wreckage.push({ partVerts, centre, drift, mine, cutAt })
       }
     }
 
@@ -992,7 +1141,11 @@ export class Game {
           hardpoints: piece.mine,
           tint: ship.colour, // keep the hull's colour on the debris
           material, // plating: survives smaller, and burns where it is torn
-          burnFrom: { point: beam.a, normal: cutNormal },
+          // Whose hull this was. Not the piece's own side - wreckage is scenery and shoots at
+          // the player like the rest of the scenery - but enough for something that wants to
+          // finish what it cut in half to know which halves are worth finishing.
+          wreckOf: ship.faction,
+          burnFrom: { point: piece.cutAt, normal: cutNormal },
         }),
       )
     }
@@ -1015,10 +1168,17 @@ export class Game {
     if (survives) {
       // Still flying, with a flat edge where the corner used to be. Nothing is paid for a
       // graze: the ship is still there to be shot at.
+      const keptSide = dot(subtract(polygonCentroid(biggest), beam.a), cutNormal) > 0 ? 1 : -1
       ship.reshape(
         biggest,
         parts.filter((part) => part !== biggest),
-        { point: beam.a, normal: cutNormal },
+        {
+          point: {
+            x: beam.a.x + cutNormal.x * slab * keptSide,
+            y: beam.a.y + cutNormal.y * slab * keptSide,
+          },
+          normal: cutNormal,
+        },
       )
       return true
     }
@@ -1085,9 +1245,17 @@ export class Game {
     }
   }
 
+  // An arena's plan: the sector's, with everything that arrives on its own switched off. The
+  // sector's plan used to go on running behind a cleared arena, so emptying it emptied it once
+  // and rivals and specials turned up a few seconds later as though the sector had never been
+  // left. What arrives in an arena is what the spawn page asks for, and nothing else.
+  arenaPlan(sector) {
+    return { ...this.planLevel(sector), spawns: [], specials: false, rivals: 0 }
+  }
+
   startLevel(sector) {
     this.level = sector
-    this.plan = this.planLevel(sector)
+    this.plan = this.sandbox ? this.arenaPlan(sector) : this.planLevel(sector)
     this.backdrop.regenSector(sector) // seeded backdrop for this sector's vibe
     this.asteroids = []
     this.oreChunks = []
@@ -1253,12 +1421,14 @@ export class Game {
   }
 
   // What hull is being flown, by the name the dev page lists it under.
+  // Which hull is being flown, as the dev page names it. Every hull is in one table now, the
+  // player's among them, so this is a lookup rather than a special case with a lookup behind it.
   playerTypeName() {
-    if (!this.player || this.player.type === PLAYER_TYPE) {
-      return "PLAYER"
+    if (!this.player) {
+      return ""
     }
     const found = Object.entries(SHIP_TYPES).find(([, type]) => type === this.player.type)
-    return found ? found[0].replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase() : "PLAYER"
+    return found ? found[0].replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase() : ""
   }
 
   // Fly another hull. The shop finds its mounts by role, so anything with a nose, a core
@@ -1268,6 +1438,22 @@ export class Game {
     const type = name === "player" ? PLAYER_TYPE : SHIP_TYPES[name]
     if (!type || !this.player) {
       return
+    }
+    // The run's own kit, put aside the first time a hull is flown out of the dev page. Stepping
+    // back into the player's hull has to be stepping back into the run, and without this it was
+    // stepping into the player's outline wearing the last hull's guns and bubble.
+    if (!this.runFitting) {
+      this.runFitting = JSON.parse(JSON.stringify(this.upgrades.fitted))
+    }
+    if (type === PLAYER_TYPE) {
+      this.upgrades.fitted = JSON.parse(JSON.stringify(this.runFitting))
+    } else {
+      // Every slot is emptied first, so the hull arrives as its designer built it rather than
+      // keeping whatever the last one had in the slots this one does not fill. What it does carry
+      // goes back in below, and is the run's to swap around in the shop from then on.
+      for (const [slot, spec] of Object.entries(EQUIPMENT)) {
+        this.upgrades.fitted[slot] = spec.perMount ? [] : ""
+      }
     }
     this.#unlockHullFitting(type)
     const was = this.player
@@ -1284,6 +1470,13 @@ export class Game {
       }
     })
     this.player = ship
+    // The cell is the new hull's, which cannot be known until the new hull is the player: the
+    // constructor sized it off `maxEnergy`, and that reads whichever hull is being flown, so
+    // it sized the pincer's cell off the one being stepped out of. It came right on the next
+    // frame, but what was in it did not, so a hull with a big cell arrived with a small one's
+    // worth in it.
+    ship.energyMax = this.maxEnergy()
+    ship.energy = ship.energyMax
     Sound.power()
   }
 
@@ -1344,7 +1537,13 @@ export class Game {
     if (!this.stock) {
       const core = (PLAYER_TYPE.loadout || []).find((entry) => entry.core)
       const fitted = { ...(core.fitted || {}) }
-      const loadout = (PLAYER_TYPE.loadout || []).filter((entry) => entry !== core)
+      // Only what the design puts on mounts the shop does not own. The design states what a fresh
+      // run is fitted with, and the loop below fits the same thing again from EQUIPMENT: kept, both
+      // would land on the mount and the hull would be weighed carrying two of everything.
+      const shopMounts = new Set(Object.values(EQUIPMENT).flatMap((spec) => spec.roles))
+      const loadout = (PLAYER_TYPE.loadout || []).filter(
+        (entry) => entry !== core && !shopMounts.has((PLAYER_TYPE.hardpoints[entry.hp] || {}).role),
+      )
       for (const [slot, spec] of Object.entries(EQUIPMENT)) {
         // Zero is what the hull came with. A slot whose cheapest option costs something
         // starts empty, which is how a shield is bought rather than issued.
@@ -1454,7 +1653,7 @@ export class Game {
       return
     }
     const cost = SPECIAL_TYPES[id].cost
-    if (!this.devMode) {
+    if (!this.devFreeBuys) {
       if (this.oreBalance < cost) {
         Sound.hit()
         return
@@ -1477,6 +1676,9 @@ export class Game {
     const menu = this.slotMenu
     if (!menu) {
       return ""
+    }
+    if (menu.title) {
+      return menu.title
     }
     if (menu.equipment) {
       return EQUIPMENT[menu.equipment].label
@@ -1527,7 +1729,7 @@ export class Game {
           return "-"
         }
         return level === g.upgrades[id] + 1
-          ? g.devMode
+          ? g.devFreeBuys
             ? "FREE"
             : `${row.levelCost(at)} ore`
           : "-"
@@ -1539,7 +1741,7 @@ export class Game {
           return
         }
         const cost = row.levelCost(g.upgrades[id])
-        if (!g.devMode) {
+        if (!g.devFreeBuys) {
           if (g.oreBalance < cost) {
             Sound.hit()
             return
@@ -1561,6 +1763,12 @@ export class Game {
   // row lists what a special slot can do.
   slotMenuRows(slot) {
     const menu = this.slotMenu
+    // A menu row that owns a pop-over brings its own rows. The dev pages use this: a list of
+    // options that each say what they do beats a row cycling through them with the meaning of
+    // each left to be remembered, and it saves descending into a page to make one choice.
+    if (menu && menu.rows) {
+      return menu.rows(this)
+    }
     if (menu && menu.equipment) {
       return this.equipmentRows(menu.equipment, menu.slot)
     }
@@ -1612,6 +1820,22 @@ export class Game {
     this.slotMenu = { slot: 0, levels: id, selection: next }
   }
 
+  // A pop-over hung off a menu row rather than off a shop slot: the row says what it is called
+  // and where its rows come from, and opens on whichever of them is already the case.
+  openRowMenu(row) {
+    const rows = row.flyout(this)
+    if (!rows.length) {
+      return
+    }
+    const at = rows.findIndex((entry) => entry.current && entry.current(this))
+    this.slotMenu = {
+      slot: 0,
+      rows: row.flyout,
+      title: row.label ? row.label(this) : row.name,
+      selection: Math.max(0, at),
+    }
+  }
+
   closeSlotMenu() {
     this.slotMenu = null
   }
@@ -1644,6 +1868,12 @@ export class Game {
     }
     const wasBuyable = !!row.buyable && row.buyable(this, slot)
     row.action(this, slot)
+    // A row that does the thing the menu was opened for closes it behind itself; one that only
+    // changes a setting leaves it up, so what the setting now is can be seen.
+    if (row.closes) {
+      this.closeSlotMenu()
+      return
+    }
     // A row that was a purchase and is not one any more is a purchase that went
     // through: one too dear to afford stays buyable, and the cursor stays on it.
     if (this.slotMenu && wasBuyable && !row.buyable(this, slot)) {
@@ -1694,7 +1924,7 @@ export class Game {
       return
     }
     const cost = item.cost(this)
-    if (!this.devMode) {
+    if (!this.devFreeBuys) {
       if (this.oreBalance < cost) {
         Sound.hit()
         return
@@ -1801,7 +2031,7 @@ export class Game {
   // between the last ship and the end of the run, so a player who banked it can buy
   // their way back in as often as it lasts.
   canContinue() {
-    return this.devMode || this.oreBalance >= this.continueCost()
+    return this.devFreeBuys || this.oreBalance >= this.continueCost()
   }
 
   // Back into the sector that killed them, which is untouched: the rocks that were
@@ -1814,7 +2044,7 @@ export class Game {
       Sound.hit()
       return
     }
-    if (!this.devMode) {
+    if (!this.devFreeBuys) {
       this.oreBalance -= this.continueCost()
     }
     this.lives++
@@ -1953,7 +2183,7 @@ export class Game {
   // adding a side is an edit to FACTIONS and nothing else. Being seen at all is
   // part of the answer and not a separate test the callers could forget: the
   // player is the one body that can hide, and visiblePlayer is where that lives.
-  hostileTarget(host, from = host, within = Infinity) {
+  hostileTarget(host, from = host, within = Infinity, { wreckage = false } = {}) {
     const hostile = FACTIONS[host.faction]
     if (!hostile) {
       return null
@@ -1973,7 +2203,74 @@ export class Game {
         candidates.push(rival)
       }
     }
+    // Halves of something already cut apart, for whoever asked to see them. They are still armed
+    // and still moving, so a hull that cut something in two has not finished with it: without
+    // this, nothing in the game ever looked at wreckage again and the pieces drifted off intact.
+    if (wreckage) {
+      for (const rock of this.asteroids) {
+        if (rock.wreckOf && hostile.includes(rock.wreckOf)) {
+          candidates.push(rock)
+        }
+      }
+    }
+    // What this hull would rather be fighting, over whatever happens to be nearest. A preference
+    // and not a blindness: with none of them in the sector it takes what there is, and wreckage is
+    // never preferred because a half is not what anything came for.
+    const prefers = host.type && host.type.prefers
+    if (prefers && prefers.length) {
+      const wanted = candidates.filter((body) => prefers.includes(body.typeName))
+      const first = this.#nearest(wanted, from, Math.min(within, reach))
+      if (first) {
+        return first
+      }
+    }
     return this.#nearest(candidates, from, Math.min(within, reach))
+  }
+
+  // The most pressing round in the air that this host would want gone, as { target, distance }. Only
+  // other people's, and only the kinds a beam can take apart: a point-defence gun that swung onto
+  // rounds it cannot stop would be a gun pointed the wrong way.
+  //
+  // Ranked by how soon it arrives rather than by how near it is, and rounds on their way out are not
+  // ranked at all. In an empty sector those come to the same thing; in a busy one they do not, and
+  // the nearest round is routinely a spent one drifting past while the one that matters is closing
+  // from further out. What a battery is for is what is about to hit the ship.
+  hostileRound(host, from = host, within = Infinity) {
+    const hostile = FACTIONS[host.faction]
+    if (!hostile) {
+      return null
+    }
+    let found = null,
+      soonest = Infinity,
+      range = 0
+    for (const shot of this.projectiles) {
+      if (shot.dead || !shot.type || shot.type.overloadedBy !== "laser") {
+        continue
+      }
+      const side = shot.owner ? shot.owner.faction : null
+      if (!side || side === host.faction || !hostile.includes(side)) {
+        continue
+      }
+      const away = distanceTo(from, shot)
+      if (away > within) {
+        continue // out of what the gun asking can reach
+      }
+      // How fast it is closing on the hull, which is not the same as how fast it is going: a round
+      // crossing the bow at speed is not arriving.
+      const toward = { x: host.x - shot.x, y: host.y - shot.y }
+      const gap = Math.hypot(toward.x, toward.y) || 1
+      const closing = (shot.vx * toward.x + shot.vy * toward.y) / gap
+      if (closing <= 0) {
+        continue // going away, so somebody else's problem
+      }
+      const arrives = gap / closing
+      if (arrives < soonest) {
+        soonest = arrives
+        range = away
+        found = shot
+      }
+    }
+    return found ? { target: found, distance: range } : null
   }
 
   // Specials the run has met. A kind has to be found in a sector before the shop
@@ -1987,7 +2284,7 @@ export class Game {
   // say on whether it is for sale at all.
   buyableSpecials() {
     return SPECIAL_IDS.filter(
-      (id) => SPECIAL_TYPES[id].buyable && (this.devMode || this.seenSpecials.has(id)),
+      (id) => SPECIAL_TYPES[id].buyable && (this.devFreeBuys || this.seenSpecials.has(id)),
     )
   }
 
@@ -2021,6 +2318,11 @@ export class Game {
           this.spawnRival()
           this.rivalTimer = this.plan.rivalInterval
         }
+      }
+      // An arena has no plan of its own, so what arrives is whatever the spawn page has set to
+      // AUTO. Nothing at all until something is.
+      if (this.sandbox) {
+        this.#tickAutoSpawn(dt)
       }
     }
 
@@ -2664,9 +2966,6 @@ export class Game {
     if (this.pausePage === "devSpawn") {
       return this.menuPage(DEV_SPAWN_MENU)
     }
-    if (this.pausePage === "devShip") {
-      return this.menuPage(DEV_SHIP_MENU)
-    }
     return PAUSE_MENU.filter((row) => !row.available || row.available(this))
   }
 
@@ -2696,10 +2995,19 @@ export class Game {
     return this.devArms[name] || 0
   }
 
-  // Walk that choice, which each hull holds for itself.
-  stepDevArms(name, step) {
-    const count = DEV_ARMS.length
-    this.devArms[name] = (this.devArmsFor(name) + (step > 0 ? 1 : count - 1)) % count
+  // Whether the arena keeps sending this hull without being asked each time.
+  devAutoFor(name) {
+    return !!this.devAuto[name]
+  }
+
+  // Both set from the hull's own pop-over, where they are separate rows: picking one must leave
+  // the other alone.
+  setDevArms(name, index) {
+    this.devArms[name] = index
+  }
+
+  setDevAuto(name, on) {
+    this.devAuto[name] = on
   }
 
   // What a dev-spawned hull turns up with: nothing beyond its design, what the spawner
@@ -2710,7 +3018,12 @@ export class Game {
       return [...(type.loadout || []), ...arms]
     }
     if (DEV_ARMS[this.devArmsFor(name)] === "rolled") {
-      return this.rollLoadout(type)
+      // Rolled deep enough that rolling means something. A hull's arms ramp up over the sectors
+      // past the one it first appears at, so an alien dart rolled at the sector a dev arena is
+      // usually opened from turns up carrying nothing at all - which is a page that looks broken
+      // rather than a page showing what the spawner does. A run already deeper than that rolls
+      // at its own depth.
+      return this.rollLoadout(type, Math.max(this.level, DEV_ROLL_SECTOR))
     }
     return type.loadout || []
   }
@@ -2722,12 +3035,18 @@ export class Game {
       Object.keys(traits)
         .map((trait) => HAZARD_NAMES[trait] || trait.toUpperCase())
         .join(" + ")
+    const said = (traits) =>
+      Object.keys(traits)
+        .map((trait) => HAZARD_DESC[trait])
+        .filter(Boolean)
+        .join(" ")
     return [
-      { name: "ASTEROID", traits: {}, fromSector: 1 },
+      { name: "PLAIN", traits: {}, fromSector: 1, desc: "Rock, and nothing else." },
       ...HAZARD_TRAITS.map((entry) => ({
-        name: `ASTEROID, ${named(entry.traits)}`,
+        name: named(entry.traits),
         traits: entry.traits,
         fromSector: entry.fromSector || 1,
+        desc: said(entry.traits),
       })),
     ]
   }
@@ -2739,18 +3058,47 @@ export class Game {
   // six on the same spot, where the contact solver would spend the next second shoving them
   // apart and they would scatter as a shower. The place in front is tried first, then a ring
   // of places around it, each one further out.
-  devSpawn(name) {
+  // `quiet` and a bearing of its own are for the arena's own spawner: one asked for by hand is
+  // put where it can be looked at and says so, and one that arrives on its own comes from
+  // wherever a hull would and does not announce itself every few seconds.
+  devSpawn(name, { quiet = false, bearing = null } = {}) {
     if (!this.player) {
       return
     }
     const type = SHIP_TYPES[name]
-    const ahead = this.player.angle
+    const ahead = bearing ?? this.player.angle
     const at = this.#clearSpawnSpot(this.player, ahead, 260 + type.boundRadius, type.boundRadius)
     const ship = new RivalShip(at.x, at.y, name, this.devLoadout(name, type))
     ship.angle = ahead + Math.PI
     ship.arrived = true // it is already here; nothing to fly in from
-    this.rivals.push(ship)
-    Sound.power()
+    this.addRival(ship)
+    if (!quiet) {
+      Sound.power()
+    }
+  }
+
+  // The arena's own spawner. A hull set to AUTO keeps arriving while there is room for it, armed
+  // however its row says, so a fight can be set up and then left running. Its own beat, because
+  // the sector's is exactly what an arena is for not having.
+  #tickAutoSpawn(dt) {
+    const wanted = Object.keys(this.spawnableTypes()).filter((name) => this.devAutoFor(name))
+    if (!wanted.length) {
+      this.autoTimer = 0
+      return
+    }
+    this.autoTimer -= dt
+    if (this.autoTimer > 0) {
+      return
+    }
+    this.autoTimer = DEV_AUTO.interval
+    for (const name of wanted) {
+      // A hull the spawner would only ever send one of is still only sent one of in here.
+      const spawn = SHIP_TYPES[name].spawn
+      const cap = (spawn && spawn.maxConcurrent) || DEV_AUTO.cap
+      if (this.rivals.filter((rival) => rival.typeName === name).length < cap) {
+        this.devSpawn(name, { quiet: true, bearing: randRange(0, TAU) })
+      }
+    }
   }
 
   // The same, for a rock of one of the kinds the generator makes. Its traits are cut to
@@ -2867,15 +3215,48 @@ export class Game {
   // An arena with nothing in it and no way to win: the sector never counts as cleared, so
   // whatever is spawned here can be watched for as long as it is wanted.
   enterSandbox() {
+    // Set before the level is built, because that is what decides whether the sector's spawners
+    // come with it.
     this.sandbox = true
-    this.devMode = true
     this.paused = false
     this.pausePage = "root"
     this.startLevel(Math.max(1, this.level))
-    this.asteroids = []
-    this.rivals = []
-    this.projectiles = []
     Sound.power()
+  }
+
+  // An arena already set up as a fight: the four hulls that come looking for one, each armed the
+  // way the sector would arm it, all set to keep arriving. Everything else is turned off, so what
+  // is asked for is what turns up rather than whatever the last session left on.
+  enterDogfight() {
+    this.devAuto = {}
+    for (const name of DOGFIGHT_HULLS) {
+      if (SHIP_TYPES[name]) {
+        this.setDevArms(name, DEV_ARMS.indexOf("rolled"))
+        this.setDevAuto(name, true)
+      }
+    }
+    this.enterSandbox()
+  }
+
+  // Whether the dev tools are offered, and what they are allowed to do. A setting, so it is in
+  // every build and it sticks; turning it off puts back everything it was doing, since leaving a
+  // run with free purchases behind a page that is no longer there would be a run quietly changed.
+  setDevMenu(on) {
+    this.settings.dev = !!on
+    if (!this.settings.dev) {
+      this.devFreeBuys = false
+      this.devAnySector = false
+      if (this.pausePage === "dev" || this.pausePage === "devSpawn") {
+        this.openPausePage("root")
+      }
+    }
+    this.rememberSettings()
+  }
+  setDevFreeBuys(on) {
+    this.devFreeBuys = !!on
+  }
+  setDevAnySector(on) {
+    this.devAnySector = !!on
   }
 
   // Move between pages of the pause menu, landing the cursor at the top.
@@ -2964,6 +3345,13 @@ export class Game {
     }
     if (this.paused) {
       const row = this.pauseMenu()[this.pauseSelection]
+      // A row with a pop-over opens it rather than doing anything itself: what it does is one of
+      // the things inside.
+      if (row && row.flyout) {
+        this.pauseConfirming = null
+        this.openRowMenu(row)
+        return
+      }
       if (!row || !row.action) {
         return
       }
@@ -3000,7 +3388,9 @@ export class Game {
       // so the four can be worked through without closing and reopening it. A menu
       // opened from a shop row has nothing beside it, and the shop behind it must not
       // move either way.
-      if (!this.slotMenu.equipment && !this.slotMenu.levels) {
+      // Sideways walks between the shop's slot boxes. A pop-over hung off a menu row has no
+      // boxes beside it, so there is nowhere to walk to.
+      if (!this.slotMenu.equipment && !this.slotMenu.levels && !this.slotMenu.rows) {
         this.#slotMenuAcross(step)
       }
       return true
@@ -3109,7 +3499,7 @@ export class Game {
   // what leaves LAUNCH's own left press free to reach OPTIONS beside it once the
   // sector is already at the floor.
   devSectorStep(step) {
-    if (this.phase !== "shop" || !this.devMode || this.shopSelection !== this.launchRow) {
+    if (this.phase !== "shop" || !this.devAnySector || this.shopSelection !== this.launchRow) {
       return false
     }
     const next = Math.max(1, this.shopSector + step)
@@ -3142,7 +3532,7 @@ export class Game {
     // Back one page, not all the way out: the dev pages hang off the dev page, which
     // hangs off the options. Backing out of SPAWN landed on the options, which is two
     // steps and the wrong one.
-    const behind = { devSpawn: "dev", devShip: "dev", dev: "root", controls: "root" }
+    const behind = { devSpawn: "dev", dev: "root", controls: "root" }
     if (this.pausePage === "root") {
       this.toggleOptions()
     } else {
@@ -3323,7 +3713,9 @@ export class Game {
     if (!this.player || this.phase === "title" || this.phase === "over") {
       this.startNewGame()
     }
-    this.devMode = true
+    // Asking for the page is asking for the tools, and it does no more than that: what the page
+    // offers still has to be turned on a row at a time.
+    this.setDevMenu(true)
     this.paused = true
     this.openPausePage("dev")
   }

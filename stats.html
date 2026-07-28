@@ -478,7 +478,9 @@
               el(
                 "tr",
                 {},
-                headers.map((h) => el("th", { textContent: h })),
+                headers.map((h) =>
+                  h && h.nodeType ? el("th", {}, h) : el("th", { textContent: h }),
+                ),
               ),
             ),
             el("tbody", {}, body),
@@ -516,6 +518,34 @@
 
       function heading(text, ...content) {
         return el("div", {}, el("h3", { textContent: text }), ...content)
+      }
+
+      // ---- factions ----------------------------------------------------------
+
+      // The colour the game draws each side in, so a table that mixes them can say
+      // whose a row is before it is read. `hazard` is a rock and the wreckage cut off
+      // a hull, and takes the colour a cut edge is drawn in.
+      const FACTION_INK = {
+        player: PALETTE.player.hull,
+        rival: PALETTE.rival.hull,
+        alien: PALETTE.alien.hull,
+        hazard: PALETTE.rock.cut,
+      }
+
+      // Who a hull flies for, defaulting the way the simulation does, so a type that
+      // states no faction is a rival here as it is there.
+      const factionOf = (name) => (config.SHIP_TYPES[name] || {}).faction ?? "rival"
+
+      // A name in a faction's colour, behind a swatch of it where it names the side
+      // itself.
+      function inFaction(text, faction, swatch = false) {
+        const ink = FACTION_INK[faction]
+        return el(
+          "span",
+          { style: ink ? `color:${ink}` : "" },
+          swatch && ink ? el("span", { className: "swatch", style: `background:${ink}` }) : null,
+          document.createTextNode(text),
+        )
       }
 
       // ---- modules ----------------------------------------------------------
@@ -700,7 +730,10 @@
               x: centre,
               y: baseline,
               "text-anchor": "middle",
-              fill: PALETTE.text.muted,
+              // The side's colour, so the row groups by faction before a name is
+              // read. The outline keeps the hull's own, which a design may set for
+              // itself and need not be its side's.
+              fill: FACTION_INK[type.faction ?? "rival"] || PALETTE.text.muted,
               "font-size": FONT,
               "font-family": "monospace",
             },
@@ -848,38 +881,96 @@
 
       // ---- the player's ship, as the shop leaves it -------------------------
 
+      // Which of a hull's mounts a slot fills. A slot names the roles it takes rather
+      // than an index, so the same slot finds its mounts on any hull, and every mount
+      // with one of those roles is filled.
+      const mountsForSlot = (type, spec) =>
+        (type.hardpoints || []).flatMap((hp, at) => (spec.roles.includes(hp.role) ? [at] : []))
+
+      // What a slot holds at one of its mounts, answered the way Game.fittedEquipment
+      // answers it: a per-mount slot keeps a row, and a mount it says nothing about
+      // keeps whatever the hull came with.
+      function fittedAt(fitted, slot, spec, ordinal) {
+        const held = fitted[slot]
+        if (Array.isArray(held)) {
+          return held[ordinal]
+        }
+        if (spec.perMount) {
+          return ordinal === 0 ? held : undefined
+        }
+        return held ?? null
+      }
+
       // The loadout the player flies with for a given set of fitted equipment. This
       // is what PlayerShip.fitEquipment does to the hull, in the shape a type states
       // a loadout in, so the same deriveShipStats that works out a rival answers for
-      // the player too.
+      // the player too. A slot owns its mounts outright, so what it fits takes the
+      // place of whatever the hull came with there.
       function playerLoadout(fitted) {
-        const loadout = (config.PLAYER_TYPE.loadout || []).map((entry) => ({ ...entry }))
-        const core = loadout.find((entry) => entry.core)
+        const type = config.PLAYER_TYPE
+        const loadout = (type.loadout || []).map((entry) => ({ ...entry }))
         for (const [slot, spec] of Object.entries(config.EQUIPMENT)) {
-          const id = fitted[slot]
-          if (!id) {
-            continue
-          }
-          if (spec.slot) {
-            if (core) {
-              core.fitted = { ...(core.fitted || {}), [spec.slot]: id }
+          mountsForSlot(type, spec).forEach((at, ordinal) => {
+            const id = fittedAt(fitted, slot, spec, ordinal)
+            if (id === undefined) {
+              return
             }
-            continue
-          }
-          const entry = { hp: spec.hp, [spec.mount]: id }
-          if (spec.controller) {
-            entry.controller = spec.controller
-          }
-          loadout.push(entry)
+            if (spec.slot) {
+              const core = loadout.find((entry) => entry.hp === at && entry.core)
+              if (!core) {
+                return
+              }
+              core.fitted = { ...(core.fitted || {}) }
+              if (id) {
+                core.fitted[spec.slot] = id
+              } else {
+                delete core.fitted[spec.slot]
+              }
+              return
+            }
+            const already = loadout.findIndex((entry) => entry.hp === at)
+            if (already >= 0) {
+              loadout.splice(already, 1)
+            }
+            if (!id) {
+              return
+            }
+            const entry = { hp: at, [spec.mount]: id }
+            if (spec.controller) {
+              entry.controller = spec.controller
+            }
+            loadout.push(entry)
+          })
         }
         return loadout
+      }
+
+      // The flight settings deriveShipStats fills in, asked of flightStats itself so
+      // the list is never restated here.
+      const FLIGHT_FIELDS = Object.keys(
+        config.flightStats({ mass: 1, reach: 1, thrust: 0, torque: 0 }),
+      )
+
+      // A derived type back as the design behind it: what deriveShipStats worked out
+      // comes off, and what the design stated for itself stays. A stated setting always
+      // wins, so refitting a type that has already been through deriveShipStats would
+      // otherwise keep the numbers the yard's own loadout came to and report every
+      // option as costing nothing.
+      function asDesign(type) {
+        const design = { ...type }
+        for (const field of FLIGHT_FIELDS) {
+          if ((type.flightOverrides || {})[field] === undefined) {
+            delete design[field]
+          }
+        }
+        return design
       }
 
       // The player's hull with a set of equipment aboard, worked out the way a rival's
       // type is. The cell is the one exception: the player's core is levelled, so its
       // capacity depends on what has been bought and is asked of coreAt instead.
       function playerAsFitted(fitted, coreLevel = 0) {
-        const design = { ...config.PLAYER_TYPE, loadout: playerLoadout(fitted) }
+        const design = { ...asDesign(config.PLAYER_TYPE), loadout: playerLoadout(fitted) }
         const core = config.coreAt(config.CORE_TYPES[playerCoreName()], coreLevel)
         return {
           ...config.deriveShipStats(design),
@@ -1023,7 +1114,8 @@
           "where each of them came from. The player's is shown as the yard leaves it, with the " +
           "equipment a run starts with aboard - what the shop can change is under UPGRADES. " +
           "Outlines are drawn from the real ones, with the shield bubble dashed, weapons as rings, " +
-          "engines as chevrons, cores as squares and empty mounts as dots.",
+          "engines as chevrons, cores as squares and empty mounts as dots. Under TRUE RELATIVE " +
+          "SCALE each hull is named in its side's colour, while the outline keeps its own.",
         el(
           "div",
           { className: "cards" },
@@ -1261,7 +1353,9 @@
         "Who shoots at whom. Game.hostileTarget is the only thing that reads this, so every gun " +
           "and every hull that steers at something asks one question and no behaviour has to know " +
           "which sides exist. A ship type states its own `faction` and is a rival without one; " +
-          "`hazard` is what everything else is, which is a rock and the wreckage cut off a hull.",
+          "`hazard` is what everything else is, which is a rock and the wreckage cut off a hull. " +
+          "Each side is written in the colour the game draws it in, here and wherever else a " +
+          "table mixes them.",
         el(
           "div",
           { className: "cards" },
@@ -1270,14 +1364,23 @@
             null,
             dataTable(
               ["side", "shoots at", "hulls flying for it"],
-              Object.entries(config.FACTIONS).map(([side, hostile]) => [
-                side,
-                hostile.join(", "),
-                hulls
-                  .filter(([, type]) => (type.faction ?? "rival") === side)
-                  .map(([name]) => name)
-                  .join(", ") || "-",
-              ]),
+              Object.entries(config.FACTIONS).map(([side, hostile]) => {
+                const flying = hulls.filter(([, type]) => (type.faction ?? "rival") === side)
+                return [
+                  inFaction(side, side, true),
+                  el(
+                    "span",
+                    {},
+                    hostile.flatMap((other, i) => [
+                      i ? document.createTextNode(", ") : null,
+                      inFaction(other, other),
+                    ]),
+                  ),
+                  flying.length
+                    ? inFaction(flying.map(([name]) => name).join(", "), side)
+                    : el("span", { className: "no", textContent: "-" }),
+                ]
+              }),
             ),
           ),
         ),
@@ -1802,9 +1905,12 @@
               className: "note",
               style: "margin:0 0 6px",
               textContent:
-                "Each type's share of a sector's arrivals, from weightAt over the eligible types. A type is out of the running while as many as its `maxConcurrent` are already alive, which is not in these shares because it depends on the sector's state rather than its number.",
+                "Each type's share of a sector's arrivals, from weightAt over the eligible types. A type is out of the running while as many as its `maxConcurrent` are already alive, which is not in these shares because it depends on the sector's state rather than its number. A column is headed in its side's colour, since one roll covers every hull eligible there whoever it flies for.",
             }),
-            dataTable(["sector", ...arrivals.names], arrivals.rows),
+            dataTable(
+              ["sector", ...arrivals.names.map((name) => inFaction(name, factionOf(name)))],
+              arrivals.rows,
+            ),
           ),
         )
       }

@@ -380,6 +380,10 @@ const COMPOSITE_FS = `#version 300 es
   // standing waves through the region, which is what a singularity does to the space it
   // is sitting in.
   uniform float uLensWave[LENSES];
+  // Where across the region the bend is heaviest. 0 puts it just inside the middle, which swells
+  // what is behind a body; 1 puts it out at the rim, so a body's whole outline ripples and its
+  // centre stays still. The peak is the same size either way, only somewhere else.
+  uniform float uLensHollow[LENSES];
   uniform int uLensCount;
   uniform vec4 uTear[TEARS];
   uniform int uTearCount;
@@ -406,13 +410,18 @@ const COMPOSITE_FS = `#version 300 es
       float dist = length(d);
       if (dist >= l.w) { continue; }
       float fall = 1.0 - dist / l.w;
+      float across = dist / l.w;
+      // How much of the bend lands here. Both profiles are zero at the centre and at the rim and
+      // peak the same amount in between; the hollow moves where that peak sits, from a third of
+      // the way out to two thirds. The wave rides the same weight, so what warps is what ripples.
+      float weight = mix(fall * fall, across * fall, uLensHollow[i]);
       vec2 dir = d / max(dist, 1e-5);
       d.x /= uAspect;
       dir.x /= uAspect;
-      uv -= d * (l.z * fall * fall);
+      uv -= d * (l.z * weight);
       float wave = uLensWave[i];
       if (wave > 0.0) {
-        uv += dir * sin(dist * 90.0 - uTime * 7.0) * wave * fall * fall * 0.05;
+        uv += dir * sin(dist * 90.0 - uTime * 7.0) * wave * weight * 0.05;
       }
     }
     return uv;
@@ -569,6 +578,7 @@ export class WebGLRenderer extends Renderer {
     this.lensData = new Float32Array(LENS_LIMIT * 4)
     this.lensEnd = new Float32Array(LENS_LIMIT * 2)
     this.lensWave = new Float32Array(LENS_LIMIT)
+    this.lensHollow = new Float32Array(LENS_LIMIT)
     this.lensCount = 0
     this.tearData = new Float32Array(TEAR_LIMIT * 4)
     this.tearCount = 0
@@ -1086,6 +1096,24 @@ export class WebGLRenderer extends Renderer {
     }
   }
 
+  // A disc that covers what is behind it. `circle`'s fill goes through the additive batch, where
+  // black is the identity and paints nothing: it reads as dark only over empty space, and over a
+  // hull it does not read at all. This one goes through the alpha batch, so black is an absence
+  // rather than an addition of nothing.
+  occlude(x, y, r, opts = {}) {
+    const col = this.#col({ color: opts.fill ?? "#000000", alpha: opts.alpha })
+    this.#use("flat")
+    // One segment per 2.5 world units of circumference, as `circle`'s stroke uses.
+    const seg = clamp(Math.ceil(r * 2.5), 8, 48)
+    const at = (i) => {
+      const a = ((i % seg) / seg) * Math.PI * 2
+      return { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }
+    }
+    for (let i = 0; i < seg; i++) {
+      this.#flatTri([{ x, y }, at(i), at(i + 1)], col)
+    }
+  }
+
   rect(x, y, w, h, opts = {}) {
     if (opts.fill) {
       const col = this.#col({ color: opts.fill, alpha: opts.alpha })
@@ -1321,6 +1349,7 @@ export class WebGLRenderer extends Renderer {
       gl.uniform4fv(this.#uniform(prog, "uLens"), this.lensData)
       gl.uniform2fv(this.#uniform(prog, "uLensEnd"), this.lensEnd)
       gl.uniform1fv(this.#uniform(prog, "uLensWave"), this.lensWave)
+      gl.uniform1fv(this.#uniform(prog, "uLensHollow"), this.lensHollow)
     }
     gl.uniform1i(this.#uniform(prog, "uTearCount"), this.tearCount)
     if (this.tearCount > 0) {
@@ -1354,6 +1383,7 @@ export class WebGLRenderer extends Renderer {
     this.lensCount = this.#packSources(list, this.lensData, LENS_LIMIT)
     for (let i = 0; i < this.lensCount; i++) {
       this.lensWave[i] = list[i].wave || 0
+      this.lensHollow[i] = list[i].hollow || 0
       // A source with no far end bends space round its own centre, which is a line of
       // no length and the same maths.
       this.lensEnd[i * 2] = list[i].endX ?? list[i].x

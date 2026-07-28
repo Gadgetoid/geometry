@@ -376,7 +376,7 @@ test("the dpad steps the dev sector, and only in the dev shop", () => {
   game.shopSelection = game.launchRow
   input.apply(readPad(pad({ buttons: { [B.dpadRight]: 1 } })))
   assert.equal(game.shopSector, sector, "not offered outside dev mode")
-  game.devMode = true
+  game.setDevAnySector(true)
   input.apply(readPad(pad()))
   input.apply(readPad(pad({ buttons: { [B.dpadRight]: 1 } })))
   assert.equal(game.shopSector, sector + 1)

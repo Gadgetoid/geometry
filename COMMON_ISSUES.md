@@ -130,6 +130,21 @@ settled.
   Fixing the runaway killed both; putting the attraction back brought the tow back
   with it, and a single well shot off with nothing near it. When a revert restores a
   symptom, check that what is being restored is what was wanted.
+- **A cap on the symptom, which then shaped the thing it was capping.** The same
+  wells got a terminal speed instead of a fix, and it worked: nothing ran away again.
+  What it also did was truncate the orbit it was capping, so a pair that should have
+  looped jittered at the cap instead, and how many times it swung around depended on
+  the frame rate. Underneath were a pull that broke Newton's third law and a force
+  with no softening at its centre, and both were still there. A clamp that reads as a
+  fix removes the pressure to find the cause; if the quantity being clamped is part
+  of what the player is meant to watch, the clamp is a bug of its own.
+- **An invariant that ties on the exact boundary.** A burst committed to at the price
+  of its shots leaves precisely the price of the shots remaining, so `energy >= cost`
+  for the last one is neither true nor false but a coin toss on rounding: the second
+  of a pair went out or did not, and the difference was a fraction of a unit. Paying
+  for the burst when it is committed to removed the comparison rather than tuning the
+  numbers either side of it. Where a check sits exactly on a boundary by construction,
+  no threshold is the right threshold.
 - **A field one kind of registry entry has and another does not.** Guns found on
   other hulls became fittable, and the player's trigger ran the charge machinery over
   all of them: a gun that does not charge has no `chargeMax`, `chargeRate` or

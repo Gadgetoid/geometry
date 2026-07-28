@@ -45,6 +45,12 @@ export class Renderer {
   circle(_x, _y, _r, _opts) {
     throw new Error("not implemented")
   }
+  // A disc that covers what is behind it, rather than adding to it. Everything else here draws
+  // light onto a dark field, so a black fill is nothing at all: this is the one primitive for
+  // drawing an absence, which is what the middle of a singularity is.
+  occlude(_x, _y, _r, _opts) {
+    throw new Error("not implemented")
+  }
   rect(_x, _y, _w, _h, _opts) {
     throw new Error("not implemented")
   }
