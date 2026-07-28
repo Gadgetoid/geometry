@@ -30,6 +30,7 @@ import {
   sliceOutSlab,
   segmentCircleEntry,
   segmentPolygonEntry,
+  outwardNormal,
   distanceToPolygon,
   convexContact,
   supportDistance,
@@ -632,6 +633,13 @@ export class Entity {
     return []
   }
 
+  // Which way a mount's arc is centred, as a world bearing. A hull's mounts are measured off its
+  // nose; a body with no meaningful facing answers from its own shape instead, which is why this is
+  // asked of the host rather than worked out from `angle` at the point of use.
+  mountFacing(module) {
+    return this.angle + (module.arcFrom ?? 0)
+  }
+
   // World position of a hardpoint. Ships store a local offset; asteroids store
   // a world point that is rotated with the rock.
   hardpointWorld(hp) {
@@ -843,6 +851,11 @@ const UNGUIDED_TIME = 0.25
 // without its field to do it, and that is the tell the fight is built around, not a bug.
 const SELF_FIRING = new Set(["turret", "miner"])
 
+// How much of the sky a gun bolted to a rock can cover, either side of the way out over its nearest
+// edge. Just under a half turn, so a rock is approached from the side its guns are not on: the arc a
+// trait states wins over this, and nothing states one today.
+const ROCK_TURRET_ARC = (80 * Math.PI) / 180
+
 // A quarter turn off the heading, which is where a hull stops calling something "in the way":
 // past this it is abeam or astern and steering off it would be steering off nothing.
 const ABEAM = Math.PI / 2
@@ -889,7 +902,7 @@ export function interceptBearing(from, target, speed) {
 // Weapon module. `kind` projectile or beam; `controller` decides firing.
 // ---------------------------------------------------------------------------
 export class Weapon {
-  constructor(typeName, controller, arc) {
+  constructor(typeName, controller, arc, arcFrom) {
     this.kind = "weapon"
     this.typeName = typeName
     this.type = WEAPON_TYPES[typeName]
@@ -899,10 +912,13 @@ export class Weapon {
     // gun's, otherwise none: a turret on a ring traverses freely, one buried in the
     // jaw of a pincer only covers what is in front of the ship.
     this.arc = arc ?? this.type.arc ?? Infinity
-    // Which way that arc is centred, in radians off the hull's nose. Nearly every mount covers
-    // the front and says nothing; a battery meant to hold the back of a ship states a half turn,
-    // and then it cannot be brought to bear on anything ahead at all.
-    this.arcFrom = this.type.arcFrom ?? 0
+    // Which way that arc is centred, in radians off the hull's nose. Nearly every mount covers the
+    // front and says nothing; a battery meant to hold the back of a ship states a half turn, and
+    // then it cannot be brought to bear on anything ahead at all.
+    //
+    // The mount states it where two mounts carry the same gun facing different ways, which is how a
+    // hull covers its flanks: the same autocannon looks left on one side and right on the other.
+    this.arcFrom = arcFrom ?? this.type.arcFrom ?? 0
     this.barrels = barrelCount(this.type)
     this.cooldown = this.rollReload() * randRange(0.15, 1) // random phase so turrets don't fire in unison
     this.charge = 0
@@ -942,14 +958,15 @@ export class Weapon {
     if (!isFinite(this.arc)) {
       return bearing
     }
-    const middle = host.angle + this.arcFrom
+    const middle = this.restBearing(host)
     return middle + clamp(shortestTurn(middle, bearing), -this.arc, this.arc)
   }
 
-  // Where this mount sits when it has nothing to point at: along the middle of its own arc, which
-  // for nearly every gun is straight ahead and for a tail battery is straight back.
+  // Where this mount sits when it has nothing to point at: the middle of its own arc, which for
+  // nearly every gun is straight ahead, for a tail battery is straight back, and for a gun bolted to
+  // a rock is whichever way is out of the rock.
   restBearing(host) {
-    return host.angle + this.arcFrom
+    return host.mountFacing ? host.mountFacing(this) : host.angle + this.arcFrom
   }
 
   // A mount that has not been aimed at anything yet sits at rest.
@@ -1030,7 +1047,7 @@ export class Weapon {
   // pointed? Asked by every controller that picks its own target, so a mount's arc is
   // one rule rather than one rule per behaviour.
   bearsOn(host, bearing) {
-    return Math.abs(shortestTurn(host.angle + this.arcFrom, bearing)) <= this.arc
+    return Math.abs(shortestTurn(this.restBearing(host), bearing)) <= this.arc
   }
 
   // How long before it can fire again. A gun that states no reload has none: what limits
@@ -1677,7 +1694,7 @@ export const WEAPON_CONTROLLERS = {
 // and a core build the same thing from the same description.
 export function moduleFor(entry) {
   if (entry.weapon) {
-    return new Weapon(entry.weapon, entry.controller, entry.arc)
+    return new Weapon(entry.weapon, entry.controller, entry.arc, entry.arcFrom)
   }
   if (entry.shield) {
     return new Shield(entry.shield)
@@ -4643,7 +4660,10 @@ export class Asteroid extends Entity {
           this.hardpoints.push({
             x: this.center.x + ux * out,
             y: this.center.y + uy * out,
-            module: new Weapon(gun.weapon, gun.controller),
+            // Held to what it can cover from where it is bolted: out over its nearest edge, and no
+            // further round than `arc` either side of that. A rock is a thing to be approached from
+            // the side its guns are not on rather than a turret platform that covers everything.
+            module: new Weapon(gun.weapon, gun.controller, traits.gun.arc ?? ROCK_TURRET_ARC),
           })
         }
       }
@@ -4880,6 +4900,19 @@ export class Asteroid extends Entity {
 
   // Split by a beam, distributing hardpoints to whichever piece they fall on.
   // A concave fragment can yield more than two pieces; all are handled.
+  // Which way a gun bolted to this rock is pointed when it has nothing to shoot at: out over the
+  // edge it sits nearest. Worked out from the outline as it stands rather than remembered, because a
+  // rock spins its vertices without ever turning its `angle`, and a piece cut off one has a
+  // different nearest edge and a different middle to be outward of.
+  mountFacing(module) {
+    const hp = this.hardpoints.find((held) => held.module === module)
+    if (!hp) {
+      return this.angle
+    }
+    const out = outwardNormal(this.vertices, hp)
+    return Math.atan2(out.y, out.x)
+  }
+
   splitBy(beam, game, slab = 0) {
     const cutNormal = perpendicular(beam.dir)
     // A cut with width to it takes a strip out and the pieces do not add up to the rock, which

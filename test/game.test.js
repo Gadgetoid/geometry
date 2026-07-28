@@ -40,6 +40,7 @@ import {
   CONFIG,
   DEV_ARMS,
   DEV_AUTO,
+  DEV_VISIBLE,
   DEV_ROLL_SECTOR,
   DOGFIGHT_HULLS,
   ENGINE_TYPES,
@@ -58,6 +59,7 @@ import {
   SHOP,
   SHOP_LAYOUT,
   OVER_MENU,
+  PAUSE_MENU,
   UI_SCALES,
   VIEW_W,
   VIEW_H,
@@ -1791,6 +1793,14 @@ test("the dev tools are switched on from the options, and change nothing until a
 
   game.openPausePage("root")
   assert.ok(named().includes("DEV MENU"), "the options offer it whatever build this is")
+  // Asked of the registry as well as of the page, because a test runs where DEV_VISIBLE is true and
+  // so cannot tell an unconditional row from one gated on the build. The row must carry no gate at
+  // all: it is how a published build reaches the tools, so gating it on the build is circular.
+  const toggle = PAUSE_MENU.find((entry) => entry.name === "DEV MENU")
+  assert.ok(toggle, "the registry has it")
+  assert.equal(toggle.available, undefined, "and it is offered unconditionally")
+  // Where the build does come in is only what it defaults to, and that is a value, not a gate.
+  assert.equal(new Game().settings.dev, DEV_VISIBLE)
 
   game.setDevMenu(false)
   assert.ok(!named().includes("DEV TOOLS"), "switched off, there is no way in")
@@ -7939,6 +7949,131 @@ test("an allied hull and the player leave each other alone", () => {
   // Nothing is earned for shooting one down either.
   assert.equal(SHIP_TYPES.geomScout.killScore, 0)
   assert.equal(SHIP_TYPES.geomScout.blastScore, 0)
+})
+
+// ---- what a mount can be brought to bear on ---------------------------------
+
+// Two batteries a side, each covering its own flank: everything except a narrow wedge dead ahead and
+// another dead astern, which is what makes a slab a problem of approach. Coming down its centreline
+// means facing the one gun that does cover it, which is the siege cannon on its nose.
+test("a rival frigate is blind dead ahead and dead astern", () => {
+  const host = plainRival(ARENA.cx, ARENA.cy, "rivalFrigate")
+  host.angle = 0
+  const guns = host.hardpoints
+    .filter((hp) => hp.module && hp.module.typeName === "autocannon")
+    .map((hp) => hp.module)
+  assert.equal(guns.length, 4, "four of them")
+  const covered = (degrees) => guns.some((gun) => gun.bearsOn(host, (degrees * Math.PI) / 180))
+
+  for (const abeam of [-90, 90, -60, 60, -140, 140]) {
+    assert.ok(covered(abeam), `${abeam} degrees is off a flank, so it is covered`)
+  }
+  for (const blind of [0, -5, 5, 180, -175, 175]) {
+    assert.equal(covered(blind), false, `${blind} degrees is fore or aft, so nothing reaches it`)
+  }
+  // The wedges are narrow: a careful attack has to hold the line, not merely be roughly in front.
+  assert.ok(covered(15), "fifteen degrees off the nose is already covered")
+  assert.ok(covered(-165), "and so is fifteen off dead astern")
+
+  // The two sides look opposite ways, which is the whole reason a mount states its own arc centre
+  // rather than taking one from the gun.
+  const centres = host.hardpoints
+    .filter((hp) => hp.module && hp.module.typeName === "autocannon")
+    .map((hp) => hp.module.arcFrom)
+  assert.deepEqual(centres.map(Math.sign).sort(), [-1, -1, 1, 1])
+
+  // And the nose gun is what covers the line the batteries cannot.
+  const nose = host.hardpoints[0].module
+  assert.ok(nose.bearsOn(host, 0), "the siege cannon holds the centreline")
+})
+
+// A gun bolted to a rock fires out over the edge it sits nearest, and cannot be brought round to
+// shoot back through its own rock. Asked of the outline every time rather than remembered, because a
+// rock spins its vertices without ever changing its `angle`.
+test("a rock's turrets fire outward and never back through the rock", () => {
+  const game = liveGame()
+  const trait = HAZARD_TRAITS.find((entry) => entry.traits.gun).traits.gun
+  const rock = new Asteroid({
+    x: ARENA.cx,
+    y: ARENA.cy,
+    radius: 70,
+    traits: { gun: { ...trait, guns: game.gunsForSector(trait, 20), count: [3, 3] } },
+  })
+  const mounted = rock.hardpoints.filter((hp) => hp.module && hp.module.kind === "weapon")
+  assert.equal(mounted.length, 3, "three turrets to ask about")
+
+  for (const hp of mounted) {
+    const out = rock.mountFacing(hp.module)
+    assert.ok(hp.module.bearsOn(rock, out), "it covers the way out")
+    assert.equal(
+      hp.module.bearsOn(rock, out + Math.PI),
+      false,
+      "and cannot be brought round to fire back through the rock",
+    )
+    assert.ok(isFinite(hp.module.arc), "which needs it to have an arc at all")
+  }
+
+  // Outward follows the rock as it turns, which a remembered offset could not do: `angle` never
+  // moves on a rock, so anything measured off it would stay put while the turret went round.
+  rock.spin = 1.2
+  const before = mounted.map((hp) => rock.mountFacing(hp.module))
+  for (let i = 0; i < 60; i++) {
+    rock.update(1 / 60, game)
+  }
+  for (const [at, hp] of mounted.entries()) {
+    const moved = Math.abs(shortestTurn(before[at], rock.mountFacing(hp.module)))
+    assert.ok(moved > 0.5, `turret ${at}'s outward bearing should follow the spin, moved ${moved}`)
+  }
+})
+
+// The payoff of asking the outline rather than remembering: cut the rock, and a turret riding a
+// fragment faces out of the fragment rather than out of the rock it used to be part of.
+test("a turret on a fragment faces out of the fragment", () => {
+  const game = liveGame()
+  // A wide flat rock with a turret set near the middle of it: far from either end, so what it sits
+  // nearest is a long edge and it fires broadside. Cutting across the middle puts a fresh face right
+  // beside it, and out of the piece is then a different direction entirely.
+  const rock = new Asteroid({
+    vertices: [
+      { x: ARENA.cx - 160, y: ARENA.cy - 60 },
+      { x: ARENA.cx + 160, y: ARENA.cy - 60 },
+      { x: ARENA.cx + 160, y: ARENA.cy + 60 },
+      { x: ARENA.cx - 160, y: ARENA.cy + 60 },
+    ],
+    vx: 0,
+    vy: 0,
+    spin: 0,
+  })
+  rock.hardpoints.push({
+    x: ARENA.cx - 20,
+    y: ARENA.cy,
+    module: new Weapon("blaster", "turret", (80 * Math.PI) / 180),
+  })
+  rock.refreshEnergy()
+  game.asteroids = [rock]
+  const gun = rock.hardpoints[0].module
+  const whole = rock.mountFacing(gun)
+
+  // Cut it down the middle, across the long axis.
+  const beam = {
+    a: { x: ARENA.cx, y: ARENA.cy - 200 },
+    b: { x: ARENA.cx, y: ARENA.cy + 200 },
+    dir: { x: 0, y: 1 },
+  }
+  const frags = rock.splitBy(beam, game)
+  assert.ok(frags && frags.length >= 2, "it should come apart")
+  const carrier = frags.find((frag) => frag.hardpoints.some((hp) => hp.module === gun))
+  assert.ok(carrier, "one piece keeps the turret")
+  const onPiece = carrier.mountFacing(gun)
+  assert.ok(
+    Math.abs(shortestTurn(whole, onPiece)) > 0.2,
+    `out of the piece is not out of the rock: ${whole.toFixed(2)} against ${onPiece.toFixed(2)}`,
+  )
+  assert.equal(
+    gun.bearsOn(carrier, onPiece + Math.PI),
+    false,
+    "and it still cannot fire back through what it is bolted to",
+  )
 })
 
 // ---- the fleet's dart, and the railgun cut down to fit it --------------------

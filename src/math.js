@@ -709,3 +709,42 @@ export function sliceOutSlab(vertices, pointOnLine, normal, halfWidth) {
   }
   return outer
 }
+
+// Which way is out of a polygon, at a point inside it: the outward normal of the edge nearest that
+// point. Oriented away from the centroid, so it does not depend on which way the outline is wound.
+//
+// For a turret sitting on a rock this is the direction it can shoot in without shooting through its
+// own rock, and it is asked of the outline as it stands rather than remembered: a rock spins, and a
+// piece cut off one has a different nearest edge and a different middle to be outward of.
+export function outwardNormal(vertices, point) {
+  const middle = polygonCentroid(vertices)
+  let best = null,
+    nearest = Infinity
+  for (let i = 0; i < vertices.length; i++) {
+    const a = vertices[i],
+      b = vertices[(i + 1) % vertices.length]
+    const ex = b.x - a.x,
+      ey = b.y - a.y
+    const len = ex * ex + ey * ey
+    // Where along the edge the point lies, held to the edge itself so a corner answers as a corner.
+    const along = len > 0 ? clamp(((point.x - a.x) * ex + (point.y - a.y) * ey) / len, 0, 1) : 0
+    const cx = a.x + ex * along,
+      cy = a.y + ey * along
+    const away = (point.x - cx) ** 2 + (point.y - cy) ** 2
+    if (away < nearest) {
+      nearest = away
+      best = { x: -ey, y: ex, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } }
+    }
+  }
+  if (!best) {
+    return { x: 1, y: 0 }
+  }
+  const length = Math.hypot(best.x, best.y) || 1
+  let nx = best.x / length,
+    ny = best.y / length
+  if ((best.mid.x - middle.x) * nx + (best.mid.y - middle.y) * ny < 0) {
+    nx = -nx
+    ny = -ny
+  }
+  return { x: nx, y: ny }
+}

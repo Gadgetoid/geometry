@@ -2051,6 +2051,11 @@ export const GEOM_PLATING = {
 }
 // ---------------------------------------------------------------------------
 
+// How far round from abeam a flank battery can be brought, either side. Under a quarter turn each
+// way, so two batteries a side cover everything except a wedge dead ahead and a wedge dead astern -
+// which is what makes a hull ringed with them a problem of approach rather than of reflexes.
+const FLANK_ARC = (80 * Math.PI) / 180
+
 const SHIP_DESIGNS = {
   rivalSeeker: {
     // What the dev pages say about it when offering it. One line, present tense, about how the
@@ -2222,10 +2227,13 @@ const SHIP_DESIGNS = {
     ],
     loadout: [
       { hp: 0, weapon: "cannonLaser", controller: "hunter" },
-      { hp: 1, weapon: "autocannon", controller: "turret" },
-      { hp: 2, weapon: "autocannon", controller: "turret" },
-      { hp: 3, weapon: "autocannon", controller: "turret" },
-      { hp: 4, weapon: "autocannon", controller: "turret" },
+      // Two a side, each covering its own flank and nothing fore or aft: a little under a half turn
+      // centred abeam, which leaves a narrow wedge dead ahead and another dead astern that none of
+      // the four can reach. A slab is approached down its centreline or not at all.
+      { hp: 1, weapon: "autocannon", controller: "turret", arc: FLANK_ARC, arcFrom: -Math.PI / 2 },
+      { hp: 2, weapon: "autocannon", controller: "turret", arc: FLANK_ARC, arcFrom: -Math.PI / 2 },
+      { hp: 3, weapon: "autocannon", controller: "turret", arc: FLANK_ARC, arcFrom: Math.PI / 2 },
+      { hp: 4, weapon: "autocannon", controller: "turret", arc: FLANK_ARC, arcFrom: Math.PI / 2 },
       { hp: 6, engine: "siegeDrive" },
       { hp: 7, engine: "siegeDrive" },
       {
