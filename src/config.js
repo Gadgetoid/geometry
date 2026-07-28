@@ -1629,11 +1629,17 @@ export const CORE_TYPES = {
     thruster: 1,
     // One level per slot, so every purchase earns room as well as cell. A fifth
     // level would be energy alone, which is the shape this replaced.
+    //
+    // `cost` is what reaching that level is charged, stated on the level it buys rather than worked
+    // out from its index by the shop. A ladder priced by formula reads as three numbers nobody can
+    // see: what a step costs belongs beside what it gives you.
     levels: [
       {
         energy: 320,
         regen: 32,
         special: 1,
+        // What the hull is issued with, so there is nothing to pay for it.
+        cost: 0,
         name: "CORE MK I",
         desc: "The yard's cell. One special slot, and enough charge for a few shots.",
       },
@@ -1641,6 +1647,7 @@ export const CORE_TYPES = {
         energy: 630,
         regen: 60,
         special: 2,
+        cost: 45,
         name: "CORE MK II",
         desc: "630 charge, refilling at 60 a second, and a second special slot.",
       },
@@ -1648,6 +1655,7 @@ export const CORE_TYPES = {
         energy: 950,
         regen: 88,
         special: 3,
+        cost: 100,
         name: "CORE MK III",
         desc: "950 charge at 88 a second, and a third slot to spend it through.",
       },
@@ -1655,6 +1663,7 @@ export const CORE_TYPES = {
         energy: 1260,
         regen: 116,
         special: 4,
+        cost: 155,
         name: "CORE MK IV",
         desc: "1260 charge at 116 a second, and the fourth slot: everything the hull will take.",
       },
@@ -3778,7 +3787,8 @@ export const SHOP = [
     "The cell every system draws on. A bigger one holds more and refills faster.",
     {
       levels: CORE_TYPES.minerCore.levels,
-      cost: (level) => 45 + level * 55,
+      // The price of stepping up from `level`, which is what the level above states.
+      cost: (level) => CORE_TYPES.minerCore.levels[level + 1]?.cost ?? 0,
       apply: (g) => {
         if (g.player) {
           g.player.energyMax = g.maxEnergy()
