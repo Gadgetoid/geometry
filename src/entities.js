@@ -546,11 +546,16 @@ export class Entity {
   }
 
   // Is this body really in the sector? A body that is not cannot be damaged, and
-  // so must not stop a beam or swallow a bullet either: it is not there to be
-  // shot at. Everything that fires reads this one predicate, so the two channels
-  // cannot come to disagree about which bodies exist. Rocks always are.
+  // so must not stop a beam, swallow a bullet or push anything either: it is not
+  // there to be shot at or bumped into. Everything that fires or solves a contact
+  // reads this one predicate, so no two of them can come to disagree about which
+  // bodies exist.
+  //
+  // Anything killed part-way through a frame is one of those. Everything is updated
+  // and then filtered, so a body stays in its list until the frame ends, and the
+  // sweeps that run after it die would otherwise still find it there.
   inPlay() {
-    return true
+    return !this.dead
   }
 
   // How far this body notices `what`, one of ships, rocks, ore or specials.
@@ -2342,7 +2347,7 @@ export class Projectile extends Entity {
       return
     }
     for (const asteroid of game.asteroids) {
-      if (asteroid === this.owner || !this.#reaches(asteroid)) {
+      if (asteroid === this.owner || !asteroid.inPlay() || !this.#reaches(asteroid)) {
         continue
       }
       this.#strike(game, asteroid, PALETTE.rock.impact, 5)
@@ -3271,7 +3276,7 @@ export class PlayerShip extends Ship {
   }
 
   inPlay() {
-    return this.solid
+    return super.inPlay() && this.solid
   }
 
   // The player's arrival is its own colour, and the sparks read as the ship's own drive
@@ -3907,6 +3912,9 @@ export class PlayerShip extends Ship {
     for (let sweep = 0; sweep < CONFIG.CONTACT_ITERATIONS; sweep++) {
       let moved = false
       for (const asteroid of game.asteroids) {
+        if (!asteroid.inPlay()) {
+          continue // shattered earlier in this frame, so there is nothing there to hit
+        }
         const dx = this.x - asteroid.center.x,
           dy = this.y - asteroid.center.y
         const reach = asteroid.contactReach() + this.contactReach()
@@ -4094,7 +4102,7 @@ export class RivalShip extends Ship {
   // Nor can one that is still forming, for the same reason the player cannot be shot mid-warp.
   // Which cuts both ways: it holds its own fire until it is all the way there.
   inPlay() {
-    return this.insideArena() && this.solid
+    return super.inPlay() && this.insideArena() && this.solid
   }
 
   // A hull appearing in front of the player is over quickly, with just enough lead-in to be a
@@ -4505,6 +4513,9 @@ export class RivalShip extends Ship {
     let closingSpeed = 0
     let touching = false
     for (const asteroid of game.asteroids) {
+      if (!asteroid.inPlay()) {
+        continue // shattered earlier in this frame, so there is nothing there to hit
+      }
       const dx = this.x - asteroid.center.x,
         dy = this.y - asteroid.center.y
       const reach = asteroid.contactReach() + this.contactReach()

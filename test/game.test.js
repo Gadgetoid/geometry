@@ -8548,6 +8548,64 @@ test("a torpedo goes off near a target without reaching it", () => {
   assert.ok(spec.blast.radius > surface - victim.boundRadius, "the blast crosses the bubble")
 })
 
+test("a hull killed part way through a frame is not killed again by the rest of it", () => {
+  // Everything is updated and then filtered, so a body stays in its list until the frame
+  // ends and the sweeps that run after it dies still find it there. Two rounds arriving
+  // together ran `destroy` twice and paid the hull's ore out twice with it. `inPlay` is the
+  // predicate every sweep already asks, so it is what answers for this.
+  const game = liveGame()
+  game.player.x = -9000
+  game.player.y = -9000
+  const victim = beSolid(plainRival(ARENA.cx + 200, ARENA.cy, "rivalScout"))
+  victim.arrived = true
+  game.rivals = [victim]
+  // no bubble in the way, and one hit's worth of hull left
+  const shield = victim.shieldModule()
+  if (shield) {
+    shield.up = false
+    shield.downTimer = 99
+  }
+  victim.hull = 10
+
+  let destroys = 0
+  const wasDestroy = victim.destroy.bind(victim)
+  victim.destroy = (g, score) => {
+    destroys++
+    wasDestroy(g, score)
+  }
+  // three rounds already inside the hull, so all three land on the same frame
+  for (let i = 0; i < 3; i++) {
+    game.projectiles.push(
+      new Projectile(victim.x, victim.y, 0, 0, 500, game.player, WEAPON_TYPES.autocannon),
+    )
+  }
+  const oreBefore = game.oreChunks.length
+  game.advance(1 / 60)
+  assert.equal(destroys, 1, "one hull comes apart once, however many rounds reached it")
+  assert.equal(
+    game.oreChunks.length - oreBefore,
+    SHIP_TYPES.rivalScout.oreDrop,
+    "and it pays out once",
+  )
+})
+
+test("a rock shattered part way through a frame stops being something to hit", () => {
+  // The same rule for rock. `#resolveRockPair` already kept it; the hull contact sweeps and
+  // the round sweep did not, so a shattered rock stayed collidable for the rest of the frame.
+  const game = liveGame()
+  const rock = new Asteroid({ vertices: square(ARENA.cx + 200, ARENA.cy, 40), vx: 0, vy: 0 })
+  game.asteroids = [rock]
+  assert.equal(rock.inPlay(), true, "a whole rock is there to be hit")
+  rock.dead = true
+  assert.equal(rock.inPlay(), false, "and a shattered one is not")
+
+  // A round sitting inside it passes straight through rather than being swallowed.
+  const round = new Projectile(rock.center.x, rock.center.y, 10, 0, 50, null, WEAPON_TYPES.blaster)
+  game.projectiles = [round]
+  round.update(1 / 60, game)
+  assert.equal(round.dead, false, "a round does not land on a rock that is already gone")
+})
+
 test("a torpedo's fuse counts the player's bubble too, as it counts a rival's", () => {
   // The same question asked of two body types. The fuse measured to a rival's bubble and to
   // the player's plating, so a torpedo got closer to the ship than to an equally shielded
