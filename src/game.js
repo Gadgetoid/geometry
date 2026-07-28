@@ -2872,6 +2872,21 @@ export class Game {
     return null
   }
 
+  // Which pad button works a slot, or null when the player is on a keyboard, the slot
+  // has no control, or nothing is bound to it. Kept apart from slotLabel because where a
+  // button sits and what is printed on it are two different answers and only the first is
+  // reliable: see PAD_LAYOUT.
+  slotButton(index) {
+    if (this.inputMode !== "gamepad") {
+      return null
+    }
+    const control = BINDABLE_CONTROLS.find((entry) => entry.slot === index)
+    if (!control) {
+      return null
+    }
+    return this.bindings.buttons[control.id] ?? null
+  }
+
   // What to press for a special slot, as the HUD should name it. It follows the
   // live binding, so a rebound slot is not still labelled with the button it used
   // to be on.

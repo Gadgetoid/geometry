@@ -9,8 +9,17 @@ import assert from "node:assert/strict"
 
 import { Game } from "../src/game.js"
 import { Asteroid } from "../src/entities.js"
+import { GameView } from "../src/view.js"
 import { GamepadInput, applyDeadzone, padInUse, readPad } from "../src/gamepad.js"
-import { ARENA, GAMEPAD, SHOP, freshBindings } from "../src/config.js"
+import {
+  ARENA,
+  GAMEPAD,
+  PAD_CLUSTERS,
+  PAD_LAYOUT,
+  SHOP,
+  VIEW_W,
+  freshBindings,
+} from "../src/config.js"
 
 // A pad with everything at rest. `set` takes { buttons: {index: value}, axes: {index: value} }.
 function pad({ buttons = {}, axes = {} } = {}) {
@@ -569,4 +578,212 @@ test("the HUD names a special slot by what is actually bound to it", () => {
   assert.equal(game.slotLabel(0), "1", "a keyboard player is told the key")
   game.bindings.keys.slot1 = ["KeyZ"]
   assert.equal(game.slotLabel(0), "Z")
+})
+
+test("a slot says which pad button works it by where the button is, not by its letter", () => {
+  // The Gamepad API reports an index and never a layout, so a letter can only ever be right
+  // for some pads: index 0 is A on an Xbox pad and B on a Nintendo one. What the standard
+  // mapping does guarantee is that an index is a position, so that is what the HUD draws.
+  const game = liveGame()
+  game.inputMode = "gamepad"
+  assert.equal(game.settings.help, true, "the hint rides on help text")
+
+  assert.equal(game.slotButton(0), D.slot1, "a slot reports the button bound to it")
+  game.bindings.buttons.slot1 = 3
+  assert.equal(game.slotButton(0), 3, "and follows a rebind")
+  game.inputMode = "keyboard"
+  assert.equal(game.slotButton(0), null, "a keyboard player has no pad button to be shown")
+  game.inputMode = "gamepad"
+  delete game.bindings.buttons.slot1
+  assert.equal(game.slotButton(0), null, "and neither has an unbound slot")
+
+  // Every face button, every shoulder and every D-pad direction has a position; the ones
+  // that do not are the buttons there is nothing useful to draw for.
+  for (let button = 0; button <= 7; button++) {
+    assert.ok(PAD_LAYOUT[button], `button ${button} should have a position`)
+  }
+  for (let button = 12; button <= 15; button++) {
+    assert.ok(PAD_LAYOUT[button], `D-pad button ${button} should have a position`)
+  }
+  assert.equal(PAD_LAYOUT[B.pause], undefined, "and a reserved button needs none")
+
+  // A cluster is four positions, and each of them is exactly one button: two buttons
+  // sharing a spot would draw one lit dot for either of them.
+  for (const [group, spots] of Object.entries(PAD_CLUSTERS)) {
+    assert.equal(spots.length, 4, `${group} should hold four buttons`)
+    const seen = new Set(spots.map((at) => at.join(",")))
+    assert.equal(seen.size, 4, `${group} should put each of them somewhere different`)
+  }
+  // And the face cluster is the standard mapping's own order: bottom, right, left, top.
+  assert.deepEqual(
+    [0, 1, 2, 3].map((button) => PAD_LAYOUT[button].at),
+    [
+      [0, 1],
+      [1, 0],
+      [-1, 0],
+      [0, -1],
+    ],
+    "0 bottom, 1 right, 2 left, 3 top",
+  )
+})
+
+test("the HUD draws that position, and moves the lit one when the binding moves", () => {
+  const game = liveGame()
+  game.inputMode = "gamepad"
+  game.player.equip(0, "refuel")
+
+  // Everything the HUD draws, as a box plus its middle, so a circle and a rect can be
+  // measured the same way: a cluster is round for a face button and square or a bar for the
+  // others, and the assertions below are about where its marks sit rather than which
+  // primitive drew them.
+  const hud = (uiScale = 1) => {
+    const filled = [],
+      outlined = [],
+      soft = [],
+      labels = []
+    const box = (list, x, y, w, h, extra = {}) =>
+      list.push({ x, y, w, h, cx: x + w / 2, cy: y + h / 2, ...extra })
+    const renderer = new Proxy(
+      {
+        circle: (x, y, r, opts = {}) => {
+          // `circle`'s own fill is the additive sprite pipeline, kept apart from the crisp
+          // discs below: the two are the same geometry and read nothing like each other.
+          if (opts.fill) {
+            box(soft, x - r, y - r, r * 2, r * 2, { r })
+          }
+          box(opts.fill ? filled : outlined, x - r, y - r, r * 2, r * 2, { r })
+        },
+        // The renderer's crisp disc, which is what a lit face button is filled with.
+        occlude: (x, y, r) => box(filled, x - r, y - r, r * 2, r * 2, { r }),
+        rect: (x, y, w, h, opts = {}) => box(opts.fill ? filled : outlined, x, y, w, h),
+        text: (str, x, y, opts = {}) => labels.push({ str: String(str), x, y, size: opts.size }),
+      },
+      { get: (target, key) => (key in target ? target[key] : () => {}) },
+    )
+    game.settings.uiScale = uiScale
+    new GameView(renderer).drawHud(game)
+    return { filled, outlined, soft, labels }
+  }
+  // The hint's marks are the only small shapes the HUD draws: everything else in that corner
+  // is a slot box at 20 units or a bar spanning the page. A size cap is what picks them out,
+  // and picking them by primitive instead caught the energy bar and measured its corners.
+  const small = (list) => list.filter((shape) => shape.w < 10)
+
+  // The letter is gone, replaced by the picture.
+  game.bindings.buttons.slot1 = 0
+  assert.ok(
+    !hud().labels.some((label) => label.str === "A"),
+    "a pad player is shown where the button is rather than told a letter",
+  )
+  // The bound button is the one that is filled, and it is the only filled mark in its
+  // cluster: fill against outline is what says which of the four it is.
+  const litFor = (button) => {
+    game.bindings.buttons.slot1 = button
+    const marks = small(hud().filled)
+    assert.ok(marks.length > 0, `something is lit for button ${button}`)
+    return marks.reduce((best, mark) => (mark.cx < best.cx ? mark : best))
+  }
+  const top = litFor(3),
+    low = litFor(0),
+    left = litFor(2),
+    right = litFor(1)
+  assert.ok(top.cy < low.cy, "the top face button is drawn above the bottom one")
+  assert.ok(left.cx < right.cx, "and the left one to the left of the right one")
+  assert.ok(Math.abs(top.cx - low.cx) < 0.01, "the pair on the vertical share a column")
+  assert.ok(Math.abs(left.cy - right.cy) < 0.01, "and the pair on the horizontal share a row")
+  // Same size as the three beside it, so which is lit is the fill and nothing else.
+  const unlit = small(hud().outlined)
+  assert.ok(unlit.length >= 3, "the other three are drawn as well")
+  assert.ok(
+    unlit.every((mark) => Math.abs(mark.w - right.w) < 0.01),
+    "every mark of a cluster is the same size",
+  )
+  // And it is solid at that size. This is the one place the primitive itself is asserted,
+  // because the geometry cannot tell the two apart: `circle`'s fill is the additive sprite
+  // pipeline, which falls away from the middle and is about a sixth as bright at the radius
+  // it was asked for, so a mark that size reads as a dot floating inside its own ring. The
+  // crisp disc is the only way to draw it solid, and solid is the whole distinction between
+  // the lit button and the other three.
+  game.bindings.buttons.slot1 = 0
+  assert.equal(
+    small(hud().soft).length,
+    0,
+    "a lit face button is filled with the crisp disc, not the soft sprite",
+  )
+
+  // The shoulders are stacked tighter than they are spread, because a bumper sits close
+  // above its trigger: on the spacing the square clusters use, the four bars read as four
+  // loose buttons rather than as a pair on each shoulder.
+  //
+  const marksFor = (button) => {
+    game.bindings.buttons.slot1 = button
+    const drawn = hud()
+    // One mark per position. The lit one is drawn twice, a fill and then an edge at the same
+    // size, so the two are folded back together here: what is being measured is where the
+    // four buttons sit, not how many calls each took.
+    const byPlace = new Map()
+    for (const mark of small(drawn.filled.concat(drawn.outlined))) {
+      const place = `${mark.cx.toFixed(2)},${mark.cy.toFixed(2)}`
+      if (!byPlace.has(place)) {
+        byPlace.set(place, mark)
+      }
+    }
+    // four to a cluster, and the first slot's are the leftmost of them
+    const cluster = [...byPlace.values()].sort((a, b) => a.cx - b.cx).slice(0, 4)
+    assert.equal(cluster.length, 4, `button ${button} should draw a cluster of four`)
+    return cluster
+  }
+  const shoulders = marksFor(4)
+  const spread = Math.max(...shoulders.map((b) => b.cx)) - Math.min(...shoulders.map((b) => b.cx))
+  const stack = Math.max(...shoulders.map((b) => b.cy)) - Math.min(...shoulders.map((b) => b.cy))
+  assert.ok(stack > 0 && spread > 0, "the shoulders are drawn as a pair on each side")
+  assert.ok(
+    stack < spread,
+    `a bumper should sit closer to its trigger than to the other side, got ${stack.toFixed(1)} down against ${spread.toFixed(1)} across`,
+  )
+  // And nothing in a cluster overlaps its neighbour, at any scale: four marks that touch
+  // are one blob, which is the thing this whole picture exists to avoid.
+  for (const marks of [marksFor(0), marksFor(4), marksFor(12)]) {
+    for (let i = 0; i < marks.length; i++) {
+      for (let j = i + 1; j < marks.length; j++) {
+        const a = marks[i],
+          b = marks[j]
+        const apart =
+          Math.abs(a.cx - b.cx) >= (a.w + b.w) / 2 || Math.abs(a.cy - b.cy) >= (a.h + b.h) / 2
+        assert.ok(apart, `two marks of a cluster overlap: ${JSON.stringify([a, b])}`)
+      }
+    }
+  }
+
+  // A button with no position falls back to being named, rather than drawing nothing.
+  game.bindings.buttons.slot1 = 11
+  assert.ok(
+    hud().labels.some((label) => label.str === "B11"),
+    "a stick press is named, since there is no picture for it",
+  )
+
+  // With help off it is the letter again: the hint is help text like any other.
+  game.bindings.buttons.slot1 = 0
+  game.setHelp(false)
+  assert.ok(
+    hud().labels.some((label) => label.str === "A"),
+    "help off falls back to the letter",
+  )
+  game.setHelp(true)
+
+  // And it scales with the rest of the HUD, anchored to the right edge as its box is.
+  const atOneX = litFor(0)
+  game.bindings.buttons.slot1 = 0
+  game.settings.uiScale = 1
+  const factor = 2
+  const atTwoX = (() => {
+    game.settings.uiScale = factor
+    const marks = hud(factor).filled.filter((shape) => shape.w < 10 * factor)
+    return marks.reduce((best, mark) => (mark.cx < best.cx ? mark : best))
+  })()
+  assert.ok(
+    Math.abs(VIEW_W - atTwoX.cx - (VIEW_W - atOneX.cx) * factor) < 0.5,
+    `the hint sits ${VIEW_W - atOneX.cx} from the right edge, then ${VIEW_W - atTwoX.cx}`,
+  )
+  assert.ok(Math.abs(atTwoX.w - atOneX.w * factor) < 0.01, "and the mark grows with it")
 })

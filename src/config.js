@@ -320,9 +320,54 @@ export const GAMEPAD = {
   // the release that ends the hold is not captured.
   rebindCancelHold: 0.6,
   // The face buttons, by their index in the standard mapping, so a slot bound to
-  // one can be named on the HUD as the pad names it.
+  // one can be named on the HUD as the pad names it. Right on a pad that prints
+  // those letters and wrong on one that does not, which is why it is the fallback
+  // and PAD_LAYOUT below is what the HUD reaches for first.
   slotLabels: ["A", "B", "X", "Y"],
 }
+
+// ---------------------------------------------------------------------------
+// PAD LAYOUT - where a button sits under the player's hand.
+//
+// The Gamepad API reports an index and a mapping, and never a layout: there is no
+// way to ask a pad what is printed on its buttons or where its clusters are. What
+// the standard mapping does guarantee is that an index IS a position - 0 is the
+// bottom face button, 1 the right, 2 the left, 3 the top - and a position is the
+// thing a thumb can act on mid-fight.
+//
+// A letter is not. The same index is A on an Xbox pad and B on a Nintendo one, so
+// `slotLabels` can only ever be right for some pads while a picture of where the
+// button is is right for all of them. So the HUD draws the cluster with the bound
+// button filled, and falls back to naming the index only for the buttons that have
+// no position worth drawing (START, the stick presses, the guide button).
+//
+//   group  which cluster it belongs to, and so which shape the HUD draws it as
+//   at     where in that cluster, as [across, down] from its middle
+// ---------------------------------------------------------------------------
+export const PAD_LAYOUT = {
+  0: { group: "face", at: [0, 1] }, // bottom: A on an Xbox pad, B on a Nintendo one
+  1: { group: "face", at: [1, 0] }, // right
+  2: { group: "face", at: [-1, 0] }, // left
+  3: { group: "face", at: [0, -1] }, // top
+  // The shoulders, as two columns of two: a bumper above the trigger on each side.
+  4: { group: "shoulder", at: [-1, -1] }, // left bumper
+  5: { group: "shoulder", at: [1, -1] }, // right bumper
+  6: { group: "shoulder", at: [-1, 1] }, // left trigger
+  7: { group: "shoulder", at: [1, 1] }, // right trigger
+  12: { group: "dpad", at: [0, -1] },
+  13: { group: "dpad", at: [0, 1] },
+  14: { group: "dpad", at: [-1, 0] },
+  15: { group: "dpad", at: [1, 0] },
+}
+
+// Every position in each cluster, so the HUD can draw the other three unlit beside the
+// one that is bound. Built once from the table above, so adding a button to it puts the
+// button in its cluster's picture.
+export const PAD_CLUSTERS = Object.values(PAD_LAYOUT).reduce((groups, entry) => {
+  groups[entry.group] = groups[entry.group] || []
+  groups[entry.group].push(entry.at)
+  return groups
+}, {})
 
 // ---------------------------------------------------------------------------
 // CONTROLS - the ship controls a player may rebind, in menu order, with each

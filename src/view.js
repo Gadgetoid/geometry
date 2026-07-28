@@ -9,6 +9,8 @@ import {
   CONFIG,
   EQUIPMENT,
   OVER_MENU,
+  PAD_CLUSTERS,
+  PAD_LAYOUT,
   VIEW_W,
   VIEW_H,
   TAU,
@@ -56,6 +58,17 @@ function turretLetter(typeName) {
 // hangs below the box it belongs to, so the panel clears the boxes either side of it
 // rather than starting level with their floor.
 const SLOT_BOX = { size: 26, gap: 6 }
+
+// How the pad hint over a special slot is laid out, per cluster: how far apart its four
+// buttons sit and how big each mark is, in units before the HUD scale. A shoulder is a wide
+// bar and sits close above its trigger, so it needs more room across and less down than the
+// square clusters do; on one spacing for all three the pair read as four loose bars rather
+// than as two on each shoulder. See GameView.#padHint.
+const PAD_HINT = {
+  face: { across: 4.2, down: 4.2, size: 1.6 },
+  dpad: { across: 4.2, down: 4.2, size: 1.6 },
+  shoulder: { across: 4.9, down: 3, size: 1.6 },
+}
 
 // How much a hull arriving inside the ring bends the space it arrives into. Tight and strong:
 // the point of it is that a spot on the screen goes wrong for a beat before something is there,
@@ -873,8 +886,22 @@ export class GameView {
             })
           }
         }
-        const label = game.slotLabel(i)
-        r.text(label, sx + 2 * ui, sy + 9 * ui, { size: 8 * ui, color: PALETTE.text.muted })
+        // What to press. On a pad the HUD draws where the button is rather than what is
+        // printed on it: the letters differ by vendor and a position does not, and in the
+        // middle of a fight a position is the thing a thumb can act on. Help text is the
+        // setting for it, as it is for everything else the HUD explains, and a button with
+        // no position worth drawing falls back to being named.
+        const button = game.settings.help ? game.slotButton(i) : null
+        const layout = button === null ? null : PAD_LAYOUT[button]
+        if (layout) {
+          // Centred over the box and clear above it, where nothing else is drawn.
+          this.#padHint(sx + size / 2, sy - 8 * ui, ui, layout, spec ? spec.colour : null)
+        } else {
+          r.text(game.slotLabel(i), sx + 2 * ui, sy + 9 * ui, {
+            size: 8 * ui,
+            color: PALETTE.text.muted,
+          })
+        }
         if (spec) {
           r.text(spec.icon, sx + size / 2, sy + size / 2 + 5 * ui, {
             size: 12 * ui,
@@ -1478,6 +1505,54 @@ export class GameView {
         align: "right",
       })
     })
+  }
+
+  // One cluster of a gamepad with the bound button filled: which of the four it is, drawn as
+  // a position rather than named as a letter. The shape says which cluster, so a slot bound
+  // away from the face buttons still says where to reach - round for a face button, square
+  // for the D-pad, a bar for a shoulder or a trigger.
+  //
+  // The three that are not bound are drawn rather than left out, because "the bottom one of
+  // four" is what a hand needs and a lone mark says nothing about which. They are outlined in
+  // white and the bound one is filled in the slot's own colour, both at the same size: fill
+  // against outline is what says which, so it survives being desaturated, and white is what
+  // survives a small screen with the CRT filter over it.
+  //
+  // It sits above the slot it belongs to rather than inside it: the box is 20 units square
+  // with a letter filling the middle of it, and a diagram tucked into the corner was clipped
+  // by the outline and lost against the letter.
+  #padHint(cx, cy, ui, layout, colour) {
+    const r = this.renderer
+    const { across, down, size } = PAD_HINT[layout.group]
+    const lit = colour || PALETTE.ui.accent
+    for (const at of PAD_CLUSTERS[layout.group]) {
+      const x = cx + at[0] * across * ui,
+        y = cy + at[1] * down * ui
+      const on = at[0] === layout.at[0] && at[1] === layout.at[1]
+      // A filled mark is drawn twice: something solid, and then an edge at the same size, so
+      // the lit one is exactly as big as the other three and differs only in being solid.
+      const edge = { stroke: on ? lit : PALETTE.white, width: 1.1 * ui, glow: on ? 8 : 3 }
+      const alpha = on ? 1 : 0.7
+      if (layout.group === "face") {
+        // `occlude` rather than `circle`'s own fill, which is the additive sprite pipeline: it
+        // falls away from the middle and is only a sixth as bright at the radius it was asked
+        // for, so a small one reads as a dot floating inside its own ring. This is the
+        // renderer's only crisp disc. It was added for drawing an absence, and a solid fill is
+        // what it does; nothing about it needs the fill to be black.
+        if (on) {
+          r.occlude(x, y, size * ui, { fill: lit, alpha: 1 })
+        }
+        r.circle(x, y, size * ui, { ...edge, alpha })
+        continue
+      }
+      // A rect's fill is alpha-blended and already crisp, so a square or a bar needs no help.
+      const w = size * (layout.group === "dpad" ? 2 : 2.2) * ui
+      const h = size * (layout.group === "dpad" ? 2 : 1.3) * ui
+      if (on) {
+        r.rect(x - w / 2, y - h / 2, w, h, { fill: lit, alpha: 1 })
+      }
+      r.rect(x - w / 2, y - h / 2, w, h, { ...edge, alpha })
+    }
   }
 
   #shopSlots(game, leftX, infoX, y, selected) {
