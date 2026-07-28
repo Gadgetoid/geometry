@@ -1,0 +1,1237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GEOMETRY II - SCREEN EFFECTS</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+        --cyan: #5fd7ff;
+        --amber: #ffb14b;
+        --red: #ff5b5b;
+        --edge: #1c3050;
+        --panel: #070c16;
+        --text: #bcd0ee;
+        --dim: #7fa0c8;
+        --muted: #5f79a6;
+        --alien: #5cff9a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #02040a;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: rgba(2, 4, 10, 0.94);
+        border-bottom: 1px solid var(--edge);
+        padding: 10px 20px;
+        backdrop-filter: blur(6px);
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+      h1 {
+        font-size: 13px;
+        letter-spacing: 0.2em;
+        color: var(--cyan);
+        margin: 0;
+      }
+      h1 span {
+        color: var(--muted);
+        letter-spacing: 0.06em;
+      }
+      .filters {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        flex-wrap: wrap;
+      }
+      label {
+        color: var(--muted);
+        letter-spacing: 0.08em;
+        font-size: 10px;
+      }
+      input[type="number"] {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text);
+        background: rgba(10, 20, 38, 0.75);
+        border: 1px solid var(--edge);
+        border-radius: 5px;
+        padding: 4px 6px;
+        width: 62px;
+      }
+      input[type="range"] {
+        accent-color: var(--cyan);
+        width: 160px;
+      }
+      select {
+        font-family: var(--mono);
+        color: var(--text);
+        background: rgba(10, 20, 38, 0.75);
+        border: 1px solid var(--edge);
+        border-radius: 5px;
+        padding: 4px 6px;
+        font-size: 11px;
+      }
+      button {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        color: var(--dim);
+        background: rgba(10, 20, 38, 0.75);
+        border: 1px solid var(--edge);
+        border-radius: 5px;
+        padding: 4px 8px;
+        cursor: pointer;
+      }
+      button:hover {
+        color: #fff;
+        border-color: var(--cyan);
+      }
+      button[aria-pressed="true"] {
+        color: #02040a;
+        background: var(--cyan);
+        border-color: var(--cyan);
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 1px solid var(--cyan);
+        outline-offset: 1px;
+      }
+      main {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 18px 20px 140px;
+      }
+      section {
+        margin: 30px 0;
+      }
+      h2 {
+        font-size: 11px;
+        letter-spacing: 0.22em;
+        color: var(--cyan);
+        border-bottom: 1px solid var(--edge);
+        padding-bottom: 6px;
+        margin: 0 0 4px;
+      }
+      h3 {
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        color: var(--amber);
+        margin: 18px 0 6px;
+      }
+      .note {
+        color: var(--muted);
+        margin: 6px 0 14px;
+        max-width: 108ch;
+      }
+      code {
+        color: var(--dim);
+      }
+      .banner {
+        border: 1px solid var(--red);
+        color: var(--red);
+        padding: 12px 14px;
+        border-radius: 6px;
+        margin: 20px 0;
+        line-height: 1.8;
+      }
+      .scroll {
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+      table {
+        border-collapse: collapse;
+        margin: 4px 0 2px;
+        font-variant-numeric: tabular-nums;
+      }
+      th,
+      td {
+        text-align: right;
+        padding: 2px 10px 2px 0;
+        border-bottom: 1px solid #0e1a2c;
+        white-space: nowrap;
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 400;
+        letter-spacing: 0.1em;
+        font-size: 10px;
+      }
+      th:first-child,
+      td:first-child {
+        text-align: left;
+      }
+      td.wrap {
+        white-space: normal;
+        text-align: left;
+        color: var(--muted);
+        max-width: 60ch;
+      }
+      tr.alien td:first-child {
+        color: var(--alien);
+      }
+      .screen {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 1024/640;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #02040a;
+        border: 1px solid #0b1526;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #benchCanvas {
+        cursor: crosshair;
+      }
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        gap: 20px;
+        align-items: start;
+      }
+      @media (max-width: 1100px) {
+        .split {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .controls {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 6px 10px;
+        align-items: center;
+        margin: 10px 0 14px;
+      }
+      .controls .val {
+        color: var(--dim);
+        font-size: 10px;
+        min-width: 6ch;
+        text-align: right;
+      }
+      .controls button {
+        justify-self: start;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 8px 0;
+      }
+      .live {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        margin: 8px 0;
+      }
+      .live b {
+        color: var(--cyan);
+        font-weight: 400;
+      }
+      dl {
+        margin: 6px 0 0;
+      }
+      dt {
+        color: var(--amber);
+        letter-spacing: 0.12em;
+        margin-top: 14px;
+      }
+      dd {
+        margin: 3px 0 0;
+        color: var(--muted);
+        max-width: 104ch;
+      }
+      /* The post chain as a column of stages, each naming what it reads and writes. */
+      .chain {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        margin: 12px 0 6px;
+        max-width: 70ch;
+      }
+      .stage {
+        border: 1px solid var(--edge);
+        border-radius: 6px;
+        padding: 7px 11px;
+        background: var(--panel);
+      }
+      .stage b {
+        color: var(--cyan);
+        font-weight: 400;
+        letter-spacing: 0.1em;
+      }
+      .stage span {
+        color: var(--muted);
+      }
+      .stage em {
+        color: var(--dim);
+        font-style: normal;
+      }
+      .arrow {
+        color: var(--edge);
+        text-align: center;
+        line-height: 1.2;
+      }
+      .tag {
+        display: inline-block;
+        border: 1px solid var(--edge);
+        border-radius: 3px;
+        padding: 0 5px;
+        color: var(--muted);
+        font-size: 10px;
+        margin-left: 6px;
+      }
+      .tag.crt {
+        border-color: #4a3a1a;
+        color: var(--amber);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="bar">
+        <h1>GEOMETRY II <span>SCREEN EFFECTS</span></h1>
+        <div class="filters">
+          <button id="btnCrt" aria-pressed="true" title="The whole CRT branch of the composite">
+            CRT
+          </button>
+          <label for="bloomThreshold">BLOOM AT</label>
+          <input id="bloomThreshold" type="range" min="0" max="2" step="0.01" value="0.55" />
+          <span id="bloomThresholdOut" class="val"></span>
+          <label for="bloomIntensity">BLOOM x</label>
+          <input id="bloomIntensity" type="range" min="0" max="4" step="0.01" value="1.25" />
+          <span id="bloomIntensityOut" class="val"></span>
+          <button id="btnReset">RESET</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="page">
+      <section>
+        <h2>A LIVE FRAME</h2>
+        <p class="note">
+          A real sector, simulated. The buttons fire the game's own triggers: a tear is
+          <code>glitchAt</code>, the ripple is a ship arriving. Bloom is worked from the header; the
+          rest of the post chain is constants in the shader.
+        </p>
+        <div class="split">
+          <div>
+            <div class="screen"><canvas id="gameCanvas"></canvas></div>
+            <div class="live" id="liveOut"></div>
+            <div class="row">
+              <label for="sector">SECTOR</label>
+              <input id="sector" type="number" min="1" max="60" step="1" value="24" />
+              <button id="btnPose">REPOSE</button>
+              <button id="btnFreeze" aria-pressed="false">FREEZE</button>
+              <button id="btnHud" aria-pressed="true">HUD</button>
+            </div>
+            <div class="row">
+              <button id="btnTear" title="game.glitchAt at the ship">TEAR</button>
+              <button id="btnWarp" title="Replay the arrival ripple">WARP IN</button>
+              <button id="btnAlien" title="A hull that bends space by existing">ADD ALIEN</button>
+              <button id="btnCharge" title="Hold every warp gun part way through its wind-up">
+                WIND UP GUNS
+              </button>
+              <button id="btnRocks">ADD ROCKS</button>
+              <button id="btnShake">SHAKE</button>
+            </div>
+          </div>
+          <div>
+            <h3>WHAT THE COMPOSITE IS HOLDING</h3>
+            <p class="note">
+              Rebuilt every frame from whatever is on screen, sorted by how much of the picture each
+              one moves, and cut to what the shader can loop over.
+            </p>
+            <div class="scroll"><table id="sourceTable"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>THE POST CHAIN</h2>
+        <p class="note">
+          Between the last thing drawn and the pixels on the glass. The scene lands in an offscreen
+          target so that everything here can sample it more than once, and at coordinates other than
+          the ones it was drawn at. Stages marked <span class="tag crt">CRT</span> need the filter
+          on.
+        </p>
+        <div class="chain" id="chain"></div>
+        <h3>AND IN MORE DETAIL</h3>
+        <dl id="passDocs"></dl>
+      </section>
+
+      <section>
+        <h2>THE DISTORTION BENCH</h2>
+        <p class="note">
+          The composite pass over a ruled grid. Point the mouse at the canvas to move the source.
+          Everything goes in through <code>setLenses</code>, <code>setTears</code> and
+          <code>setWarp</code>, so a setting found here means the same thing on a weapon or a hull.
+        </p>
+        <div class="split">
+          <div>
+            <div class="screen"><canvas id="benchCanvas"></canvas></div>
+            <div class="row">
+              <label for="preset">PRESET</label>
+              <select id="preset"></select>
+              <button id="btnBenchClear">CLEAR</button>
+            </div>
+          </div>
+          <div>
+            <div class="controls" id="benchControls"></div>
+            <div class="live" id="benchPeak"></div>
+            <p class="note" id="benchNote"></p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>WHERE EACH ONE COMES FROM</h2>
+        <p class="note">
+          A <code>warp</code> bends the picture continuously for as long as its owner is there; a
+          <code>wake</code> lays that bend along a line behind something moving; a
+          <code>glitch</code> tears it briefly where something landed.
+        </p>
+
+        <h3>SPACE BENT - HULLS</h3>
+        <p class="note">
+          Radius is world units. A reach a little past the furthest point of the outline puts the
+          heaviest part of the bend on the silhouette itself.
+        </p>
+        <div class="scroll"><table id="hullWarpTable"></table></div>
+
+        <h3>SPACE BENT - WEAPONS</h3>
+        <div class="scroll"><table id="weaponWarpTable"></table></div>
+
+        <h3>SPACE TORN</h3>
+        <div class="scroll"><table id="tearTable"></table></div>
+
+        <h3>THE SCREEN SHAKEN</h3>
+        <p class="note">
+          Shake moves the eye the world and background layers are projected from. The HUD pass is
+          given a camera with none of it, so the frame lurches and the readouts hold still.
+        </p>
+        <div class="scroll"><table id="shakeTable"></table></div>
+      </section>
+    </main>
+
+    <script type="module">
+      // The passes that run after the scene is drawn, and where the game asks for them.
+      //
+      // Two canvases. The first runs a real posed sector through the real GameView, so the
+      // effects arrive the way they arrive in play and the buttons are the game's own
+      // triggers. The second draws a ruled grid and drives the distortion uniforms
+      // directly, which is the only way to see what one setting does on its own.
+      //
+      // The reference at the foot of the page walks the weapon and hull registries.
+
+      const page = document.getElementById("page")
+
+      let glrenderer, viewmod, gamemod, entities, config, palette
+      try {
+        ;[glrenderer, viewmod, gamemod, entities, config, palette] = await Promise.all([
+          import("./src/glrenderer.js"),
+          import("./src/view.js"),
+          import("./src/game.js"),
+          import("./src/entities.js"),
+          import("./src/config.js"),
+          import("./src/palette.js"),
+        ])
+      } catch (err) {
+        page.innerHTML =
+          `<div class="banner">The game's modules could not be imported, and this page is ` +
+          `nothing without them. Serve the folder (<code>python3 -m http.server</code>) and open ` +
+          `it over http, or launch with <code>--allow-file-access-from-files</code>.<br />` +
+          `${String(err)}</div>`
+        throw err
+      }
+
+      const { WebGLRenderer } = glrenderer
+      const { GameView } = viewmod
+      const { Game } = gamemod
+      const { Asteroid, RivalShip } = entities
+      const { VIEW_W, VIEW_H, WEAPON_TYPES, SHIP_TYPES, ARENA } = config
+      const { PALETTE } = palette
+
+      const round = (v, places = 2) => {
+        const scale = 10 ** places
+        return Math.round(v * scale) / scale
+      }
+
+      function el(tag, props = {}, ...children) {
+        const node = Object.assign(document.createElement(tag), props)
+        for (const child of children.flat()) {
+          if (child != null && child !== false) {
+            node.append(child)
+          }
+        }
+        return node
+      }
+
+      function row(cells, tag = "td") {
+        return el(
+          "tr",
+          {},
+          cells.map((cell) => {
+            if (cell && typeof cell === "object" && !cell.nodeType) {
+              const node = el(tag, { className: cell.className || "" })
+              node.append(...[cell.content].flat().filter((c) => c != null))
+              return node
+            }
+            return el(tag, {}, cell && cell.nodeType ? cell : String(cell ?? ""))
+          }),
+        )
+      }
+
+      // ---- the live frame ----------------------------------------------------
+      const gameCanvas = document.getElementById("gameCanvas")
+      const renderer = WebGLRenderer.create(gameCanvas)
+      const benchCanvas = document.getElementById("benchCanvas")
+      const benchRenderer = WebGLRenderer.create(benchCanvas)
+      if (!renderer || !benchRenderer) {
+        page.innerHTML =
+          `<div class="banner">WEBGL2 REQUIRED<br />This browser could not create a WebGL2 ` +
+          `context, and every picture on this page is drawn through the game's own one.</div>`
+        throw new Error("WebGL2 unavailable")
+      }
+
+      const view = new GameView(renderer)
+      const game = new Game()
+
+      function resizeGame() {
+        view.resize(gameCanvas.getBoundingClientRect())
+      }
+      new ResizeObserver(resizeGame).observe(gameCanvas)
+      resizeGame()
+
+      // The bench has no view to size it, so it is sized the same way by hand: the canvas
+      // takes its own box in device pixels and the whole of it is the content rect, which
+      // the CSS holds to the game's 16:10 so nothing is stretched to fill it.
+      function resizeBench() {
+        const rect = benchCanvas.getBoundingClientRect()
+        const dpr = Math.min(window.devicePixelRatio || 1, 2)
+        const w = Math.max(1, Math.round(rect.width * dpr))
+        const h = Math.max(1, Math.round(rect.height * dpr))
+        if (benchCanvas.width !== w || benchCanvas.height !== h) {
+          benchCanvas.width = w
+          benchCanvas.height = h
+        }
+        benchRenderer.setContentRect(0, 0, rect.width, rect.height, dpr)
+      }
+      new ResizeObserver(resizeBench).observe(benchCanvas)
+      resizeBench()
+
+      // A sector with the ship parked in the middle of the arena and nothing able to end
+      // the demonstration: an effect worth looking at is worth looking at for longer than
+      // the fight would allow.
+      function pose(sector) {
+        game.startNewGame()
+        game.startLevel(sector)
+        game.phase = "play"
+        game.asteroids = []
+        game.rivals = []
+        game.particles = []
+        game.laserShots = []
+        game.projectiles = []
+        game.glitches = []
+        const player = game.player
+        player.warp = 1
+        player.warpTarget = 1
+        player.warpHold = 0
+        player.x = ARENA.cx
+        player.y = ARENA.cy
+        player.vx = 0
+        player.vy = 0
+        game.viewCenter.x = player.x
+        game.viewCenter.y = player.y
+        addRocks()
+        // One alien to begin with, so the page opens with something bending the picture.
+        addAlien()
+      }
+
+      // Still rocks: an outline for a bend to move, and something for a beam to cut.
+      function addRocks() {
+        const places = [
+          [-300, -120, 104],
+          [290, 130, 96],
+          [40, 250, 78],
+          [-150, 210, 62],
+        ]
+        for (const [dx, dy, radius] of places) {
+          game.asteroids.push(
+            new Asteroid({
+              x: game.viewCenter.x + dx,
+              y: game.viewCenter.y + dy,
+              radius,
+              traits: {},
+              vx: 0,
+              vy: 0,
+              spin: 0,
+            }),
+          )
+        }
+      }
+
+      // A hull that bends space by existing, which is the only distortion in the game that
+      // is not an event: it is there for as long as the ship is. spawnRival picks a hull by
+      // the sector's own spawn weights, so this one is built directly.
+      function addAlien() {
+        const alien = Object.keys(SHIP_TYPES).find(
+          (name) => SHIP_TYPES[name].warp && SHIP_TYPES[name].faction === "alien",
+        )
+        if (!alien) {
+          return
+        }
+        const ship = new RivalShip(
+          game.viewCenter.x + 200,
+          game.viewCenter.y - 60,
+          alien,
+          game.rollLoadout ? game.rollLoadout(SHIP_TYPES[alien]) : null,
+        )
+        ship.vx = 0
+        ship.vy = 0
+        ship.lifeTimer = 1e9
+        game.rivals.push(ship)
+      }
+
+      // Hold every gun that bends space part way through its wind-up, which is when the
+      // bend is loudest: a well being wound up is the telegraph, and this is what it looks
+      // like held still.
+      function windUpGuns() {
+        for (const ship of [...game.rivals, game.player]) {
+          if (!ship || !ship.hardpoints) {
+            continue
+          }
+          for (const hp of ship.hardpoints) {
+            const gun = hp.module
+            if (gun && gun.kind === "weapon" && gun.type.warp && gun.type.chargeTime) {
+              gun.chargeDuration = gun.type.chargeTime
+              gun.charging = gun.chargeDuration * 0.55
+            }
+          }
+        }
+      }
+
+      let frozen = false
+      let sector = 24
+
+      // ---- the bench ---------------------------------------------------------
+      // One source at a time, expressed the way the view expresses one: uv centre, uv
+      // radius, and the strength and shape settings a weapon or a hull would state.
+      const bench = {
+        mode: "lens",
+        x: 0.5,
+        y: 0.5,
+        radius: 0.14,
+        strength: 0.42,
+        wave: 0.18,
+        hollow: 1,
+        length: 0,
+        ripple: 0,
+      }
+
+      const BENCH_PRESETS = {
+        "alien hull - a bend that is always there": {
+          mode: "lens",
+          radius: 0.146,
+          strength: 0.42,
+          wave: 0.18,
+          hollow: 1,
+          length: 0,
+        },
+        "singularity - the strongest bend in the game": {
+          mode: "lens",
+          radius: 0.127,
+          strength: 0.55,
+          wave: 0.4,
+          hollow: 1,
+          length: 0,
+        },
+        "warp beam - bent along a line": {
+          mode: "lens",
+          radius: 0.068,
+          strength: 0.45,
+          wave: 0,
+          hollow: 0,
+          length: 0.34,
+        },
+        "railgun wake - a slab closing behind it": {
+          mode: "lens",
+          radius: 0.107,
+          strength: 0.42,
+          wave: 0.26,
+          hollow: 0,
+          length: 0.3,
+        },
+        "a hit that tore the picture": { mode: "tear", radius: 0.068, strength: 1 },
+        "inside a well - torn everywhere at once": {
+          mode: "tear",
+          radius: 1.6,
+          strength: 0.3,
+        },
+        "the arrival ripple": { mode: "ripple", ripple: 1 },
+      }
+
+      const BENCH_NOTES = {
+        lens:
+          "Samples are pulled toward the centre, and the weight is zero at the middle and " +
+          "zero at the rim: HOLLOW moves where between them the peak sits, from a third of " +
+          "the way out to two thirds. At 1 the centre is left alone and the outline of a " +
+          "thing crawls; at 0 what is behind it swells. WAVE puts standing waves through the " +
+          "same region on the same weight, so what warps is what ripples. LENGTH turns the " +
+          "point into a capsule about a line, which is how a beam bends space along its whole " +
+          "run and how a wake lays one behind a shot.",
+        tear:
+          "The picture coming apart. Each of 190 scanlines rolls against STRENGTH to decide " +
+          "whether it is thrown at all, and each colour channel rolls separately, so the three " +
+          "come apart. The line is quantised along x as strength rises, which is what makes " +
+          "what moved read as data. The unevenness carries it: an even displacement of every " +
+          "line reads as motion blur.",
+        ripple:
+          "One centre, and concentric waves running out from it on an exponential falloff. " +
+          "The only distortion the game aims at the player: it is a ship arriving, and it " +
+          "bends the HUD along with the sector, which is why the view switches it off while " +
+          "the game is paused.",
+      }
+
+      const BENCH_SLIDERS = [
+        ["radius", 0.01, 1.7, 0.001, "uv radius. 1.6 is past the corners, so the whole frame"],
+        ["strength", 0, 1.2, 0.01, "How hard, at the heaviest point of the falloff"],
+        ["wave", 0, 1, 0.01, "Standing waves through the region, on the same weight"],
+        ["hollow", 0, 1, 0.01, "Where across the region the peak sits: 0 middle, 1 rim"],
+        ["length", 0, 0.6, 0.005, "Bend along a line this long instead of around a point"],
+        ["ripple", 0, 1, 0.01, "The arrival ripple, which has a centre and nothing else"],
+      ]
+
+      function drawBench(time) {
+        const r = benchRenderer
+        r.beginFrame(time)
+        r.clearFrame(PALETTE.space)
+        r.compositeBackground()
+        r.pushView({})
+        // A ruled grid, because a bend is only legible against something straight, and a
+        // fine one because the real settings move the picture by a few pixels: every
+        // fourth line is brighter so the eye has both a fine and a coarse reference.
+        const PITCH = 16
+        for (let x = 0; x <= VIEW_W; x += PITCH) {
+          const major = x % (PITCH * 4) === 0
+          r.line(x, 0, x, VIEW_H, {
+            color: major ? PALETTE.ui.slotEmpty : PALETTE.ui.edge,
+            width: major ? 1.3 : 1,
+          })
+        }
+        for (let y = 0; y <= VIEW_H; y += PITCH) {
+          const major = y % (PITCH * 4) === 0
+          r.line(0, y, VIEW_W, y, {
+            color: major ? PALETTE.ui.slotEmpty : PALETTE.ui.edge,
+            width: major ? 1.3 : 1,
+          })
+        }
+        // Something bright, so the bloom and the chromatic aberration have something to
+        // work on, and something round so a bend is obvious in both axes at once.
+        r.circle(VIEW_W / 2, VIEW_H / 2, 150, {
+          stroke: PALETTE.player.hull,
+          width: 1.8,
+          glow: 10,
+        })
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2
+          r.point(VIEW_W / 2 + Math.cos(a) * 230, VIEW_H / 2 + Math.sin(a) * 230, 2.4, {
+            color: PALETTE.text.bright,
+            alpha: 0.9,
+          })
+        }
+        r.text("GEOMETRY", VIEW_W / 2, 92, {
+          size: 34,
+          color: PALETTE.player.hull,
+          align: "center",
+        })
+        r.popView()
+
+        // The three calls the view makes, from the settings above.
+        const lenses = []
+        const tears = []
+        if (bench.mode === "lens" && bench.strength > 0) {
+          const source = {
+            x: bench.x,
+            y: bench.y,
+            radius: bench.radius,
+            strength: bench.strength,
+            wave: bench.wave,
+            hollow: bench.hollow,
+          }
+          if (bench.length > 0) {
+            source.endX = bench.x + bench.length
+            source.endY = bench.y
+          }
+          lenses.push(source)
+        }
+        if (bench.mode === "tear" && bench.strength > 0) {
+          tears.push({
+            x: bench.x,
+            y: bench.y,
+            radius: bench.radius,
+            strength: bench.strength,
+          })
+        }
+        r.setLenses(lenses)
+        r.setTears(tears)
+        r.setWarp(bench.x, bench.y, bench.mode === "ripple" ? bench.ripple : 0)
+        r.endFrame()
+      }
+
+      function buildBenchControls() {
+        const host = document.getElementById("benchControls")
+        host.replaceChildren()
+        for (const [key, min, max, step, hint] of BENCH_SLIDERS) {
+          const input = el("input", {
+            type: "range",
+            min,
+            max,
+            step,
+            value: bench[key],
+            title: hint,
+          })
+          const out = el("span", { className: "val" }, String(round(bench[key], 3)))
+          input.addEventListener("input", () => {
+            bench[key] = Number(input.value)
+            out.textContent = String(round(bench[key], 3))
+            reportBench()
+          })
+          host.append(el("label", {}, key.toUpperCase()), input, out)
+          input.dataset.key = key
+        }
+      }
+
+      function syncBenchControls() {
+        for (const input of document.querySelectorAll("#benchControls input")) {
+          input.value = String(bench[input.dataset.key])
+          input.nextElementSibling.textContent = String(round(bench[input.dataset.key], 3))
+        }
+        document.getElementById("benchNote").textContent = BENCH_NOTES[bench.mode]
+        reportBench()
+      }
+
+      // How far the worst-affected pixel actually moves, which is worth stating: both
+      // falloff profiles peak at the same weight, 4/27 of the way across the region, so the
+      // pull comes to 0.148 * radius * strength however the hollow is set. In a frame 1024
+      // across that is a handful of pixels for every setting in the game: the distortion works
+      // at the edge of attention, and the sliders go well past what the game ships with.
+      function reportBench() {
+        const host = document.getElementById("benchPeak")
+        if (bench.mode !== "lens") {
+          host.textContent = ""
+          return
+        }
+        const pull = 0.148 * bench.radius * bench.strength * VIEW_W
+        const ripple = 0.25 * bench.wave * 0.05 * VIEW_W
+        host.replaceChildren(
+          el("span", {}, "PEAK PULL ", el("b", {}, `${round(pull, 1)} px`)),
+          el("span", {}, "PEAK RIPPLE ", el("b", {}, `${round(ripple, 1)} px`)),
+          el("span", {}, "REACH ", el("b", {}, `${Math.round(bench.radius * VIEW_W)} px`)),
+        )
+      }
+
+      function buildPresets() {
+        const select = document.getElementById("preset")
+        for (const name of Object.keys(BENCH_PRESETS)) {
+          select.append(el("option", { value: name }, name))
+        }
+        select.addEventListener("change", () => {
+          Object.assign(bench, { wave: 0, hollow: 0, length: 0, ripple: 0 })
+          Object.assign(bench, BENCH_PRESETS[select.value])
+          syncBenchControls()
+        })
+        Object.assign(bench, BENCH_PRESETS[select.value])
+        syncBenchControls()
+      }
+
+      benchCanvas.addEventListener("pointermove", (event) => {
+        const rect = benchCanvas.getBoundingClientRect()
+        bench.x = (event.clientX - rect.left) / rect.width
+        // The scene target has its origin at the bottom, as the view's own conversion does.
+        bench.y = 1 - (event.clientY - rect.top) / rect.height
+      })
+
+      // ---- the post chain ----------------------------------------------------
+      const CHAIN = [
+        ["the scene target", "2048x1280, RGBA16F where the driver allows it", "", "written"],
+        [
+          "bright pass",
+          "keeps only what is over the threshold, at half resolution",
+          "BRIGHT_FS",
+          "",
+        ],
+        ["blur", "separable, two axes, twice over: a wide soft glow", "BLUR_FS", ""],
+        ["barrel curvature", "the sample point bent out from the centre", "COMPOSITE_FS", "crt"],
+        ["ripple", "concentric waves from one point", "COMPOSITE_FS", ""],
+        ["lens", "every bend, in order of how much of the picture it moves", "COMPOSITE_FS", ""],
+        [
+          "tear",
+          "if anything is torn here, the scanline path instead of the next two",
+          "COMPOSITE_FS",
+          "",
+        ],
+        [
+          "chromatic aberration",
+          "the three channels split, growing toward the edges",
+          "COMPOSITE_FS",
+          "crt",
+        ],
+        ["bloom added", "the blurred bright pass, times the intensity", "COMPOSITE_FS", ""],
+        [
+          "scanlines and vignette",
+          "a sine on y, and a soft darkening at the corners",
+          "COMPOSITE_FS",
+          "crt",
+        ],
+        ["the letterboxed rect", "blitted to whatever shape the window is", "", "written"],
+      ]
+
+      const PASS_DOCS = [
+        [
+          "why there is an offscreen target at all",
+          "Everything on this page needs to read the finished picture at a coordinate other than the one being written. A bend is the same picture sampled from somewhere else, which is only possible once the whole frame exists. It is also what keeps the distortion free of the rest of the renderer: the scene does not know it is going to be bent.",
+        ],
+        [
+          "bloom, and why the threshold matters",
+          "The bright pass keeps max(r, g, b) over the threshold and scales what is left, so a pixel only blooms in proportion to how far past the bar it got. Two blur iterations on each axis at half resolution give a wide glow cheaply. With RGBA16F targets the scene can hold values past 1.0, so the threshold is a real one; without the extension the targets clamp and only the brightest cores bloom, which still reads correctly. It is why the planet shader dims the lit body before adding its emissive: the surface stays under the bar and the glow goes over it.",
+        ],
+        [
+          "the order inside the composite",
+          "Curvature first, because it decides which sample point everything after it uses. Then ripple, then the lenses, each of which moves that point again - so a ship arriving inside an alien's field is bent by both, in that order. The tear is checked last and replaces the sampling path entirely: a torn pixel skips the aberration, since the tear splits the channels itself.",
+        ],
+        [
+          "a fixed number of sources",
+          "A shader loops over an array whose size it knows at compile time, so the composite holds eight bends and six tears. The view rebuilds both lists every frame from what is on screen, sorts them by how much of the picture each moves, and lets the renderer drop the rest. That is why a beam gets one source laid along its whole length, and why a railgun's wake is a single capsule from its oldest live mark to where the round is now.",
+        ],
+        [
+          "the CRT is the intended look",
+          "Curvature, aberration, scanlines and vignette are one branch of the composite, all constants in COMPOSITE_FS in src/shaders.js. The aberration in particular is deliberate: compare the energy bar with the filter off and on. Turning it off is a development affordance.",
+        ],
+        [
+          "screen shake",
+          "Shake moves the eye the projection is taken from, so it happens in the geometry: the world and background cameras get it and the HUD camera does not. The pause menu freezes the distortion too, because the ripple and the tears are screen-space passes over the finished frame and would otherwise keep moving over a still world.",
+        ],
+      ]
+
+      function buildChain() {
+        const host = document.getElementById("chain")
+        CHAIN.forEach(([name, what, where, kind], i) => {
+          const stage = el(
+            "div",
+            { className: "stage" },
+            el("b", {}, name.toUpperCase()),
+            kind === "crt" ? el("span", { className: "tag crt" }, "CRT") : null,
+            where ? el("span", { className: "tag" }, where) : null,
+            el("div", {}, el("span", {}, what)),
+          )
+          host.append(stage)
+          if (i < CHAIN.length - 1) {
+            host.append(el("div", { className: "arrow" }, "|"))
+          }
+        })
+      }
+
+      function buildProse() {
+        const list = document.getElementById("passDocs")
+        for (const [name, text] of PASS_DOCS) {
+          list.append(el("dt", {}, name.toUpperCase()))
+          list.append(el("dd", {}, text))
+        }
+      }
+
+      // ---- the reference -----------------------------------------------------
+      const shape = (warp) =>
+        [
+          warp.wave ? `wave ${warp.wave}` : null,
+          warp.hollow ? "hollow" : null,
+          warp.life ? `life ${warp.life}s` : null,
+          warp.every ? `mark every ${warp.every}` : null,
+        ]
+          .filter(Boolean)
+          .join(", ") || "a plain bend"
+
+      function buildHullWarps() {
+        const table = document.getElementById("hullWarpTable")
+        table.append(row(["HULL", "FACTION", "RADIUS", "STRENGTH", "SHAPE"], "th"))
+        for (const [name, type] of Object.entries(SHIP_TYPES)) {
+          if (!type.warp) {
+            continue
+          }
+          table.append(
+            row([
+              name,
+              type.faction ?? "-",
+              type.warp.radius,
+              type.warp.strength,
+              { className: "wrap", content: shape(type.warp) },
+            ]),
+          )
+          table.lastElementChild.className = type.faction === "alien" ? "alien" : ""
+        }
+      }
+
+      function buildWeaponWarps() {
+        const table = document.getElementById("weaponWarpTable")
+        table.append(row(["WEAPON", "KIND", "SOURCE", "RADIUS", "STRENGTH", "SHAPE"], "th"))
+        for (const [name, type] of Object.entries(WEAPON_TYPES)) {
+          for (const [field, label] of [
+            ["warp", "warp"],
+            ["wake", "wake"],
+          ]) {
+            const warp = type[field]
+            if (!warp) {
+              continue
+            }
+            table.append(
+              row([
+                name,
+                type.kind ?? "-",
+                label,
+                warp.radius,
+                warp.strength,
+                { className: "wrap", content: shape(warp) },
+              ]),
+            )
+          }
+        }
+      }
+
+      function buildTears() {
+        const table = document.getElementById("tearTable")
+        table.append(row(["SOURCE", "WHERE FROM", "RADIUS", "STRENGTH", "SECONDS"], "th"))
+        for (const [name, type] of Object.entries(WEAPON_TYPES)) {
+          const glitch = type.impact && type.impact.glitch
+          if (glitch) {
+            table.append(
+              row([
+                name,
+                "impact.glitch, wherever the round landed",
+                glitch.radius,
+                glitch.strength,
+                glitch.seconds,
+              ]),
+            )
+          }
+          const well = type.well
+          if (well && well.nearGlitch) {
+            table.append(
+              row([
+                name,
+                "well.nearGlitch, the whole frame while the ship is inside it",
+                "the frame",
+                well.nearGlitch,
+                "while inside",
+              ]),
+            )
+          }
+        }
+      }
+
+      function buildShake() {
+        const table = document.getElementById("shakeTable")
+        table.append(row(["SOURCE", "WHAT HAPPENED", "SHAKE"], "th"))
+        const found = []
+        for (const [name, type] of Object.entries(WEAPON_TYPES)) {
+          if (type.impact && type.impact.shake) {
+            found.push([name, "a round landed", type.impact.shake])
+          }
+        }
+        for (const [name, type] of Object.entries(SHIP_TYPES)) {
+          if (type.debris && type.debris.shake) {
+            found.push([name, "a hull came apart", type.debris.shake])
+          }
+        }
+        found.sort((a, b) => b[2] - a[2])
+        for (const entry of found) {
+          table.append(row(entry))
+        }
+      }
+
+      // ---- wiring ------------------------------------------------------------
+      const bloomThreshold = document.getElementById("bloomThreshold")
+      const bloomIntensity = document.getElementById("bloomIntensity")
+      const thresholdOut = document.getElementById("bloomThresholdOut")
+      const intensityOut = document.getElementById("bloomIntensityOut")
+      // The sliders start where the renderer starts.
+      const BLOOM_DEFAULTS = {
+        threshold: renderer.bloomThreshold,
+        intensity: renderer.bloomIntensity,
+      }
+
+      function syncBloom() {
+        for (const r of [renderer, benchRenderer]) {
+          r.bloomThreshold = Number(bloomThreshold.value)
+          r.bloomIntensity = Number(bloomIntensity.value)
+        }
+        thresholdOut.textContent = round(Number(bloomThreshold.value)).toFixed(2)
+        intensityOut.textContent = round(Number(bloomIntensity.value)).toFixed(2)
+      }
+      bloomThreshold.value = String(BLOOM_DEFAULTS.threshold)
+      bloomIntensity.value = String(BLOOM_DEFAULTS.intensity)
+      bloomThreshold.addEventListener("input", syncBloom)
+      bloomIntensity.addEventListener("input", syncBloom)
+      syncBloom()
+
+      document.getElementById("btnReset").addEventListener("click", () => {
+        bloomThreshold.value = String(BLOOM_DEFAULTS.threshold)
+        bloomIntensity.value = String(BLOOM_DEFAULTS.intensity)
+        syncBloom()
+      })
+
+      const btnCrt = document.getElementById("btnCrt")
+      btnCrt.addEventListener("click", () => {
+        const on = btnCrt.getAttribute("aria-pressed") !== "true"
+        btnCrt.setAttribute("aria-pressed", String(on))
+        renderer.crtEnabled = on
+        benchRenderer.crtEnabled = on
+      })
+
+      const sectorInput = document.getElementById("sector")
+      document.getElementById("btnPose").addEventListener("click", () => {
+        sector = Math.max(1, Math.min(60, Number(sectorInput.value) || 1))
+        pose(sector)
+      })
+      document.getElementById("btnTear").addEventListener("click", () => {
+        game.glitchAt(game.player.x, game.player.y, 1, 150, 0.4)
+      })
+      document.getElementById("btnWarp").addEventListener("click", () => {
+        game.player.warp = 0
+        game.player.warpTarget = 1
+      })
+      document.getElementById("btnAlien").addEventListener("click", addAlien)
+      document.getElementById("btnCharge").addEventListener("click", windUpGuns)
+      document.getElementById("btnRocks").addEventListener("click", addRocks)
+      document.getElementById("btnShake").addEventListener("click", () => {
+        game.screenShake = 14
+      })
+
+      const btnFreeze = document.getElementById("btnFreeze")
+      btnFreeze.addEventListener("click", () => {
+        frozen = !frozen
+        btnFreeze.setAttribute("aria-pressed", String(frozen))
+      })
+      const btnHud = document.getElementById("btnHud")
+      btnHud.addEventListener("click", () => {
+        view.showHud = !view.showHud
+        btnHud.setAttribute("aria-pressed", String(view.showHud))
+      })
+      document.getElementById("btnBenchClear").addEventListener("click", () => {
+        bench.strength = 0
+        bench.ripple = 0
+        syncBenchControls()
+      })
+
+      // What the composite is holding, taken from the renderer once the view has filled it
+      // in: the count the shader will loop over, and the strongest few.
+      const liveOut = document.getElementById("liveOut")
+      const sourceTable = document.getElementById("sourceTable")
+      function reportSources() {
+        liveOut.replaceChildren(
+          el("span", {}, "LENSES ", el("b", {}, String(renderer.lensCount))),
+          el("span", {}, "TEARS ", el("b", {}, String(renderer.tearCount))),
+          el("span", {}, "RIPPLE ", el("b", {}, round(renderer.warp[2]).toFixed(2))),
+          el("span", {}, "SHAKE ", el("b", {}, round(game.screenShake).toFixed(1))),
+          el("span", {}, "RIVALS ", el("b", {}, String(game.rivals.length))),
+          el("span", {}, "ROCKS ", el("b", {}, String(game.asteroids.length))),
+        )
+        sourceTable.replaceChildren()
+        sourceTable.append(row(["", "X", "Y", "RADIUS", "STRENGTH"], "th"))
+        for (let i = 0; i < renderer.lensCount; i++) {
+          sourceTable.append(
+            row([
+              `lens ${i}`,
+              round(renderer.lensData[i * 4], 3),
+              round(renderer.lensData[i * 4 + 1], 3),
+              round(renderer.lensData[i * 4 + 3], 3),
+              round(renderer.lensData[i * 4 + 2], 3),
+            ]),
+          )
+        }
+        for (let i = 0; i < renderer.tearCount; i++) {
+          sourceTable.append(
+            row([
+              `tear ${i}`,
+              round(renderer.tearData[i * 4], 3),
+              round(renderer.tearData[i * 4 + 1], 3),
+              round(renderer.tearData[i * 4 + 3], 3),
+              round(renderer.tearData[i * 4 + 2], 3),
+            ]),
+          )
+        }
+        if (!renderer.lensCount && !renderer.tearCount) {
+          sourceTable.append(row([{ className: "wrap", content: "nothing bending or torn" }, ""]))
+        }
+      }
+
+      buildChain()
+      buildProse()
+      buildHullWarps()
+      buildWeaponWarps()
+      buildTears()
+      buildShake()
+      buildBenchControls()
+      buildPresets()
+      pose(sector)
+
+      // ---- the loop ----------------------------------------------------------
+      let last = 0
+      let report = 0
+      function frame(stamp) {
+        const dt = last ? Math.min((stamp - last) / 1000, 0.05) : 0
+        last = stamp
+        if (!frozen) {
+          game.advance(dt)
+          // Nothing here is a fight worth losing: the ship is held where it was put and
+          // topped up, so whatever is being looked at stays on screen. Its hull is refilled each
+          // frame; invincibility would set it blinking, which is no use for judging a filter.
+          const player = game.player
+          if (player) {
+            player.vx = 0
+            player.vy = 0
+            player.hull = player.type.hull
+            player.energy = player.energyMax
+          }
+        }
+        if (renderer.ready) {
+          view.render(game)
+        }
+        if (benchRenderer.ready) {
+          drawBench(stamp / 1000)
+        }
+        report += dt
+        if (report > 0.2) {
+          report = 0
+          reportSources()
+        }
+        requestAnimationFrame(frame)
+      }
+      requestAnimationFrame(frame)
+    </script>
+  </body>
+</html>
