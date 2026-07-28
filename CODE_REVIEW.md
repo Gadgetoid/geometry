@@ -38,6 +38,7 @@ susceptibility from its outline and three stated numbers (mass, power, armour) �
 weapon controllers · `game.js` state, phases, beams, menus, bindings ·
 `background.js` backdrop · `view.js` painting ·
 `renderer.js` backend contract · `glrenderer.js` WebGL2, the only backend ·
+`shaders.js` the GLSL every pass compiles ·
 `gamepad.js` pad sampling · `persistence.js` IndexedDB, one key per thing
 remembered · `audio.js` · `main.js` wiring
 
