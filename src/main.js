@@ -65,9 +65,11 @@ addEventListener("keydown", (e) => game.onKeyDown(e))
 addEventListener("keyup", (e) => game.onKeyUp(e))
 addEventListener("blur", () => game.onBlur())
 
-document.getElementById("btnCrt").addEventListener("click", (e) => {
-  game.setCrt(!game.settings.crt)
-  e.currentTarget.setAttribute("aria-pressed", String(game.settings.crt))
+// The filter has three levels, so the button cycles them rather than toggling. Its
+// aria-pressed follows: "mixed" is what ARIA has for a control that is partly on, which is
+// exactly what LOW is. syncSettings does the writing, so the click only has to ask.
+document.getElementById("btnCrt").addEventListener("click", () => {
+  game.stepCrt(1)
 })
 
 const soundButton = document.getElementById("btnSnd")
@@ -101,9 +103,19 @@ const applied = { crt: null, sound: null }
 function syncSettings() {
   if (applied.crt !== game.settings.crt) {
     applied.crt = game.settings.crt
-    renderer.crtEnabled = game.settings.crt
-    document.querySelector(".stage").classList.toggle("crt-off", !game.settings.crt)
-    document.getElementById("btnCrt").setAttribute("aria-pressed", String(game.settings.crt))
+    renderer.crtStrength = game.settings.crt
+    const level = game.crtLevel()
+    // The page frame's rounded corners belong to the tube, so they go with it entirely.
+    document.querySelector(".stage").classList.toggle("crt-off", level.strength <= 0)
+    const button = document.getElementById("btnCrt")
+    button.setAttribute(
+      "aria-pressed",
+      level.strength <= 0 ? "false" : level.strength >= 1 ? "true" : "mixed",
+    )
+    // Named rather than only shaded, so which of the three it is on does not have to be
+    // guessed at from the picture.
+    button.textContent = level.strength >= 1 ? "CRT" : `CRT ${level.name}`
+    button.title = `CRT filter: ${level.name}`
   }
   if (applied.sound !== game.settings.sound) {
     applied.sound = game.settings.sound

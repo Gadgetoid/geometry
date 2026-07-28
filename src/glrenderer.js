@@ -164,7 +164,8 @@ export class WebGLRenderer extends Renderer {
     super()
     this.canvas = canvas
     this.gl = gl
-    this.crtEnabled = true
+    // How much of the CRT filter to lay over the frame, 0 to 1. See CONFIG.CRT_LEVELS.
+    this.crtStrength = 1
     this.time = 0
     // How bright a pixel has to be before it blooms, and how much of the blurred
     // result is added back. Both are settings, so effects.html can work them
@@ -234,6 +235,15 @@ export class WebGLRenderer extends Renderer {
   // Nothing can be drawn while the context is gone; main.js skips the frame.
   get ready() {
     return !this.contextLost
+  }
+
+  // The filter as something to switch, for a caller that only wants it on or off: the
+  // preview pages, which have a checkbox rather than three levels.
+  get crtEnabled() {
+    return this.crtStrength > 0
+  }
+  set crtEnabled(on) {
+    this.crtStrength = on ? 1 : 0
   }
 
   #initPrograms() {
@@ -938,7 +948,7 @@ export class WebGLRenderer extends Renderer {
     this.#bindTex(prog, "uScene", this.scene.tex, 0)
     this.#bindTex(prog, "uBloom", this.bloomA.tex, 1)
     gl.uniform1f(this.#uniform(prog, "uBloom0"), this.bloomIntensity)
-    gl.uniform1f(this.#uniform(prog, "uCrt"), this.crtEnabled ? 1 : 0)
+    gl.uniform1f(this.#uniform(prog, "uCrt"), clamp(Number(this.crtStrength) || 0, 0, 1))
     gl.uniform1f(this.#uniform(prog, "uTime"), this.time)
     gl.uniform3f(this.#uniform(prog, "uWarp"), this.warp[0], this.warp[1], this.warp[2])
     gl.uniform1f(this.#uniform(prog, "uAspect"), SCENE_W / SCENE_H)

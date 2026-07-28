@@ -186,7 +186,7 @@ export class Game {
     this.settings = {
       volume: 0.8,
       sound: true,
-      crt: true,
+      crt: CONFIG.CRT_LEVELS[CONFIG.CRT_LEVELS.length - 1].strength,
       help: true,
       uiScale: 1,
       dev: DEV_VISIBLE,
@@ -234,6 +234,8 @@ export class Game {
     loadSettings().then((stored) => {
       if (stored) {
         this.settings = { ...this.settings, ...stored }
+        // A save from before the filter had levels holds a boolean here.
+        this.settings.crt = this.crtStrength(this.settings.crt)
         this.applySound()
       }
     })
@@ -2657,9 +2659,31 @@ export class Game {
     }
     this.rememberSettings()
   }
-  setCrt(on) {
-    this.settings.crt = !!on
+  // The CRT filter is a strength rather than a switch, so `crt` holds one of
+  // CONFIG.CRT_LEVELS' own numbers. A saved run from before it had levels holds a boolean,
+  // which `Number` turns into the two ends of the range it became.
+  crtStrength(value) {
+    const wanted = Number(value) || 0
+    return CONFIG.CRT_LEVELS.reduce((best, level) =>
+      Math.abs(level.strength - wanted) < Math.abs(best.strength - wanted) ? level : best,
+    ).strength
+  }
+  crtLevel() {
+    const at = this.crtStrength(this.settings.crt)
+    return CONFIG.CRT_LEVELS.find((level) => level.strength === at) ?? CONFIG.CRT_LEVELS[0]
+  }
+  crtName() {
+    return this.crtLevel().name
+  }
+  setCrt(value) {
+    this.settings.crt = this.crtStrength(value)
     this.rememberSettings()
+  }
+  // Step through the levels, wrapping, so one row works whether it is pressed or nudged.
+  stepCrt(step) {
+    const at = CONFIG.CRT_LEVELS.indexOf(this.crtLevel())
+    const next = (at + (step > 0 ? 1 : -1) + CONFIG.CRT_LEVELS.length) % CONFIG.CRT_LEVELS.length
+    this.setCrt(CONFIG.CRT_LEVELS[next].strength)
   }
   setHelp(on) {
     this.settings.help = !!on

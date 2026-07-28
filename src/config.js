@@ -249,6 +249,20 @@ export const CONFIG = {
   // Sizes the in-game HUD can be drawn at, in menu order. The menus themselves are not scaled:
   // they already fill the page, and there is nowhere for them to grow.
   UI_SCALES: [1, 1.5, 2],
+  // How much CRT to lay over the frame, in menu order, so stepping right is more of it.
+  // `strength` scales every part of the filter at once - the chromatic aberration, the
+  // scanlines, the vignette and the barrel curve - rather than switching parts of it off, so
+  // the middle setting is the same tube seen through less of itself. The curve is scaled by
+  // the square of it, since it reads far stronger than its share; see COMPOSITE_FS.
+  //
+  // It is a setting worth having three of because the filter costs legibility, and how much
+  // is a matter of the screen it is being read on: what is characterful on a monitor is a
+  // haze over a handheld. HIGH is the intended look, and is what a run has always had.
+  CRT_LEVELS: [
+    { name: "OFF", strength: 0 },
+    { name: "LOW", strength: 0.7 },
+    { name: "HIGH", strength: 1 },
+  ],
   // What a spare ship costs. A repair is priced against it: patching a hull back to whole is worth
   // what it would have cost to lose it, and half a hull is half of that.
   LIFE_COST: 90,
@@ -3717,9 +3731,9 @@ export const PAUSE_MENU = [
   },
   {
     name: "CRT FILTER",
-    value: (g) => (g.settings.crt ? "ON" : "OFF"),
-    action: (g) => g.setCrt(!g.settings.crt),
-    adjust: (g, step) => g.setCrt(step > 0),
+    value: (g) => g.crtName(),
+    action: (g) => g.stepCrt(1),
+    adjust: (g, step) => g.stepCrt(step),
   },
   {
     name: "HUD SIZE",

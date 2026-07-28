@@ -290,7 +290,10 @@ export const COMPOSITE_FS = `#version 300 es
   uniform sampler2D uScene;
   uniform sampler2D uBloom;
   uniform float uBloom0;      // bloom intensity
-  uniform float uCrt;         // 0 = flat, 1 = full CRT
+  // How much of the filter to lay over the frame: 0 is flat, 1 is the full tube. Every part
+  // of it is scaled by this rather than switched by it, so a half strength is a gentler
+  // curve, a narrower aberration, shallower scanlines and a lighter vignette all at once.
+  uniform float uCrt;
   uniform float uTime;
   uniform vec3 uWarp;         // xy = ripple centre in uv, z = strength (0 = off)
   uniform float uAspect;
@@ -405,11 +408,16 @@ export const COMPOSITE_FS = `#version 300 es
   }
   void main() {
     vec2 uv = vUV;
-    if (uCrt > 0.5) {
+    if (uCrt > 0.001) {
+      // The curve gets its own, slower ramp. It is a geometric change where the rest of the
+      // filter is shading, so it reads far stronger than its share: scaled with everything
+      // else, a middle setting was all curve and no tube. Squared, so it is gentler through
+      // the middle of the range and exactly itself at full strength.
+      float bend = uCrt * uCrt;
       // gentle barrel curvature about the centre
       vec2 c = uv * 2.0 - 1.0;
       float r2 = dot(c, c);
-      c *= 1.0 + r2 * vec2(0.022, 0.030);
+      c *= 1.0 + r2 * vec2(0.022, 0.030) * bend;
       uv = c * 0.5 + 0.5;
       if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
         frag = vec4(0.0, 0.0, 0.0, 1.0);
@@ -422,15 +430,15 @@ export const COMPOSITE_FS = `#version 300 es
         col = torn(uv, rip);
       } else {
         // chromatic aberration grows toward the edges
-        float ca = 0.0006 + 0.0020 * r2;
+        float ca = (0.0006 + 0.0020 * r2) * uCrt;
         vec2 off = normalize(c + 1e-5) * ca;
         col.r = sceneSample(uv + off).r;
         col.g = sceneSample(uv).g;
         col.b = sceneSample(uv - off).b;
       }
       // scanlines + gentle vignette (keeps the curved screen edges visible)
-      float scan = 0.93 + 0.07 * sin(uv.y * 1400.0);
-      float vig = mix(1.0, smoothstep(2.7, 0.7, r2), 0.45);
+      float scan = 1.0 - (0.07 - 0.07 * sin(uv.y * 1400.0)) * uCrt;
+      float vig = mix(1.0, smoothstep(2.7, 0.7, r2), 0.45 * uCrt);
       frag = vec4(col * scan * vig, 1.0);
     } else {
       uv = lens(ripple(uv));

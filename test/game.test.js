@@ -11432,10 +11432,60 @@ test("resetting progress returns to the title with nothing kept", () => {
 test("settings survive a reset of progress", () => {
   const game = liveGame()
   game.setVolume(0.3)
-  game.setCrt(false)
+  game.setCrt(0)
   game.resetProgress()
   assert.equal(game.settings.volume, 0.3, "how loud the game is is not progress")
-  assert.equal(game.settings.crt, false)
+  // Asked by name rather than by the number behind it: what the row reports is the setting.
+  assert.equal(game.crtName(), "OFF", "and neither is how the picture is filtered")
+})
+
+test("the CRT filter has three levels, and steps through them", () => {
+  // The filter costs legibility, and how much is a matter of the screen: what reads as
+  // character on a monitor is a haze over a handheld. So it is a strength rather than a
+  // switch, and every part of it scales together - see CONFIG.CRT_LEVELS.
+  const game = liveGame()
+  const names = CONFIG.CRT_LEVELS.map((level) => level.name)
+  assert.deepEqual(names, ["OFF", "LOW", "HIGH"], "off, a happy medium, and the full tube")
+  const strengths = CONFIG.CRT_LEVELS.map((level) => level.strength)
+  assert.deepEqual(
+    [...strengths].sort((a, b) => a - b),
+    strengths,
+    "in menu order, so stepping right is more of it",
+  )
+  assert.equal(strengths[0], 0, "OFF is no filter at all")
+  assert.equal(strengths.at(-1), 1, "and HIGH is the whole of it, which is what a run had")
+
+  // A fresh run gets the intended look.
+  assert.equal(game.crtName(), "HIGH")
+
+  // Stepping walks the levels and wraps, as the HUD size row does.
+  game.setCrt(0)
+  assert.equal(game.crtName(), "OFF")
+  game.stepCrt(1)
+  assert.equal(game.crtName(), "LOW")
+  game.stepCrt(1)
+  assert.equal(game.crtName(), "HIGH")
+  game.stepCrt(1)
+  assert.equal(game.crtName(), "OFF", "and round again")
+  game.stepCrt(-1)
+  assert.equal(game.crtName(), "HIGH", "backwards too")
+
+  // The row reports and works it, and pressing it is the same as nudging it right.
+  const row = PAUSE_MENU.find((entry) => entry.name === "CRT FILTER")
+  game.setCrt(0)
+  row.action(game)
+  assert.equal(row.value(game), "LOW", "the row names the level it is on")
+  row.adjust(game, -1)
+  assert.equal(row.value(game), "OFF")
+
+  // A stored setting from before it had levels is a boolean, and lands on an end of the range.
+  game.settings.crt = true
+  assert.equal(game.crtName(), "HIGH", "an old save that had it on gets the full tube")
+  game.settings.crt = false
+  assert.equal(game.crtName(), "OFF", "and one that had it off stays off")
+  // Anything in between snaps to the nearest level rather than being kept as it is.
+  assert.equal(game.crtStrength(0.4), CONFIG.CRT_LEVELS[1].strength)
+  assert.equal(game.crtStrength(0.9), CONFIG.CRT_LEVELS[2].strength)
 })
 
 test("adjusting the volume plays a tone at the level just set", async () => {
