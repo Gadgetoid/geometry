@@ -1786,33 +1786,9 @@ export class GameView {
       bold: selected,
       color: asking ? PALETTE.ui.warn : selected ? PALETTE.text.bright : PALETTE.text.normal,
     })
-    // A row offering a choice shows all of them with the one it is set to lit, so what
-    // pressing the row will do is readable without moving the cursor onto it. Laid out
-    // from the right, so the list ends where a plain row's value would.
-    const choices = !asking && !waiting && row.choices ? row.choices(game) : null
     const small = size - 2
     let right = x1
-    if (choices) {
-      for (let i = choices.options.length - 1; i >= 0; i--) {
-        const picked = i === choices.at
-        r.text(choices.options[i], right, y, {
-          size: small,
-          bold: picked,
-          color: picked ? PALETTE.fx.flash : PALETTE.text.muted,
-          align: "right",
-        })
-        right -= textWidth(choices.options[i], small)
-        if (i > 0) {
-          r.text(" / ", right, y, { size: small, color: PALETTE.text.muted, align: "right" })
-          right -= textWidth(" / ", small)
-        }
-      }
-    }
-    const value = choices
-      ? ""
-      : asking
-        ? row.confirm
-        : waiting || (row.value ? row.value(game) : "")
+    const value = asking ? row.confirm : waiting || (row.value ? row.value(game) : "")
     // A second fact about the row, sat to the left of whatever the row already shows on the right:
     // what it is set to do is one thing, and whether it does it without being asked is another.
     // Left of it rather than tacked on, so the values stay in their column down the page. Lit,
@@ -1986,9 +1962,8 @@ export class GameView {
         y = top + i * rowHeight
       const selected = game.pauseSelection === i
       const asking = this.#menuRow(game, row, selected, leftX, rightX, y, 17, flagRight)
-      // a scale gets arrows, so it is clear it is adjusted rather than pressed. A row
-      // showing its choices already reads as one, and the arrows would sit over them.
-      if (selected && row.adjust && !asking && !row.choices) {
+      // a scale gets arrows, so it is clear it is adjusted rather than pressed
+      if (selected && row.adjust && !asking) {
         r.text("<", leftX + 264, y, { size: 14, color: PALETTE.text.muted })
         r.text(">", rightX - 80, y, { size: 14, color: PALETTE.text.muted })
       }
