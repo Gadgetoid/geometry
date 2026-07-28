@@ -378,8 +378,11 @@ export class Game {
   ownsEquipment(slot, id) {
     return (this.upgrades.owned[slot] ?? []).includes(id)
   }
+  // Nothing left to buy in a slot, which is what the shop marks as MAX. Against what the
+  // yard sells rather than every entry in the slot: a `locked` option is not for sale at
+  // all, so counting them left every row unable to ever report itself finished.
   ownsEveryOption(slot) {
-    return EQUIPMENT[slot].options.every((option) => this.ownsEquipment(slot, option.id))
+    return yardOptions(slot).every((option) => this.ownsEquipment(slot, option.id))
   }
 
   // Fit something the run already owns. Free, and it re-mounts the module.
@@ -3190,7 +3193,12 @@ export class Game {
       // The top of a ladder is the best of it. A slot that is a choice rather than a climb
       // has no best, so it takes the one the yard fits: the alternatives are trades, and
       // picking the last of them by position would just mean the slowest drive.
-      const wanted = spec.ladder ? spec.options[spec.options.length - 1] : spec.options[0]
+      //
+      // The yard's list, not the whole slot. What another hull carries is appended after
+      // the ladder, so the last entry outright is a found option: this page was fitting a
+      // dart's field, a hunting array and a dart's railgun in place of the marks it means.
+      const offered = yardOptions(slot)
+      const wanted = spec.ladder ? offered[offered.length - 1] : offered[0]
       this.fitEquipment(slot, wanted.id)
     }
     for (const row of SHOP) {

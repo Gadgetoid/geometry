@@ -1762,13 +1762,26 @@ test("the dev page reaches every part of the game without playing up to it", () 
     )
   }
 
-  // Fully upgrading fits the top of every ladder and the last core.
+  // Fully upgrading fits the top of every ladder and the last core. Measured against the
+  // yard's own list rather than the whole slot: what another hull carries is appended after
+  // the ladder, so the last entry outright is a found option and never what this row means.
   row("FULLY UPGRADE").action(game)
-  assert.equal(game.fittedEquipment("laser"), EQUIPMENT.laser.options.at(-1).id)
+  assert.equal(game.fittedEquipment("laser"), yardOptions("laser").at(-1).id)
   assert.equal(game.upgrades.core, shopRow(game, "core").levels.length - 1)
   // A slot that is a choice rather than a climb takes what the yard fits: the last by
   // position would just mean the slowest drive.
-  assert.equal(game.fittedEquipment("engine"), EQUIPMENT.engine.options[0].id)
+  assert.equal(game.fittedEquipment("engine"), yardOptions("engine")[0].id)
+  // And nothing it fitted is a found option, in any slot. A page showing the best the shop
+  // sells must not quietly put a dart's field and a dart's railgun on the ship instead.
+  for (const slot of Object.keys(EQUIPMENT)) {
+    const held = game.upgrades.fitted[slot]
+    for (const id of (Array.isArray(held) ? held : [held]).filter(Boolean)) {
+      assert.ok(
+        yardOptions(slot).some((option) => option.id === id),
+        `FULLY UPGRADE fitted ${id} in ${slot}, which the yard does not sell`,
+      )
+    }
+  }
 
   // The spawn rows are a page of their own, since there are more of them than the rest
   // of the dev tools put together.
@@ -4454,6 +4467,36 @@ test("the shop calls the spare ships LIVES", () => {
   const game = liveGame()
   game.enterShop()
   assert.equal(game.shopRowById("life").name, "LIVES")
+})
+
+test("an equipment row reports itself finished once the yard has nothing left to sell", () => {
+  // What "nothing left to buy" means is what the yard offers, not every entry in the slot:
+  // a `locked` option is what another hull carries and is never for sale, so counting those
+  // left every row on the page unable to ever go green however much had been bought.
+  const game = liveGame()
+  game.enterShop()
+  game.devFreeBuys = true
+  for (const slot of Object.keys(EQUIPMENT)) {
+    const row = game.shopRowById(slot)
+    assert.ok(row, `the shop should have a ${slot} row`)
+    assert.equal(row.maxed(game), false, `${slot} starts with something to buy`)
+    for (const option of yardOptions(slot)) {
+      game.buyEquipment(slot, option.id)
+    }
+    assert.equal(
+      row.maxed(game),
+      true,
+      `${slot} should read MAX once every mark the yard sells is owned`,
+    )
+    // And it says so without the run having found what other hulls carry, which is the
+    // whole point: those cannot be bought at any price.
+    const locked = EQUIPMENT[slot].options.filter((option) => option.locked)
+    assert.ok(locked.length > 0, `${slot} has found-only options, or this proves nothing`)
+    assert.ok(
+      locked.every((option) => !game.ownsEquipment(slot, option.id)),
+      `${slot} should still be missing its found-only options`,
+    )
+  }
 })
 
 test("a dev build offers its tools first, and a testing arena opens on them", () => {
