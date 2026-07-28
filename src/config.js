@@ -251,7 +251,7 @@ export const CONFIG = {
   UI_SCALES: [1, 1.5, 2],
   // What a spare ship costs. A repair is priced against it: patching a hull back to whole is worth
   // what it would have cost to lose it, and half a hull is half of that.
-  LIFE_COST: 60,
+  LIFE_COST: 90,
 
   // audio. Every effect is mixed through MASTER_VOLUME, so its own level only sets
   // where it sits against the others and this one number sets how loud the game is.
@@ -1657,7 +1657,7 @@ export const CORE_TYPES = {
         energy: 630,
         regen: 60,
         special: 2,
-        cost: 45,
+        cost: 70,
         name: "CORE MK II",
         desc: "630 charge, refilling at 60 a second, and a second special slot.",
       },
@@ -1665,7 +1665,7 @@ export const CORE_TYPES = {
         energy: 950,
         regen: 88,
         special: 3,
-        cost: 100,
+        cost: 150,
         name: "CORE MK III",
         desc: "950 charge at 88 a second, and a third slot to spend it through.",
       },
@@ -1673,7 +1673,7 @@ export const CORE_TYPES = {
         energy: 1260,
         regen: 116,
         special: 4,
-        cost: 155,
+        cost: 235,
         name: "CORE MK IV",
         desc: "1260 charge at 116 a second, and the fourth slot: everything the hull will take.",
       },
@@ -2826,25 +2826,25 @@ export const EQUIPMENT = {
         id: "playerShieldMk1",
         name: "SHIELD MK I",
         desc: "A bubble at last. Turns damage into energy drain until the cell gives out.",
-        cost: 40,
+        cost: 60,
       },
       {
         id: "playerShieldMk2",
         name: "SHIELD MK II",
         desc: "Drains 1.44 energy a point instead of 2, so the same cell soaks more.",
-        cost: 85,
+        cost: 130,
       },
       {
         id: "playerShieldMk3",
         name: "SHIELD MK III",
         desc: "A point of damage costs a point of energy.",
-        cost: 130,
+        cost: 195,
       },
       {
         id: "playerShieldMk4",
         name: "SHIELD MK IV",
         desc: "0.64 a point: the cell goes three times as far against fire as Mk I.",
-        cost: 175,
+        cost: 265,
       },
       // Found rather than sold: what another hull carries. See `locked`.
       {
@@ -2899,19 +2899,19 @@ export const EQUIPMENT = {
         id: "surveyMk2",
         name: "RADAR MK II",
         desc: "Adds loose ore, so a rival cannot quietly clear up behind you.",
-        cost: 60,
+        cost: 90,
       },
       {
         id: "surveyMk3",
         name: "RADAR MK III",
         desc: "Adds hulls, so what is hunting you is on the edge of the screen before it arrives.",
-        cost: 110,
+        cost: 165,
       },
       {
         id: "surveyMk4",
         name: "RADAR MK IV",
         desc: "Adds specials, so nothing drifting past is missed.",
-        cost: 160,
+        cost: 240,
       },
       // Found rather than sold: what another hull carries. See `locked`.
       {
@@ -2950,7 +2950,7 @@ export const EQUIPMENT = {
         id: "vectorJets",
         name: "VECTOR JETS",
         desc: "Fast but harder to master.",
-        cost: 70,
+        cost: 105,
       },
       // Found rather than sold: what another hull carries. See `locked`.
       {
@@ -2995,13 +2995,13 @@ export const EQUIPMENT = {
         id: "defenseBlaster",
         name: "BLASTER",
         desc: "Single heavy rounds out to 340. Reaches a rival before it reaches you.",
-        cost: 85,
+        cost: 130,
       },
       {
         id: "defenseFlak",
         name: "FLAK",
         desc: "A stream of light rounds, harder hitting but only out to 240.",
-        cost: 85,
+        cost: 130,
       },
       // Found rather than sold: what another hull carries. See `locked`.
       {
@@ -3050,25 +3050,25 @@ export const EQUIPMENT = {
         id: "playerLaserMk2",
         name: "BEAM MK II",
         desc: "Charges half again as fast, so a full shot comes round sooner.",
-        cost: 45,
+        cost: 70,
       },
       {
         id: "playerLaserMk3",
         name: "BEAM MK III",
         desc: "A charge costs 83 energy instead of 150, so the cell goes further.",
-        cost: 90,
+        cost: 135,
       },
       {
         id: "playerLaserMk4",
         name: "BEAM MK IV",
         desc: "Hits for 57 rather than 38: one shot fewer to strip a shield and cut a hull.",
-        cost: 135,
+        cost: 205,
       },
       {
         id: "playerLaserMk5",
         name: "BEAM MK V",
         desc: "Overdrive: hold past full charge to wind up a shot that shatters a rock.",
-        cost: 180,
+        cost: 270,
       },
       // Found rather than sold: what another hull carries. See `locked`.
       {
@@ -3145,7 +3145,7 @@ export const EQUIPMENT = {
         id: "vectoredDrive",
         name: "VECTORED DRIVE",
         desc: "Backs away under DOWN or S. Less thrust, so less speed and less push.",
-        cost: 55,
+        cost: 85,
       },
       // Found rather than sold: what another hull carries. See `locked`.
       {
@@ -3290,7 +3290,7 @@ export const SPECIAL_TYPES = {
     desc: "A shove that throws rocks and shot clear of the ship. A way out of a squeeze, not a way to sweep a sector.",
     icon: "R",
     colour: PALETTE.special.repel,
-    cost: 90,
+    cost: 135,
     buyable: true,
     mode: "pulse",
     energy: 0.22,
@@ -3328,7 +3328,7 @@ export const SPECIAL_TYPES = {
     desc: "Fills the cell in one go, and is gone with it.",
     icon: "F",
     colour: PALETTE.special.refuel,
-    cost: 70,
+    cost: 105,
     buyable: true,
     mode: "single",
     energy: 0,
@@ -3344,7 +3344,7 @@ export const SPECIAL_TYPES = {
     short: "BOOST",
     icon: "B",
     colour: PALETTE.special.booster,
-    cost: 140,
+    cost: 210,
     buyable: true,
     mode: "timed",
     energy: 0.38,
@@ -3365,7 +3365,7 @@ export const SPECIAL_TYPES = {
     short: "MULTI",
     icon: "L",
     colour: PALETTE.special.multi,
-    cost: 130,
+    cost: 195,
     buyable: true,
     mode: "timed",
     energy: 0.44,
@@ -3383,7 +3383,7 @@ export const SPECIAL_TYPES = {
     short: "MAGNET",
     icon: "M",
     colour: PALETTE.special.magnet,
-    cost: 100,
+    cost: 150,
     buyable: true,
     mode: "passive",
     pull: CONFIG.ORE_PASSIVE_PULL,
@@ -3402,7 +3402,7 @@ export const SPECIAL_TYPES = {
     desc: "Mends the hull while you carry it, slowly, out of the cell.",
     icon: "H",
     colour: PALETTE.special.hullRegen,
-    cost: 120,
+    cost: 180,
     buyable: true,
     mode: "passive",
     repair: 0.022,
@@ -3416,7 +3416,7 @@ export const SPECIAL_TYPES = {
     desc: "Nothing hunting the ship can see it. It runs on the cell, and firing gives the position away.",
     icon: "S",
     colour: PALETTE.special.stealth,
-    cost: 160,
+    cost: 240,
     buyable: true,
     mode: "toggle",
     drain: 0.2,

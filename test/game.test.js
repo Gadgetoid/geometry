@@ -4561,8 +4561,10 @@ test("the specials boxes start where the rows above name what they have fitted",
       "both start where that column does",
     )
   }
-  // And they still stop short of the prices, which own the right-hand edge.
-  const price = drawn.text.find((t) => t.text === "60 ore")
+  // And they still stop short of the prices, which own the right-hand edge. Found by shape rather
+  // than by a figure, so repricing the shop does not rot the layout test.
+  const price = drawn.text.filter((t) => /^\d+ ore$/.test(t.text)).sort((a, b) => a.x - b.x)[0]
+  assert.ok(price, "some row shows a price")
   const widest = rows.map((row) => row.at(-1)).sort((a, b) => b.x - a.x)[0]
   assert.ok(widest.x + widest.w < price.x, "clear of the price column")
 })
