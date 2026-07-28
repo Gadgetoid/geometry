@@ -3336,6 +3336,8 @@ export function freshEquipment() {
 //   pullRange       how far that attraction reaches, or the whole sector without one
 //   repair          hull points a second mended, as a fraction of the hull's own maximum
 //   repairCost      what a point of that costs, as a fraction of the cell
+//   repairFloor     the share of the cell it will not mend below, so it can never hold the
+//                   ship at nothing
 //   tintsShip       the hull and the energy bar take this entry's `colour`
 //   invisible       nothing hunting the player can see it, see Game.visiblePlayer
 //   hullAlpha       the hull is drawn this solid
@@ -3463,8 +3465,14 @@ export const SPECIAL_TYPES = {
   // the cell quadruples across the core ladder while its regen only trebles, so a flat
   // 26 a point ran a net 8 a second down at the bottom of the ladder and a net 76 a second
   // *up* at the top - which is to say it was free on an upgraded ship, and mending is the
-  // one thing that should never be. As a fraction the drain sits at about 1.3 times regen
-  // at every level, so it always costs the cell and never costs dramatically more.
+  // one thing that should never be.
+  //
+  // `repairFloor` is what makes that safe. The drain is around 1.3 times regen at every
+  // level, so left to itself mending empties the cell and then holds it at nothing: the
+  // bubble stays down, the laser cannot be charged, and the ship is unable to fight for
+  // as long as it is hurt. It mends down to this share of the cell and no further, so the
+  // cost is felt as most of the cell and never as all of it. Set clear of the player
+  // bubble's own `recoverAt` of 0.35, or the shield would flicker on the threshold.
   hullRegen: {
     fromSector: 5,
     label: "HULL REGEN",
@@ -3477,6 +3485,7 @@ export const SPECIAL_TYPES = {
     mode: "passive",
     repair: 0.022,
     repairCost: 0.08,
+    repairFloor: 0.45,
   },
   // Held on rather than triggered: it costs energy for as long as it runs, and
   // firing the main laser gives the position away and drops it.

@@ -3832,15 +3832,22 @@ export class PlayerShip extends Ship {
     // maximum, so it takes the same time to put any hull back together.
     const mending = this.buffWith("repair")
     const mend = mending ? mending.repair : 0
-    if (mend > 0 && this.energy > 0 && this.hull < this.type.hull) {
+    // And it stops at a floor rather than at empty. Mending draws more than regen supplies,
+    // so a mend allowed to spend the last of the cell holds it at nothing for as long as the
+    // hull is hurt: bubble down, laser uncharged, and a ship that cannot fight while it is
+    // being repaired. What it may spend is the cell above the floor, so the cost is felt as
+    // most of the cell and never as all of it.
+    const floor = (mending && mending.repairFloor ? mending.repairFloor : 0) * this.energyMax
+    const spare = this.energy - floor
+    if (mend > 0 && spare > 0 && this.hull < this.type.hull) {
       // What it mends this frame, and what that costs: paid as it mends, so a whole hull
-      // costs nothing to carry, and never more than the cell has left to give. The price is
+      // costs nothing to carry, and never more than the cell has to spare. The price is
       // a fraction of the cell a point, as every other cost a special charges is, so a
       // bigger cell does not make mending free.
       const price = (mending.repairCost ?? 0) * this.energyMax
       let points = Math.min(mend * this.type.hull * dt, this.type.hull - this.hull)
       if (price > 0) {
-        points = Math.min(points, this.energy / price)
+        points = Math.min(points, spare / price)
         this.energy = Math.max(0, this.energy - points * price)
       }
       this.hull += points

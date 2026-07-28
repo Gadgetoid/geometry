@@ -5824,29 +5824,51 @@ test("hull regen mends out of the cell, and a whole hull costs nothing", () => {
   run(whole, 20)
   assert.equal(whole.player.energy, cell, "a hull with nothing missing is free to carry")
 
-  // Mending, it puts the hull back and empties the cell doing it.
+  // Mending, it puts the hull back and takes most of the cell doing it.
   const hurt = armed()
   hurt.player.hull = 1
   const lowest = run(hurt, 70)
   assert.equal(hurt.player.hull, hurt.player.type.hull, "the hull comes back")
   assert.ok(
-    lowest < hurt.player.energyMax * 0.2,
+    lowest < hurt.player.energyMax * (spec.repairFloor + 0.05),
     `and the cell paid for it, low of ${lowest.toFixed(0)}`,
   )
 
-  // And it stays a real trade on a bigger cell. `repairCost` is a fraction of the cell
-  // rather than an amount, so what mending draws grows with what it draws on: quoted flat
-  // it cost 40 a second at every level against a regen running 32 to 116, which made
-  // mending a net *gain* at the top of the ladder and free on an upgraded ship.
+  // At every core level it costs the cell, and at none of them does it hold the cell at
+  // nothing. `repairCost` is a fraction of the cell rather than an amount, so what mending
+  // draws grows with what it draws on: quoted flat it cost 40 a second at every level
+  // against a regen running 32 to 116, which made mending free at the top of the ladder.
+  // As a fraction it draws about 1.3 times regen, which is *more* than the cell takes in,
+  // and left to itself it emptied the cell and then pinned it there for as long as the hull
+  // was hurt: bubble down, laser uncharged, and a ship unable to fight while being mended.
+  // `repairFloor` is the share of the cell it will not mend below.
   for (let level = 0; level < CORE_TYPES.minerCore.levels.length; level++) {
     const game = armed(level)
-    game.player.hull = 1
+    const player = game.player
+    player.hull = 1
+    player.energy = 0 // as if it had just been spent, which is when mending matters
     const low = run(game, 40)
+    const floor = player.energyMax * spec.repairFloor
     assert.ok(
-      low < game.player.energyMax * 0.5,
-      `at core level ${level} mending should cost the cell, low of ${low.toFixed(0)} of ${game.player.energyMax}`,
+      low < player.energyMax * (spec.repairFloor + 0.05),
+      `at core level ${level} mending should cost the cell, low of ${low.toFixed(0)} of ${player.energyMax}`,
+    )
+    // The property the whole floor exists for: an emptied cell comes back while mending.
+    assert.ok(
+      player.energy >= floor - 1,
+      `at core level ${level} the cell should recover to its floor of ${floor.toFixed(0)}, got ${player.energy.toFixed(0)}`,
+    )
+    assert.ok(
+      player.hull > 1,
+      `and the hull should still be mending, got ${player.hull.toFixed(1)}`,
     )
   }
+  // And the floor clears what the bubble needs to come back, or mending would cost the shield.
+  const bubble = SHIELD_TYPES[optionAt("shield", 0)]
+  assert.ok(
+    spec.repairFloor > bubble.recoverAt,
+    `the floor of ${spec.repairFloor} should clear the bubble's own recovery level of ${bubble.recoverAt}`,
+  )
 
   // It is the first special a run can find, since it is the one worth a slot in trouble.
   const gates = SPECIAL_IDS.map((id) => SPECIAL_TYPES[id].fromSector ?? 0)
