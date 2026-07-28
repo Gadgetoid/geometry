@@ -166,6 +166,11 @@ export class WebGLRenderer extends Renderer {
     this.gl = gl
     this.crtEnabled = true
     this.time = 0
+    // How bright a pixel has to be before it blooms, and how much of the blurred
+    // result is added back. Both are settings, so effects.html can work them
+    // against a live frame.
+    this.bloomThreshold = 0.55
+    this.bloomIntensity = 1.25
     this.warp = [0, 0, 0] // ripple centre in uv plus strength
     // Space bent and space torn, packed as vec4s for the composite pass.
     this.lensData = new Float32Array(LENS_LIMIT * 4)
@@ -897,7 +902,7 @@ export class WebGLRenderer extends Renderer {
     gl.viewport(0, 0, bw, bh)
     gl.useProgram(this.progs.bright)
     this.#bindTex(this.progs.bright, "uTex", this.scene.tex, 0)
-    gl.uniform1f(this.#uniform(this.progs.bright, "uThreshold"), 0.55)
+    gl.uniform1f(this.#uniform(this.progs.bright, "uThreshold"), this.bloomThreshold)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
 
     // separable blur, two iterations for a wide, soft glow
@@ -932,7 +937,7 @@ export class WebGLRenderer extends Renderer {
     gl.useProgram(prog)
     this.#bindTex(prog, "uScene", this.scene.tex, 0)
     this.#bindTex(prog, "uBloom", this.bloomA.tex, 1)
-    gl.uniform1f(this.#uniform(prog, "uBloom0"), 1.25)
+    gl.uniform1f(this.#uniform(prog, "uBloom0"), this.bloomIntensity)
     gl.uniform1f(this.#uniform(prog, "uCrt"), this.crtEnabled ? 1 : 0)
     gl.uniform1f(this.#uniform(prog, "uTime"), this.time)
     gl.uniform3f(this.#uniform(prog, "uWarp"), this.warp[0], this.warp[1], this.warp[2])
