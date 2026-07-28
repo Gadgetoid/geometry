@@ -4759,6 +4759,43 @@ test("a special says what it does, wherever it is being looked at", () => {
   assert.equal(sell.desc(game, 0), SPECIAL_TYPES[carried.id].desc)
 })
 
+test("a row drawn as boxes shows no price of its own", () => {
+  // What a turret costs depends on which mount and which gun, which is the pop-over's
+  // business. The row was falling through to the price column and reading "0 ore".
+  const game = liveGame()
+  game.enterShop()
+  const drawn = []
+  const renderer = new Proxy(
+    {
+      text: (text, x, y, opts) =>
+        drawn.push({
+          text: String(text).trim(),
+          x,
+          y,
+          size: opts && opts.size,
+          align: opts && opts.align,
+        }),
+    },
+    { get: (target, key) => (key in target ? target[key] : () => {}) },
+  )
+  new GameView(renderer).render(game)
+  const label = drawn.find((row) => row.size === 17 && row.text.replace("> ", "") === "TURRET")
+  assert.ok(label, "the turret row is drawn")
+  const priced = drawn.filter(
+    (row) => row.align === "right" && row.size === 16 && Math.abs(row.y - label.y) < 2 && row.text,
+  )
+  assert.equal(priced.length, 0, `nothing in the price column, got ${JSON.stringify(priced)}`)
+
+  // While a row that is bought outright still says what it costs.
+  const lives = drawn.find((row) => row.size === 17 && row.text.replace("> ", "") === "LIVES")
+  assert.ok(
+    drawn.some(
+      (row) => row.align === "right" && Math.abs(row.y - lives.y) < 2 && /ore$/.test(row.text),
+    ),
+    "and a spare ship still shows its price",
+  )
+})
+
 test("a turret is drawn on its mount, lettered as a special is", () => {
   const game = liveGame()
   game.upgrades.owned.turret = ["defenseFlak"]

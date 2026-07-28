@@ -1050,7 +1050,8 @@ export class GameView {
       // which option is chosen in there, so the column marks it as a way in instead.
       // A row drawn as boxes has its way in on the boxes themselves, so it is not also
       // marked as one in the price column.
-      const opens = !!((item.equipment || item.levels) && !game.boxesOnRow(row))
+      const boxes = game.boxesOnRow(row) > 0
+      const opens = !!((item.equipment || item.levels) && !boxes)
       r.text(
         `${selected ? "> " : "  "}${item.name}`,
         leftX + (item.inset ? SHOP_LAYOUT.insetBy : 0),
@@ -1091,15 +1092,19 @@ export class GameView {
           color: openedHere ? PALETTE.text.bright : PALETTE.text.faint,
         })
       }
-      const price = opens
-        ? maxed
-          ? "MAX"
-          : ">"
-        : maxed
-          ? "MAX"
-          : game.devMode
-            ? "FREE"
-            : `${cost} ore`
+      // A row drawn as boxes has no price of its own: what it costs depends on which box
+      // and which option, which is the pop-over's business. It showed "0 ore".
+      const price = boxes
+        ? ""
+        : opens
+          ? maxed
+            ? "MAX"
+            : ">"
+          : maxed
+            ? "MAX"
+            : game.devMode
+              ? "FREE"
+              : `${cost} ore`
       r.text(price, rightX, y, {
         size: 16,
         color:
