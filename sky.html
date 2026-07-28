@@ -1,0 +1,1399 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GEOMETRY II - SKY</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+        --cyan: #5fd7ff;
+        --amber: #ffb14b;
+        --red: #ff5b5b;
+        --edge: #1c3050;
+        --panel: #070c16;
+        --grid: #12203a;
+        --text: #bcd0ee;
+        --dim: #7fa0c8;
+        --muted: #5f79a6;
+        --alien: #5cff9a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #02040a;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: rgba(2, 4, 10, 0.94);
+        border-bottom: 1px solid var(--edge);
+        padding: 10px 20px;
+        backdrop-filter: blur(6px);
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+      h1 {
+        font-size: 13px;
+        letter-spacing: 0.2em;
+        color: var(--cyan);
+        margin: 0;
+      }
+      h1 span {
+        color: var(--muted);
+        letter-spacing: 0.06em;
+      }
+      /* One sector control above everything it scopes: the rendered sky, the arc
+         readings and the palette each world kind is shown in all follow it. */
+      .filters {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        flex-wrap: wrap;
+      }
+      label {
+        color: var(--muted);
+        letter-spacing: 0.08em;
+        font-size: 10px;
+      }
+      input[type="number"] {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text);
+        background: rgba(10, 20, 38, 0.75);
+        border: 1px solid var(--edge);
+        border-radius: 5px;
+        padding: 4px 6px;
+        width: 62px;
+      }
+      input[type="range"] {
+        accent-color: var(--cyan);
+        width: 150px;
+      }
+      input[type="color"] {
+        width: 34px;
+        height: 22px;
+        padding: 0;
+        border: 1px solid var(--edge);
+        border-radius: 4px;
+        background: none;
+        cursor: pointer;
+      }
+      select,
+      textarea {
+        font-family: var(--mono);
+        color: var(--text);
+        background: rgba(10, 20, 38, 0.75);
+        border: 1px solid var(--edge);
+        border-radius: 5px;
+        padding: 4px 6px;
+        font-size: 11px;
+      }
+      button {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        color: var(--dim);
+        background: rgba(10, 20, 38, 0.75);
+        border: 1px solid var(--edge);
+        border-radius: 5px;
+        padding: 4px 8px;
+        cursor: pointer;
+      }
+      button:hover {
+        color: #fff;
+        border-color: var(--cyan);
+      }
+      button[aria-pressed="true"] {
+        color: #02040a;
+        background: var(--cyan);
+        border-color: var(--cyan);
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible {
+        outline: 1px solid var(--cyan);
+        outline-offset: 1px;
+      }
+      main {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 18px 20px 140px;
+      }
+      section {
+        margin: 30px 0;
+      }
+      h2 {
+        font-size: 11px;
+        letter-spacing: 0.22em;
+        color: var(--cyan);
+        border-bottom: 1px solid var(--edge);
+        padding-bottom: 6px;
+        margin: 0 0 4px;
+      }
+      h3 {
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        color: var(--amber);
+        margin: 18px 0 6px;
+      }
+      .note {
+        color: var(--muted);
+        margin: 6px 0 14px;
+        max-width: 108ch;
+      }
+      .note code,
+      code {
+        color: var(--dim);
+      }
+      .banner {
+        border: 1px solid var(--red);
+        color: var(--red);
+        padding: 12px 14px;
+        border-radius: 6px;
+        margin: 20px 0;
+        line-height: 1.8;
+      }
+      table {
+        border-collapse: collapse;
+        margin: 4px 0 2px;
+        font-variant-numeric: tabular-nums;
+      }
+      th,
+      td {
+        text-align: right;
+        padding: 2px 10px 2px 0;
+        border-bottom: 1px solid #0e1a2c;
+        white-space: nowrap;
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 400;
+        letter-spacing: 0.1em;
+        font-size: 10px;
+      }
+      th:first-child,
+      td:first-child {
+        text-align: left;
+      }
+      td.wrap {
+        white-space: normal;
+        text-align: left;
+        color: var(--muted);
+        max-width: 62ch;
+      }
+      /* A table of colour values is wider than the column it sits in, so it scrolls
+         within itself. */
+      .scroll {
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+      .swatch {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        vertical-align: -1px;
+        margin-right: 4px;
+      }
+      /* Every canvas holds the game's own 16:10 frame, so the composite pass maps
+         onto it without stretching whatever the page is resized to. */
+      .screen {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 1024/640;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #02040a;
+        border: 1px solid #0b1526;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        gap: 20px;
+        align-items: start;
+      }
+      @media (max-width: 1100px) {
+        .split {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      /* Labels for the world-kind grid, laid over the canvas on the same 4x2 the
+         planets are drawn on, so a name sits under the world it names. */
+      .tiles {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(2, 1fr);
+        pointer-events: none;
+      }
+      .tiles div {
+        align-self: end;
+        justify-self: center;
+        padding-bottom: 10px;
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        color: var(--dim);
+        text-shadow: 0 0 8px #02040a;
+      }
+      .tiles div b {
+        color: var(--muted);
+        font-weight: 400;
+      }
+      .controls {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 6px 10px;
+        align-items: center;
+        margin: 10px 0 14px;
+      }
+      .controls .val {
+        color: var(--dim);
+        font-size: 10px;
+        min-width: 5ch;
+        text-align: right;
+      }
+      .controls button {
+        justify-self: start;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 8px 0;
+      }
+      textarea {
+        width: 100%;
+        min-height: 380px;
+        line-height: 1.45;
+        white-space: pre;
+        tab-size: 2;
+        resize: vertical;
+      }
+      pre {
+        background: var(--panel);
+        border: 1px solid var(--edge);
+        border-radius: 6px;
+        padding: 10px 12px;
+        overflow-x: auto;
+        color: var(--dim);
+        margin: 8px 0;
+      }
+      .status {
+        border-radius: 5px;
+        padding: 6px 9px;
+        margin: 8px 0;
+        border: 1px solid var(--edge);
+        color: var(--muted);
+        white-space: pre-wrap;
+        min-height: 2.4em;
+      }
+      .status.bad {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      .status.good {
+        border-color: #1f4433;
+        color: var(--alien);
+      }
+      .bar-cell {
+        display: inline-block;
+        height: 7px;
+        background: var(--cyan);
+        border-radius: 1px;
+        vertical-align: 0;
+      }
+      dl {
+        margin: 6px 0 0;
+      }
+      dt {
+        color: var(--amber);
+        letter-spacing: 0.12em;
+        margin-top: 14px;
+      }
+      dd {
+        margin: 3px 0 0;
+        color: var(--muted);
+        max-width: 104ch;
+      }
+      .ramp {
+        display: flex;
+        gap: 1px;
+        margin: 8px 0 2px;
+      }
+      .ramp div {
+        flex: 1 1 0;
+        height: 26px;
+      }
+      .ramp div span {
+        display: block;
+        height: 50%;
+      }
+      .axis {
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="bar">
+        <h1>GEOMETRY II <span>SKY</span></h1>
+        <div class="filters">
+          <label for="sector">SECTOR</label>
+          <input id="sector" type="number" min="1" max="60" step="1" value="1" />
+          <input id="sectorRange" type="range" min="1" max="60" step="1" value="1" />
+          <span id="arcOut" class="val"></span>
+          <button id="btnAnimate" aria-pressed="true" title="Advance shader time">ANIMATE</button>
+          <button id="btnCrt" aria-pressed="false" title="CRT composite">CRT</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="page">
+      <section>
+        <h2>THE SECTOR</h2>
+        <p class="note">
+          A seeded nebula behind the planets a sector rolled, at half resolution and blurred for
+          depth of field, with the starfield sharp over the top.
+        </p>
+        <div class="split">
+          <div>
+            <div class="screen"><canvas id="skyCanvas"></canvas></div>
+            <div class="row">
+              <button id="btnPrev">&lt; PREV</button>
+              <button id="btnNext">NEXT &gt;</button>
+              <label for="skyDrift">DRIFT</label>
+              <input id="skyDrift" type="range" min="0" max="4" step="0.05" value="1" />
+              <span id="skyDriftOut" class="val"></span>
+            </div>
+          </div>
+          <div>
+            <h3>WHAT THIS SECTOR ROLLED</h3>
+            <div class="scroll"><table id="rollTable"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>THE ARC</h2>
+        <p class="note">
+          How far out a sector is, as 0 to 1: <code>sector / SKY.arcSectors</code>, clamped, so the
+          trend arrives at sector <span id="arcSectors"></span> and the sky holds there. Every
+          setting below is a pair read at that fraction, and a sector wanders off the trend by
+          <code>hueWander</code>.
+        </p>
+        <div class="scroll"><table id="arcTable"></table></div>
+
+        <h3>THE ANCHOR, SECTOR BY SECTOR</h3>
+        <p class="note">
+          Upper band A, lower band B. The wander is what makes the ramp jagged; the trend under it
+          runs from blue to ember the short way round the wheel, through violet.
+        </p>
+        <div class="ramp" id="hueRamp"></div>
+        <div class="axis"><span>1</span><span id="rampEnd"></span></div>
+
+        <h3>WHAT A SECTOR MAY ROLL</h3>
+        <p class="note">
+          A kind held back by <code>from</code> cannot come up until the arc reaches it, and one
+          weighted to nothing is out of the pool whatever its gate says. The share is the first pick
+          of a sector: once the emissive cap is spent, every glowing kind drops out and the rest
+          grow to fill the gap.
+        </p>
+        <div class="scroll"><table id="worldTable"></table></div>
+
+        <h3>HOW BIG, AND HOW NEAR</h3>
+        <p class="note">
+          A bigger world sits nearer and so parallaxes more, which is what <code>depth</code> buys.
+          Only one giant at a time, since the grid planets are spread over is three cells wide.
+        </p>
+        <div class="scroll"><table id="sizeTable"></table></div>
+      </section>
+
+      <section>
+        <h2>THE WORLD KINDS</h2>
+        <p class="note">
+          Every branch of the <code>uType</code> switch at the palette this sector would give it.
+          Sharp, with the depth-of-field blur skipped; bloom still applies, since a glowing world is
+          mostly what its glow does in the composite.
+        </p>
+        <div class="split">
+          <div>
+            <div class="screen">
+              <canvas id="kindsCanvas"></canvas>
+              <div class="tiles" id="kindLabels"></div>
+            </div>
+            <div class="row">
+              <button id="btnReroll">REROLL PALETTES</button>
+              <label for="kindLight">LIGHT</label>
+              <input id="kindLight" type="range" min="-3.14" max="3.14" step="0.01" value="-0.7" />
+              <span id="kindLightOut" class="val"></span>
+            </div>
+          </div>
+          <div>
+            <h3>PALETTES AT THIS SECTOR</h3>
+            <div class="scroll"><table id="kindTable"></table></div>
+          </div>
+        </div>
+
+        <h3>WHAT EACH BRANCH DOES</h3>
+        <dl id="kindDocs"></dl>
+      </section>
+
+      <section>
+        <h2>THE WORKBENCH</h2>
+        <p class="note">
+          One world, every uniform the shader takes, and the shader itself. Compiling swaps the
+          program this canvas draws through. A failed compile keeps the last working one and says
+          why.
+        </p>
+        <div class="split">
+          <div>
+            <div class="screen"><canvas id="benchCanvas"></canvas></div>
+            <div class="controls" id="benchControls"></div>
+            <div class="row">
+              <label for="benchType">TYPE</label>
+              <select id="benchType"></select>
+              <input id="benchTypeNum" type="number" min="0" max="63" step="1" value="0" />
+              <button id="btnPalette">PALETTE FROM SECTOR</button>
+            </div>
+          </div>
+          <div>
+            <h3>THE FRAGMENT SHADER</h3>
+            <div class="row">
+              <button id="btnCompile">COMPILE (CTRL+ENTER)</button>
+              <button id="btnRevert">REVERT TO GAME SHADER</button>
+            </div>
+            <div class="status" id="compileStatus"></div>
+            <textarea id="glsl" spellcheck="false" aria-label="planet fragment shader"></textarea>
+          </div>
+        </div>
+
+        <h3>PASTE-READY</h3>
+        <p class="note">
+          A kind of world is three edits: a name in <code>WORLD</code>, a branch in the shader, and
+          a row in <code>WORLDS</code> saying when it may turn up and how heavily.
+        </p>
+        <pre id="exportOut"></pre>
+      </section>
+
+      <section>
+        <h2>HOW THE PLANET SHADER WORKS</h2>
+        <p class="note">
+          A planet is one quad. The fragment shader is handed coordinates running -1 to 1 and works
+          out everything else from the distance to the middle. <code>PLANET_FS</code>, in the order
+          it runs.
+        </p>
+        <dl id="pipelineDocs"></dl>
+      </section>
+
+      <section>
+        <h2>HOW THE NEBULA WORKS</h2>
+        <p class="note">
+          One full-screen pass, two octaves of value-noise drifting against each other, and a
+          threshold high enough that most of the frame stays near-black. <code>NEBULA_FS</code>.
+        </p>
+        <dl id="nebulaDocs"></dl>
+      </section>
+    </main>
+
+    <script type="module">
+      // A view of the sky the game generates and the shaders that draw it.
+      //
+      // Three canvases, three renderers: the sector as the game draws it, the kinds laid
+      // out side by side, and one world with its shader open for editing. The last one
+      // swaps the planet program on the renderer it owns, so it needs a renderer to itself.
+
+      const page = document.getElementById("page")
+
+      let background, glrenderer, shaders, config, palette, math
+      try {
+        ;[background, glrenderer, shaders, config, palette, math] = await Promise.all([
+          import("./src/background.js"),
+          import("./src/glrenderer.js"),
+          import("./src/shaders.js"),
+          import("./src/config.js"),
+          import("./src/palette.js"),
+          import("./src/math.js"),
+        ])
+      } catch (err) {
+        page.innerHTML =
+          `<div class="banner">The game's modules could not be imported, and this page is ` +
+          `nothing without them. Serve the folder (<code>python3 -m http.server</code>) and open ` +
+          `it over http, or launch with <code>--allow-file-access-from-files</code>.<br />` +
+          `${String(err)}</div>`
+        throw err
+      }
+
+      const { Backdrop, SKY, WORLD, WORLDS, worldPalette } = background
+      const { WebGLRenderer } = glrenderer
+      const { PLANET_VS, PLANET_FS } = shaders
+      const { VIEW_W, VIEW_H } = config
+      const { PALETTE } = palette
+      const { mulberry32 } = math
+
+      // World kind numbers to the names they go by.
+      const KIND_NAME = Object.fromEntries(Object.entries(WORLD).map(([name, id]) => [id, name]))
+
+      // ---- helpers -----------------------------------------------------------
+      // SKY is a table of [early, late] pairs, each read at the arc.
+      const clamp01 = (v) => Math.max(0, Math.min(1, v))
+      const lerp = (from, to, t) => from + (to - from) * t
+      const at = (pair, arc) => lerp(pair[0], pair[1], arc)
+      const round = (v, places = 2) => {
+        const scale = 10 ** places
+        return Math.round(v * scale) / scale
+      }
+
+      function el(tag, props = {}, ...children) {
+        const node = Object.assign(document.createElement(tag), props)
+        for (const child of children.flat()) {
+          if (child != null && child !== false) {
+            node.append(child)
+          }
+        }
+        return node
+      }
+
+      function row(cells, tag = "td") {
+        return el(
+          "tr",
+          {},
+          cells.map((cell) => {
+            if (cell && cell.nodeType) {
+              return el(tag, {}, cell)
+            }
+            if (cell && typeof cell === "object") {
+              const node = el(tag, { className: cell.className || "" })
+              node.append(...[cell.content].flat().filter((c) => c != null))
+              return node
+            }
+            return el(tag, {}, String(cell ?? ""))
+          }),
+        )
+      }
+
+      function swatch(colour) {
+        return el("span", { className: "swatch", style: `background:${colour}` })
+      }
+
+      function swatched(colour) {
+        return el("span", {}, swatch(colour), el("span", {}, colour))
+      }
+
+      // Any CSS colour to "#rrggbb", so an hsl() the generator built can be handed to
+      // a colour input. Same scratch-context trick the renderer parses colours with.
+      const hexCtx = document.createElement("canvas").getContext("2d")
+      function toHex(colour) {
+        hexCtx.fillStyle = "#000000"
+        hexCtx.fillStyle = colour
+        const resolved = hexCtx.fillStyle
+        if (resolved.startsWith("#")) {
+          return resolved
+        }
+        const parts = resolved.match(/[\d.]+/g) || [0, 0, 0]
+        return (
+          "#" +
+          parts
+            .slice(0, 3)
+            .map((p) => Number(p).toString(16).padStart(2, "0"))
+            .join("")
+        )
+      }
+
+      // ---- the sector --------------------------------------------------------
+      const backdrop = new Backdrop()
+      let sector = 1
+      let arc = 0
+      // The seed the world-kind grid draws its palettes from. Rerolling it is how the
+      // jitter each kind allows can be seen without moving off the sector.
+      let paletteSeed = 7
+
+      // The anchor hue this sector settled on, which is the hue of nebula colour A.
+      function anchorHue() {
+        const match = backdrop.nebula.colorA.match(/hsl\(\s*([\d.]+)/)
+        return match ? Number(match[1]) : 0
+      }
+
+      // ---- renderers ---------------------------------------------------------
+      // One per canvas. The canvas is sized to its own box in device pixels and the
+      // whole of it is the content rect, so the composite pass fills it; the CSS holds
+      // every one of them to the game's 16:10 so nothing is stretched to get there.
+      function mount(canvas) {
+        const renderer = WebGLRenderer.create(canvas)
+        if (!renderer) {
+          return null
+        }
+        renderer.crtEnabled = false
+        const resize = () => {
+          const rect = canvas.getBoundingClientRect()
+          const dpr = Math.min(window.devicePixelRatio || 1, 2)
+          const w = Math.max(1, Math.round(rect.width * dpr))
+          const h = Math.max(1, Math.round(rect.height * dpr))
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w
+            canvas.height = h
+          }
+          renderer.setContentRect(0, 0, rect.width, rect.height, dpr)
+          dirty.all = true
+        }
+        new ResizeObserver(resize).observe(canvas)
+        resize()
+        return renderer
+      }
+
+      const dirty = { all: true }
+      const skyRenderer = mount(document.getElementById("skyCanvas"))
+      const kindsRenderer = mount(document.getElementById("kindsCanvas"))
+      const benchRenderer = mount(document.getElementById("benchCanvas"))
+      if (!skyRenderer || !kindsRenderer || !benchRenderer) {
+        page.innerHTML =
+          `<div class="banner">WEBGL2 REQUIRED<br />This browser could not create a WebGL2 ` +
+          `context, and every picture on this page is drawn through the game's own one.</div>`
+        throw new Error("WebGL2 unavailable")
+      }
+
+      // ---- the sector pass ---------------------------------------------------
+      // The order view.js draws the backdrop in: nebula, then planets, then the
+      // depth-of-field composite, then the stars over the top of it sharp.
+      function drawSector(time) {
+        const r = skyRenderer
+        r.beginFrame(time)
+        r.clearFrame(PALETTE.space)
+        const neb = backdrop.nebula
+        r.nebula(VIEW_W / 2, VIEW_H / 2, neb.colorA, neb.colorB, neb.seed)
+        // The slow cinematic sway the game puts on both background layers.
+        const cam = {
+          shakeX: 0,
+          shakeY: 0,
+          panX: Math.sin(time * 0.13) * 6,
+          panY: Math.cos(time * 0.17) * 4,
+        }
+        r.pushView(cam)
+        for (const p of backdrop.planets) {
+          r.planet(p.x, p.y, p.r, {
+            base: p.base,
+            hi: p.hi,
+            atmo: p.atmo,
+            emit: p.emit,
+            type: p.type,
+            seed: p.seed,
+            light: p.light,
+            depth: p.depth,
+          })
+        }
+        r.popView()
+        r.compositeBackground()
+        r.pushView(cam)
+        for (const star of backdrop.stars) {
+          // The twinkle and the size-with-depth the star pass in view.js uses.
+          const twinkle = 0.55 + 0.45 * Math.sin(star.twinkle + time * 1.5)
+          r.point(star.x, star.y, star.depth * 2.6 + 0.7, {
+            color: `rgb(${lerp(170, 232, star.depth) | 0},${lerp(198, 240, star.depth) | 0},255)`,
+            alpha: clamp01((0.4 + 0.6 * star.depth) * twinkle),
+            depth: star.depth,
+          })
+        }
+        r.popView()
+        r.endFrame()
+      }
+
+      // ---- the world-kind grid -----------------------------------------------
+      const KIND_COLS = 4
+      const KIND_ROWS = 2
+      const KIND_R = 96
+      const kindIds = Object.values(WORLD)
+
+      // Palettes for every kind at this sector. Each kind is given its own stream so
+      // one of them rolling a different number of values cannot shift the next.
+      function kindPalettes() {
+        const anchor = anchorHue()
+        return kindIds.map((type, i) => ({
+          type,
+          name: KIND_NAME[type],
+          ...worldPalette(type, anchor, arc, mulberry32(paletteSeed * 977 + i * 31 + 1)),
+        }))
+      }
+
+      let kinds = []
+      let kindLight = -0.7
+
+      function drawKinds(time) {
+        const r = kindsRenderer
+        r.beginFrame(time)
+        r.clearFrame(PALETTE.space)
+        // Nothing is drawn into the background target, so the depth-of-field pass has
+        // nothing to soften: this hands a black scene over and the planets land on it
+        // sharp, which is the whole point of the grid.
+        r.compositeBackground()
+        r.pushView({})
+        const cellW = VIEW_W / KIND_COLS
+        const cellH = VIEW_H / KIND_ROWS
+        kinds.forEach((kind, i) => {
+          const cx = (i % KIND_COLS) * cellW + cellW / 2
+          const cy = Math.floor(i / KIND_COLS) * cellH + cellH / 2 - 16
+          r.planet(cx, cy, KIND_R, {
+            base: kind.base,
+            hi: kind.hi,
+            atmo: kind.atmo,
+            emit: kind.emit,
+            type: kind.type,
+            seed: 3 + kind.type * 2.7,
+            light: kindLight,
+          })
+        })
+        r.popView()
+        r.endFrame()
+      }
+
+      // ---- the workbench -----------------------------------------------------
+      const bench = {
+        type: 0,
+        base: "#3a4a63",
+        hi: "#7f93a8",
+        atmo: "#8fb7d6",
+        emit: "#000000",
+        seed: 4,
+        light: -0.7,
+        radius: 210,
+        time: 0,
+      }
+
+      function drawBench(time) {
+        const r = benchRenderer
+        r.beginFrame(bench.animate ? time : bench.time)
+        r.clearFrame(PALETTE.space)
+        r.compositeBackground()
+        r.pushView({})
+        r.planet(VIEW_W / 2, VIEW_H / 2, bench.radius, {
+          base: bench.base,
+          hi: bench.hi,
+          atmo: bench.atmo,
+          emit: bench.emit,
+          type: bench.type,
+          seed: bench.seed,
+          light: bench.light,
+        })
+        r.popView()
+        r.endFrame()
+      }
+
+      // Compile a planet fragment shader and, if it builds, hand the program to the
+      // workbench renderer. Keeps the info log on its own, and leaves the working program
+      // in place when the new one fails.
+      function compilePlanet(source) {
+        const gl = benchRenderer.gl
+        const build = (type, src) => {
+          const shader = gl.createShader(type)
+          gl.shaderSource(shader, src)
+          gl.compileShader(shader)
+          if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            const log = gl.getShaderInfoLog(shader)
+            gl.deleteShader(shader)
+            return { error: log }
+          }
+          return { shader }
+        }
+        const vs = build(gl.VERTEX_SHADER, PLANET_VS)
+        if (vs.error) {
+          return { error: vs.error }
+        }
+        const fs = build(gl.FRAGMENT_SHADER, source)
+        if (fs.error) {
+          gl.deleteShader(vs.shader)
+          return { error: fs.error }
+        }
+        const prog = gl.createProgram()
+        gl.attachShader(prog, vs.shader)
+        gl.attachShader(prog, fs.shader)
+        gl.linkProgram(prog)
+        gl.deleteShader(vs.shader)
+        gl.deleteShader(fs.shader)
+        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+          const log = gl.getProgramInfoLog(prog)
+          gl.deleteProgram(prog)
+          return { error: log }
+        }
+        return { prog }
+      }
+
+      const glslBox = document.getElementById("glsl")
+      const compileStatus = document.getElementById("compileStatus")
+      glslBox.value = PLANET_FS
+
+      function applyShader() {
+        const result = compilePlanet(glslBox.value)
+        if (result.error) {
+          compileStatus.className = "status bad"
+          compileStatus.textContent = result.error.trim() || "the shader would not compile"
+          return
+        }
+        benchRenderer.progs.planet = result.prog
+        compileStatus.className = "status good"
+        const edited = glslBox.value !== PLANET_FS
+        compileStatus.textContent = edited
+          ? "compiled: this canvas is drawing through your edit"
+          : "compiled: this is the shader the game ships"
+        dirty.bench = true
+      }
+
+      // ---- tables ------------------------------------------------------------
+      // What each setting in the SKY table is for.
+      const SKY_NOTES = {
+        arcSectors: "How many sectors the trend takes to arrive. Past it the sky holds.",
+        hueEarly: "The anchor hue a run opens on.",
+        hueLate: "The anchor hue it arrives at, reached the short way round the wheel.",
+        hueWander: "How far either side of the trend a sector may land, so neighbours differ.",
+        nebulaGap:
+          "Degrees between the nebula's two hues: analogous and serene early, genuinely opposed late.",
+        nebulaSatA: "Saturation of the anchor cloud.",
+        nebulaLightA: "Lightness of the anchor cloud.",
+        nebulaSatB: "Saturation of the contrast cloud.",
+        nebulaLightB:
+          "Lightness of the contrast cloud. It ends darker than A, so a late sky is ember with a cold accent in its shadows and not the other way about.",
+        emissiveCap: "How many glowing worlds a sector may hold at once. Bloom is what limits it.",
+      }
+
+      function buildArcTable() {
+        const table = document.getElementById("arcTable")
+        table.replaceChildren()
+        table.append(row(["SETTING", "EARLY", "LATE", "AT THIS SECTOR", "WHAT IT IS"], "th"))
+        for (const [key, value] of Object.entries(SKY)) {
+          if (key === "sizes") {
+            continue
+          }
+          const pair = Array.isArray(value)
+          table.append(
+            row([
+              key,
+              pair ? value[0] : value,
+              pair ? value[1] : "",
+              pair ? round(at(value, arc)) : "",
+              { className: "wrap", content: SKY_NOTES[key] || "" },
+            ]),
+          )
+        }
+      }
+
+      // The pool as the generator would see it: gates applied, zero weights dropped.
+      function pool(entries) {
+        const live = entries.filter(
+          (entry) => arc >= (entry.from ?? 0) && at(entry.weight, arc) > 0,
+        )
+        const total = live.reduce((sum, entry) => sum + at(entry.weight, arc), 0)
+        return { live, total }
+      }
+
+      function shareCell(weight, total) {
+        const share = total > 0 ? weight / total : 0
+        return {
+          content: [
+            el("span", { className: "bar-cell", style: `width:${Math.round(share * 60)}px` }),
+            el("span", {}, ` ${Math.round(share * 100)}%`),
+          ],
+        }
+      }
+
+      function buildWorldTable() {
+        const table = document.getElementById("worldTable")
+        table.replaceChildren()
+        table.append(row(["KIND", "EARLY", "LATE", "FROM", "GLOWS", "NOW", "SHARE"], "th"))
+        const { live, total } = pool(WORLDS)
+        for (const entry of WORLDS) {
+          const open = arc >= (entry.from ?? 0)
+          const weight = at(entry.weight, arc)
+          const inPool = live.includes(entry)
+          table.append(
+            row([
+              KIND_NAME[entry.type] ?? `type ${entry.type}`,
+              entry.weight[0],
+              entry.weight[1],
+              entry.from != null ? `arc ${entry.from}` : "-",
+              entry.emissive ? "yes" : "-",
+              open ? round(weight) : "held",
+              inPool ? shareCell(weight, total) : { content: "-" },
+            ]),
+          )
+        }
+      }
+
+      function buildSizeTable() {
+        const table = document.getElementById("sizeTable")
+        table.replaceChildren()
+        table.append(row(["CLASS", "RADIUS", "DEPTH", "EARLY", "LATE", "NOW", "SHARE"], "th"))
+        const { live, total } = pool(SKY.sizes)
+        SKY.sizes.forEach((size, i) => {
+          const weight = at(size.weight, arc)
+          table.append(
+            row([
+              size.giant ? `${i} giant` : String(i),
+              `${size.r[0]} - ${size.r[1]}`,
+              `${size.depth[0]} - ${size.depth[1]}`,
+              size.weight[0],
+              size.weight[1],
+              round(weight),
+              live.includes(size) ? shareCell(weight, total) : { content: "-" },
+            ]),
+          )
+        })
+      }
+
+      function buildRollTable() {
+        const table = document.getElementById("rollTable")
+        table.replaceChildren()
+        table.append(row(["", "VALUE"], "th"))
+        const neb = backdrop.nebula
+        table.append(row(["sector", String(sector)]))
+        table.append(row(["arc", round(arc, 3)]))
+        const anchor = anchorHue()
+        table.append(
+          row([
+            "anchor hue",
+            { content: [swatch(`hsl(${anchor} 70% 55%)`), `${round(anchor, 1)} deg`] },
+          ]),
+        )
+        table.append(row(["nebula A", swatched(neb.colorA)]))
+        table.append(row(["nebula B", swatched(neb.colorB)]))
+        table.append(row(["nebula seed", round(neb.seed, 3)]))
+        table.append(row(["worlds", String(backdrop.planets.length)]))
+        table.append(
+          row(["glowing", String(backdrop.planets.filter((p) => p.emit !== "#000000").length)]),
+        )
+        table.append(row(["cap", String(Math.round(at(SKY.emissiveCap, arc)))]))
+        backdrop.planets.forEach((p, i) => {
+          const glows = p.emit !== "#000000"
+          table.append(row([`world ${i}`, KIND_NAME[p.type] ?? `type ${p.type}`]))
+          table.append(row(["  radius / depth", `${Math.round(p.r)} / ${round(p.depth, 3)}`]))
+          table.append(row(["  seed / light", `${round(p.seed)} / ${round(p.light)} rad`]))
+          table.append(
+            row(["  base / hi", { content: [swatch(p.base), swatch(p.hi), `${p.base} ${p.hi}`] }]),
+          )
+          table.append(
+            row([
+              "  atmo / emit",
+              {
+                content: [swatch(p.atmo), glows ? swatch(p.emit) : "", glows ? p.emit : "no glow"],
+              },
+            ]),
+          )
+        })
+      }
+
+      function buildHueRamp() {
+        const ramp = document.getElementById("hueRamp")
+        ramp.replaceChildren()
+        const probe = new Backdrop()
+        const end = SKY.arcSectors
+        for (let s = 1; s <= end; s++) {
+          probe.regenSector(s)
+          ramp.append(
+            el(
+              "div",
+              { title: `sector ${s}: ${probe.nebula.colorA} / ${probe.nebula.colorB}` },
+              el("span", { style: `background:${probe.nebula.colorA}` }),
+              el("span", { style: `background:${probe.nebula.colorB}` }),
+            ),
+          )
+        }
+        document.getElementById("rampEnd").textContent = String(end)
+      }
+
+      function buildKindTable() {
+        const table = document.getElementById("kindTable")
+        table.replaceChildren()
+        table.append(row(["KIND", "uType", "BASE", "HI", "ATMO", "EMIT"], "th"))
+        for (const kind of kinds) {
+          table.append(
+            row([
+              kind.name,
+              String(kind.type),
+              { content: [swatch(kind.base), kind.base] },
+              { content: [swatch(kind.hi), kind.hi] },
+              { content: [swatch(kind.atmo), kind.atmo] },
+              kind.emit === "#000000"
+                ? { content: "-" }
+                : { content: [swatch(kind.emit), kind.emit] },
+            ]),
+          )
+        }
+      }
+
+      function buildKindLabels() {
+        const labels = document.getElementById("kindLabels")
+        labels.replaceChildren()
+        for (const kind of kinds) {
+          labels.append(el("div", {}, kind.name.toUpperCase(), el("b", {}, ` ${kind.type}`)))
+        }
+      }
+
+      // ---- prose -------------------------------------------------------------
+      // What each branch of the switch actually does, in terms of the numbers in it.
+      const KIND_DOCS = [
+        [
+          "rocky",
+          "Two scales of the same noise: broad shapes from fbm at 2.2 and a finer mottle at 6.0, mixed a third of the way toward the mottle, then smoothstepped between base and hi. No glow. It takes the sector's anchor with 35 degrees of jitter, which makes it the world that most looks like wherever the run currently is.",
+        ],
+        [
+          "volcanic",
+          "The surface barely varies - fbm at 4.0, halved - because the lava is what carries the read. A ridged network at 3.2, thresholded hard between 0.80 and 0.97, gives the veins, and they breathe on a sine at roughly 2Hz offset by the seed. The palette is fixed dark basalt whatever the sector, so it always reads as the same kind of place.",
+        ],
+        [
+          "inhabited",
+          "Land from fbm at 3.0. The lights are a much finer fbm at 15.0 thresholded high, multiplied by the night side and gated by step(0.48, land), so they only appear on land and only where the sun is not. The atmosphere is the anchor's opposite hue, which is what makes it read as somewhere that has been changed.",
+        ],
+        [
+          "gas",
+          "Latitude bands: a sine on the surface y at 6.0 with fbm warping its phase so the bands are not ruled lines, mixed 40% toward a swirl sampled wide and short (x at 0.7, y at 3.2) so they shear into each other. No glow, and the widest hue jitter of the tinted kinds.",
+        ],
+        [
+          "ice",
+          "The simplest branch in the switch: one fbm at 4.0 smoothstepped between base and hi. It is also the only kind that ignores the anchor completely, sitting near hue 210 whatever the sector, which is exactly why it belongs to the opening and is weighted almost out of the pool by the end.",
+        ],
+        [
+          "forge",
+          "A gas giant's bands tightened to 13.0 and mixed 45% with soot at 5.0. The furnace is banked in the low bands - smoothstep(0.30, 0.0, bands) inverts the band mask - and gated by mid-range soot so it glows in the gaps. It burns on the day side too, which no other emissive kind does: industry does not stop for the terminator.",
+        ],
+        [
+          "alien",
+          "Big smooth cells from fbm at 1.7 with a ridged web between them at 2.4, thresholded very hard at 0.84 to 0.99 so the veins stay thin. Two glows: the veins pulse on a slow sine whose phase carries the cell value, so the web lights unevenly along its length, and the body between them breathes on a slower beat scaled by the same cells. The second term is what makes the whole world move instead of a lit web on a dark ball.",
+        ],
+        [
+          "shattered",
+          "Crust from fbm at 3.4, a fracture network from ridged at 2.8 thresholded at 0.88, and a belt where the crust has come apart altogether: smoothstep(0.30, 0.0, |y|) with the line of it wobbled by another fbm. Inside the belt the albedo is cut by 55% and a finer ridged pattern lets the core through. The emissive is halved on the way out, so it reads as cooling.",
+        ],
+      ]
+
+      const PIPELINE_DOCS = [
+        [
+          "the disc",
+          "r = length(vUV), and anything past 1.0 is discarded. That is the planet's edge: the quad is square and the world is the circle inscribed in it.",
+        ],
+        [
+          "a normal without a mesh",
+          "n = vec3(vUV, sqrt(1 - r*r)) reconstructs the front of a unit sphere from the disc coordinate. The z it works out is what everything after this reads as facing-the-camera.",
+        ],
+        [
+          "surface coordinates",
+          "sp = vUV / (0.35 + 0.65 * n.z) divides by that facing term, so the same noise stretches as it approaches the limb. A cheap approximation of a spherical mapping: it compresses detail toward the edge, which is the cue that sells the curve.",
+        ],
+        [
+          "the light",
+          "lambert = dot(normalize(vec3(uLight, 0.85)), n), clamped. The light direction is 2D on the disc with a fixed z of 0.85 pushed in behind it, so nothing is ever fully unlit and a world never becomes a black hole in the sky.",
+        ],
+        [
+          "the branch",
+          "One if/else chain on uType picks the surface. Each arm writes albedo, and the emissive kinds add to emit. Everything below this point is shared, which is why a new kind of world is a new arm and nothing else.",
+        ],
+        [
+          "shade and rim",
+          "shade = 0.12 + 0.72 * lambert lights the body with a floor under it. rim = pow(1 - n.z, 2.5) picks out the limb, and the atmosphere colour is added there, weighted toward the lit side so the rim is brightest where the sun is.",
+        ],
+        [
+          "dim, then glow",
+          "col *= 0.6 pushes the whole lit body down so planets read as distant, and emit is added after that multiply. That ordering is the point: it holds the surface under the bloom threshold while letting the glow through it, which is why an emissive world blooms and a rocky one does not.",
+        ],
+        [
+          "the edge",
+          "edge = smoothstep(1.0, 0.985, r) fades the last 1.5% of the radius, and both the colour and the alpha are multiplied by it. That is the only antialiasing the disc gets, and it is why the planet quad goes through the alpha batch where most primitives are additive.",
+        ],
+      ]
+
+      const NEBULA_DOCS = [
+        [
+          "where it is sampled",
+          "p = vUV * vec2(1.6, 1.0) * 2.4 + uScroll * 0.0004 + uSeed. The 1.6 undoes the aspect so clouds are not oval, the seed is the sector's own offset into the noise field, and uScroll is the view centre: the clouds sit still in the world, so flying moves through them.",
+        ],
+        [
+          "two layers, drifting apart",
+          "n1 drifts on x at 0.004 and n2 on y at 0.003, at 1.3 and 2.7 scale. Two speeds on two axes means the pattern never repeats and never obviously slides.",
+        ],
+        [
+          "the threshold",
+          "clouds = smoothstep(0.42, 0.95, n1 * 0.65 + n2 * 0.45). That is a high bar over a sum that rarely reaches it, which is what keeps most of the frame near-black: the nebula is meant to be somewhere the ship is in front of, not a wallpaper.",
+        ],
+        [
+          "the two colours",
+          "mix(uColA, uColB, n2) * clouds * 0.9. B shows up where the second layer is strong, so the gap between the two hues is read as structure. Both have to sit well clear of black to survive being multiplied by the cloud mask and by 0.9, which is what SKY holds their lightness for.",
+        ],
+        [
+          "dust, and the floor",
+          "A 20x fbm thresholded high and scaled to 0.10 adds grain, over a base of vec3(0.008, 0.016, 0.04) - the same near-black PALETTE.space clears to.",
+        ],
+        [
+          "and then it is blurred",
+          "The whole pass renders into a half-resolution target which is blurred twice and upscaled into the scene. Fine detail in here is thrown away by design: it buys depth of field, and it is why the stars are drawn after the composite.",
+        ],
+      ]
+
+      function buildProse() {
+        const kindDocs = document.getElementById("kindDocs")
+        for (const [name, text] of KIND_DOCS) {
+          const entry = WORLDS.find((w) => w.type === WORLD[name])
+          const gate = entry && entry.from != null ? ` - held until arc ${entry.from}` : ""
+          kindDocs.append(el("dt", {}, `${name.toUpperCase()}  uType ${WORLD[name]}${gate}`))
+          kindDocs.append(el("dd", {}, text))
+        }
+        for (const [id, docs] of [
+          ["pipelineDocs", PIPELINE_DOCS],
+          ["nebulaDocs", NEBULA_DOCS],
+        ]) {
+          const list = document.getElementById(id)
+          for (const [name, text] of docs) {
+            list.append(el("dt", {}, name.toUpperCase()))
+            list.append(el("dd", {}, text))
+          }
+        }
+      }
+
+      // ---- workbench controls ------------------------------------------------
+      const BENCH_SLIDERS = [
+        ["seed", 0, 30, 0.01, "uSeed: the offset into the noise field, and the phase of a pulse"],
+        ["light", -3.14, 3.14, 0.01, "uLight: where the sun is, as an angle on the disc"],
+        ["radius", 40, 300, 1, "How big the quad is drawn, in world units"],
+        ["time", 0, 60, 0.01, "uTime, when not animating: scrub a pulse to a still"],
+      ]
+
+      function buildBenchControls() {
+        const host = document.getElementById("benchControls")
+        host.replaceChildren()
+        for (const [key, label, hint] of [
+          ["base", "BASE", "uBase: the unlit body"],
+          ["hi", "HI", "uHi: what the surface mask mixes toward"],
+          ["atmo", "ATMO", "uAtmo: added at the rim only"],
+          ["emit", "EMIT", "uEmit: added after the dim, so this is what blooms"],
+        ]) {
+          const input = el("input", { type: "color", value: toHex(bench[key]), title: hint })
+          input.addEventListener("input", () => {
+            bench[key] = input.value
+            dirty.bench = true
+            syncExport()
+          })
+          host.append(el("label", {}, label), input, el("span", {}, ""))
+        }
+        for (const [key, min, max, step, hint] of BENCH_SLIDERS) {
+          const input = el("input", {
+            type: "range",
+            min,
+            max,
+            step,
+            value: bench[key],
+            title: hint,
+          })
+          const out = el("span", { className: "val" }, round(bench[key]).toString())
+          input.addEventListener("input", () => {
+            bench[key] = Number(input.value)
+            out.textContent = round(bench[key]).toString()
+            dirty.bench = true
+            syncExport()
+          })
+          host.append(el("label", {}, key.toUpperCase()), input, out)
+        }
+        const animate = el("button", {}, "ANIMATE THIS ONE")
+        bench.animate = true
+        animate.setAttribute("aria-pressed", "true")
+        animate.addEventListener("click", () => {
+          bench.animate = !bench.animate
+          animate.setAttribute("aria-pressed", String(bench.animate))
+          dirty.bench = true
+        })
+        host.append(el("span", {}, ""), animate, el("span", {}, ""))
+      }
+
+      function buildTypeControls() {
+        const select = document.getElementById("benchType")
+        const number = document.getElementById("benchTypeNum")
+        for (const [name, id] of Object.entries(WORLD)) {
+          select.append(el("option", { value: String(id) }, `${id}  ${name}`))
+        }
+        const sync = (value) => {
+          bench.type = value
+          select.value = String(value)
+          number.value = String(value)
+          dirty.bench = true
+          syncExport()
+        }
+        select.addEventListener("change", () => sync(Number(select.value)))
+        number.addEventListener("input", () => sync(Number(number.value)))
+        document.getElementById("btnPalette").addEventListener("click", () => {
+          const found = kinds.find((k) => k.type === bench.type) || kinds[0]
+          bench.base = toHex(found.base)
+          bench.hi = toHex(found.hi)
+          bench.atmo = toHex(found.atmo)
+          bench.emit = toHex(found.emit)
+          buildBenchControls()
+          dirty.bench = true
+          syncExport()
+        })
+      }
+
+      function syncExport() {
+        const name = KIND_NAME[bench.type] ?? "newKind"
+        const glows = bench.emit !== "#000000"
+        document.getElementById("exportOut").textContent =
+          `// src/background.js - worldPalette(), one branch\n` +
+          `if (type === WORLD.${name}) {\n` +
+          `  return {\n` +
+          `    base: "${bench.base}",\n` +
+          `    hi: "${bench.hi}",\n` +
+          `    atmo: "${bench.atmo}",\n` +
+          `    emit: "${bench.emit}",\n` +
+          `  }\n` +
+          `}\n\n` +
+          `// src/background.js - WORLD, so the kind has a name\n` +
+          `${name}: ${bench.type},\n\n` +
+          `// src/background.js - WORLDS, when it may turn up and how heavily\n` +
+          `{ type: WORLD.${name}, weight: [0, 1]${glows ? ", emissive: true" : ""} },\n\n` +
+          `// src/shaders.js - PLANET_FS, the branch that draws it\n` +
+          `} else if (uType == ${bench.type}) {\n` +
+          `  // writes albedo, and emit if it glows\n` +
+          `}\n\n` +
+          `// drawn here with seed ${round(bench.seed)}, light ${round(bench.light)} rad, ` +
+          `radius ${bench.radius}`
+      }
+
+      // ---- wiring ------------------------------------------------------------
+      const sectorInput = document.getElementById("sector")
+      const sectorRange = document.getElementById("sectorRange")
+      const arcOut = document.getElementById("arcOut")
+
+      function setSector(value) {
+        sector = Math.max(1, Math.min(60, Math.round(value) || 1))
+        sectorInput.value = String(sector)
+        sectorRange.value = String(sector)
+        arc = clamp01(sector / SKY.arcSectors)
+        arcOut.textContent = `arc ${round(arc, 3)}`
+        backdrop.regenSector(sector)
+        kinds = kindPalettes()
+        buildRollTable()
+        buildArcTable()
+        buildWorldTable()
+        buildSizeTable()
+        buildKindTable()
+        buildKindLabels()
+        dirty.all = true
+      }
+
+      sectorInput.addEventListener("input", () => setSector(Number(sectorInput.value)))
+      sectorRange.addEventListener("input", () => setSector(Number(sectorRange.value)))
+      document.getElementById("btnPrev").addEventListener("click", () => setSector(sector - 1))
+      document.getElementById("btnNext").addEventListener("click", () => setSector(sector + 1))
+      document.getElementById("btnReroll").addEventListener("click", () => {
+        paletteSeed = Math.floor(Math.random() * 100000) + 1
+        kinds = kindPalettes()
+        buildKindTable()
+        dirty.kinds = true
+      })
+
+      const kindLightInput = document.getElementById("kindLight")
+      const kindLightOut = document.getElementById("kindLightOut")
+      kindLightInput.addEventListener("input", () => {
+        kindLight = Number(kindLightInput.value)
+        kindLightOut.textContent = round(kindLight).toString()
+        dirty.kinds = true
+      })
+      kindLightOut.textContent = round(kindLight).toString()
+
+      let animating = true
+      const btnAnimate = document.getElementById("btnAnimate")
+      btnAnimate.addEventListener("click", () => {
+        animating = !animating
+        btnAnimate.setAttribute("aria-pressed", String(animating))
+        dirty.all = true
+      })
+
+      const btnCrt = document.getElementById("btnCrt")
+      btnCrt.addEventListener("click", () => {
+        const on = btnCrt.getAttribute("aria-pressed") !== "true"
+        btnCrt.setAttribute("aria-pressed", String(on))
+        for (const r of [skyRenderer, kindsRenderer, benchRenderer]) {
+          r.crtEnabled = on
+        }
+        dirty.all = true
+      })
+
+      let drift = 1
+      const driftInput = document.getElementById("skyDrift")
+      const driftOut = document.getElementById("skyDriftOut")
+      driftInput.addEventListener("input", () => {
+        drift = Number(driftInput.value)
+        driftOut.textContent = `x${round(drift)}`
+      })
+      driftOut.textContent = `x${round(drift)}`
+
+      document.getElementById("btnCompile").addEventListener("click", applyShader)
+      document.getElementById("btnRevert").addEventListener("click", () => {
+        glslBox.value = PLANET_FS
+        applyShader()
+      })
+      glslBox.addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          event.preventDefault()
+          applyShader()
+        }
+      })
+
+      document.getElementById("arcSectors").textContent = String(SKY.arcSectors)
+
+      buildProse()
+      buildHueRamp()
+      buildBenchControls()
+      buildTypeControls()
+      setSector(1)
+      syncExport()
+      compileStatus.textContent = "the shader the game ships, unedited"
+
+      // ---- the loop ----------------------------------------------------------
+      // Shader time only advances while ANIMATE is on, and a canvas is redrawn when it
+      // is animating or when something it reads has changed. A still page costs nothing.
+      let time = 0
+      let last = 0
+      function frame(stamp) {
+        const dt = last ? Math.min((stamp - last) / 1000, 0.05) : 0
+        last = stamp
+        if (animating) {
+          time += dt
+          // The backdrop drifts on its own with no ship to move it, which is what a
+          // sector looks like while the player sits still.
+          backdrop.update(dt * drift, 0, 0)
+        }
+        if (animating || dirty.all || dirty.sky) {
+          drawSector(time)
+        }
+        if (animating || dirty.all || dirty.kinds) {
+          drawKinds(time)
+        }
+        if (animating || dirty.all || dirty.bench) {
+          drawBench(time)
+        }
+        dirty.all = dirty.sky = dirty.kinds = dirty.bench = false
+        requestAnimationFrame(frame)
+      }
+      requestAnimationFrame(frame)
+    </script>
+  </body>
+</html>

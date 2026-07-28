@@ -83,7 +83,7 @@ export const SKY = {
 // What kinds of world a sector may roll, and how heavily. `from` holds a kind
 // back until the arc reaches it, so the first sectors cannot turn up anything
 // that belongs to the far end of the run.
-const WORLDS = [
+export const WORLDS = [
   { type: WORLD.ice, weight: [3, 0.2] },
   { type: WORLD.gas, weight: [3, 1] },
   { type: WORLD.rocky, weight: [2, 1] },
@@ -126,7 +126,7 @@ function weightedPick(entries, arc, rng) {
 
 // A world's colours. Most take the sector's anchor hue so the sky hangs
 // together; the ones that are meant to unsettle deliberately do not.
-function worldPalette(type, anchor, arc, rng) {
+export function worldPalette(type, anchor, arc, rng) {
   const jitter = (h, d) => Math.round(wrapHue(h + (rng() * 2 - 1) * d))
   if (type === WORLD.gas) {
     const h = jitter(anchor, 25)
