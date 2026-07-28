@@ -4,64 +4,13 @@ Where GEOMETRY II might go next, roughly in build order. Nothing here is
 committed, and the further down the page an item sits the less thought it has
 had.
 
-## Where things stand
-
-A ship is an outline, two numbers and what is bolted to it. Everything else is
-worked out: a drive on a hardpoint decides acceleration and top speed, a set of
-maneuvering thrusters in the core decides the turn and never the other way about,
-and all of it divides by what the hull weighs with its loadout aboard, so fitting
-more costs handling. One method does that arithmetic for every ship, whether it is
-a type read at boot or a ship refitted in the shop, so the two cannot come to
-different answers about the same hull.
-
-What that bought:
-
-- A frigate with siege engines sweeps through an arc no drive it fits will
-  shorten, and carries the heaviest thrusters in the game while still being the
-  slowest hull round.
-- A fully fitted player ship is a quarter heavier than a bare one and gives up
-  20% of its acceleration, top speed and turn. The quicker thrusters win back
-  most of the turn, which is what they are for.
-- A rival works out how it flies from what it turned up carrying, so a scout that
-  rolled a shield and a gun is a third heavier and handles like it.
-- The shop is slots the whole way down: buy once, swap freely, fly without what is
-  optional. A rival could be given anything the player bought.
-
-Any hull in the game can be flown from the dev page. The shop finds its mounts by
-the role each plays rather than by index, a turret is fitted per mount, and whatever
-the hull carries is found and swappable against the yard's own from then on. It is a
-dev tool and nothing is balanced around it, but it is also the groundwork for
-unlockable weapons and for an alternate player ship: see Aliens.
-
-The player's ship is most of the way to being an ordinary hull that is simply
-never spawned. Its outline, cell, drive, thrusters, shield, radar and guns are all
-fitted equipment read through the same relationships as any rival's; what is left
-on CONFIG is drag, which is a control aid rather than a property of the hull.
-
-Around that sits a run of 40 sectors that is still getting harder at the end of it
-(see Length and difficulty), and a run ends when the ore does rather than when the
-ships do: the last ship lost offers another at the shop's price for one, as often
-as what was mined will pay for it.
+Only what is planned. What is already built is described where it is built, and
+`KNOWN_ISSUES.md` holds what is known and unfixed.
 
 ## Aliens
 
-A third faction, hostile to the player and to the rivals alike, held back to the
-last stretch of a run: the scout from sector 20, the seeker from 25 and the pincer
-from 30, each rare on arrival and common by 40. All three hulls are in, one per
-rival tier, so the spawn tables and the controllers carried over and being alien is
-a faction, a colour and how it is drawn. They fight rivals as readily as the
-player, since every gun asks one question of the faction table.
-
-What is there: the shapes, green, the pincer's jaw guns held to the front by a mount
-arc, the singularity it holds in them, drives that burn green with a rounded plume,
-a permanent faint ripple in the space each one occupies, `ALIEN_PLATING`, so a cut
-alien burns and smokes in their own colour, a sky that turns over to them as the run
-does (about half the planets behind a sector 40 fight are theirs, sickly green and
-pulsing), guns in their own yellow-green, beams that bend the space along their whole
-length, and a round that tears the picture wherever it lands rather than only on the
-player. The pincer holds its field up rather than spending it on the gun, and comes
-round twice as fast as its mass says it should, because a hull that slow is beaten by
-standing behind it. What is not:
+A third faction, hostile to the player and to the rivals alike, held back to the last
+stretch of a run. All three hulls are in, one per rival tier. What is left:
 
 - **The glitch over them.** They bend space around themselves, but the tearing that
   is meant to go with it only happens where their shots land. Over a hull it wants
@@ -71,84 +20,37 @@ standing behind it. What is not:
   is a rival that did not. `PROGRESSION.rivals` wants generalising to a table per
   faction.
 - **A reason to meet their weapons before sector 20.** Every module an alien hull
-  carries is an EQUIPMENT option now, locked until a run has one, and flying the hull
-  is what finds it. That is the machinery for unlocking a warp orb or a singularity
-  gun in ordinary play; what it wants is the way in. Salvage off a cut hull is the
+  carries is an EQUIPMENT option, locked until a run has one, and flying the hull is
+  what finds it. That is the machinery for unlocking a warp orb or a singularity gun
+  in ordinary play; what it wants is the way in. Salvage off a cut hull is the
   obvious one, and nothing about it needs new code beyond deciding when it drops.
-
-The singularity in the jaws is the fight the pincer was drawn for, and it is there:
-flying into the well is bad news, so the approach is the fight, and a hull cut while
-its own well is live leaves halves inside a field that no longer knows them.
-
-The pincer's mouth is a real void: contact is decided part by part, so a rock sits
-in the jaws touching nothing and stays cuttable through the opening. Its hull is
-1455 against a frigate's 1012, being more material at the same mass, which may want
-an `armour` pass once there is something to fight it with.
-
-No visible boosters is available whenever it is wanted: a flame belongs to the
-engine, and a hull with no `engine` hardpoint cannot move under its own power, so a
-pincer that drifts on its field alone needs no rule of its own.
+- **An `armour` pass on the pincer.** Its hull is 1455 against a rival frigate's
+  1012, being more material at the same mass. Worth revisiting once there is
+  something to fight it with.
 
 ## Alien weapons
 
-Alien guns work like the ones already in the game, projectiles and beams through the
-same modules and controllers, and do their damage by warping the space around them
-rather than by burning or striking it. All of it is one capability, a local
-distortion of what is behind a thing, stated as data on a weapon or a hull and read
-by one pass in the renderer: a source names a point or a line, how far it reaches and
-how hard it bends.
-
-The beam bends the space along its whole length, the orbs bend it as they travel and
-fall toward what they were thrown at, and the hulls ripple the space they sit in. A
-round tears the picture where it lands, whatever it landed on. The singularity is the
-far end of the same idea: it winds up, drawing in particles and loose shot; it costs
-as it winds rather than at the shot; it is let go of to fire; and two of them fall
-toward each other, bounded so a pair cannot outrun the ship watching them. It does
-not drag rocks around, and it never will: the sector heaving toward a point is mayhem
-the contact solver would not survive.
-
-What is left of it: entries in the `ROCK_TURRETS` pool so rocks can mount alien guns,
-which is data and no code.
+Entries in the `ROCK_TURRETS` pool, so a rock can mount an alien gun. Data, and no
+code.
 
 ## The alien shield
 
-Alien hulls carry a repel shield instead of a bubble. It absorbs lasers the way
-any shield does, paying energy for the damage, and it shoves everything else
-away: rocks, shots and other ships alike. What it costs to run follows what it is
-holding off, so a hull backed into a rock field bleeds energy far faster than one
-in open space, and burying it in debris is a way to strip it.
+The field is drawn as a ring. It wants to be a direct offset outline of the ship
+itself, with convex regions smoothed out, so the shape of the shield is the shape of
+the ship.
 
-All three alien hulls carry one. A shield prices each damage channel separately and
-pays per unit of momentum it turns away, so what it costs to run is what it is
-holding off. What is not there is the last line of this section: the field is still
-drawn as a ring rather than as the hull's own shape.
-
-Generating a singularity defeats the repel. The well needs to draw shots in, and
-it cannot do that through a field pushing them out, so the ship is bare for as
-long as it is winding up. That is the same window the hull can be cut in, which
-puts the fight on one clock: the moment it is most dangerous is the moment it can
-be killed.
-
-It wants to be drawn as a direct offset outline of the ship itself, with convex
-regions smoothed out, so the shape of the shield is the shape of the ship. That is
-its own project: everything that meets a shield meets a circle, and
+That is its own project: everything that meets a shield meets a circle, and
 `KNOWN_ISSUES.md` measures how far the drawn ring already diverges from it.
 
 ## Length and difficulty
 
-A run is 40 sectors and the ramp is spread across all of them: hulls arrive a tier
-at a time (scout 2, seeker 8, frigate 14, alien scout 20, alien seeker 25, alien
-pincer 30), each fading in from a small share rather than appearing at full weight,
-and the rock count, the share of rocks armed, the number of rivals alive and the
-gap between arrivals are all still moving at sector 40. timeline.html is where the
-curve is read; the tests hold its shape rather than its numbers.
-
-What is left of it:
+A run is 40 sectors and every part of the ramp is still climbing at the end of it.
+`timeline.html` is where the curve is read. What is left:
 
 - **Prices.** The radar marks and the thrusters were priced to be reachable rather
   than to be right, and nothing has been repriced against a run twice as long as
   the one they were set for.
-- **The specials pool.** They arrive one kind at a time now, but which kind is worth
+- **The specials pool.** They arrive one kind at a time, but which kind is worth
   meeting when is a first guess: repel 5, refuel 8, ore magnet 11, booster 15, multi
   19, stealth 25.
 - **What a sector pays.** Ore per rock and the kill and clear bonuses were set
@@ -162,8 +64,8 @@ survives being cut in half and grows the missing half back.
 
 ## The shape of the source
 
-`src/config.js` is 3858 lines, and about a quarter of it is not description of the
-game at all: it is menu wiring. `PAUSE_MENU`, `DEV_MENU`, `DEV_SPAWN_MENU`,
+`src/config.js` is around 3,900 lines, and about a quarter of it is not description
+of the game at all: it is menu wiring. `PAUSE_MENU`, `DEV_MENU`, `DEV_SPAWN_MENU`,
 `OVER_MENU`, `SHOP` and `SHOP_LAYOUT`, plus the row helpers and the dev page's
 labels, describe pages rather than ships.
 
@@ -172,20 +74,19 @@ looks: the dependency already points one way. The menu tail reads `CONFIG`,
 `EQUIPMENT`, `SHIP_TYPES`, `SPECIAL_TYPES`, `CORE_TYPES` and the `DEV_*` helpers,
 and nothing above it reads anything back, so the move is mechanical and the suite
 either stays green or it does not. The input tables, `BINDABLE_CONTROLS`,
-`BINDING_DEVICES`, `DEFAULT_BINDINGS` and `GAMEPAD`, would go the same way into a
+`BINDING_DEVICES`, `PAD_LAYOUT` and `GAMEPAD`, would go the same way into a
 `src/controls.js`.
 
 `EQUIPMENT` is the awkward one and should stay put. It is the largest UI-looking
-block in the file at 402 lines, but it is not only UI: `fitEquipment` and
-`unlockHullFitting` read it to decide what is actually bolted to a hull, and
-`freshEquipment` and `yardOptions` sit on top of it. Only the rows that present it
-belong on a menu page.
+block in the file, but it is not only UI: `fitEquipment` and `unlockHullFitting`
+read it to decide what is actually bolted to a hull, and `freshEquipment` and
+`yardOptions` sit on top of it. Only the rows that present it belong on a menu page.
 
 Beyond that, and as a maybe: the registries themselves want breaking into
 manageable units, which past a certain number of files starts wanting a build
 step. That is a trade rather than an improvement. The game runs today by opening
 `index.html` with no tooling between the source and the thing running, which is
-worth a great deal - it is why a dev page can be a page and why nothing has to be
+worth a great deal: it is why a dev page can be a page and why nothing has to be
 installed to try a change. A build step buys smaller files and costs that. Worth
 doing only when the file count makes the current arrangement the harder one to
 work in, and not before.
@@ -215,19 +116,23 @@ Small things, none of them load-bearing.
   price for a ship every time. Charging more for each one in a row would make a
   hoard finite in a way a flat price does not, at the cost of a second number
   saying what a life is worth.
+- **Stackable specials?** Whether a slot can hold more than one of a kind, so a
+  duplicate found in the field is worth going for rather than passed over. Open,
+  because it cuts against what a slot currently is: an addressable thing with its
+  own cooldown, which is what makes the pop-over and the HUD boxes work. Either a
+  count on the slot, or a level, which the slot object was already shaped to take.
 
 ## Specials
-
-They arrive a kind at a time across a run, at most one of each adrift, and a drop can
-simply not happen. Hull regen is the first a run finds, for the reason the slot
-machinery exists: it is worth throwing the ore magnet out for when the hull is nearly
-gone, and mending on a stock cell leaves nothing for the shield.
 
 The set wants tuning, and there is space for two more:
 
 - **stop time**
 - **warp**, launching the ship along its facing at high speed as a dash strike,
-  in the manner of the Holdo maneuver
+  in the manner of the Holdo maneuver. The railgun's `wake` is the candidate
+  mechanism and most of the work: a slab of bent space closing behind something
+  travelling fast, laid down a point at a time and held after the thing has gone.
+  A dash wants exactly that behind the ship, so what is left is who lays it and
+  what the dash does to whatever it crosses.
 
 ## Long term
 
@@ -236,6 +141,9 @@ Speculative, none of it costed.
 - Equipment that takes something away as well as giving: a shield that turns
   incoming fire into energy and does without passive regen. The slots exist now,
   so this is a matter of writing one.
-- Other modes: survival, dogfight.
+- Other modes: survival, dogfight. The dogfight is being prototyped behind the dev
+  switch, where `DOGFIGHT_HULLS` and the arena's own AUTO spawner already set one
+  going; what a mode wants past that is a way in that is not the dev page, and
+  something to be scored on.
 - Deformation of rocks and hulls where projectiles land.
 - Ships that fly in and install turrets or mines on rocks.
