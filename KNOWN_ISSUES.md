@@ -154,9 +154,23 @@ gun cannot keep a shield it is not paying for; exhaust comes out of every nozzle
 hull has; a gun that does not charge fires the way every other hull fires it, so
 nothing on the nose can put NaN through the cell; a well is bounded, and a wind-up
 does not tow the one already out there; a marker on the page is what the radar
-found rather than what the sensor floor reached; and a special that is already
-adrift is not rolled again. Shop purchase sounds against a silent options menu is
-a decision, not a defect, and stands.
+found rather than what the sensor floor reached; a special that is already
+adrift is not rolled again; what the yard sells and what only exists on another hull
+are two lists, so FULLY UPGRADE fits the top of a ladder rather than whatever was
+appended after it and an equipment row reads MAX once the yard is out of stock;
+mending the hull is priced as a fraction of the cell like every other special, so it
+is never free on an upgraded one; a torpedo's fuse counts the player's bubble exactly
+as it counts a rival's; and one predicate answers whether a body is still in the
+sector, `dead` included, so nothing killed part way through a frame is hit again by
+the rest of it.
+
+Shop purchase sounds against a silent options menu is a decision, not a defect, and
+stands. So are two more. Holding the trigger past full charge keeps drawing on the
+cell on the marks with no overdrive to wind: the beam painted on screen is also how
+the shot is aimed, and the drain is what relying on it costs. And a rock's turrets
+covering a little under half the sky each is the arc they are meant to have, since it
+reads as mounts on the flanks of a rock that occludes them, so the 55% of its fire it
+costs is the price of that and not a clamp to be loosened.
 
 `KNOWN_ISSUES.md` in the repo holds five measured cosmetic defects that are
 deliberately unfixed. Read it before reporting a hull or a rock crossing the
@@ -206,7 +220,14 @@ happening rather than four things being done · a pair of wells costs so nearly 
 pincer's whole cell that only its first commitment of an engagement can afford one,
 its turrets keeping the cell under the price after that: `burstChance` is a quarter,
 so about one appearance in four opens with a pair and the rest throw singles, and
-raising the odds without also cheapening the pair changes nothing.
+raising the odds without also cheapening the pair changes nothing · on a pad the left
+stick moves a menu cursor but cannot work a row, since `GAMEPAD.axes.menu` feeds up and
+down while left and right come from the D-pad alone: VOLUME, HUD SIZE, the shop's slot
+boxes and the dev sector step all want the D-pad, and the comment on BINDABLE_CONTROLS
+says the stick navigates · there are two `weightedPick` implementations, one in
+`math.js` taking a weight function and one in `background.js` taking an arc, and they
+disagree about what an empty pool answers; the comment on the first says every roll in
+the game goes through it, which the world roll does not.
 
 ## Measured, and not worth re-deriving
 

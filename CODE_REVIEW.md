@@ -44,7 +44,7 @@ remembered · `audio.js` · `main.js` wiring
 
 ## How to verify
 
-Run `npm run check` (eslint + prettier + 387 tests) before and after any change.
+Run `npm run check` (eslint + prettier + 468 tests) before and after any change.
 
 The simulation is headless: `new Game()` works under plain node, so
 `game.startNewGame()` and `game.advance(1/60)` in a loop will reproduce and
