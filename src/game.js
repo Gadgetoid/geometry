@@ -2502,7 +2502,7 @@ export class Game {
   // itself, for a hit that should feel like it reached out of the game. The view turns
   // these into the sources the composite pass reads; nothing in the simulation depends
   // on them, so a renderer that cannot show them simply does not.
-  glitchAt(x, y, strength = 1, radius = 150, seconds = 0.28) {
+  glitchAt(x, y, strength = 1, radius = 94, seconds = 0.28) {
     this.glitches.push({ x, y, strength, radius, life: seconds, maxLife: seconds })
   }
 

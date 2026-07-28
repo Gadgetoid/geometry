@@ -73,7 +73,7 @@ const PAD_HINT = {
 // How much a hull arriving inside the ring bends the space it arrives into. Tight and strong:
 // the point of it is that a spot on the screen goes wrong for a beat before something is there,
 // so it wants to be local enough to say where and hard enough to be noticed.
-const ARRIVAL_WARP = { radius: 60, strength: 0.5, wave: 0.12 }
+const ARRIVAL_WARP = { radius: 38, strength: 0.5, wave: 0.12 }
 
 // What a mount is drawn in, by what is bolted to it. An empty one takes the same colour
 // as an empty special slot, being the same idea.
@@ -351,10 +351,14 @@ export class GameView {
     }
     // World to uv, with the same vertical flip the ripple uses: the scene target has its
     // origin at the bottom.
+    // The radius is normalised by the view's *height*, not its width, because that is the
+    // metric the shader measures in: it corrects x by the aspect so a region comes out round,
+    // which leaves the distance in fractions of the height. Divided by the width a radius
+    // arrived five eighths of its own size, so every stated reach was 62.5% of what it said.
     const source = (x, y, radius, strength, wave = 0, hollow = 0) => ({
       x: (VIEW_W / 2 + (x - centre.x)) / VIEW_W,
       y: 1 - (VIEW_H / 2 + (y - centre.y)) / VIEW_H,
-      radius: radius / VIEW_W,
+      radius: radius / VIEW_H,
       strength,
       wave,
       hollow,

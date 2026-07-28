@@ -323,7 +323,21 @@ export const COMPOSITE_FS = `#version 300 es
     vec3 b = texture(uBloom, uv).rgb;
     return s + b * uBloom0;
   }
-  float hash(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
+  // No trig. A sine of a large argument is where a hash like this comes apart, and the
+  // argument here carried uTime, which is the run's own clock and grows all session: half an
+  // hour in it is past five million, where a 24-bit mantissa has no fraction left to take a
+  // sine of. Measured under swiftshader the tear lost a quarter of its reach by then, and
+  // what happens past that is the driver's business - which is the shape of an effect that
+  // shows on one machine and not on another.
+  //
+  // Nothing in this file may contain a backtick or a dollar: it is a template literal, and
+  // one of either ends the shader early. This comment cost a page that would not boot.
+  float hash(float n) {
+    n = fract(n * 0.1031);
+    n *= n + 33.33;
+    n *= n + n;
+    return fract(n);
+  }
   // What an alien does to the space it occupies: samples are drawn inward toward the
   // centre, hardest in the middle and nothing at the edge, so what is behind it swells
   // and slides as it passes. Aspect-corrected, so the region stays round.
@@ -375,7 +389,10 @@ export const COMPOSITE_FS = `#version 300 es
   // go a long way, which is what tearing looks like: displacing all of them evenly reads
   // as motion blur. The seed is the channel, so the three come apart independently.
   float lineOffset(float line, float seed, float strength) {
-    float roll = hash(line * 1.7 + seed + floor(uTime * 34.0) * 3.1);
+    // The clock, wrapped. What this wants of time is that it changes from frame to frame,
+    // not what it counts from, so it is held small rather than handed the whole session.
+    float tick = mod(floor(uTime * 34.0), 512.0);
+    float roll = hash(line * 1.7 + seed + tick * 3.1);
     float thrown = step(1.0 - strength * 0.7, roll);
     float amount = (hash(line * 3.3 + seed + 11.0) - 0.5) * 2.0;
     return thrown * amount * strength * 0.085;

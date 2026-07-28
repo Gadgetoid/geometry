@@ -792,7 +792,7 @@ export const WEAPON_TYPES = {
     shot: { radius: 5.5, streak: 0, pulse: 9 },
     // What it does to the space it is travelling through, which is how it does its
     // damage: `radius` in world units, `strength` how hard the picture is drawn inward.
-    warp: { radius: 46, strength: 0.32 },
+    warp: { radius: 29, strength: 0.32 },
     // It lands like something with weight behind it: a shower of green off the point of
     // contact, a ring going out with it and a good shove of the screen. A round that
     // reaches nothing still comes apart, rather than winking out of existence.
@@ -911,7 +911,7 @@ export const WEAPON_TYPES = {
     // at the centre dragged whatever was behind the muzzle across the dark disc drawn there, and
     // a hole with the hull smeared over it is not a hole: what the eye wants is space pulled
     // taut into an edge with nothing inside it.
-    warp: { radius: 130, strength: 0.55, wave: 0.4, hollow: 1 },
+    warp: { radius: 81, strength: 0.55, wave: 0.4, hollow: 1 },
   },
   // The alien seeker's: a snap, as its rival counterpart's is.
   warpNeedle: {
@@ -922,7 +922,7 @@ export const WEAPON_TYPES = {
     // length of it. It lives for a third of a second, which is not long enough for
     // something subtle to register: a band either side wide enough to see the stars
     // behind it move.
-    warp: { radius: 70, strength: 0.45 },
+    warp: { radius: 44, strength: 0.45 },
     energy: 24,
     reload: [0.9, 1.4],
     length: 440,
@@ -940,7 +940,7 @@ export const WEAPON_TYPES = {
     mass: 0.02,
     damage: 30,
     // As the needle, and heavier: it is the bigger cutter of the two.
-    warp: { radius: 85, strength: 0.5 },
+    warp: { radius: 53, strength: 0.5 },
     energy: 16,
     reload: [1.4, 2.6],
     length: [320, 520],
@@ -1009,7 +1009,7 @@ export const WEAPON_TYPES = {
     width: 7, // the capsule it strikes with, as a beam has one
     // The wake: a slab of bent space closing behind it, which is the tell that something
     // devastating has just gone past. Held for `life` seconds after the slug is gone.
-    wake: { radius: 110, strength: 0.42, wave: 0.26, life: 0.5, every: 26 },
+    wake: { radius: 69, strength: 0.42, wave: 0.26, life: 0.5, every: 26 },
     // `trail` is a length in units rather than a multiple of velocity, because RailSlug draws
     // itself and a slug at 1250 u/s multiplied by anything is a line across the whole sector.
     shot: { radius: 1.8, trail: 23 },
@@ -1106,7 +1106,7 @@ export const WEAPON_TYPES = {
     slice: { width: 11 },
     width: 3.4,
     recoil: 26,
-    wake: { radius: 46, strength: 0.24, wave: 0.16, life: 0.3, every: 20 },
+    wake: { radius: 29, strength: 0.24, wave: 0.16, life: 0.3, every: 20 },
     shot: { radius: 1.2, trail: 14 },
     impact: {
       particles: 12,
@@ -2397,7 +2397,7 @@ const SHIP_DESIGNS = {
     // of them land: out at the rim rather than in the middle, so the whole outline crawls and
     // ripples instead of the centre swelling while the jaws sit still. The reach is a little past
     // the furthest point of the hull (92) so the heaviest of it falls on the outline itself.
-    warp: { radius: 150, strength: 0.42, wave: 0.18, hollow: 1 },
+    warp: { radius: 94, strength: 0.42, wave: 0.18, hollow: 1 },
     // Twice the material of a rival frigate for the same laden 6, which is what a hull this wide
     // and this hollow comes to. Bare here: its plant, field, drives and five guns make up
     // the rest.
@@ -2478,7 +2478,7 @@ const SHIP_DESIGNS = {
     faction: "alien",
     // Space bends around it. Read by the view, which turns it into a lens over whatever
     // is behind the hull, so a sector with one in it looks wrong before a shot is fired.
-    warp: { radius: 70, strength: 0.3, wave: 0.05 },
+    warp: { radius: 44, strength: 0.3, wave: 0.05 },
     mass: 0.58, // bare hull; its loadout brings it to the 0.7 of the scout it answers
     armour: 1,
     lifeTime: [16, 26],
@@ -2545,7 +2545,7 @@ const SHIP_DESIGNS = {
     ],
     colour: PALETTE.alien.hull,
     faction: "alien",
-    warp: { radius: 66, strength: 0.28, wave: 0.05 },
+    warp: { radius: 41, strength: 0.28, wave: 0.05 },
     mass: 0.47, // bare hull; laden it matches the seeker at 0.8
     armour: 1.2,
     handling: 0.8, // as its rival counterpart: quick in a line, committed in a turn

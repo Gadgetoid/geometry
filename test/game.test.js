@@ -84,6 +84,7 @@ import {
   polygonCentroid,
 } from "../src/math.js"
 import { Sound } from "../src/audio.js"
+import * as SHADERS from "../src/shaders.js"
 
 // A rival as the spawner would bring it in, carrying its design's own loadout and
 // none of the arms it might have rolled. Passing an empty loadout instead would be a
@@ -2351,6 +2352,54 @@ test("what bends space says so, and the view finds it", () => {
   game.rivals = [plainRival(500, 320, "rivalFrigate")]
   game.projectiles = []
   assert.deepEqual(distortion(game).lenses, [], "a rival frigate bends nothing")
+})
+
+test("a stated reach arrives at the shader as the reach it states", () => {
+  // The composite pass corrects x by the aspect so a region comes out round, which leaves
+  // its distance in fractions of the view's *height*. A radius normalised by the width
+  // therefore arrived five eighths of its own size, and every reach in the registries was
+  // 62.5% of what it said: the orb's tear is documented as 140 across and was 87.
+  const game = liveGame()
+  beSolid(game.player)
+  game.asteroids = [new Asteroid({ vertices: square(-600, -600, 40), spin: 0 })]
+  const player = game.player
+  game.viewCenter.x = player.x
+  game.viewCenter.y = player.y
+
+  const stated = 160
+  game.glitchAt(player.x, player.y, 1, stated, 1)
+  const tear = distortion(game).tears[0]
+  assert.ok(tear, "the tear is there")
+  // Measured the way the shader measures it: a point this far along y is on the edge.
+  assert.ok(
+    Math.abs(tear.radius * VIEW_H - stated) < 0.5,
+    `a stated ${stated} should reach ${stated} world units, got ${(tear.radius * VIEW_H).toFixed(1)}`,
+  )
+  // And the same for a lens, which shares the conversion.
+  game.glitches = []
+  const alien = plainRival(player.x, player.y, "alienFrigate")
+  game.rivals = [alien]
+  const lens = distortion(game).lenses[0]
+  assert.ok(
+    Math.abs(lens.radius * VIEW_H - alien.type.warp.radius) < 0.5,
+    `a hull's stated ${alien.type.warp.radius} should reach it, got ${(lens.radius * VIEW_H).toFixed(1)}`,
+  )
+})
+
+test("every shader this file exports is whole", () => {
+  // They are template literals, so a backtick or a dollar anywhere in one ends the shader
+  // early and the page does not boot. A comment with a backticked word in it cost exactly
+  // that, and nothing else would have caught it: eslint sees valid JavaScript.
+  const sources = Object.entries(SHADERS).filter(([, value]) => typeof value === "string")
+  assert.ok(sources.length > 10, `there should be a shader or two, found ${sources.length}`)
+  for (const [name, src] of sources) {
+    assert.ok(!src.includes("`"), `${name} contains a backtick, which would end it early`)
+    if (name.endsWith("_VS") || name.endsWith("_FS")) {
+      assert.ok(src.startsWith("#version 300 es"), `${name} should open with its version`)
+      assert.ok(src.includes("void main"), `${name} should have a main, or it was truncated`)
+      assert.ok(src.trimEnd().endsWith("}"), `${name} should close its main`)
+    }
+  }
 })
 
 test("a tear bursts and falls away, rather than being switched off", () => {

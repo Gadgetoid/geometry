@@ -5474,7 +5474,7 @@ export class Singularity extends Projectile {
     game.burst(this.x, this.y, 44, PALETTE.alien.beam, 60, 320, 0.8)
     game.burst(this.x, this.y, 18, PALETTE.alien.shotCore, 40, 200, 1)
     game.ring(this.x, this.y, 26, PALETTE.fx.flash, 340, 0.6)
-    game.glitchAt(this.x, this.y, 1, well.radius * 1.4, 0.45)
+    game.glitchAt(this.x, this.y, 1, well.radius * 0.875, 0.45)
     game.screenShake = Math.max(game.screenShake, 16)
     Sound.explode()
   }
