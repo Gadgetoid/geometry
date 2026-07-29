@@ -760,6 +760,56 @@ export class Entity {
   onHull() {
     /* subclasses decide what losing the hull means */
   }
+
+  // A gun coming apart at its mount: a flash, fire out of it and embers falling off the
+  // debris, burning as whatever it was bolted to burns. Shared, so a gun shot off a rock, a
+  // gun lost to a cut through it and a gun shot off a hull all go the same way.  The sound is
+  // the caller's, since several can go at once.
+  turretLost(hp, game) {
+    const at = this.hardpointWorld(hp)
+    const burn = this.burnSpec || DEFAULT_BURN
+    game.burst(at.x, at.y, randInt(14, 20), burn.colour, 60, 230, 0.5)
+    game.burst(at.x, at.y, randInt(6, 10), burn.ember, 30, 150, 0.75)
+    game.ring(at.x, at.y, 9, PALETTE.fx.flash, 230, 0.4)
+  }
+
+  // Shoot the guns off. A mount within AST_TURRET_HITBOX of the beam is taken out, whether or
+  // not the shot goes on to cut what it was bolted to, so a turret can be picked off
+  // something too big to cut apart. Returns how many were lost.
+  //
+  // One answer for every body that carries mounts. A rock and a hull hold a hardpoint
+  // differently - a rock keeps a world point, a hull a local offset - which `hardpointWorld`
+  // already reconciles, and what losing one means is each body's own business: see
+  // `loseMount`. `mountsStrippable` is what decides whether it can happen at all.
+  strikeTurrets(beam, halfWidth, game) {
+    const reach = CONFIG.AST_TURRET_HITBOX + halfWidth
+    const struck = this.hardpoints.filter(
+      (hp) =>
+        hp.module &&
+        hp.module.kind === "weapon" &&
+        this.mountStrippable(hp) &&
+        segmentCircleEntry(beam.a, beam.b, this.hardpointWorld(hp), reach) !== null,
+    )
+    if (!struck.length) {
+      return 0
+    }
+    for (const hp of struck) {
+      this.turretLost(hp, game)
+      this.loseMount(hp)
+    }
+    Sound.explode() // once, however many went with the shot
+    this.mountsLost()
+    return struck.length
+  }
+
+  // Whether this mount holds a gun that is a thing in its own right, big enough for a shot
+  // lined up through it to take it off. A rock's always are.
+  mountStrippable() {
+    return true
+  }
+  // What losing one means, and what to put right afterwards.
+  loseMount() {}
+  mountsLost() {}
 }
 
 // A turret as the view draws it: a mount ring and one barrel per barrel the gun
@@ -3051,6 +3101,33 @@ export class Ship extends Entity {
     this.hardpoints = list.map((hp) => ({ local: hp.local, role: hp.role, module: null }))
   }
 
+  // A gun on a hull this big is a thing in its own right: a shot lined up through one takes
+  // it, exactly as it does off a rock. On a dart it is not - the mount is part of the outline,
+  // and what a cut through one should leave is the little burning stub it already leaves,
+  // rather than a hull flying on with its gun sniped off. `MOUNT_STRIP_REACH` is where the
+  // line falls; a frigate reaches 57 to 92 and everything else in the game reaches under 19,
+  // so nothing sits near it.
+  //
+  // Never the nose, whatever the hull. That mount is the ship's main gun rather than something
+  // bolted to its flank - it is the trigger on a flown hull, and `mainWeapon` holds it - so a
+  // shot down the centreline would leave a hull firing a gun that is no longer drawn.
+  mountStrippable(hp) {
+    return hp.role !== "nose" && this.boundRadius >= CONFIG.MOUNT_STRIP_REACH
+  }
+
+  // A hull's hardpoints are addressed by index and by role - a loadout mounts onto them, the
+  // shop fits them, and the view draws them - so a lost gun empties its mount rather than
+  // taking the mount out of the list.
+  loseMount(hp) {
+    hp.module = null
+  }
+
+  // And what it was carrying comes off the hull with it, so a frigate stripped of its guns is
+  // lighter and handles like it.
+  mountsLost() {
+    this.refreshFitting()
+  }
+
   // What the guns on this hull are drawn in. Whose they are, rather than what they are:
   // a hull ringed with guns should read as its faction's from across the sector.
   get turretColour() {
@@ -4889,39 +4966,13 @@ export class Asteroid extends Entity {
     }
   }
 
-  // A gun coming apart at its mount: a flash, fire out of it and embers falling off
-  // the debris, burning as whatever it was bolted to burns. Shared, so a gun shot off
-  // a rock and a gun lost to a cut through it go the same way. The sound is the
-  // caller's, since several can go at once.
-  turretLost(hp, game) {
-    const burn = this.burnSpec || DEFAULT_BURN
-    game.burst(hp.x, hp.y, randInt(14, 20), burn.colour, 60, 230, 0.5)
-    game.burst(hp.x, hp.y, randInt(6, 10), burn.ember, 30, 150, 0.75)
-    game.ring(hp.x, hp.y, 9, PALETTE.fx.flash, 230, 0.4)
+  // A rock's mounts are its own to take off: the array is the rock's outline furniture and
+  // nothing indexes into it, so a lost gun simply goes. Its cell shrinks with it.
+  loseMount(hp) {
+    this.hardpoints = this.hardpoints.filter((held) => held !== hp)
   }
-
-  // Shoot the guns off. A mount within AST_TURRET_HITBOX of the beam is taken out,
-  // whether or not the shot goes on to cut the rock underneath it, so a turret can
-  // be picked off a boulder too big to cut apart. Returns how many were lost, and
-  // the rock's cell shrinks with them.
-  strikeTurrets(beam, halfWidth, game) {
-    const reach = CONFIG.AST_TURRET_HITBOX + halfWidth
-    const struck = this.hardpoints.filter(
-      (hp) =>
-        hp.module &&
-        hp.module.kind === "weapon" &&
-        segmentCircleEntry(beam.a, beam.b, hp, reach) !== null,
-    )
-    if (!struck.length) {
-      return 0
-    }
-    this.hardpoints = this.hardpoints.filter((hp) => !struck.includes(hp))
-    for (const hp of struck) {
-      this.turretLost(hp, game)
-    }
-    Sound.explode() // once, however many went with the shot
+  mountsLost() {
     this.refreshEnergy(this.energy)
-    return struck.length
   }
 
   // Split by a beam, distributing hardpoints to whichever piece they fall on.

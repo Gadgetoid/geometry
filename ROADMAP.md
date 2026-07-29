@@ -98,9 +98,10 @@ Small things, none of them load-bearing.
 - **Thruster puffs.** A set of maneuvering thrusters is drawn nowhere. It could
   puff where the turn comes from, the way an engine's flame sits at its nozzle,
   which would also show what a hull is doing when it is only turning.
-- **Mass that is lost.** A module weighs something, but nothing stops weighing
-  when it is destroyed. A rock's turret can be shot off; when a hull's can be,
-  what it was carrying should come off the hull's mass with it.
+- **Mass that is lost, for the rest of it.** A gun shot off a hull now takes its
+  weight with it, so a stripped frigate is lighter and handles like it. Every other
+  module still weighs the same however it ends: a drive on a severed nozzle, a
+  bubble on a hull that has lost its core.
 - **A mount's arc, drawn.** A gun held to the front is invisible until it declines
   to fire. The nub could show what it covers, at least while it has a target it
   cannot answer.

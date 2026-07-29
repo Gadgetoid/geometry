@@ -10744,6 +10744,117 @@ test("a shot lined up through a rock's turret takes it off", () => {
   }
 })
 
+test("a shot lined up through a frigate's turret takes it off too", () => {
+  // The same hitbox a rock's turrets have, on the hulls big enough for a mount to be a thing
+  // in its own right. A frigate's flank batteries could only be dealt with by cutting the hull
+  // apart, and the halves then carried the guns on: a shot straight down a turret did nothing.
+  const game = liveGame()
+  const weapon = game.player.mainWeapon
+  game.player.x = -9000
+  game.player.y = -9000
+  const gunsFitted = (ship) =>
+    ship.hardpoints.filter((hp) => hp.module && hp.module.kind === "weapon").length
+
+  const armed = (typeName) => {
+    const ship = beSolid(plainRival(500, 340, typeName))
+    ship.arrived = true
+    ship.angle = 0
+    game.rivals = [ship]
+    const shield = ship.shieldModule()
+    if (shield) {
+      shield.up = false
+      shield.downTimer = 999
+    }
+    return ship
+  }
+
+  const frigate = armed("rivalFrigate")
+  const before = gunsFitted(frigate)
+  assert.ok(before > 1, "a frigate is a hull with guns on it")
+  const flank = frigate.hardpoints.find(
+    (hp) => hp.module && hp.module.kind === "weapon" && hp.role === "gun",
+  )
+  // Just clear of the outline and still inside the hitbox, so what is being measured is the
+  // mount and not the cut: a beam that reaches a mount through the hull also severs the hull,
+  // and a cut drops mounts and lightens it all by itself.
+  const at = frigate.mountWorld(flank.local)
+  game.applyBeam(beamAcross(at.y - CONFIG.AST_TURRET_HITBOX), game.player, weapon)
+  assert.equal(frigate.massScale, 1, "the beam missed the hull itself")
+  assert.ok(gunsFitted(frigate) < before, "a shot through a flank mount takes the gun")
+  assert.ok(!frigate.dead, "and leaves the hull flying")
+  assert.equal(flank.module, null, "the mount is emptied rather than taken out of the list")
+  assert.equal(frigate.hardpoints.length, frigate.type.hardpoints.length, "so the roles hold")
+
+  // The nose is never one of them. It is the hull's main gun and `mainWeapon` holds it, so a
+  // shot down the centreline would leave a hull firing a gun that is no longer drawn.
+  const nosed = armed("rivalFrigate")
+  const nose = nosed.hardpointByRole("nose")
+  assert.ok(nose.module, "the frigate leads with a gun on its nose")
+  game.applyBeam(beamAcross(nosed.mountWorld(nose.local).y), game.player, weapon)
+  assert.ok(nose.module, "which a shot through it does not take")
+
+  // And not on a hull too small for a mount to be its own thing: the little burning stub a cut
+  // leaves on a dart is the wanted behaviour there.
+  for (const typeName of ["rivalScout", "rivalSeeker", "alienScout", "geomSeeker"]) {
+    const small = armed(typeName)
+    assert.ok(
+      small.hardpoints.every((hp) => !small.mountStrippable(hp)),
+      `${typeName} reaches ${small.boundRadius.toFixed(0)} and should keep its guns`,
+    )
+  }
+  const frigates = ["rivalFrigate", "alienFrigate", "geomFrigate"]
+  for (const typeName of frigates) {
+    const big = armed(typeName)
+    const exposed = big.hardpoints.filter(
+      (hp) => hp.module && hp.module.kind === "weapon" && big.mountStrippable(hp),
+    )
+    assert.ok(
+      exposed.length >= 2,
+      `${typeName} should expose its flank guns, got ${exposed.length}`,
+    )
+  }
+
+  // A raised bubble covers them, exactly as it covers a rock's.
+  const shielded = armed("rivalFrigate")
+  shielded.shieldModule().up = true
+  shielded.energy = shielded.energyMax
+  const held = gunsFitted(shielded)
+  const mount = shielded.hardpoints.find(
+    (hp) => hp.module && hp.module.kind === "weapon" && hp.role === "gun",
+  )
+  game.applyBeam(beamAcross(shielded.mountWorld(mount.local).y), game.player, weapon)
+  assert.equal(gunsFitted(shielded), held, "a bubble keeps the guns on")
+})
+
+test("a gun shot off a hull takes its weight with it", () => {
+  // The other half of a mount being a real thing: a module weighs something, so a frigate
+  // stripped of two autocannons is lighter and handles like it.
+  const game = liveGame()
+  game.player.x = -9000
+  game.player.y = -9000
+  const ship = beSolid(plainRival(500, 340, "rivalFrigate"))
+  ship.arrived = true
+  ship.angle = 0
+  game.rivals = [ship]
+  const shield = ship.shieldModule()
+  shield.up = false
+  shield.downTimer = 999
+
+  const before = { mass: ship.mass, accel: ship.accel, turn: ship.turnRate }
+  const flank = ship.hardpoints.find(
+    (hp) => hp.module && hp.module.kind === "weapon" && hp.role === "gun",
+  )
+  // Clear of the outline, so the weight that comes off is the gun's and not the hull's: a cut
+  // lightens a hull through `massScale` on its own, and this passed on that alone.
+  const line = beamAcross(ship.mountWorld(flank.local).y - CONFIG.AST_TURRET_HITBOX)
+  game.applyBeam(line, game.player, game.player.mainWeapon)
+  assert.equal(ship.massScale, 1, "the hull itself was not cut")
+  assert.equal(flank.module, null, "the gun came off")
+  assert.ok(ship.mass < before.mass, `mass ${before.mass} -> ${ship.mass}`)
+  assert.ok(ship.accel > before.accel, "so it accelerates a little harder")
+  assert.ok(ship.turnRate > before.turn, "and comes round a little quicker")
+})
+
 test("a turret the cut passes through does not ride on either piece", () => {
   // The hitbox covers a beam that reaches the mount. This is the other way a gun
   // ends up on the edge of a piece: a cut close enough to leave the nub hanging off

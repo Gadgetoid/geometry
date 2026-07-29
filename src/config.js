@@ -112,6 +112,12 @@ export const CONFIG = {
   // guns was to cut it into pieces small enough to shatter, so a shot lined up
   // straight through a turret left it firing.
   AST_TURRET_HITBOX: 12,
+  // How big a hull has to be before its own guns can be shot off it, as a rock's can. A
+  // frigate reaches 57 to 92 and every other hull in the game reaches under 19, so the line
+  // is nowhere near anything: on a hull that size a turret is a thing in its own right and a
+  // shot through one should take it, while on a dart the mount is part of the outline and what
+  // a cut leaves is the little burning stub it already leaves. Rocks are never held to this.
+  MOUNT_STRIP_REACH: 40,
   // And how far clear of a cut a mount has to be to ride on it. Inside this the nub
   // straddles the cut line, so it goes with it rather than surviving on the piece
   // its centre happened to fall on.

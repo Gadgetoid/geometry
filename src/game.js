@@ -854,6 +854,33 @@ export class Game {
       }
     }
 
+    // The guns on a hull, before anything is cut, and on the same terms a rock's are: a mount
+    // lined up with the shot is taken off whether or not the beam goes on to sever the hull
+    // under it. Which is what makes the flank batteries of a frigate something to shoot at
+    // rather than something to be got through, and it is what stops the halves of a cut one
+    // carrying a gun the shot went straight down the middle of.
+    //
+    // Only hulls big enough for a mount to be a thing in its own right, and never the nose:
+    // see Ship.mountStrippable. A raised bubble covers the guns, as it covers a rock's.
+    const stripTurrets = (ship) => {
+      if (ship === attacker || ship.dead || !ship.inPlay()) {
+        return
+      }
+      if (ship.blockingRadius("laser", beam.a) > 0) {
+        return
+      }
+      if (ship.strikeTurrets(beam, halfWidth, this)) {
+        this.screenShake = Math.max(this.screenShake, 3)
+        didHit = true
+      }
+    }
+    for (const rival of this.rivals) {
+      stripTurrets(rival)
+    }
+    if (this.player) {
+      stripTurrets(this.player)
+    }
+
     const survivors = []
     for (const asteroid of this.asteroids) {
       if (asteroid === attacker) {
